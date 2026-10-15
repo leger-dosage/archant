@@ -11,6 +11,8 @@ import {
 	isSubtypeOf,
 	isTaxAdvantaged,
 	loanDetailsOf,
+	propertyDetailsOf,
+	vehicleDetailsOf,
 } from "./account-types.ts";
 import { toMinorUnits } from "./money.ts";
 
@@ -58,11 +60,15 @@ describe("account types", () => {
 			"trust",
 			"brokerage",
 			"single_family_home",
-			"apartment",
-			"second_home",
+			"multi_family_home",
+			"condominium",
+			"townhouse",
 			"investment_property",
+			"second_home",
+			"apartment",
 			"plot",
 			"commercial",
+			"agri_land",
 		]);
 	});
 
@@ -93,6 +99,9 @@ describe("account types", () => {
 		expect(isSubtypeOf("investment", "savings")).toBe(false);
 		expect(isSubtypeOf("property", "single_family_home")).toBe(true);
 		expect(isSubtypeOf("property", "commercial")).toBe(true);
+		expect(isSubtypeOf("property", "condominium")).toBe(true);
+		expect(isSubtypeOf("property", "agri_land")).toBe(true);
+		expect(isSubtypeOf("property", "rented")).toBe(false);
 		expect(isSubtypeOf("property", null)).toBe(false);
 		expect(isSubtypeOf("property", "pea")).toBe(false);
 		expect(isSubtypeOf("vehicle", null)).toBe(true);
@@ -175,5 +184,37 @@ describe("account details", () => {
 		expect(creditCardDetailsOf({ type: "credit_card", details: loan })).toBeNull();
 		expect(creditCardDetailsOf({ type: "loan", details: card })).toBeNull();
 		expect(creditCardDetailsOf({ type: "credit_card", details: null })).toBeNull();
+	});
+
+	const property = {
+		yearBuilt: 1975,
+		areaValue: 120,
+		areaUnit: "sqm",
+		addressLine1: null,
+		locality: "Lyon",
+		region: null,
+		postalCode: null,
+		country: null,
+	} as const;
+	const vehicle = {
+		make: "Peugeot",
+		model: null,
+		year: null,
+		mileageValue: 15000,
+		mileageUnit: "km",
+	} as const;
+
+	it("reads a property's details on a property only", () => {
+		expect(propertyDetailsOf({ type: "property", details: property })).toBe(property);
+		expect(propertyDetailsOf({ type: "property", details: vehicle })).toBeNull();
+		expect(propertyDetailsOf({ type: "vehicle", details: property })).toBeNull();
+		expect(propertyDetailsOf({ type: "property", details: null })).toBeNull();
+	});
+
+	it("reads a vehicle's details on a vehicle only", () => {
+		expect(vehicleDetailsOf({ type: "vehicle", details: vehicle })).toBe(vehicle);
+		expect(vehicleDetailsOf({ type: "vehicle", details: property })).toBeNull();
+		expect(vehicleDetailsOf({ type: "property", details: vehicle })).toBeNull();
+		expect(vehicleDetailsOf({ type: "vehicle", details: null })).toBeNull();
 	});
 });

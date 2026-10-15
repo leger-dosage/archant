@@ -203,6 +203,7 @@ export type LoanOverviewData = Pick<
 	| "leverage"
 	| "repaidPercent"
 > & {
+	kind: "loan";
 	/** Today in `APP_TIMEZONE`, the one day every figure answers for. */
 	asOf: IsoDate;
 	currency: string;
@@ -219,30 +220,24 @@ const minorOrNull = (value: bigint | null) => (value === null ? null : minor(val
 
 /**
  * A loan's overview, computed on read from its terms and its balance: nothing
- * is stored. `null` for another type of account; a loan without details
- * answers every figure it cannot know as `null`, and measures what it
- * borrowed by its opening balance.
+ * is stored. A loan without details answers every figure it cannot know as
+ * `null`, and measures what it borrowed by its opening balance.
  */
 export async function loanOverview(
 	deps: ServiceDeps,
-	accountId: string,
-): Promise<LoanOverviewData | null> {
-	const account = await getAccount(deps, accountId);
-
-	if (account.type !== "loan") {
-		return null;
-	}
-
+	account: AccountDetail,
+): Promise<LoanOverviewData> {
 	const asOf = today(deps.timeZone);
 	const overview = overviewOf({
 		details: loanDetailsOf(account),
 		balance: BigInt(account.balance),
-		opening: await openingOf(deps, accountId),
+		opening: await openingOf(deps, account.id),
 		asOf,
 	});
 	const { instalment, insurance, monthlyPayment } = overview;
 
 	return {
+		kind: "loan",
 		asOf,
 		currency: account.currency,
 		originalAmount: minor(overview.originalAmount),

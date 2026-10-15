@@ -55,6 +55,23 @@ describe("ACCOUNT_KINDS", () => {
 		]);
 	});
 
+	it("offers Sure's ten property subtypes in Sure's order", () => {
+		const properties = ACCOUNT_KINDS.filter((kind) => kind.type === "property");
+
+		expect(properties.map((kind) => fr.accounts.subtypes[kind.id])).toEqual([
+			"Maison",
+			"Maison plurifamiliale",
+			"Copropriété",
+			"Maison de ville",
+			"Bien locatif",
+			"Résidence secondaire",
+			"Appartement",
+			"Terrain",
+			"Local commercial",
+			"Terrain agricole",
+		]);
+	});
+
 	it("offers the blank investment, then Sure's European, generic and brokerage subtypes, each named by Sure's short label", () => {
 		const investments = ACCOUNT_KINDS.filter((kind) => kind.type === "investment");
 

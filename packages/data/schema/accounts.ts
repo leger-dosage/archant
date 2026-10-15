@@ -15,7 +15,8 @@ export const accounts = sqliteTable(
 		type: text("type").$type<AccountType>().notNull(),
 		subtype: text("subtype").$type<AccountSubtype>(),
 		currency: text("currency").notNull(),
-		// A loan's or a credit card's optional details; null for every other type.
+		// A loan's, a credit card's, a property's or a vehicle's optional details;
+		// null for every other type.
 		details: text("details", { mode: "json" }).$type<AccountDetails>(),
 		// Deactivated rather than deleted: hidden from the lists, history kept,
 		// reactivable. Left out of its group's total, as in Sure.

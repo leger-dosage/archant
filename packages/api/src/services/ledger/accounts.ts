@@ -31,7 +31,7 @@ export type NewAccountInput = {
 	/** A stored balance (AD-5): an asset's value, a liability's amount owed. */
 	openingBalance: MinorUnits;
 	openingDate: IsoDate;
-	/** A loan's or a credit card's details; absent or null for every other type. */
+	/** Its type's details; absent or null for a type without any. */
 	details?: AccountDetails | null | undefined;
 };
 

@@ -1,6 +1,7 @@
 import type { OpeningAccount } from "@/components/OpeningBalanceSheet";
 import type { OpeningRow } from "@/components/SnapshotList";
 import type { SheetAccount } from "@/components/TransactionForm";
+import type { AccountDetailData } from "@/hooks/useAccount";
 import type { HoldingsData, PositionData } from "@/hooks/useHoldings";
 import type { SnapshotData } from "@/hooks/useSnapshots";
 import type { TradeData } from "@/hooks/useTrades";
@@ -15,9 +16,11 @@ import { z } from "zod";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
+import { propertyDetailsOf, vehicleDetailsOf } from "@archant/data/account-types";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { AssetOverview, AssetOverviewSkeleton } from "@/components/AssetOverview";
 import { EditAccountDialog } from "@/components/EditAccountDialog";
 import { EmptyNote, EmptyState } from "@/components/EmptyState";
 import { ImportDialog } from "@/components/ImportDialog";
@@ -51,12 +54,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccount } from "@/hooks/useAccount";
+import { useAccountOverview } from "@/hooks/useAccountOverview";
 import { useBalanceHistory } from "@/hooks/useBalanceHistory";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useLoanOverview } from "@/hooks/useLoanOverview";
 import { useLoanPayoffChart } from "@/hooks/useLoanPayoffChart";
 import { useLoanSchedule } from "@/hooks/useLoanSchedule";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
@@ -64,6 +67,7 @@ import { useAccountTrades } from "@/hooks/useTrades";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { kindOf } from "@/lib/account-kinds";
 import { errorCodeOf } from "@/lib/api";
+import { addressText } from "@/lib/asset-details";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { pageSearch } from "@/lib/page-search";
 
@@ -360,21 +364,37 @@ function PositionsPanel({ holdings, onOpen }: PositionsPanelProps) {
 }
 
 type OverviewPanelProps = {
-	overview: ReturnType<typeof useLoanOverview>;
+	account: AccountDetailData;
+	overview: ReturnType<typeof useAccountOverview>;
 	onEdit: (() => void) | null;
 };
 
-function OverviewPanel({ overview, onEdit }: OverviewPanelProps) {
+/** Sure's `overview` tab: a loan's terms, or a property's or a vehicle's cards. */
+function OverviewPanel({ account, overview, onEdit }: OverviewPanelProps) {
+	const data = overview.data;
+
 	return (
 		<div className="flex flex-col gap-3">
-			{overview.isPending && <LoanOverviewSkeleton />}
+			{overview.isPending &&
+				(account.type === "loan" ? (
+					<LoanOverviewSkeleton />
+				) : (
+					<AssetOverviewSkeleton cards={account.type === "property" ? 5 : 6} />
+				))}
 
 			{overview.isError && (
 				<ListError error={overview.error} onRetry={() => void overview.refetch()} />
 			)}
 
-			{overview.data !== undefined && overview.data !== null && (
-				<LoanOverview overview={overview.data} onEdit={onEdit} />
+			{data?.kind === "loan" && <LoanOverview overview={data} onEdit={onEdit} />}
+
+			{(data?.kind === "property" || data?.kind === "vehicle") && (
+				<AssetOverview
+					overview={data}
+					property={propertyDetailsOf(account)}
+					vehicle={vehicleDetailsOf(account)}
+					onEdit={onEdit}
+				/>
 			)}
 		</div>
 	);
@@ -461,7 +481,7 @@ function AccountPage() {
 		securityId: null,
 	});
 	const [importing, setImporting] = useState(false);
-	const [editingLoan, setEditingLoan] = useState(false);
+	const [editingDetails, setEditingDetails] = useState(false);
 	const [editingOpening, setEditingOpening] = useState(false);
 	const notFound = account.isError && errorCodeOf(account.error) === "NOT_FOUND";
 	const name = account.data?.name;
@@ -488,6 +508,8 @@ function AccountPage() {
 	// « Échéancier » shows for a loan with a schedule, as Sure's `amortizable?`;
 	// a link to it otherwise opens « Opérations », as « Positions » does.
 	const loan = account.data?.type === "loan";
+	// « Aperçu » shows on every loan, property and vehicle, as Sure's.
+	const overviewed = loan || account.data?.type === "property" || account.data?.type === "vehicle";
 	const schedule = useLoanSchedule(accountId, loan);
 	// A failed read shows the tab too, so its error and retry are reachable.
 	const scheduled =
@@ -506,13 +528,15 @@ function AccountPage() {
 	const payoffChart = useLoanPayoffChart(accountId, period, charted);
 	const tab =
 		(requestedTab === "trades" && account.data !== undefined && !investment) ||
-		(requestedTab === "overview" && account.data !== undefined && !loan) ||
+		(requestedTab === "overview" && account.data !== undefined && !overviewed) ||
 		(requestedTab === "positions" && account.data !== undefined && !traded) ||
 		(requestedTab === "schedule" && account.data !== undefined && !scheduled)
 			? DEFAULT_TAB
 			: requestedTab;
-	// « Aperçu » shows on every loan, as Sure's, and is read only while open.
-	const overview = useLoanOverview(accountId, loan && tab === "overview");
+	// Read only while its tab is open.
+	const overview = useAccountOverview(accountId, overviewed && tab === "overview");
+	// Sure's page subtitle: a property's address, under its caption.
+	const address = account.data === undefined ? null : addressText(propertyDetailsOf(account.data));
 	// The sheet reads the position afresh, so a lock or a typed price shows at once.
 	const openPosition =
 		holdings.data?.positions.find(
@@ -634,6 +658,7 @@ function AccountPage() {
 						{t(`accounts.subtypes.${kindOf(account.data.type, account.data.subtype)}`)}
 						{!account.data.active && <Badge variant="outline">{t("accounts.inactive")}</Badge>}
 					</p>
+					{address !== null && <p className="text-sm text-muted-foreground">{address}</p>}
 					<Money
 						amount={account.data.balance}
 						currency={account.data.currency}
@@ -670,8 +695,8 @@ function AccountPage() {
 					<TabsTrigger value="transactions" className={FLAT_TAB}>
 						{t("accountDetail.tabs.transactions")}
 					</TabsTrigger>
-					{/* Sure's order: a loan's own tabs right after its activity. */}
-					{loan && (
+					{/* Sure's order: an account's own tabs right after its activity. */}
+					{overviewed && (
 						<TabsTrigger value="overview" className={FLAT_TAB}>
 							{t("accountDetail.tabs.overview")}
 						</TabsTrigger>
@@ -718,9 +743,13 @@ function AccountPage() {
 						onOpenOpening={canEditOpening ? () => setEditingOpening(true) : null}
 					/>
 				</TabsContent>
-				{loan && (
+				{overviewed && account.data !== undefined && (
 					<TabsContent value="overview">
-						<OverviewPanel overview={overview} onEdit={admin ? () => setEditingLoan(true) : null} />
+						<OverviewPanel
+							account={account.data}
+							overview={overview}
+							onEdit={admin ? () => setEditingDetails(true) : null}
+						/>
 					</TabsContent>
 				)}
 				{scheduled && (
@@ -754,11 +783,11 @@ function AccountPage() {
 				</TabsContent>
 			</Tabs>
 
-			{account.data !== undefined && loan && admin && (
+			{account.data !== undefined && overviewed && admin && (
 				<EditAccountDialog
 					account={account.data}
-					open={editingLoan}
-					onOpenChange={setEditingLoan}
+					open={editingDetails}
+					onOpenChange={setEditingDetails}
 				/>
 			)}
 

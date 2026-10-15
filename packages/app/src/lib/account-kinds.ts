@@ -39,12 +39,17 @@ export const ACCOUNT_KINDS = [
 	{ id: "other_investment", type: "investment", subtype: "other" },
 	// Sure's `brokerage`, labelled « Compte-titres ».
 	{ id: "brokerage", type: "investment", subtype: "brokerage" },
+	// Sure's `Property::SUBTYPES`, in its order.
 	{ id: "single_family_home", type: "property", subtype: "single_family_home" },
-	{ id: "apartment", type: "property", subtype: "apartment" },
-	{ id: "second_home", type: "property", subtype: "second_home" },
+	{ id: "multi_family_home", type: "property", subtype: "multi_family_home" },
+	{ id: "condominium", type: "property", subtype: "condominium" },
+	{ id: "townhouse", type: "property", subtype: "townhouse" },
 	{ id: "investment_property", type: "property", subtype: "investment_property" },
+	{ id: "second_home", type: "property", subtype: "second_home" },
+	{ id: "apartment", type: "property", subtype: "apartment" },
 	{ id: "plot", type: "property", subtype: "plot" },
 	{ id: "commercial", type: "property", subtype: "commercial" },
+	{ id: "agri_land", type: "property", subtype: "agri_land" },
 	{ id: "vehicle", type: "vehicle", subtype: null },
 ] as const satisfies readonly { id: string; type: AccountType; subtype: AccountSubtype | null }[];
 

@@ -26,11 +26,7 @@ import type { Account } from "@archant/data/types";
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
-import {
-	isCreditCardDetailsInput,
-	parseCreditCardDetails,
-	parseLoanDetails,
-} from "../schemas/accounts.ts";
+import { parseAccountDetails } from "../schemas/accounts.ts";
 import { openingBalanceSchema } from "../schemas/snapshots.ts";
 import { codeOf } from "./bank-connections.ts";
 import {
@@ -173,8 +169,9 @@ export type AccountDetail = AccountSummary & {
 	 */
 	openingBalance: { balance: MinorUnits; notes: string | null };
 	/**
-	 * A loan's terms or a credit card's details, each null when not given;
-	 * null for other types, and for a card saved before it had any.
+	 * Its type's details, a loan's terms, a card's, a property's or a
+	 * vehicle's, each null when not given; null for other types, and for an
+	 * account saved before its type had any.
 	 */
 	details: AccountDetails | null;
 	/** The bank connection that feeds it, null for a manual account. */
@@ -234,7 +231,7 @@ export async function currencyOf(deps: ServiceDeps, accountId: string): Promise<
 
 /**
  * Renames, retypes within its type, deactivates or excludes an account, sets
- * a loan's or a card's details and a linked card's toggle, and returns it as
+ * its type's details and a linked card's toggle, and returns it as
  * its page shows it. Updating `accounts` is not a money write, so it happens
  * here rather than in the ledger. The toggle is written with the account, in
  * one transaction, and ignored on any other account, as Sure's; a change
@@ -261,25 +258,19 @@ export async function updateAccount(
 	let details: AccountDetails | undefined;
 
 	if (patch.details !== undefined) {
-		if (account.type === "credit_card" && isCreditCardDetailsInput(patch.details)) {
-			const parsed = parseCreditCardDetails(patch.details, account.currency);
-			details = parsed.details;
-			fields.push(
-				...parsed.issues.map((issue) => ({ path: `details.${issue.field}`, code: issue.code })),
-			);
-		} else if (account.type === "loan" && !isCreditCardDetailsInput(patch.details)) {
-			const parsed = parseLoanDetails(
-				patch.details,
-				account.currency,
-				await openingDateOf(deps, id),
-			);
+		const parsed = parseAccountDetails(account.type, patch.details, {
+			currency: account.currency,
+			openingDate: account.type === "loan" ? await openingDateOf(deps, id) : null,
+		});
+
+		if (parsed === null) {
+			fields.push({ path: "details", code: "invalid_details" });
+		} else {
 			details = parsed.details;
 			fields.push(
 				...parsed.issues.map((issue) => ({ path: `details.${issue.field}`, code: issue.code })),
 				...futureStartIssues(deps, parsed.details),
 			);
-		} else {
-			fields.push({ path: "details", code: "invalid_details" });
 		}
 	}
 

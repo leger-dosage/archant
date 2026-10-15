@@ -46,16 +46,20 @@ export const ACCOUNT_TYPES = {
 		],
 		subtypeOptional: true,
 	},
-	// A French-relevant subset of Sure's `Property::SUBTYPES` keys.
+	// Sure's `Property::SUBTYPES` keys, in its order.
 	property: {
 		classification: "asset",
 		subtypes: [
 			"single_family_home",
-			"apartment",
-			"second_home",
+			"multi_family_home",
+			"condominium",
+			"townhouse",
 			"investment_property",
+			"second_home",
+			"apartment",
 			"plot",
 			"commercial",
+			"agri_land",
 		],
 	},
 	// Sure's `Vehicle` has no subtypes.
@@ -200,8 +204,48 @@ export type CreditCardDetails = {
 	annualFee: MinorUnits | null;
 };
 
-/** What `accounts.details` holds: a loan's or a credit card's, never another type's. */
-export type AccountDetails = LoanDetails | CreditCardDetails;
+/** Sure's `area_unit` values, square feet and square metres. */
+export const AREA_UNITS = ["sqft", "sqm"] as const;
+
+export type AreaUnit = (typeof AREA_UNITS)[number];
+
+/** Sure's `mileage_unit` values, miles and kilometres. */
+export const MILEAGE_UNITS = ["mi", "km"] as const;
+
+export type MileageUnit = (typeof MILEAGE_UNITS)[number];
+
+/**
+ * What a property carries besides its value, in `accounts.details`, as
+ * Sure's `Property` columns and its `Address`, less the `line2` and `county`
+ * its form never asks for. Every value is optional; the unit always has one,
+ * square metres unless chosen, where Sure defaults to square feet.
+ */
+export type PropertyDetails = {
+	yearBuilt: number | null;
+	areaValue: number | null;
+	areaUnit: AreaUnit;
+	addressLine1: string | null;
+	locality: string | null;
+	region: string | null;
+	postalCode: string | null;
+	country: string | null;
+};
+
+/**
+ * What a vehicle carries besides its value, in `accounts.details`, as Sure's
+ * `Vehicle` columns. Every value is optional; the unit always has one,
+ * kilometres unless chosen, where Sure defaults to miles.
+ */
+export type VehicleDetails = {
+	make: string | null;
+	model: string | null;
+	year: number | null;
+	mileageValue: number | null;
+	mileageUnit: MileageUnit;
+};
+
+/** What `accounts.details` holds: its own type's details, never another type's. */
+export type AccountDetails = LoanDetails | CreditCardDetails | PropertyDetails | VehicleDetails;
 
 /** A loan's details, null for any other account or a loan without them. */
 export function loanDetailsOf(account: {
@@ -221,6 +265,26 @@ export function creditCardDetailsOf(account: {
 	return account.type === "credit_card" &&
 		account.details !== null &&
 		"availableCredit" in account.details
+		? account.details
+		: null;
+}
+
+/** A property's details, null for any other account or a property saved before it had them. */
+export function propertyDetailsOf(account: {
+	type: AccountType;
+	details: AccountDetails | null;
+}): PropertyDetails | null {
+	return account.type === "property" && account.details !== null && "areaUnit" in account.details
+		? account.details
+		: null;
+}
+
+/** A vehicle's details, null for any other account or a vehicle saved before it had them. */
+export function vehicleDetailsOf(account: {
+	type: AccountType;
+	details: AccountDetails | null;
+}): VehicleDetails | null {
+	return account.type === "vehicle" && account.details !== null && "mileageUnit" in account.details
 		? account.details
 		: null;
 }

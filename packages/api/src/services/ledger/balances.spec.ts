@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { entries } from "@archant/data/schema/entries";
 
 import {
 	add,
@@ -9,11 +10,13 @@ import {
 	linkedChecking,
 	openChecking,
 	setToday,
+	snapshot,
 	splitInTwo,
+	temp,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createAccount } from "./accounts.ts";
-import { balanceOn, balancesBetween, openingDateOf } from "./balances.ts";
+import { balanceOn, balancesBetween, firstValuationOf, openingDateOf } from "./balances.ts";
 
 useLedgerDatabase();
 
@@ -80,6 +83,54 @@ describe("openingDateOf", () => {
 
 		await expect(openingDateOf(deps(), account.id)).resolves.toBe("2026-09-01");
 		await expect(openingDateOf(deps(), "nope")).resolves.toBeNull();
+	});
+});
+
+describe("firstValuationOf", () => {
+	it("returns the opening anchor's amount, or null for an unknown account", async () => {
+		const account = await openChecking();
+
+		await expect(firstValuationOf(deps(), account.id)).resolves.toBe(123456);
+		await expect(firstValuationOf(deps(), "nope")).resolves.toBeNull();
+	});
+
+	it("picks the one written first of two valuations on the earliest day", async () => {
+		const account = await openChecking();
+		// The ledger keeps one snapshot a day and folds one on the opening date
+		// into the anchor; only a bank's anchor beside a snapshot shares a day,
+		// written here directly, the ids sorting against the creation order.
+		const valuation = (
+			id: string,
+			kind: "reconciliation" | "current_anchor",
+			amount: number,
+			createdAt: number,
+		) => ({
+			id,
+			accountId: account.id,
+			kind: "valuation" as const,
+			valuationKind: kind,
+			date: "2026-08-01",
+			amount,
+			currency: "EUR",
+			createdAt,
+			updatedAt: createdAt,
+		});
+		await temp.db
+			.insert(entries)
+			.values([
+				valuation("a-later", "reconciliation", 800, 2_000),
+				valuation("z-first", "current_anchor", 700, 1_000),
+			]);
+
+		await expect(firstValuationOf(deps(), account.id)).resolves.toBe(700);
+	});
+
+	it("picks the earliest by date, whatever was written first", async () => {
+		const account = await openChecking();
+		await snapshot(account.id, "2026-09-15", 900);
+		await snapshot(account.id, "2026-08-20", 700);
+
+		await expect(firstValuationOf(deps(), account.id)).resolves.toBe(700);
 	});
 });
 

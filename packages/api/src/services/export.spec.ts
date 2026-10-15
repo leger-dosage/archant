@@ -947,6 +947,65 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes a property's and a vehicle's details as Sure's columns, the address under archant", async () => {
+		await ownDatabase();
+		const flat = await account({
+			name: "Appartement",
+			type: "property",
+			subtype: "condominium",
+			details: {
+				yearBuilt: "1975",
+				areaValue: "68",
+				addressLine1: "3 rue Mercière",
+				locality: "Lyon",
+				postalCode: "69002",
+				country: "FR",
+			},
+		});
+		const plot = await account({ name: "Terrain", type: "property", subtype: "agri_land" });
+		const van = await account({
+			name: "Fourgon",
+			type: "vehicle",
+			subtype: null,
+			details: { make: "Renault", model: "Trafic", year: "2019", mileageValue: "84000" },
+		});
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(flat)).toMatchObject({
+			accountable_type: "Property",
+			subtype: "condominium",
+			accountable: { subtype: "condominium", year_built: 1975, area_value: 68, area_unit: "sqm" },
+			archant: {
+				address: {
+					line1: "3 rue Mercière",
+					locality: "Lyon",
+					region: null,
+					postal_code: "69002",
+					country: "FR",
+				},
+			},
+		});
+		expect(accounts.get(plot)).toMatchObject({
+			accountable: { subtype: "agri_land", year_built: null, area_value: null },
+			archant: { address: { line1: null, locality: null } },
+		});
+		expect(accounts.get(van)).toMatchObject({
+			accountable_type: "Vehicle",
+			accountable: {
+				subtype: null,
+				make: "Renault",
+				model: "Trafic",
+				year: 2019,
+				mileage_value: 84000,
+				mileage_unit: "km",
+			},
+		});
+		expect(accounts.get(van)).not.toHaveProperty("archant.address");
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes a loan's terms Sure saves without amortising them, and passes its preflight", async () => {
 		await ownDatabase();
 		const loan = await account({

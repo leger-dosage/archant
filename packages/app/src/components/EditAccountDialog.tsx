@@ -10,12 +10,18 @@ import { toast } from "sonner";
 
 import type { AccountSettingsFormInput } from "@archant/api/schemas/accounts";
 import { accountSettingsFormSchema } from "@archant/api/schemas/accounts";
-import { creditCardDetailsOf, loanDetailsOf } from "@archant/data/account-types";
+import {
+	creditCardDetailsOf,
+	loanDetailsOf,
+	propertyDetailsOf,
+	vehicleDetailsOf,
+} from "@archant/data/account-types";
 
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
+import { PropertyDetailsFields } from "@/components/PropertyDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -35,9 +41,18 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useUpdateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
+import {
+	PROPERTY_FIELD_NAMES,
+	VEHICLE_FIELD_NAMES,
+	completePropertyInput,
+	completeVehicleInput,
+	propertyDetailsToInput,
+	vehicleDetailsToInput,
+} from "@/lib/asset-details";
 import {
 	CREDIT_CARD_FIELD_NAMES,
 	completeCreditCardInput,
@@ -54,6 +69,8 @@ const FIELD_NAMES = [
 	"treatBalanceAsAvailableCredit",
 	...LOAN_FIELD_NAMES,
 	...CREDIT_CARD_FIELD_NAMES,
+	...PROPERTY_FIELD_NAMES,
+	...VEHICLE_FIELD_NAMES,
 ] as const;
 
 /** Rendered for a loan only, so no other account's form ever holds a loan's `details`. */
@@ -76,6 +93,32 @@ function CreditCardFields({ form }: { form: UseFormReturn<AccountSettingsFormInp
 	return (
 		<CreditCardDetailsFields
 			value={completeCreditCardInput(details.field.value)}
+			onChange={details.field.onChange}
+			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
+		/>
+	);
+}
+
+/** Rendered for a property only, so no other account's form ever holds a property's `details`. */
+function PropertyFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const details = useController({ control: form.control, name: "details" });
+
+	return (
+		<PropertyDetailsFields
+			value={completePropertyInput(details.field.value)}
+			onChange={details.field.onChange}
+			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
+		/>
+	);
+}
+
+/** Rendered for a vehicle only, so no other account's form ever holds a vehicle's `details`. */
+function VehicleFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const details = useController({ control: form.control, name: "details" });
+
+	return (
+		<VehicleDetailsFields
+			value={completeVehicleInput(details.field.value)}
 			onChange={details.field.onChange}
 			errorOf={(field) => errorAt(form.formState.errors, `details.${field}`)}
 		/>
@@ -127,8 +170,8 @@ type EditAccountDialogProps = {
 
 /**
  * What Sure's account edit form changes: the name, the subtype within its
- * type, a loan's or a card's details, a linked card's toggle and the
- * exclusion switch. Type, currency and the opening balance stay as the
+ * type, a loan's, a card's, a property's or a vehicle's details, a linked
+ * card's toggle and the exclusion switch. Type, currency and the opening balance stay as the
  * account was created.
  */
 export function EditAccountDialog({
@@ -141,6 +184,8 @@ export function EditAccountDialog({
 	const updateAccount = useUpdateAccount(account.id);
 	const isLoan = account.type === "loan";
 	const isCard = account.type === "credit_card";
+	const isProperty = account.type === "property";
+	const isVehicle = account.type === "vehicle";
 	const linkedCard = isCard && account.bankConnection !== null;
 	const values: AccountSettingsFormInput = {
 		name: account.name,
@@ -158,6 +203,8 @@ export function EditAccountDialog({
 		...(isCard
 			? { details: creditCardDetailsToInput(creditCardDetailsOf(account), account.currency) }
 			: {}),
+		...(isProperty ? { details: propertyDetailsToInput(propertyDetailsOf(account)) } : {}),
+		...(isVehicle ? { details: vehicleDetailsToInput(vehicleDetailsOf(account)) } : {}),
 		...(linkedCard
 			? { treatBalanceAsAvailableCredit: account.treatBalanceAsAvailableCredit ?? false }
 			: {}),
@@ -202,6 +249,8 @@ export function EditAccountDialog({
 				...input,
 				...(isLoan ? { details: completeLoanInput(details) } : {}),
 				...(isCard ? { details: completeCreditCardInput(details) } : {}),
+				...(isProperty ? { details: completePropertyInput(details) } : {}),
+				...(isVehicle ? { details: completeVehicleInput(details) } : {}),
 				...(linkedCard ? { treatBalanceAsAvailableCredit } : {}),
 			});
 			toast.success(t("accountActions.form.saved", { name: saved.name }));
@@ -301,6 +350,10 @@ export function EditAccountDialog({
 					{isLoan && <LoanFields form={form} />}
 
 					{isCard && <CreditCardFields form={form} />}
+
+					{isProperty && <PropertyFields form={form} />}
+
+					{isVehicle && <VehicleFields form={form} />}
 
 					{linkedCard && <AvailableCreditToggle form={form} />}
 

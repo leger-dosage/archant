@@ -1020,6 +1020,42 @@ describe("investment subtypes", () => {
 	});
 });
 
+describe("property subtypes", () => {
+	it("keeps every account and its details at 0077, then takes Sure's ten property subtypes", async () => {
+		const before = await migratedBefore("0077");
+		await insertAccount(before, "a1", "property", "apartment");
+		await insertAccount(before, "a2", "vehicle", null);
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, created_at, updated_at) values ('a3', 'A', 'credit_card', null, 'EUR', '{"apr":159900}', 0, 0)`,
+		);
+		// The rebuild drops `accounts`: an entry on it must outlive the drop.
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await expect(insertAccount(before, "a4", "property", "agri_land")).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+		await expect(
+			database.all(sql`select id, type, subtype, details from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "property", subtype: "apartment", details: null },
+			{ id: "a2", type: "vehicle", subtype: null, details: null },
+			{ id: "a3", type: "credit_card", subtype: null, details: '{"apr":159900}' },
+		]);
+		const added = ["multi_family_home", "condominium", "townhouse", "agri_land"];
+		await expect(
+			Promise.all(added.map((subtype) => insertAccount(database, subtype, "property", subtype))),
+		).resolves.toHaveLength(added.length);
+		await expect(insertAccount(database, "b1", "property", "rented")).rejects.toThrow();
+		await expect(insertAccount(database, "b2", "property", null)).rejects.toThrow();
+		await expect(insertAccount(database, "b3", "loan", "condominium")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("loan accounts", () => {
 	it("keeps every account, entry and CSV mapping when 0018 rebuilds accounts", async () => {
 		const before = await migratedBefore("0018");

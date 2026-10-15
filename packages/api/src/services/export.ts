@@ -7,8 +7,19 @@ import type { ExportedTransactionRow } from "./ledger/export.ts";
 import { Zip, ZipDeflate } from "fflate";
 import Papa from "papaparse";
 
-import type { AccountType, CreditCardDetails, LoanDetails } from "@archant/data/account-types";
-import { creditCardDetailsOf, loanDetailsOf } from "@archant/data/account-types";
+import type {
+	AccountType,
+	CreditCardDetails,
+	LoanDetails,
+	PropertyDetails,
+	VehicleDetails,
+} from "@archant/data/account-types";
+import {
+	creditCardDetailsOf,
+	loanDetailsOf,
+	propertyDetailsOf,
+	vehicleDetailsOf,
+} from "@archant/data/account-types";
 import type { Database, ReadSnapshot } from "@archant/data/client";
 import { readSnapshot } from "@archant/data/client";
 import { formatMicros } from "@archant/data/micros";
@@ -206,6 +217,43 @@ function creditCardAccountable(details: CreditCardDetails | null, currency: stri
 		apr: percentOrNull(details?.apr ?? null),
 		annual_fee: amount(details?.annualFee),
 		expiration_date: details?.expirationDate ?? null,
+	};
+}
+
+/**
+ * Sure's `Property` columns, each null when unknown, a property saved before
+ * it had details included.
+ */
+function propertyAccountable(details: PropertyDetails | null) {
+	return {
+		year_built: details?.yearBuilt ?? null,
+		area_value: details?.areaValue ?? null,
+		area_unit: details?.areaUnit ?? null,
+	};
+}
+
+/**
+ * A property's address, under `archant`: Sure's exporter leaves its `Address`
+ * row out, so its keys are Sure's columns, ready for an importer that reads them.
+ */
+function propertyAddress(details: PropertyDetails | null) {
+	return {
+		line1: details?.addressLine1 ?? null,
+		locality: details?.locality ?? null,
+		region: details?.region ?? null,
+		postal_code: details?.postalCode ?? null,
+		country: details?.country ?? null,
+	};
+}
+
+/** Sure's `Vehicle` columns, each null when unknown. */
+function vehicleAccountable(details: VehicleDetails | null) {
+	return {
+		make: details?.make ?? null,
+		model: details?.model ?? null,
+		year: details?.year ?? null,
+		mileage_value: details?.mileageValue ?? null,
+		mileage_unit: details?.mileageUnit ?? null,
 	};
 }
 
@@ -831,11 +879,16 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 						...(account.type === "credit_card"
 							? creditCardAccountable(creditCardDetailsOf(account), account.currency)
 							: {}),
+						...(account.type === "property" ? propertyAccountable(propertyDetailsOf(account)) : {}),
+						...(account.type === "vehicle" ? vehicleAccountable(vehicleDetailsOf(account)) : {}),
 					},
 					archant: {
 						type: account.type,
 						subtype: account.subtype,
 						...(account.type === "loan" ? { loan_end_date: loan?.endDate ?? null } : {}),
+						...(account.type === "property"
+							? { address: propertyAddress(propertyDetailsOf(account)) }
+							: {}),
 					},
 				},
 			};

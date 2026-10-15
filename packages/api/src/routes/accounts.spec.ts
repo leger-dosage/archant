@@ -74,6 +74,26 @@ const noTerms = {
 	endDate: null,
 };
 
+// A property's and a vehicle's details, as created without any.
+const noPropertyDetails = {
+	yearBuilt: null,
+	areaValue: null,
+	areaUnit: "sqm",
+	addressLine1: null,
+	locality: null,
+	region: null,
+	postalCode: null,
+	country: null,
+};
+
+const noVehicleDetails = {
+	make: null,
+	model: null,
+	year: null,
+	mileageValue: null,
+	mileageUnit: "km",
+};
+
 // Every field of a PATCH's details, blank: it replaces them whole.
 const blankTerms = {
 	originalAmount: "",
@@ -870,7 +890,7 @@ describe("POST /api/accounts", () => {
 		expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
 	});
 
-	it("creates a home as an asset worth its estimated value, without details", async () => {
+	it("creates a home as an asset worth its estimated value, its details unknown", async () => {
 		const response = await testClient(buildApp()).api.accounts.$post({
 			json: { ...valid, ...home, openingDate: "2026-01-10" },
 		});
@@ -884,11 +904,11 @@ describe("POST /api/accounts", () => {
 		});
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 		expect(detail.body).toMatchObject({
-			data: { classification: "asset", balance: 32000000, details: null },
+			data: { classification: "asset", balance: 32000000, details: noPropertyDetails },
 		});
 	});
 
-	it("creates a vehicle without a subtype as an asset worth its estimated value", async () => {
+	it("creates a vehicle without a subtype as an asset worth its estimated value, its details unknown", async () => {
 		const response = await testClient(buildApp()).api.accounts.$post({
 			json: { ...valid, ...car },
 		});
@@ -898,7 +918,7 @@ describe("POST /api/accounts", () => {
 		expect(data).toMatchObject({ type: "vehicle", subtype: null, balance: 1850000 });
 		const detail = await request("GET", `/api/accounts/${data.id}`);
 		expect(detail.body).toMatchObject({
-			data: { classification: "asset", balance: 1850000, details: null },
+			data: { classification: "asset", balance: 1850000, details: noVehicleDetails },
 		});
 	});
 
@@ -918,7 +938,7 @@ describe("POST /api/accounts", () => {
 		}
 	});
 
-	it("refuses details on a property and on a vehicle", async () => {
+	it("refuses a loan's details on a property and on a vehicle", async () => {
 		const responses = await Promise.all(
 			[home, car].map(async (account) =>
 				postRaw({ ...valid, ...account, details: { originalAmount: "300 000,00" } }),
@@ -929,6 +949,131 @@ describe("POST /api/accounts", () => {
 			expect(status).toBe(400);
 			expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
 		}
+	});
+
+	it("stores a property's details trimmed, blank ones null, the area in square metres unless chosen", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...home,
+				subtype: "agri_land",
+				details: { areaValue: "120", locality: " Lyon ", region: "  " },
+			},
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		expect(data).toMatchObject({ type: "property", subtype: "agri_land" });
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: { details: { ...noPropertyDetails, areaValue: 120, locality: "Lyon" } },
+		});
+	});
+
+	it("takes each of Sure's ten property subtypes", async () => {
+		const subtypes = [
+			"single_family_home",
+			"multi_family_home",
+			"condominium",
+			"townhouse",
+			"investment_property",
+			"second_home",
+			"apartment",
+			"plot",
+			"commercial",
+			"agri_land",
+		];
+
+		const statuses = await Promise.all(
+			subtypes.map(async (subtype) => postStatus({ ...valid, ...home, subtype })),
+		);
+
+		expect(statuses).toEqual(subtypes.map(() => 201));
+	});
+
+	it("stores a vehicle's details", async () => {
+		const response = await testClient(buildApp()).api.accounts.$post({
+			json: {
+				...valid,
+				...car,
+				details: { make: "Peugeot", model: "208", year: "2021", mileageValue: "15000" },
+			},
+		});
+
+		expect(response.status).toBe(201);
+		const { data } = await response.json();
+		const detail = await request("GET", `/api/accounts/${data.id}`);
+		expect(detail.body).toMatchObject({
+			data: {
+				details: {
+					make: "Peugeot",
+					model: "208",
+					year: 2021,
+					mileageValue: 15000,
+					mileageUnit: "km",
+				},
+			},
+		});
+	});
+
+	it("saves a year or a mileage only Sure's form would bound", async () => {
+		const property = await postStatus({ ...valid, ...home, details: { yearBuilt: "1200" } });
+		const vehicle = await postStatus({
+			...valid,
+			...car,
+			details: { year: "1850", mileageValue: "-1", mileageUnit: "mi" },
+		});
+
+		expect([property, vehicle]).toEqual([201, 201]);
+	});
+
+	it("refuses a number that is not an integer, a text too long or a unit Sure has not, nothing written", async () => {
+		const before = await accountCount();
+
+		const property = await postRaw({
+			...valid,
+			...home,
+			details: { areaValue: "12,5", yearBuilt: "deux mille", addressLine1: "x".repeat(256) },
+		});
+		const unit = await postRaw({ ...valid, ...car, details: { mileageUnit: "furlong" } });
+		const mileage = await postRaw({
+			...valid,
+			...car,
+			details: { mileageValue: "1e3", mileageUnit: "km" },
+		});
+
+		expect(property.status).toBe(400);
+		expect(property.body.error.fields).toEqual([
+			{ path: "details.yearBuilt", code: "invalid_number" },
+			{ path: "details.areaValue", code: "invalid_number" },
+			{ path: "details.addressLine1", code: "too_long" },
+		]);
+		expect(unit.status).toBe(400);
+		expect(unit.body.error.fields).toEqual([
+			{ path: "details.mileageUnit", code: "invalid_value" },
+		]);
+		expect(mileage.status).toBe(400);
+		expect(mileage.body.error.fields).toEqual([
+			{ path: "details.mileageValue", code: "invalid_number" },
+		]);
+		await expect(accountCount()).resolves.toBe(before);
+	});
+
+	it("refuses a vehicle's details on a property, a property's on a vehicle, and either on a depository", async () => {
+		const before = await accountCount();
+
+		const responses = await Promise.all([
+			postRaw({ ...valid, ...home, details: { areaValue: "120", make: "Peugeot" } }),
+			postRaw({ ...valid, ...car, details: { locality: "Lyon" } }),
+			postRaw({ ...valid, details: { yearBuilt: "1975" } }),
+			postRaw({ ...valid, details: { mileageValue: "15000" } }),
+		]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(body.error.fields).toEqual([{ path: "details", code: "invalid_details" }]);
+		}
+		await expect(accountCount()).resolves.toBe(before);
 	});
 
 	it("answers a body that is not JSON with VALIDATION_ERROR", async () => {
@@ -2047,6 +2192,112 @@ describe("PATCH /api/accounts/:id on a credit card", () => {
 	});
 });
 
+// Every field of a property's details in a PATCH, blank: it replaces them whole.
+const blankProperty = {
+	yearBuilt: "",
+	areaValue: "",
+	areaUnit: "sqm",
+	addressLine1: "",
+	locality: "",
+	region: "",
+	postalCode: "",
+	country: "",
+} as const;
+
+const blankVehicle = {
+	make: "",
+	model: "",
+	year: "",
+	mileageValue: "",
+	mileageUnit: "km",
+} as const;
+
+describe("PATCH /api/accounts/:id on a property or a vehicle", () => {
+	it("replaces a property's details whole, a blank one cleared, its unit as chosen", async () => {
+		const property = await openAccount({
+			...home,
+			details: { yearBuilt: "1975", region: "Rhône" },
+		});
+
+		const { status, body } = await patchAccount(property.id, {
+			details: {
+				...blankProperty,
+				areaValue: "1290",
+				areaUnit: "sqft",
+				addressLine1: "3 rue Mercière",
+			},
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({
+			data: {
+				details: {
+					...noPropertyDetails,
+					areaValue: 1290,
+					areaUnit: "sqft",
+					addressLine1: "3 rue Mercière",
+				},
+			},
+		});
+	});
+
+	it("saves details on a property created before it had any", async () => {
+		const property = await openAccount(home);
+		await temp.db.update(accounts).set({ details: null }).where(eq(accounts.id, property.id));
+
+		const { status, body } = await patchAccount(property.id, {
+			details: { ...blankProperty, locality: "Lyon" },
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { details: { ...noPropertyDetails, locality: "Lyon" } } });
+	});
+
+	it("replaces a vehicle's details, and refuses an invalid one, nothing written", async () => {
+		const vehicle = await openAccount({ ...car, details: { make: "Peugeot" } });
+
+		const saved = await patchAccount(vehicle.id, {
+			details: { ...blankVehicle, make: "Renault", mileageValue: "42000", mileageUnit: "mi" },
+		});
+		const refused = await patchAccount(vehicle.id, {
+			details: { ...blankVehicle, make: "Citroën", year: "2021.5" },
+		});
+
+		expect(saved.status).toBe(200);
+		expect(saved.body).toMatchObject({
+			data: {
+				details: { ...noVehicleDetails, make: "Renault", mileageValue: 42000, mileageUnit: "mi" },
+			},
+		});
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "details.year", code: "invalid_number" },
+		]);
+		const detail = await request("GET", `/api/accounts/${vehicle.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { make: "Renault" } } });
+	});
+
+	it("refuses a vehicle's details on a property, a property's on a vehicle, and either on a depository", async () => {
+		const property = await openAccount(home);
+		const vehicle = await openAccount(car);
+		const checking = await openAccount();
+
+		const responses = await Promise.all([
+			patchAccount(property.id, { details: blankVehicle }),
+			patchAccount(vehicle.id, { details: blankProperty }),
+			patchAccount(checking.id, { details: blankProperty }),
+			patchAccount(checking.id, { details: blankVehicle }),
+		]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error.fields).toEqual([
+				{ path: "details", code: "invalid_details" },
+			]);
+		}
+	});
+});
+
 describe("a viewer on a loan or a position", () => {
 	let viewerCookie: string;
 	let auth: Auth;
@@ -2156,6 +2407,28 @@ describe("a viewer on a loan or a position", () => {
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { monthlyPayment: 53_969, insured: true } });
+	});
+
+	it("reads a property's details and overview, and is refused FORBIDDEN on an edit, nothing written", async () => {
+		const property = await openAccount({ ...home, details: { locality: "Lyon" } });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${property.id}`);
+		const overviewRead = await viewer.request(`/api/accounts/${property.id}/overview`);
+		const edit = await viewer.request(`/api/accounts/${property.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ details: { ...blankProperty, locality: "Paris" } }),
+		});
+
+		expect(await read.json()).toMatchObject({ data: { details: { locality: "Lyon" } } });
+		expect(overviewRead.status).toBe(200);
+		expect(await overviewRead.json()).toMatchObject({
+			data: { kind: "property", purchasePrice: 32_000_000 },
+		});
+		expect(edit.status).toBe(403);
+		const detail = await request("GET", `/api/accounts/${property.id}`);
+		expect(detail.body).toMatchObject({ data: { details: { locality: "Lyon" } } });
 	});
 
 	it("reads its payoff chart", async () => {
@@ -3082,6 +3355,7 @@ describe("GET /api/accounts/:id/overview", () => {
 		const data = await overviewOf(loan.id);
 
 		expect(data).toEqual({
+			kind: "loan",
 			asOf: "2026-10-04",
 			currency: "EUR",
 			originalAmount: 13_000_000,
@@ -3127,7 +3401,7 @@ describe("GET /api/accounts/:id/overview", () => {
 			monthlyPayment: payments.find((payment) => payment.date >= "2026-09-21")?.payment,
 			leverage: { tenths: 40, band: "conservative" },
 		});
-		expect(data?.monthlyPayment).not.toBe(53_969);
+		expect(data?.kind === "loan" && data.monthlyPayment).not.toBe(53_969);
 	});
 
 	it("follows the terms once they are saved", async () => {
@@ -3210,6 +3484,59 @@ describe("GET /api/accounts/:id/overview", () => {
 
 		expect(response.status).toBe(404);
 		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("GET /api/accounts/:id/overview on a property or a vehicle", () => {
+	it("measures a property's trend from its opening value, its purchase price", async () => {
+		const property = await openAccount({
+			...home,
+			openingBalance: "300 000,00",
+			openingDate: "2026-01-10",
+		});
+		await postSnapshot(property.id, { date: "2026-06-01", balance: "320 000,00" });
+
+		await expect(overviewOf(property.id)).resolves.toEqual({
+			kind: "property",
+			currency: "EUR",
+			balance: 32_000_000,
+			purchasePrice: 30_000_000,
+			trend: { amount: 2_000_000, percent: 6.7 },
+		});
+	});
+
+	it("reads the earliest valuation by date, wherever it was written", async () => {
+		const vehicle = await openAccount({ ...car, openingDate: "2026-03-01" });
+		await postSnapshot(vehicle.id, { date: "2026-08-01", balance: "16 000,00" });
+		await postSnapshot(vehicle.id, { date: "2026-02-01", balance: "21 000,00" });
+
+		await expect(overviewOf(vehicle.id)).resolves.toMatchObject({
+			kind: "vehicle",
+			purchasePrice: 2_100_000,
+			trend: { amount: -500_000 },
+		});
+	});
+
+	it("gives no percentage from a purchase price of zero", async () => {
+		const vehicle = await openAccount({ ...car, openingBalance: "0", openingDate: "2026-01-10" });
+		await postSnapshot(vehicle.id, { date: "2026-06-01", balance: "5 000,00" });
+
+		await expect(overviewOf(vehicle.id)).resolves.toMatchObject({
+			purchasePrice: 0,
+			balance: 500_000,
+			trend: { amount: 500_000, percent: null },
+		});
+	});
+
+	it("answers a property created before it had details", async () => {
+		const property = await openAccount(home);
+		await temp.db.update(accounts).set({ details: null }).where(eq(accounts.id, property.id));
+
+		await expect(overviewOf(property.id)).resolves.toMatchObject({
+			kind: "property",
+			purchasePrice: 32_000_000,
+			trend: { amount: 0, percent: 0 },
+		});
 	});
 });
 
