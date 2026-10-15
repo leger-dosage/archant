@@ -328,7 +328,7 @@ describe("transfers", () => {
 		expect((await listed("?direction=income")).items).toEqual([]);
 	});
 
-	it("links a move into a home or a vehicle as an internal move, raising its value", async () => {
+	it("links a move into a home or a vehicle as an internal move, its value left to valuations", async () => {
 		const checking = await openOwn({ name: "Compte courant" });
 		const account = await openOwn(home);
 		const vehicle = await openOwn(car);
@@ -348,9 +348,10 @@ describe("transfers", () => {
 		expect((await listed("?direction=expense")).items).toEqual([]);
 		expect((await listed("?direction=income")).items).toEqual([]);
 		const detail = await ownRequest("GET", `/api/accounts/${account.id}`);
-		expect(detail.body).toMatchObject({ data: { balance: 32000000 + 200000 } });
+		// Non-cash, as Sure's: only a valuation moves a home's or a car's value.
+		expect(detail.body).toMatchObject({ data: { balance: 32000000 } });
 		const vehicleDetail = await ownRequest("GET", `/api/accounts/${vehicle.id}`);
-		expect(vehicleDetail.body).toMatchObject({ data: { balance: 1850000 + 40000 } });
+		expect(vehicleDetail.body).toMatchObject({ data: { balance: 1850000 } });
 	});
 
 	it("refuses a counterpart that is not a candidate, already matched or 31 days away included", async () => {

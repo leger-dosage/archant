@@ -1,14 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { and, eq, gte, inArray } from "drizzle-orm";
+import { describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
+import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
+import { settings } from "@archant/data/schema/settings";
 
 import {
 	add,
 	checking,
 	deps,
+	history,
 	linkedChecking,
 	openChecking,
+	openLoan,
 	setToday,
 	snapshot,
 	splitInTwo,
@@ -16,7 +22,16 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createAccount } from "./accounts.ts";
-import { balanceOn, balancesBetween, firstValuationOf, openingDateOf } from "./balances.ts";
+import {
+	balanceOn,
+	balancesBetween,
+	firstValuationOf,
+	openingDateOf,
+	recomputeBalances,
+	recomputeNonCashBalances,
+} from "./balances.ts";
+import * as shared from "./shared.ts";
+import { findSnapshot } from "./snapshots.ts";
 
 useLedgerDatabase();
 
@@ -157,5 +172,145 @@ describe("balances and a split", () => {
 		await expect(balanceOn(deps(), account.id, "2026-09-10")).resolves.toMatchObject({
 			amount: (before?.amount ?? 0) + amount,
 		});
+	});
+});
+
+// A home opened at 300 000 € on 2026-09-01, as Story 28.9's matrix.
+const HOME = 30_000_000;
+
+const openHome = () =>
+	openChecking({
+		name: "Maison",
+		type: "property",
+		subtype: "single_family_home",
+		openingBalance: toMinorUnits(HOME),
+	});
+
+const openCar = () =>
+	openChecking({
+		name: "Voiture",
+		type: "vehicle",
+		subtype: null,
+		openingBalance: toMinorUnits(1_850_000),
+	});
+
+const builder = { amount: toMinorUnits(-500_000), label: "Maçon" };
+
+describe("a property's or a vehicle's balances", () => {
+	it("keep the value every day a builder is paid from it", async () => {
+		const home = await openHome();
+		await add(home.id, { ...builder, date: "2026-09-10" });
+
+		const rows = await history(home.id);
+
+		expect(rows.size).toBe(21);
+		expect([...rows.values()].every((balance) => balance === HOME)).toBe(true);
+	});
+
+	it("move only on a valuation, from its own day, with no gap from the day's lines", async () => {
+		const home = await openHome();
+		await add(home.id, { ...builder, date: "2026-09-10" });
+		await add(home.id, { ...builder, date: "2026-09-15" });
+
+		const id = await snapshot(home.id, "2026-09-15", 32_000_000);
+
+		const rows = await history(home.id);
+		expect(rows.get("2026-09-14")).toBe(HOME);
+		expect(rows.get("2026-09-15")).toBe(32_000_000);
+		expect(rows.get("2026-09-21")).toBe(32_000_000);
+		await expect(findSnapshot(deps(), id)).resolves.toMatchObject({
+			computed: HOME,
+			gap: 2_000_000,
+		});
+	});
+
+	it("start from zero at a line before the opening", async () => {
+		const car = await openCar();
+		await add(car.id, { ...builder, date: "2026-08-01" });
+
+		const rows = await history(car.id);
+
+		expect(rows.get("2026-08-01")).toBe(0);
+		expect(rows.get("2026-08-31")).toBe(0);
+		expect(rows.get("2026-09-01")).toBe(1_850_000);
+	});
+
+	it("run to a future line, the value unchanged", async () => {
+		const home = await openHome();
+		await add(home.id, { ...builder, date: "2026-10-15" });
+
+		const rows = await history(home.id);
+
+		expect([...rows.keys()].at(-1)).toBe("2026-10-15");
+		expect(rows.get("2026-10-15")).toBe(HOME);
+	});
+
+	it("give the same rows from a later day as from the history start", async () => {
+		const home = await openHome();
+		await add(home.id, { ...builder, date: "2026-09-10" });
+		await snapshot(home.id, "2026-09-15", 32_000_000);
+		// Recomputes from 09-12 only.
+		await add(home.id, { ...builder, date: "2026-09-12" });
+		const incremental = await history(home.id);
+
+		await temp.db.transaction(async (tx) =>
+			recomputeBalances(tx, home, "2026-09-01", deps().timeZone),
+		);
+
+		await expect(history(home.id)).resolves.toEqual(incremental);
+	});
+
+	it("leave a loan's payment lowering its debt", async () => {
+		const loan = await openLoan();
+		await add(loan.id, { amount: toMinorUnits(100_000), date: "2026-09-10" });
+
+		await expect(balanceOn(deps(), loan.id, "2026-09-10")).resolves.toMatchObject({
+			amount: 18_000_000 - 100_000,
+		});
+	});
+});
+
+const claim = () =>
+	temp.db.select().from(settings).where(eq(settings.key, "non_cash_balances_recomputed_at")).get();
+
+describe("recomputeNonCashBalances", () => {
+	it("rolls its claim back with a failed recompute, so the next start tries again", async () => {
+		await openHome();
+		vi.spyOn(shared, "oneByOne").mockRejectedValueOnce(new Error("disk full"));
+
+		await expect(recomputeNonCashBalances(deps())).rejects.toThrow("disk full");
+
+		await expect(claim()).resolves.toBeUndefined();
+	});
+
+	it("drops the transactions a stored value counted, once, every other account left as it was", async () => {
+		const home = await openHome();
+		const checkingAccount = await openChecking();
+		await add(home.id, { ...builder, date: "2026-09-10" });
+		await add(checkingAccount.id, { date: "2026-09-10" });
+		// As a release before Story 28.9 stored it: the builder's line counted.
+		await temp.db
+			.update(balances)
+			.set({ balance: toMinorUnits(HOME - 500_000), cash: toMinorUnits(HOME - 500_000) })
+			.where(and(eq(balances.accountId, home.id), gte(balances.date, "2026-09-10")));
+		const checkingBefore = await history(checkingAccount.id);
+		// The file's other tests opened properties and vehicles too, all recomputed.
+		const nonCash = await temp.db
+			.select({ id: accounts.id })
+			.from(accounts)
+			.where(inArray(accounts.type, ["property", "vehicle"]));
+
+		await expect(recomputeNonCashBalances(deps())).resolves.toBe(nonCash.length);
+
+		const rows = await temp.db
+			.select({ balance: balances.balance, cash: balances.cash })
+			.from(balances)
+			.where(eq(balances.accountId, home.id));
+		expect(rows.every((row) => row.balance === HOME && row.cash === HOME)).toBe(true);
+		await expect(history(checkingAccount.id)).resolves.toEqual(checkingBefore);
+		await expect(claim()).resolves.toBeDefined();
+
+		// Claimed: a second start recomputes nothing.
+		await expect(recomputeNonCashBalances(deps())).resolves.toBe(0);
 	});
 });

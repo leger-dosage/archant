@@ -5,23 +5,35 @@ export const CLASSIFICATIONS = ["asset", "liability"] as const;
 export type Classification = (typeof CLASSIFICATIONS)[number];
 
 /**
+ * Sure's `Account#balance_type`: what moves a type's balance. A `cash` account
+ * moves with its transactions, an `investment` one with them and its holdings,
+ * a `non_cash` one only with its valuations.
+ */
+export const BALANCE_TYPES = ["cash", "investment", "non_cash"] as const;
+
+export type BalanceType = (typeof BALANCE_TYPES)[number];
+
+/**
  * The one list of account types. A type's classification decides which group
- * it is listed under and the sign of its balance updates (AD-5); its subtypes
- * are the only values `accounts.subtype` accepts for it. A type with
- * `subtypeOptional` also takes no subtype at all, as Sure's `allow_blank`.
+ * it is listed under and the sign of its balance updates (AD-5); its balance
+ * type decides what moves its balance (AD-8); its subtypes are the only values
+ * `accounts.subtype` accepts for it. A type with `subtypeOptional` also takes
+ * no subtype at all, as Sure's `allow_blank`.
  */
 export const ACCOUNT_TYPES = {
 	// Sure's `Depository::SUBTYPES` keys in its order, less `hsa`, an American
 	// health savings account no French household holds.
 	depository: {
 		classification: "asset",
+		balanceType: "cash",
 		subtypes: ["cash", "checking", "savings", "cd", "money_market"],
 		subtypeOptional: true,
 	},
-	credit_card: { classification: "liability", subtypes: [] },
+	credit_card: { classification: "liability", balanceType: "cash", subtypes: [] },
 	// Sure's `Loan::SUBTYPES` keys, in its order.
 	loan: {
 		classification: "liability",
+		balanceType: "non_cash",
 		subtypes: ["mortgage", "student", "auto", "home_equity", "line_of_credit", "business", "other"],
 	},
 	// Sure's `Investment::SUBTYPES` keys of its « Europe » and generic regions,
@@ -30,6 +42,7 @@ export const ACCOUNT_TYPES = {
 	// holds the US, UK, Canadian, Australian or Indian others.
 	investment: {
 		classification: "asset",
+		balanceType: "investment",
 		subtypes: [
 			"assurance_vie",
 			"pea",
@@ -49,6 +62,7 @@ export const ACCOUNT_TYPES = {
 	// Sure's `Property::SUBTYPES` keys, in its order.
 	property: {
 		classification: "asset",
+		balanceType: "non_cash",
 		subtypes: [
 			"single_family_home",
 			"multi_family_home",
@@ -63,10 +77,15 @@ export const ACCOUNT_TYPES = {
 		],
 	},
 	// Sure's `Vehicle` has no subtypes.
-	vehicle: { classification: "asset", subtypes: [] },
+	vehicle: { classification: "asset", balanceType: "non_cash", subtypes: [] },
 } as const satisfies Record<
 	string,
-	{ classification: Classification; subtypes: readonly string[]; subtypeOptional?: true }
+	{
+		classification: Classification;
+		balanceType: BalanceType;
+		subtypes: readonly string[];
+		subtypeOptional?: true;
+	}
 >;
 
 export type AccountType = keyof typeof ACCOUNT_TYPES;
@@ -93,6 +112,21 @@ export function isAccountSubtype(value: unknown): value is AccountSubtype {
 
 export function classificationOf(type: AccountType): Classification {
 	return ACCOUNT_TYPES[type].classification;
+}
+
+export function balanceTypeOf(type: AccountType): BalanceType {
+	return ACCOUNT_TYPES[type].balanceType;
+}
+
+/**
+ * Whether a booked transaction or trade moves the account's balance, as
+ * Sure's `Balance::BaseCalculator`: on a non-cash account only valuations do,
+ * so paying a builder from a property leaves the home's value as it was. A
+ * loan is non-cash but its payments lower the debt, Sure's
+ * `accountable_type == "Loan"` branch.
+ */
+export function transactionsMoveBalance(type: AccountType): boolean {
+	return balanceTypeOf(type) !== "non_cash" || type === "loan";
 }
 
 /** Whether a type takes no subtype, either because it has none or because one is optional. */

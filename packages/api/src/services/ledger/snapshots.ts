@@ -6,7 +6,7 @@ import type { Origin, Transaction } from "./shared.ts";
 import { and, count, desc, eq, exists, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
-import { classificationOf } from "@archant/data/account-types";
+import { classificationOf, transactionsMoveBalance } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -361,6 +361,7 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 				: snapshotGap({
 						previousCash: toMinorUnits(known.cash),
 						movements: toMinorUnits(movements.get(row.date) ?? 0),
+						transactionsMoveBalance: transactionsMoveBalance(type),
 						holdingsValue: toMinorUnits(values.get(row.date) ?? 0),
 						recorded: balance,
 						classification,

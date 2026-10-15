@@ -172,6 +172,19 @@ describe("the server entrypoint", () => {
 		}
 	});
 
+	it("claims the one-time property and vehicle balance recompute on a fresh database", async () => {
+		const db = await createDb(`file:${join(directory, "fresh.db")}`);
+		try {
+			const claim = await db.$client.execute(
+				"select key from settings where key = 'non_cash_balances_recomputed_at'",
+			);
+
+			expect(claim.rows).toHaveLength(1);
+		} finally {
+			db.$client.close();
+		}
+	});
+
 	it("hands SYNC_SECRET to the scheduled sync route", async () => {
 		server.use(http.post(`http://127.0.0.1:${port}/*`, () => passthrough()));
 		const sync = (headers: Record<string, string>) =>
