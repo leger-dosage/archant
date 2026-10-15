@@ -14,6 +14,7 @@ import { loopbackListener } from "./lib/port.ts";
 import { createAuth } from "./services/auth.ts";
 import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
+import { recomputeNonCashBalances } from "./services/ledger/balances.ts";
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { hasUser } from "./services/setup.ts";
@@ -118,6 +119,12 @@ if (seeded > 0) {
 const feeCostBases = await recomputeFeeCostBases({ db, timeZone: env.APP_TIMEZONE });
 if (feeCostBases > 0) {
 	logger.info({ accounts: feeCostBases }, "cost bases recomputed with fees");
+}
+// Once per instance, as the cost bases: a property's or a vehicle's value
+// stored before Story 28.9 counted its transactions; only valuations move it.
+const nonCashBalances = await recomputeNonCashBalances({ db, timeZone: env.APP_TIMEZONE });
+if (nonCashBalances > 0) {
+	logger.info({ accounts: nonCashBalances }, "property and vehicle balances recomputed");
 }
 // An unconfirmed preview keeps the uploaded file; a day is long enough to
 // come back to it, and short enough that bank statements do not pile up.

@@ -4,6 +4,7 @@ import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
 	BANK_ACCOUNT_TARGETS,
+	balanceTypeOf,
 	classificationOf,
 	creditCardDetailsOf,
 	isAccountSubtype,
@@ -11,6 +12,7 @@ import {
 	isSubtypeOf,
 	isTaxAdvantaged,
 	loanDetailsOf,
+	transactionsMoveBalance,
 	propertyDetailsOf,
 	vehicleDetailsOf,
 } from "./account-types.ts";
@@ -24,6 +26,24 @@ describe("account types", () => {
 		expect(classificationOf("vehicle")).toBe("asset");
 		expect(classificationOf("credit_card")).toBe("liability");
 		expect(classificationOf("loan")).toBe("liability");
+	});
+
+	it("gives each type Sure's balance type", () => {
+		expect(ACCOUNT_TYPE_IDS.map((type) => [type, balanceTypeOf(type)])).toEqual([
+			["depository", "cash"],
+			["credit_card", "cash"],
+			["loan", "non_cash"],
+			["investment", "investment"],
+			["property", "non_cash"],
+			["vehicle", "non_cash"],
+		]);
+	});
+
+	it("lets transactions move every balance but a property's and a vehicle's, a loan's still moving", () => {
+		expect(ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type))).toEqual([
+			"property",
+			"vehicle",
+		]);
 	});
 
 	it("lists every type and subtype once", () => {

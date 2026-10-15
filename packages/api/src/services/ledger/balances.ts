@@ -21,7 +21,11 @@ import {
 	sum,
 } from "drizzle-orm";
 
-import { classificationOf } from "@archant/data/account-types";
+import {
+	ACCOUNT_TYPE_IDS,
+	classificationOf,
+	transactionsMoveBalance,
+} from "@archant/data/account-types";
 import type { MinorUnits, Money } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -29,6 +33,7 @@ import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
 import { holdings } from "@archant/data/schema/holdings";
 import { securityPrices } from "@archant/data/schema/securities";
+import { settings } from "@archant/data/schema/settings";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { Account, NewBalance, NewHolding } from "@archant/data/types";
@@ -302,7 +307,8 @@ async function recomputeHoldings(
  * Called by every ledger write inside its own transaction, so no commit ever
  * leaves `balances` stale (AD-2). A bank-linked account with a bank balance is
  * computed backward from it, whole; any other forward, an investment account's
- * holdings with it, from the same day.
+ * holdings with it, from the same day, and a property's or a vehicle's from
+ * its valuations alone.
  */
 export async function recomputeBalances(
 	tx: Transaction,
@@ -348,7 +354,10 @@ export async function recomputeBalances(
 	// valuation, the opening anchor included, then sets its own day.
 	const [from, previousCash] =
 		previous === undefined ? [start, 0] : [addDays(previous.date, 1), previous.cash];
-	const movements = await bookedMovements(tx, account.id, gte(entries.date, from));
+	const transactionsMove = transactionsMoveBalance(account.type);
+	const movements = transactionsMove
+		? await bookedMovements(tx, account.id, gte(entries.date, from))
+		: [];
 	const valuations = await tx
 		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
@@ -369,6 +378,7 @@ export async function recomputeBalances(
 		previousCash: toMinorUnits(previousCash),
 		valuations: valuations.map((row) => ({ date: row.date, balance: toMinorUnits(row.balance) })),
 		movements: movements.map((row) => ({ date: row.date, amount: toMinorUnits(row.amount) })),
+		transactionsMoveBalance: transactionsMove,
 		holdings: held,
 		until,
 		classification: classificationOf(account.type),
@@ -384,6 +394,59 @@ export async function recomputeBalances(
 		);
 
 	await inSequence(rows, BALANCE_ROWS_PER_INSERT, (chunk) => tx.insert(balances).values(chunk));
+}
+
+const NON_CASH_BALANCES_KEY = "non_cash_balances_recomputed_at";
+
+/**
+ * Rewrites every property and vehicle account's balances once per instance,
+ * so a value a release before Story 28.9 moved with a transaction returns to
+ * its valuations, and returns how many accounts it recomputed. A migration
+ * cannot replay entries, so the `non_cash_balances_recomputed_at` row is
+ * claimed in the same transaction as the recompute (AD-12): a failure rolls
+ * the claim back and the next start tries again, a later start recomputes
+ * nothing.
+ */
+export async function recomputeNonCashBalances(
+	deps: Pick<ServiceDeps, "db" | "timeZone">,
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			const now = Date.now();
+			const claimed = await tx
+				.insert(settings)
+				.values({ key: NON_CASH_BALANCES_KEY, value: String(now), updatedAt: now })
+				.onConflictDoNothing()
+				.returning({ key: settings.key });
+
+			if (claimed.length === 0) {
+				return 0;
+			}
+
+			const nonCash = await tx
+				.select({ id: accounts.id, type: accounts.type, currency: accounts.currency })
+				.from(accounts)
+				.where(
+					inArray(
+						accounts.type,
+						ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type)),
+					),
+				)
+				.orderBy(asc(accounts.id));
+
+			await oneByOne(nonCash, async (account) =>
+				recomputeBalances(
+					tx,
+					account,
+					await historyStartOf(tx, account.id, today(deps.timeZone)),
+					deps.timeZone,
+				),
+			);
+
+			return nonCash.length;
+		},
+		{ behavior: "immediate" },
+	);
 }
 
 export async function accountWithOpeningDate(tx: Transaction, accountId: string) {

@@ -35,6 +35,8 @@ export type SnapshotGapInput = {
 	previousCash: MinorUnits;
 	/** Sum of the signed transaction amounts (AD-5) dated on the snapshot day. */
 	movements: MinorUnits;
+	/** As `ForwardInput`'s: false, the day's movements count for nothing. */
+	transactionsMoveBalance: boolean;
 	/** What the account's holdings are worth on the snapshot day; zero without any. */
 	holdingsValue: MinorUnits;
 	/** The snapshot's stored balance. */
@@ -50,7 +52,8 @@ export type SnapshotGapInput = {
  */
 export function snapshotGap(input: SnapshotGapInput): { computed: MinorUnits; gap: MinorUnits } {
 	const sign = input.classification === "asset" ? 1 : -1;
-	const computed = input.previousCash + sign * input.movements + input.holdingsValue;
+	const movements = input.transactionsMoveBalance ? input.movements : 0;
+	const computed = input.previousCash + sign * movements + input.holdingsValue;
 
 	return { computed: toMinorUnits(computed), gap: toMinorUnits(input.recorded - computed) };
 }

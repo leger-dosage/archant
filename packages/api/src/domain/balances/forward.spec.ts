@@ -1,4 +1,4 @@
-import type { ForwardInput } from "./forward.ts";
+import type { CashBalance, ForwardInput } from "./forward.ts";
 
 import { describe, expect, it } from "vitest";
 
@@ -14,10 +14,13 @@ const opening: ForwardInput = {
 	previousCash: m(0),
 	valuations: [{ date: "2026-09-01", balance: m(123456) }],
 	movements: [],
+	transactionsMoveBalance: true,
 	holdings: [],
 	until: "2026-09-03",
 	classification: "asset",
 };
+
+const on = (rows: CashBalance[], date: string) => rows.find((row) => row.date === date);
 
 const balances = (input: ForwardInput) => forwardBalances(input).map((row) => row.balance);
 
@@ -104,6 +107,7 @@ describe("forwardBalances", () => {
 				previousCash: m(123456),
 				valuations: [],
 				movements: [{ date: "2026-09-10", amount: m(-4290) }],
+				transactionsMoveBalance: true,
 				holdings: [],
 				until: "2026-09-11",
 				classification: "asset",
@@ -122,6 +126,7 @@ describe("forwardBalances", () => {
 			previousCash: m(2_500_000),
 			valuations: [],
 			movements: [{ date: "2026-09-10", amount: m(-612_650) }],
+			transactionsMoveBalance: true,
 			holdings: [
 				{ date: "2026-09-10", value: m(612_400) },
 				{ date: "2026-09-11", value: m(650_000) },
@@ -159,6 +164,65 @@ describe("forwardBalances", () => {
 				{ date: "2026-09-11", balance: 3_000_000, cash: 2_350_000 },
 				{ date: "2026-09-12", balance: 3_010_000, cash: 2_350_000 },
 			]);
+		});
+	});
+
+	describe("on a property or a vehicle", () => {
+		// A home opened at 300 000 € on 2026-05-01, a builder paid 5 000 € from
+		// it on 05-10, as Sure's `derive_non_cash_balance`.
+		const home: ForwardInput = {
+			from: "2026-05-01",
+			previousCash: m(0),
+			valuations: [{ date: "2026-05-01", balance: m(30_000_000) }],
+			movements: [{ date: "2026-05-10", amount: m(-500_000) }],
+			transactionsMoveBalance: false,
+			holdings: [],
+			until: "2026-05-31",
+			classification: "asset",
+		};
+
+		it("keeps the value every day a transaction is booked", () => {
+			const rows = forwardBalances(home);
+
+			expect(rows).toHaveLength(31);
+			expect(rows.every((row) => row.balance === 30_000_000 && row.cash === 30_000_000)).toBe(true);
+		});
+
+		it("moves only on a valuation, from its own day", () => {
+			const rows = forwardBalances({
+				...home,
+				valuations: [...home.valuations, { date: "2026-05-20", balance: m(32_000_000) }],
+			});
+
+			expect(on(rows, "2026-05-19")?.balance).toBe(30_000_000);
+			expect(on(rows, "2026-05-20")).toEqual({
+				date: "2026-05-20",
+				balance: 32_000_000,
+				cash: 32_000_000,
+			});
+			expect(rows.at(-1)?.balance).toBe(32_000_000);
+		});
+
+		it("stays at zero before the opening, a line there notwithstanding", () => {
+			const rows = forwardBalances({
+				...home,
+				from: "2026-04-01",
+				movements: [{ date: "2026-04-01", amount: m(-150_000) }],
+			});
+
+			expect(on(rows, "2026-04-01")?.balance).toBe(0);
+			expect(on(rows, "2026-04-30")?.balance).toBe(0);
+			expect(on(rows, "2026-05-01")?.balance).toBe(30_000_000);
+		});
+
+		it("runs to a future line without moving the value", () => {
+			const rows = forwardBalances({
+				...home,
+				movements: [{ date: "2026-06-15", amount: m(-500_000) }],
+				until: "2026-06-15",
+			});
+
+			expect(rows.at(-1)).toEqual({ date: "2026-06-15", balance: 30_000_000, cash: 30_000_000 });
 		});
 	});
 

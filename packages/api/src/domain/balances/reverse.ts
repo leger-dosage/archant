@@ -57,6 +57,8 @@ export function reverseBalances(input: ReverseInput): DailyBalance[] {
 		previousCash: input.anchor.balance,
 		valuations: input.valuations,
 		movements: input.movements,
+		// Only a cash account or a loan is ever linked (`LINKABLE_TYPES`).
+		transactionsMoveBalance: true,
 		holdings: [],
 		until: input.until,
 		classification: input.classification,

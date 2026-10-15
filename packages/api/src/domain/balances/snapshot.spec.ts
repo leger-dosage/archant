@@ -33,6 +33,7 @@ describe("snapshotGap", () => {
 		expect(
 			snapshotGap({
 				previousCash: m(138000),
+				transactionsMoveBalance: true,
 				movements: m(0),
 				holdingsValue: m(0),
 				recorded: m(200000),
@@ -45,6 +46,7 @@ describe("snapshotGap", () => {
 		expect(
 			snapshotGap({
 				previousCash: m(138000),
+				transactionsMoveBalance: true,
 				movements: m(-3000),
 				holdingsValue: m(0),
 				recorded: m(200000),
@@ -58,6 +60,7 @@ describe("snapshotGap", () => {
 		expect(
 			snapshotGap({
 				previousCash: m(49030),
+				transactionsMoveBalance: true,
 				movements: m(-3000),
 				holdingsValue: m(0),
 				recorded: m(52000),
@@ -71,6 +74,7 @@ describe("snapshotGap", () => {
 		expect(
 			snapshotGap({
 				previousCash: m(1_887_350),
+				transactionsMoveBalance: true,
 				movements: m(0),
 				holdingsValue: m(650_000),
 				recorded: m(3_000_000),
@@ -79,10 +83,25 @@ describe("snapshotGap", () => {
 		).toEqual({ computed: 2_537_350, gap: 462_650 });
 	});
 
+	it("leaves a property's transactions out, only its valuations moving its value", () => {
+		// A home at 300 000 € with a builder paid 5 000 € the day of a 320 000 € snapshot.
+		expect(
+			snapshotGap({
+				previousCash: m(30_000_000),
+				transactionsMoveBalance: false,
+				movements: m(-500_000),
+				holdingsValue: m(0),
+				recorded: m(32_000_000),
+				classification: "asset",
+			}),
+		).toEqual({ computed: 30_000_000, gap: 2_000_000 });
+	});
+
 	it("is zero when the recorded balance matches", () => {
 		expect(
 			snapshotGap({
 				previousCash: m(-8000),
+				transactionsMoveBalance: true,
 				movements: m(0),
 				holdingsValue: m(0),
 				recorded: m(-8000),

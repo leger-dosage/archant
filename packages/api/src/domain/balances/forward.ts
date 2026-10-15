@@ -29,6 +29,11 @@ export type ForwardInput = {
 	 */
 	valuations: readonly DailyBalance[];
 	movements: readonly Movement[];
+	/**
+	 * `transactionsMoveBalance` of the account's type: false on a property or
+	 * a vehicle, whose value only its valuations move (AD-8).
+	 */
+	transactionsMoveBalance: boolean;
 	/** The holdings of each day, an investment account's; none on any other. */
 	holdings: readonly HoldingValue[];
 	/** Last day to compute, `max(today, latest entry date)`. */
@@ -55,13 +60,15 @@ function sumByDay<Row extends { date: IsoDate }>(
  * liability's `previous cash - sum` (AD-5): a card purchase of −30 raises what
  * is owed by 30. A valuation sets the day's total, and the cash becomes that
  * total less the holdings' value. The balance is `cash + holdings value`,
- * the cash itself on an account that holds nothing. Empty when `from` is
- * past `until`, which happens after the latest entry is deleted.
+ * the cash itself on an account that holds nothing. On an account whose
+ * transactions move nothing, each day carries the last valuation, as Sure's
+ * `derive_non_cash_balance`. Empty when `from` is past `until`, which happens
+ * after the latest entry is deleted.
  */
 export function forwardBalances(input: ForwardInput): CashBalance[] {
 	const sign = input.classification === "asset" ? 1 : -1;
 	const valuations = new Map(input.valuations.map((row) => [row.date, row.balance]));
-	const sums = sumByDay(input.movements, (row) => row.amount);
+	const sums = sumByDay(input.transactionsMoveBalance ? input.movements : [], (row) => row.amount);
 	const values = sumByDay(input.holdings, (row) => row.value);
 	const rows: CashBalance[] = [];
 	let cash: number = input.previousCash;
