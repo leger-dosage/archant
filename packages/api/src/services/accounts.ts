@@ -497,13 +497,6 @@ export type OpeningBalanceChange = Extract<OpeningBalanceResult, { status: "set"
 };
 
 function openingRejection(result: Extract<OpeningBalanceResult, { status: "rejected" }>) {
-	if (result.reason === "ACCOUNT_LINKED") {
-		return new AppError(
-			"ACCOUNT_LINKED",
-			"A bank sets this account's balances: its opening balance cannot be edited.",
-		);
-	}
-
 	if (result.reason === "NOT_BEFORE_OLDEST_ENTRY") {
 		return new AppError(
 			"VALIDATION_ERROR",

@@ -6,6 +6,7 @@ import { testClient } from "hono/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { rateLimits } from "@archant/data/schema/auth";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -14,6 +15,7 @@ import { securities } from "@archant/data/schema/securities";
 
 import { createLogger } from "../lib/logger.ts";
 import { MAX_IMPORT_BYTES } from "../schemas/imports.ts";
+import { linkBankAccount } from "../services/ledger/bank-link.ts";
 import {
 	balanceOf,
 	balanceOnDay,
@@ -2914,7 +2916,7 @@ describe("PATCH /api/accounts/:id/opening-balance", () => {
 		});
 	});
 
-	it("refuses a linked account with ACCOUNT_LINKED", async () => {
+	it("moves a linked account's, its day ending there and today staying the bank's", async () => {
 		const account = await openAccount(pinned);
 		const connectionId = crypto.randomUUID();
 		const bankAccountId = crypto.randomUUID();
@@ -2937,15 +2939,26 @@ describe("PATCH /api/accounts/:id/opening-balance", () => {
 			createdAt: 0,
 			updatedAt: 0,
 		});
-		await temp.db.update(accounts).set({ bankAccountId }).where(eq(accounts.id, account.id));
+		await linkBankAccount(
+			{ db: temp.db, timeZone: "Europe/Paris" },
+			account.id,
+			{ bankAccountId, balance: { amount: toMinorUnits(200000), date: "2026-09-01" } },
+			{ origin: "sync" },
+		);
 
 		const { status, body } = await patchOpening(account.id, {
 			date: "2026-01-01",
 			balance: "1,00",
 		});
 
-		expect(status).toBe(409);
-		expect(errorBody.parse(body).error.code).toBe("ACCOUNT_LINKED");
+		expect(status).toBe(200);
+		expect(openingDetail.parse(body).data).toMatchObject({
+			openingDate: "2026-01-01",
+			openingBalance: { balance: 100 },
+			balance: 200000,
+		});
+		await expect(balanceOnDay(account.id, "2026-01-01")).resolves.toBe(100);
+		await expect(balanceOnDay(account.id, "2026-01-02")).resolves.toBe(200000);
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {

@@ -8,11 +8,12 @@ import { reverseBalances } from "./reverse.ts";
 
 const m = toMinorUnits;
 
-// Checking opened on 2026-09-01, linked to its bank, which says 1 000,00 at
-// the end of 2026-09-05.
+// Checking opened on 2026-09-01 at 1 000,00, linked to its bank, which says
+// 1 000,00 at the end of 2026-09-05.
 const linked: ReverseInput = {
 	from: "2026-09-01",
 	anchor: { date: "2026-09-05", balance: m(100000) },
+	opening: { date: "2026-09-01", balance: m(100000) },
 	valuations: [],
 	movements: [],
 	until: "2026-09-05",
@@ -36,6 +37,7 @@ describe("reverseBalances", () => {
 		expect(
 			balances({
 				...linked,
+				opening: { date: "2026-09-01", balance: m(113290) },
 				movements: [
 					{ date: "2026-09-05", amount: m(-4290) },
 					{ date: "2026-09-05", amount: m(1000) },
@@ -55,6 +57,7 @@ describe("reverseBalances", () => {
 		expect(
 			balances({
 				...linked,
+				opening: { date: "2026-09-01", balance: m(53000) },
 				valuations: [{ date: "2026-09-03", balance: m(50000) }],
 				movements: [
 					{ date: "2026-09-03", amount: m(-2000) },
@@ -76,6 +79,7 @@ describe("reverseBalances", () => {
 			balances({
 				...linked,
 				anchor: { date: "2026-09-05", balance: m(anchor) },
+				opening: { date: "2026-09-01", balance: m(100700) },
 				valuations: [{ date: "2026-09-02", balance: m(100000) }],
 				movements,
 			});
@@ -88,6 +92,7 @@ describe("reverseBalances", () => {
 		expect(
 			balances({
 				...linked,
+				opening: { date: "2026-09-01", balance: m(100100) },
 				valuations: [{ date: "2026-09-05", balance: m(1) }],
 				movements: [{ date: "2026-09-05", amount: m(-100) }],
 			}),
@@ -99,6 +104,7 @@ describe("reverseBalances", () => {
 			balances({
 				...linked,
 				anchor: { date: "2026-09-05", balance: m(30000) },
+				opening: { date: "2026-09-01", balance: m(37000) },
 				classification: "liability",
 				movements: [
 					{ date: "2026-09-04", amount: m(-3000) },
@@ -129,24 +135,94 @@ describe("reverseBalances", () => {
 		]);
 	});
 
-	it("goes on past the opening date down to an older line, ignoring the opening anchor", () => {
+	// Sure's `use_opening_anchor_for_date?` and `opening_boundary_adjustment`.
+	it("ends the opening day at the opening anchor, the next day bridging the gap", () => {
+		const rows = balances({
+			...linked,
+			opening: { date: "2026-09-01", balance: m(50000) },
+			movements: [{ date: "2026-09-02", amount: m(-2000) }],
+		});
+
+		expect(rows).toEqual([50000, 100000, 100000, 100000, 100000]);
+		// Sure's cash adjustment on the day after: end - start - flows.
+		expect(rows[1]! - rows[0]! - -2000).toBe(52000);
+	});
+
+	it("ends a liability's opening day at the amount owed it gives", () => {
+		expect(
+			balances({
+				...linked,
+				anchor: { date: "2026-09-05", balance: m(30000) },
+				opening: { date: "2026-09-01", balance: m(10000) },
+				classification: "liability",
+				movements: [{ date: "2026-09-03", amount: m(-3000) }],
+			}),
+		).toEqual([10000, 27000, 30000, 30000, 30000]);
+	});
+
+	it("goes on past the opening date down to an older line, from the opening amount", () => {
 		expect(
 			reverseBalances({
 				...linked,
 				from: "2026-08-30",
 				movements: [
 					{ date: "2026-08-30", amount: m(-2000) },
+					{ date: "2026-08-31", amount: m(-300) },
+					// The opening day starts where it ends: undone for nothing.
+					{ date: "2026-09-01", amount: m(-50) },
 					{ date: "2026-09-03", amount: m(-500) },
 				],
 			}),
 		).toEqual([
-			{ date: "2026-08-30", balance: 100500 },
-			{ date: "2026-08-31", balance: 100500 },
-			{ date: "2026-09-01", balance: 100500 },
+			{ date: "2026-08-30", balance: 100300 },
+			{ date: "2026-08-31", balance: 100000 },
+			{ date: "2026-09-01", balance: 100000 },
 			{ date: "2026-09-02", balance: 100500 },
 			{ date: "2026-09-03", balance: 100000 },
 			{ date: "2026-09-04", balance: 100000 },
 			{ date: "2026-09-05", balance: 100000 },
+		]);
+	});
+
+	it("ends the anchor's own day at the opening amount when both share it", () => {
+		expect(
+			reverseBalances({
+				...linked,
+				from: "2026-09-03",
+				until: "2026-09-07",
+				opening: { date: "2026-09-05", balance: m(70000) },
+				movements: [
+					{ date: "2026-09-04", amount: m(-100) },
+					{ date: "2026-09-05", amount: m(-40) },
+					{ date: "2026-09-06", amount: m(-100) },
+				],
+			}),
+		).toEqual([
+			{ date: "2026-09-03", balance: 70100 },
+			{ date: "2026-09-04", balance: 70000 },
+			{ date: "2026-09-05", balance: 70000 },
+			{ date: "2026-09-06", balance: 69900 },
+			{ date: "2026-09-07", balance: 69900 },
+		]);
+	});
+
+	it("ends an opening day after the anchor at its amount, going forward", () => {
+		expect(
+			reverseBalances({
+				...linked,
+				from: "2026-09-05",
+				until: "2026-09-08",
+				opening: { date: "2026-09-07", balance: m(70000) },
+				movements: [
+					{ date: "2026-09-06", amount: m(-500) },
+					{ date: "2026-09-08", amount: m(200) },
+				],
+			}),
+		).toEqual([
+			{ date: "2026-09-05", balance: 100000 },
+			{ date: "2026-09-06", balance: 99500 },
+			{ date: "2026-09-07", balance: 70000 },
+			{ date: "2026-09-08", balance: 70200 },
 		]);
 	});
 

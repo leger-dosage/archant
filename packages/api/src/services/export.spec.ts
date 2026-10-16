@@ -1670,7 +1670,7 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
-	it("gives a bank-linked account's opening anchor the stored balance of its day", async () => {
+	it("gives a bank-linked account's opening anchor its own amount, the balance of its day", async () => {
 		await ownDatabase();
 		const db = database();
 		const linked = await openOwn({ openingDate: "2026-04-01", openingBalance: "2 000,00" });
@@ -1695,9 +1695,12 @@ describe("exportArchive", () => {
 			sql`select entries.amount from entries where account_id = ${linked.id} and valuation_kind = 'opening_anchor'`,
 		);
 
-		// Computed backward from the bank's 5 000,00, the anchor's own 2 000,00 plays no part.
+		// Computed backward from the bank's 5 000,00, the day ending at the anchor's 2 000,00.
 		expect(stored).toEqual([{ amount: 200_000 }]);
-		expect(anchor).toMatchObject({ date: "2026-04-01", amount: "5000.00" });
+		expect(anchor).toMatchObject({ date: "2026-04-01", amount: "2000.00" });
+		expect(archive.of("Balance")).toContainEqual(
+			expect.objectContaining({ account_id: linked.id, date: "2026-04-01", balance: "2000.00" }),
+		);
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 

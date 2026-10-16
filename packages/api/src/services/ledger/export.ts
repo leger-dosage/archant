@@ -791,28 +791,13 @@ export function exportedTypedPrices(db: Reader) {
 		.orderBy(asc(securityPrices.date), asc(securityPrices.securityId));
 }
 
-/**
- * Every valuation, by account and day. An opening anchor carries the stored
- * balance of its day, `dayBalance`: a bank-linked account is computed
- * backward and never reads its anchor's amount (AD-8), so that balance is the
- * only figure true of both kinds of account. `null` on every other row.
- */
-export async function exportedValuations(deps: ServiceDeps) {
-	const rows = await deps.db
+/** Every valuation, by account and day. */
+export function exportedValuations(db: Reader) {
+	return db
 		.select(EXPORTED_COLUMNS.entries)
 		.from(entries)
 		.where(eq(entries.kind, "valuation"))
 		.orderBy(asc(entries.accountId), asc(entries.date), asc(entries.createdAt), asc(entries.id));
-
-	return Promise.all(
-		rows.map(async (row) => ({
-			...row,
-			dayBalance:
-				row.valuationKind === "opening_anchor"
-					? await balanceOn(deps, row.accountId, row.date)
-					: null,
-		})),
-	);
 }
 
 export function exportedBudgets(db: Reader) {

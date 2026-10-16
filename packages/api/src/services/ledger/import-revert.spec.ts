@@ -482,8 +482,9 @@ describe("revertImport", () => {
 			account.id,
 			statementOf(line({ date: "2026-08-20", amount: toMinorUnits(-2000), label: "Loyer" })),
 		);
+		// From the opening amount, as the day before the opening date starts there.
 		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
-			amount: 100000,
+			amount: 123456,
 		});
 
 		await revert(importId);

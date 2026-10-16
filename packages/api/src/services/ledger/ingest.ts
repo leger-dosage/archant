@@ -190,10 +190,7 @@ export type StatementBalanceOutcome =
 			status: "skipped";
 			date: IsoDate;
 			balance: MinorUnits;
-			reason:
-				| Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS">
-				| "OPENING_DATE"
-				| "CURRENCY_MISMATCH";
+			reason: Exclude<SnapshotRejectionCode, "SNAPSHOT_EXISTS"> | "CURRENCY_MISMATCH";
 	  };
 
 export type IngestResult = {
@@ -534,15 +531,11 @@ type BalancePlan = {
  * user entered on that date wins, and so does the opening anchor on its own
  * date, which only the owner sets; one an earlier import wrote gives way, as
  * the bank's latest file is the better word, and Sure's `ReconciliationManager`
- * updates in place. A linked account's opening date is skipped, as a snapshot
- * there is refused: its backward computation ignores the anchor's amount.
+ * updates in place.
  */
 async function planStatementBalance(
 	tx: Transaction,
-	account: Pick<
-		LedgerAccount,
-		"id" | "type" | "currency" | "bankAccountId" | "openingId" | "openingBalance"
-	>,
+	account: Pick<LedgerAccount, "id" | "type" | "currency" | "openingId" | "openingBalance">,
 	statementBalance: StatementBalance,
 	context: { openingDate: IsoDate; today: IsoDate },
 	importId: string,
@@ -551,7 +544,7 @@ async function planStatementBalance(
 	const balance = toStoredBalance(account, statementBalance.amount);
 	const placed = snapshotRejectionFor(date, context);
 	const reason =
-		(placed === "OPENING_DATE" && account.bankAccountId === null ? null : placed) ??
+		(placed === "OPENING_DATE" ? null : placed) ??
 		(statementBalance.currency === account.currency ? null : "CURRENCY_MISMATCH");
 
 	if (reason !== null) {

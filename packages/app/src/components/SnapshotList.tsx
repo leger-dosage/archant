@@ -25,10 +25,7 @@ type SnapshotListProps = {
 	onOpen: ((snapshot: SnapshotData) => void) | null;
 	/** Shown below the snapshots, on the last page only; `null` elsewhere. */
 	opening: OpeningRow | null;
-	/**
-	 * `null` for a viewer and on a linked account, whose balances derive from
-	 * the bank's and ignore the opening amount: the row opens nothing.
-	 */
+	/** `null` for a viewer: the row opens nothing. */
 	onOpenOpening: (() => void) | null;
 };
 

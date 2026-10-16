@@ -1227,7 +1227,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 		);
 	}
 
-	const valuations = await exportedValuations(deps);
+	const valuations = await exportedValuations(deps.db);
 	const moved = new Map(
 		await Promise.all(
 			valuations
@@ -1296,7 +1296,7 @@ function valuationLines(
 	}
 
 	return [...kept.values()].map(({ row, kind, date }) => {
-		const balance = date === row.date ? row.dayBalance : moved.get(row.id);
+		const balance = date === row.date ? null : moved.get(row.id);
 
 		return {
 			type: "Valuation",

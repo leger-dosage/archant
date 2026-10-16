@@ -303,3 +303,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-15-account-notes-and-institution.md`
   summary: The creation dialog's mapping of a server refusal onto « Nom de l'institution », « Domaine de l'institution » and « Notes » has no test.
   evidence: Replacing `errorOf` in `CreateAccountDialog.tsx` with `() => undefined` breaks no test; the form's schema refuses the same lengths first, so only a server-only refusal would reach it.
+
+## Deferred from: code review of spec-28-17-honour-a-linked-accounts-opening-balance (2026-10-16)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-17-honour-a-linked-accounts-opening-balance.md`
+  summary: « Solde d'ouverture » refuses an amount-only edit when a line or a snapshot precedes the opening date, since the sheet always sends the date and `setOpeningBalance` checks it against the oldest entry even unchanged; a linked account whose bank lines go back past its opening date meets it now that its sheet opens.
+  evidence: pre-existing on manual accounts since Story 27.21. Story 28.20 drops the oldest-entry check from the sheet, as Sure's valuation drawer refuses only a future date, which settles it for both kinds of account.

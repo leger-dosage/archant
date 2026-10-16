@@ -587,9 +587,6 @@ function AccountPage() {
 					openingBalance: account.data.openingBalance,
 				}
 			: undefined;
-	// A linked account's balances derive backward from the bank's and ignore
-	// the opening amount: an edit would look saved and change nothing.
-	const canEditOpening = admin && account.data?.bankConnection === null;
 	// The dialog needs the account's currency, like the two forms.
 	const canImport = writable !== undefined;
 
@@ -755,7 +752,7 @@ function AccountPage() {
 						onAdd={admin ? openNewSnapshot : null}
 						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 						opening={opening}
-						onOpenOpening={canEditOpening ? () => setEditingOpening(true) : null}
+						onOpenOpening={admin ? () => setEditingOpening(true) : null}
 					/>
 				</TabsContent>
 				{overviewed && account.data !== undefined && (
@@ -834,7 +831,7 @@ function AccountPage() {
 							{openingAccount !== undefined && (
 								<OpeningBalanceSheet
 									account={openingAccount}
-									open={editingOpening && canEditOpening}
+									open={editingOpening}
 									onOpenChange={setEditingOpening}
 								/>
 							)}
