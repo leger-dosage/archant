@@ -9,6 +9,8 @@ import type { OpeningBalanceResult } from "./ledger/opening.ts";
 
 import { eq } from "drizzle-orm";
 
+import type { AccountOrder } from "@archant/data/account-orders";
+import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
 import type {
 	AccountDetails,
 	AccountSubtype,
@@ -29,6 +31,7 @@ import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 import type { Account } from "@archant/data/types";
 
+import { sortAccounts } from "../domain/account-order.ts";
 import { today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
@@ -105,24 +108,27 @@ async function summarise(
 	};
 }
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
-
 /**
  * Every account with today's balance, inactive ones included, assets first
- * then liabilities, each group sorted by name and totalled in the reporting
- * currency. The whole set, not a page: a household holds a bounded number of
- * accounts. Each list of the interface decides what to hide.
+ * then liabilities, each group sorted in `order`, Sure's
+ * `BalanceSheet#sorted`, and totalled in the reporting currency. The whole
+ * set, not a page: a household holds a bounded number of accounts. Each list
+ * of the interface decides what to hide; an inactive account keeps its place.
  */
-export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
+export async function listAccounts(
+	deps: ServiceDeps,
+	order: AccountOrder = DEFAULT_ACCOUNT_ORDER,
+): Promise<AccountList> {
 	const date = today(deps.timeZone);
 	const reportingCurrency = getReportingCurrency();
 	const rows = await deps.db.select().from(accounts);
 	const summaries = await Promise.all(rows.map((row) => summarise(deps, row, date)));
 
 	const groups = CLASSIFICATIONS.map((classification): AccountGroup => {
-		const members = summaries
-			.filter((summary) => classificationOf(summary.type) === classification)
-			.toSorted((a, b) => byName.compare(a.name, b.name));
+		const members = sortAccounts(
+			summaries.filter((summary) => classificationOf(summary.type) === classification),
+			order,
+		);
 		const reported = members.filter((summary) => summary.active && !summary.excludedFromReports);
 		const counted = reported.filter((summary) => summary.currency === reportingCurrency);
 

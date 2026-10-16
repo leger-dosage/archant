@@ -167,6 +167,13 @@ export const queryKeys = {
 		all: ["invitations"] as const,
 		preview: (token: string) => ["invitation-preview", token] as const,
 	},
+	/**
+	 * The signed-in user's preferences, one query: a save sets it from its
+	 * answer, and invalidates `accounts.all`, whose lists follow the order.
+	 */
+	preferences: {
+		all: ["preferences"] as const,
+	},
 	/** The household's members, one query: a role change or a removal invalidates `all`. */
 	members: {
 		all: ["members"] as const,

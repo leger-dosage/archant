@@ -44,6 +44,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useBills, useDetectRecurring, useRecurring } from "@/hooks/useRecurring";
+import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayAndMonth } from "@/lib/dates";
@@ -382,7 +383,7 @@ function OverviewPage() {
 	const [subject, setSubject] = useState<{ key: number; of: BillDialogSubject } | null>(null);
 	const [billOpen, setBillOpen] = useState(false);
 	const accounts = useAccounts({
-		select: (data) => data.groups.flatMap((group) => group.accounts),
+		select: accountsByName,
 	});
 	const offered = useMemo(
 		() => (accounts.data ?? []).filter((account) => account.active),

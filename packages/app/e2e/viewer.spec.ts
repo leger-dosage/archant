@@ -570,6 +570,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 				sections,
 				[
 					"Banques",
+					"Préférences",
 					"Placements",
 					"Catégories",
 					"Transactions récurrentes",
@@ -585,6 +586,8 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.goto("/settings/categories");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 			await page.goto("/settings/banks");
+			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+			await page.goto("/settings/preferences");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 			await page.goto("/settings/investments");
 			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);

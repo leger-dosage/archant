@@ -26,6 +26,7 @@ import {
 	useRecurringOfEntry,
 } from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
+import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { dayAndMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
@@ -312,9 +313,9 @@ export function RecurringBlock({
 	const merchants = useMerchants();
 	const accounts = useAccounts({
 		select: (data) =>
-			data.groups
-				.flatMap((group) => group.accounts)
-				.filter((account) => account.active || account.id === transaction.accountId),
+			accountsByName(data).filter(
+				(account) => account.active || account.id === transaction.accountId,
+			),
 	});
 	// Kept while the dialog closes; the key mounts a fresh form per opening.
 	const [prefill, setPrefill] = useState<{ key: number; of: BillPrefill } | null>(null);

@@ -82,6 +82,7 @@ test("each settings entry has its icon", async ({ page }) => {
 		(
 			[
 				["Banques", "banknote"],
+				["Préférences", "bolt"],
 				["Catégories", "shapes"],
 				["Marchands", "store"],
 				["Étiquettes", "tags"],

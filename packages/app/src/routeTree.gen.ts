@@ -35,6 +35,7 @@ import { Route as AuthedSettingsDataRouteImport } from './routes/_authed.setting
 import { Route as AuthedSettingsInvestmentsRouteImport } from './routes/_authed.settings.investments'
 import { Route as AuthedSettingsMembersRouteImport } from './routes/_authed.settings.members'
 import { Route as AuthedSettingsMerchantsRouteImport } from './routes/_authed.settings.merchants'
+import { Route as AuthedSettingsPreferencesRouteImport } from './routes/_authed.settings.preferences'
 import { Route as AuthedSettingsRecurringRouteImport } from './routes/_authed.settings.recurring'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
@@ -175,6 +176,12 @@ const AuthedSettingsMerchantsRoute = AuthedSettingsMerchantsRouteImport.update({
   path: '/merchants',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedSettingsPreferencesRoute =
+  AuthedSettingsPreferencesRouteImport.update({
+    id: '/preferences',
+    path: '/preferences',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 const AuthedSettingsRecurringRoute = AuthedSettingsRecurringRouteImport.update({
   id: '/recurring',
   path: '/recurring',
@@ -236,6 +243,7 @@ export interface FileRoutesByFullPath {
   '/settings/investments': typeof AuthedSettingsInvestmentsRoute
   '/settings/members': typeof AuthedSettingsMembersRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/settings/preferences': typeof AuthedSettingsPreferencesRoute
   '/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -269,6 +277,7 @@ export interface FileRoutesByTo {
   '/settings/investments': typeof AuthedSettingsInvestmentsRoute
   '/settings/members': typeof AuthedSettingsMembersRoute
   '/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/settings/preferences': typeof AuthedSettingsPreferencesRoute
   '/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
@@ -305,6 +314,7 @@ export interface FileRoutesById {
   '/_authed/settings/investments': typeof AuthedSettingsInvestmentsRoute
   '/_authed/settings/members': typeof AuthedSettingsMembersRoute
   '/_authed/settings/merchants': typeof AuthedSettingsMerchantsRoute
+  '/_authed/settings/preferences': typeof AuthedSettingsPreferencesRoute
   '/_authed/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
@@ -341,6 +351,7 @@ export interface FileRouteTypes {
     | '/settings/investments'
     | '/settings/members'
     | '/settings/merchants'
+    | '/settings/preferences'
     | '/settings/recurring'
     | '/settings/security'
     | '/settings/tags'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/settings/investments'
     | '/settings/members'
     | '/settings/merchants'
+    | '/settings/preferences'
     | '/settings/recurring'
     | '/settings/security'
     | '/settings/tags'
@@ -409,6 +421,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/investments'
     | '/_authed/settings/members'
     | '/_authed/settings/merchants'
+    | '/_authed/settings/preferences'
     | '/_authed/settings/recurring'
     | '/_authed/settings/security'
     | '/_authed/settings/tags'
@@ -614,6 +627,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsMerchantsRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/settings/preferences': {
+      id: '/_authed/settings/preferences'
+      path: '/preferences'
+      fullPath: '/settings/preferences'
+      preLoaderRoute: typeof AuthedSettingsPreferencesRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
     '/_authed/settings/recurring': {
       id: '/_authed/settings/recurring'
       path: '/recurring'
@@ -686,6 +706,7 @@ interface AuthedSettingsRouteChildren {
   AuthedSettingsInvestmentsRoute: typeof AuthedSettingsInvestmentsRoute
   AuthedSettingsMembersRoute: typeof AuthedSettingsMembersRoute
   AuthedSettingsMerchantsRoute: typeof AuthedSettingsMerchantsRoute
+  AuthedSettingsPreferencesRoute: typeof AuthedSettingsPreferencesRoute
   AuthedSettingsRecurringRoute: typeof AuthedSettingsRecurringRoute
   AuthedSettingsSecurityRoute: typeof AuthedSettingsSecurityRoute
   AuthedSettingsTagsRoute: typeof AuthedSettingsTagsRoute
@@ -702,6 +723,7 @@ const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
   AuthedSettingsInvestmentsRoute: AuthedSettingsInvestmentsRoute,
   AuthedSettingsMembersRoute: AuthedSettingsMembersRoute,
   AuthedSettingsMerchantsRoute: AuthedSettingsMerchantsRoute,
+  AuthedSettingsPreferencesRoute: AuthedSettingsPreferencesRoute,
   AuthedSettingsRecurringRoute: AuthedSettingsRecurringRoute,
   AuthedSettingsSecurityRoute: AuthedSettingsSecurityRoute,
   AuthedSettingsTagsRoute: AuthedSettingsTagsRoute,
