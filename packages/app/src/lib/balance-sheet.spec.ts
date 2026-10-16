@@ -24,6 +24,7 @@ const account = (
 		balance: toMinorUnits(balance),
 		active: true,
 		excludedFromReports: false,
+		linked: false,
 		...overrides,
 	};
 };

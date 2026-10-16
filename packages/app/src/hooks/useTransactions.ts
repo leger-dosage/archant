@@ -29,8 +29,13 @@ export type SplitData = InferResponseType<
 	200
 >["data"];
 
-export function useAccountTransactions(accountId: string, page: number) {
+export function useAccountTransactions(
+	accountId: string,
+	page: number,
+	{ enabled = true }: { enabled?: boolean } = {},
+) {
 	return useQuery({
+		enabled,
 		queryKey: queryKeys.transactions.byAccount(accountId, page),
 		queryFn: async () =>
 			(

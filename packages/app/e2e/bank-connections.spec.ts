@@ -795,6 +795,23 @@ test("a linked account's menu offers no deletion, only its connection's page", a
 	await validate(page).click();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 
+	// Sure's row menu offers deletion only on an account no bank feeds.
+	await page.goto("/accounts");
+	// Other tests link the same fake account: its row is the one leading to this id.
+	await page
+		.getByRole("main")
+		.getByRole("listitem")
+		.filter({ has: page.locator(`a[href="/accounts/${accountId}"]`) })
+		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
+		.click();
+	await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Désactiver le compte",
+		"Exclure de tous les rapports",
+	]);
+	await expect(page.getByRole("menu").getByRole("separator")).toHaveCount(1);
+	await page.keyboard.press("Escape");
+
 	await page.goto(`/accounts/${accountId}`);
 	await page
 		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })

@@ -6,14 +6,9 @@ import type { BalancePeriod } from "../schemas/balances.ts";
 import type { AccountSummary } from "./accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { eq } from "drizzle-orm";
-
 import type { Classification } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-import { accounts } from "@archant/data/schema/accounts";
-import { bankAccounts } from "@archant/data/schema/bank-accounts";
-import { bankConnections } from "@archant/data/schema/bank-connections";
 
 import { balanceChange, periodRange } from "../domain/balances/history.ts";
 import { periodInterval, seriesDates, surePeriodRange } from "../domain/balances/sure-periods.ts";
@@ -83,8 +78,6 @@ export type AssistantAccount = AccountSummary & {
 	classification: Classification;
 	/** Sure's `start_date`: the day its history starts, the oldest entry's. */
 	startDate: IsoDate;
-	/** Sure's `linked?`: a bank connection feeds it. */
-	linked: boolean;
 	/**
 	 * Its balances at Sure's series dates over the period, from its start
 	 * date at the earliest; `null` when it starts after the period ends.
@@ -103,16 +96,7 @@ export async function listAssistantAccounts(
 	period?: SurePeriod,
 ): Promise<AssistantAccount[]> {
 	const asOf = today(deps.timeZone);
-	const [{ groups }, linkedRows, oldest] = await Promise.all([
-		listAccounts(deps),
-		deps.db
-			.select({ id: accounts.id })
-			.from(accounts)
-			.innerJoin(bankAccounts, eq(bankAccounts.id, accounts.bankAccountId))
-			.innerJoin(bankConnections, eq(bankConnections.id, bankAccounts.bankConnectionId)),
-		oldestEntryDate(deps),
-	]);
-	const linked = new Set(linkedRows.map((row) => row.id));
+	const [{ groups }, oldest] = await Promise.all([listAccounts(deps), oldestEntryDate(deps)]);
 	const range = period === undefined ? undefined : surePeriodRange(period, asOf, oldest);
 
 	const seriesOf = async (id: string, startDate: IsoDate) => {
@@ -149,7 +133,6 @@ export async function listAssistantAccounts(
 						...summary,
 						classification: group.classification,
 						startDate,
-						linked: linked.has(summary.id),
 						series: await seriesOf(summary.id, startDate),
 					};
 				}),
