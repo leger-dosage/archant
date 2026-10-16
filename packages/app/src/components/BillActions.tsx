@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAccounts } from "@/hooks/useAccounts";
 import { recurringName, useDeleteRecurring, useSetRecurringStatus } from "@/hooks/useRecurring";
+import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
@@ -55,7 +56,7 @@ export function useBillActions(onDeleted?: () => void): BillActions {
 	const [subject, setSubject] = useState<{ key: number; of: BillDialogSubject } | null>(null);
 	const [billOpen, setBillOpen] = useState(false);
 	const accounts = useAccounts({
-		select: (data) => data.groups.flatMap((group) => group.accounts),
+		select: accountsByName,
 	});
 	// A series may sit on an account deactivated since: it stays offered for it.
 	const offered = useMemo(() => {

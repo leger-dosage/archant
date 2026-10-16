@@ -11,6 +11,7 @@ import type {
 } from "@archant/api/schemas/accounts";
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
+import type { AccountOrder } from "@archant/data/account-orders";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { CategoryKind } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
@@ -373,6 +374,13 @@ export function apiHelpers(request: APIRequestContext) {
 			const response = await request.delete(`/api/accounts/${accountId}/default`, {
 				headers: sameOrigin,
 			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Saves the administrator's account order, one for the whole run: reset it after. */
+		async setAccountOrder(defaultAccountOrder: AccountOrder) {
+			const response = await request.patch("/api/preferences", { data: { defaultAccountOrder } });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},

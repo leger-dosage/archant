@@ -1,8 +1,10 @@
+import type { AccountOrder } from "../account-orders.ts";
 import type { UserRole } from "../user-roles.ts";
 
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { ACCOUNT_ORDERS, DEFAULT_ACCOUNT_ORDER } from "../account-orders.ts";
 import { USER_ROLES } from "../user-roles.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
@@ -52,8 +54,20 @@ export const users = sqliteTable(
 		defaultAccountId: text("default_account_id").references(() => accounts.id, {
 			onDelete: "set null",
 		}),
+		// Sure's `users.default_account_order`: how this user's account lists
+		// are sorted. Existing users read the name order they had before.
+		defaultAccountOrder: text("default_account_order")
+			.$type<AccountOrder>()
+			.notNull()
+			.default(DEFAULT_ACCOUNT_ORDER),
 	},
-	(table) => [check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`)],
+	(table) => [
+		check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`),
+		check(
+			"users_default_account_order_check",
+			sql`${table.defaultAccountOrder} in ${inList(ACCOUNT_ORDERS)}`,
+		),
+	],
 );
 
 export const sessions = sqliteTable(

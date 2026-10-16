@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./account-orders": "./account-orders.ts",
 		"./account-types": "./account-types.ts",
 		"./attachments": "./attachments.ts",
 		"./backup": "./backup.ts",

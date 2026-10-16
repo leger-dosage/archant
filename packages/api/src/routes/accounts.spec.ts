@@ -3977,6 +3977,28 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 
 const defaultIdBody = z.object({ data: z.object({ defaultAccountId: z.string().nullable() }) });
 
+/** The names of `group`'s accounts among `wanted`, in the listed order. */
+function namesAmong(group: { accounts: { name: string }[] }, wanted: string[]) {
+	return group.accounts.map(({ name }) => name).filter((name) => wanted.includes(name));
+}
+
+async function saveOrder(order: string, app = buildApp()) {
+	return app.request("/api/preferences", {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({ defaultAccountOrder: order }),
+	});
+}
+
+const orderedBody = z.object({
+	data: z.object({
+		groups: z.tuple([
+			z.object({ accounts: z.array(z.object({ name: z.string() })) }),
+			z.object({ accounts: z.array(z.object({ name: z.string() })) }),
+		]),
+	}),
+});
+
 async function defaultOf(app = buildApp()) {
 	const response = await app.request("/api/accounts");
 
@@ -4100,6 +4122,69 @@ describe("the default account for new transactions", () => {
 
 		expect(deleted.status).toBe(200);
 		await expect(defaultOf()).resolves.toBeNull();
+	});
+
+	it("lists each group in each administrator's own saved order, the viewer's by name", async () => {
+		const names = ["Ordre Alpha", "Ordre Bravo", "Ordre Charlie"];
+		const cards = ["Ordre Carte Petite", "Ordre Carte Grosse"];
+		await openAccount({ name: "Ordre Alpha", openingBalance: "200,00" });
+		await openAccount({ name: "Ordre Bravo", openingBalance: "900,00" });
+		await openAccount({ name: "Ordre Charlie", openingBalance: "50,00" });
+		await openAccount({
+			name: "Ordre Carte Petite",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "300,00",
+		});
+		await openAccount({
+			name: "Ordre Carte Grosse",
+			type: "credit_card",
+			subtype: null,
+			openingBalance: "800,00",
+		});
+		const listed = async (app = buildApp()) => {
+			const body = orderedBody.parse(await (await app.request("/api/accounts")).json());
+
+			return {
+				assets: namesAmong(body.data.groups[0], names),
+				liabilities: namesAmong(body.data.groups[1], cards),
+			};
+		};
+
+		try {
+			await expect(listed()).resolves.toEqual({
+				assets: names,
+				liabilities: ["Ordre Carte Grosse", "Ordre Carte Petite"],
+			});
+
+			expect((await saveOrder("balance_desc")).status).toBe(200);
+			expect((await saveOrder("name_desc", second())).status).toBe(200);
+
+			// A liability's balance is what is owed, positive as Sure's: the
+			// largest debt comes first.
+			await expect(listed()).resolves.toEqual({
+				assets: ["Ordre Bravo", "Ordre Alpha", "Ordre Charlie"],
+				liabilities: ["Ordre Carte Grosse", "Ordre Carte Petite"],
+			});
+			await expect(listed(second())).resolves.toEqual({
+				assets: names.toReversed(),
+				liabilities: ["Ordre Carte Petite", "Ordre Carte Grosse"],
+			});
+			await expect(listed(viewer())).resolves.toEqual({
+				assets: names,
+				liabilities: ["Ordre Carte Grosse", "Ordre Carte Petite"],
+			});
+
+			expect((await saveOrder("balance_asc")).status).toBe(200);
+
+			await expect(listed()).resolves.toEqual({
+				assets: ["Ordre Charlie", "Ordre Alpha", "Ordre Bravo"],
+				liabilities: ["Ordre Carte Petite", "Ordre Carte Grosse"],
+			});
+		} finally {
+			await saveOrder("name_asc");
+			await saveOrder("name_asc", second());
+		}
 	});
 
 	it("refuses a viewer FORBIDDEN on either method, nothing written", async () => {

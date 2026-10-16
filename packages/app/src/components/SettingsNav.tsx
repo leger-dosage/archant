@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
 	BanknoteIcon,
+	BoltIcon,
 	BotIcon,
 	ChartLineIcon,
 	DatabaseIcon,
@@ -20,6 +21,7 @@ import { releaseUrl } from "@/lib/release";
 // Sure's settings icons.
 export const SETTINGS_SECTIONS = [
 	{ to: "/settings/banks", label: "settings.sections.banks", icon: BanknoteIcon },
+	{ to: "/settings/preferences", label: "settings.sections.preferences", icon: BoltIcon },
 	{ to: "/settings/investments", label: "settings.sections.investments", icon: ChartLineIcon },
 	{ to: "/settings/categories", label: "settings.sections.categories", icon: ShapesIcon },
 	{ to: "/settings/merchants", label: "settings.sections.merchants", icon: StoreIcon },

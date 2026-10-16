@@ -16,6 +16,7 @@
 		"./schemas/invitations": "./src/schemas/invitations.ts",
 		"./schemas/members": "./src/schemas/members.ts",
 		"./schemas/merchants": "./src/schemas/merchants.ts",
+		"./schemas/preferences": "./src/schemas/preferences.ts",
 		"./schemas/prices": "./src/schemas/prices.ts",
 		"./schemas/reports": "./src/schemas/reports.ts",
 		"./schemas/rules": "./src/schemas/rules.ts",

@@ -40,6 +40,7 @@ import { useMerchants } from "@/hooks/useMerchants";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
 import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
+import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { shownOrder } from "@/lib/transaction-days";
 import {
@@ -236,13 +237,13 @@ function OperationsPage() {
 	);
 	const accountOptions: FilterAccount[] = useMemo(
 		() =>
-			accounts.data?.groups.flatMap((group) =>
-				group.accounts.map((account) => ({
-					id: account.id,
-					name: account.name,
-					active: account.active,
-				})),
-			) ?? [],
+			accounts.data === undefined
+				? []
+				: accountsByName(accounts.data).map((account) => ({
+						id: account.id,
+						name: account.name,
+						active: account.active,
+					})),
 		[accounts.data],
 	);
 

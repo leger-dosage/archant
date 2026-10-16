@@ -48,6 +48,7 @@ import { dailyRecurring } from "./routes/middleware/daily-recurring.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
 import { requireRole, viewerReadOnly } from "./routes/middleware/roles.ts";
 import { sameOrigin } from "./routes/middleware/same-origin.ts";
+import { preferencesRoutes } from "./routes/preferences.ts";
 import { pricesRoutes } from "./routes/prices.ts";
 import { recurringRoutes } from "./routes/recurring.ts";
 import { reportsRoutes } from "./routes/reports.ts";
@@ -271,6 +272,7 @@ function createApi(deps: AppDeps) {
 		.route("/assistants", assistantsRoutes(deps))
 		.route("/invitations", invitationsRoutes(deps))
 		.route("/members", membersRoutes(deps))
+		.route("/preferences", preferencesRoutes(deps))
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/export", exportRoutes(deps))

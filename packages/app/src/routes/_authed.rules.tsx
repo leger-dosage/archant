@@ -50,6 +50,7 @@ import {
 	useSetRuleEnabled,
 } from "@/hooks/useRules";
 import { useTags } from "@/hooks/useTags";
+import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
@@ -296,7 +297,7 @@ function RulesPage() {
 	const previewPending = useRef(false);
 	const list = rules.data ?? [];
 	const accountList = useMemo(
-		() => (accounts.data?.groups ?? []).flatMap((group) => group.accounts),
+		() => (accounts.data === undefined ? [] : accountsByName(accounts.data)),
 		[accounts.data],
 	);
 	const options = useMemo(

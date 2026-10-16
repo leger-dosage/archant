@@ -37,19 +37,23 @@ import {
 } from "../services/holdings.ts";
 import { createImport, listImports } from "../services/imports.ts";
 import { loanPayoffChart, loanSchedule } from "../services/loans.ts";
+import { getPreferences } from "../services/preferences.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 import { signedInUser } from "./middleware/roles.ts";
 
 /**
- * The list with the signed-in user's default account, Sure's
+ * The list in the signed-in user's order, Sure's
+ * `users.default_account_order`, with their default account, Sure's
  * `users.default_account_id`; the assistant's `get_accounts` reads
- * `listAccounts` alone, without it.
+ * `listAccounts` alone, by name and without it.
  */
 async function listFor(deps: ServiceDeps, userId: string) {
+	const { defaultAccountOrder } = await getPreferences(deps, userId);
+
 	return {
-		...(await listAccounts(deps)),
+		...(await listAccounts(deps, defaultAccountOrder)),
 		defaultAccountId: await getDefaultAccountId(deps, userId),
 	};
 }

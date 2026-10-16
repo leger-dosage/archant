@@ -342,6 +342,33 @@ describe("users and settings", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("keeps a user's default account and session when 0082 rebuilds users, on the name order", async () => {
+		const before = await migratedBefore("0082");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertUser(before, "u1", "admin");
+		await before.run(sql`update users set default_account_id = 'a1' where id = 'u1'`);
+		await before.run(
+			sql`insert into sessions (id, expires_at, token, updated_at, user_id) values ('s1', 0, 't1', 0, 'u1')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select default_account_id as defaultAccountId, default_account_order as defaultAccountOrder from users`,
+			),
+		).resolves.toEqual([{ defaultAccountId: "a1", defaultAccountOrder: "name_asc" }]);
+		await expect(database.all(sql`select id from sessions`)).resolves.toEqual([{ id: "s1" }]);
+		await expect(
+			database.run(sql`update users set default_account_order = 'random' where id = 'u1'`),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error && String(error.cause).includes("users_default_account_order_check"),
+		);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("holds one pending invitation per email, a known role only, gone with its inviter", async () => {
 		const database = await migrated();
 		await insertUser(database, "u1", "admin");

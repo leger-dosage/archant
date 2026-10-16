@@ -11,6 +11,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { useAccounts } from "@/hooks/useAccounts";
+import { accountsByName } from "@/lib/account-list";
 import { api, errorCodeOf, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -27,7 +28,7 @@ export type GoalsSummaryData = InferResponseType<typeof api.goals.summary.$get, 
 
 /**
  * The accounts a goal's dialog offers, as Sure's: the active depository and
- * investment accounts, in the order the accounts list shows them, with the
+ * investment accounts, by name as Sure's `alphabetically`, with the
  * currency amounts are read in before one is ticked.
  */
 function fundableOf(list: AccountListData) {
@@ -36,7 +37,7 @@ function fundableOf(list: AccountListData) {
 
 	return {
 		reportingCurrency,
-		accounts: list.groups.flatMap((group) => group.accounts).filter(canBackGoal),
+		accounts: accountsByName(list).filter(canBackGoal),
 	};
 }
 

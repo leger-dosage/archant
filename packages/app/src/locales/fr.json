@@ -2132,6 +2132,7 @@
 		"title": "Réglages",
 		"sections": {
 			"banks": "Banques",
+			"preferences": "Préférences",
 			"categories": "Catégories",
 			"merchants": "Marchands",
 			"tags": "Étiquettes",
@@ -2249,6 +2250,21 @@
 			"copy": "Copier le lien d'invitation",
 			"done": "Terminé"
 		}
+	},
+	"preferences": {
+		"title": "Préférences",
+		"general": {
+			"title": "Général",
+			"subtitle": "Configurez vos préférences",
+			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut"
+		},
+		"accountOrders": {
+			"name_asc": "Nom (A-Z)",
+			"name_desc": "Nom (Z-A)",
+			"balance_asc": "Solde (de bas en haut)",
+			"balance_desc": "Solde (haut à bas)"
+		},
+		"saved": "Votre profil a été mis à jour."
 	},
 	"investments": {
 		"title": "Placements",
