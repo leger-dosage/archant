@@ -411,10 +411,11 @@ test("a row's menu holds Sure's items in Sure's order, excludes and deletes from
 		"Modifier",
 		"Désactiver le compte",
 		"Exclure de tous les rapports",
+		"Définir par défaut",
 		"Supprimer le compte",
 	]);
 	await expect(menu.getByRole("separator")).toHaveCount(2);
-	await expectMenuIcons(menu, ["pencil-line", "toggle-right", "eye-off", "trash-2"]);
+	await expectMenuIcons(menu, ["pencil-line", "toggle-right", "eye-off", "star", "trash-2"]);
 	expect(reads).toEqual([]);
 
 	await menu.getByRole("menuitem", { name: "Modifier" }).click();
@@ -439,9 +440,10 @@ test("a row's menu holds Sure's items in Sure's order, excludes and deletes from
 		"Modifier",
 		"Désactiver le compte",
 		"Inclure dans les rapports",
+		"Définir par défaut",
 		"Supprimer le compte",
 	]);
-	await expectMenuIcons(excluded, ["pencil-line", "toggle-right", "eye", "trash-2"]);
+	await expectMenuIcons(excluded, ["pencil-line", "toggle-right", "eye", "star", "trash-2"]);
 
 	// The confirmation waits for the count, so its title never states a wrong one.
 	const held: Route[] = [];

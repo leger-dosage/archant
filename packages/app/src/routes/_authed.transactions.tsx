@@ -1,4 +1,6 @@
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
+import type { AccountChoice } from "@/components/TransactionForm";
+import type { AccountListData } from "@/hooks/useAccounts";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind, OperationsSearch } from "@/lib/transaction-filters";
 
@@ -8,7 +10,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
-import { isCurrencyCode } from "@archant/data/money";
+import { eligibleForTransactionDefault } from "@archant/data/account-types";
+import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { BulkBar } from "@/components/BulkBar";
 import { EmptyNote } from "@/components/EmptyState";
@@ -158,6 +161,37 @@ function OperationSheet({
 	);
 }
 
+const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+
+/**
+ * What « Ajouter une opération » offers, as Sure's `set_new_transaction_form_options`:
+ * the active accounts no bank feeds, sorted by name, starting on the user's default
+ * while it is eligible, as `default_account_for_transactions`.
+ */
+function accountChoiceOf(list: AccountListData): AccountChoice {
+	const accounts = list.groups
+		.flatMap((group) => group.accounts)
+		.filter((account) => account.active && !account.linked)
+		.toSorted((a, b) => byName.compare(a.name, b.name))
+		.flatMap(({ id, name, currency, type, subtype }) =>
+			isCurrencyCode(currency) ? [{ id, name, currency, type, subtype }] : [],
+		);
+	// Looked up among the options, so the select never starts on one it does not offer.
+	const stored = list.groups
+		.flatMap((group) => group.accounts)
+		.find((account) => account.id === list.defaultAccountId);
+	const offered = accounts.some((account) => account.id === stored?.id);
+
+	return {
+		accounts,
+		initialAccountId:
+			stored !== undefined && offered && eligibleForTransactionDefault(stored) ? stored.id : null,
+		fallbackCurrency: isCurrencyCode(list.reportingCurrency)
+			? list.reportingCurrency
+			: DEFAULT_CURRENCY,
+	};
+}
+
 function OperationsPage() {
 	const { t } = useTranslation();
 	const { tab, ...search } = Route.useSearch();
@@ -186,6 +220,11 @@ function OperationsPage() {
 			: { total: settled.total, pageSize: data.pageSize },
 	);
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
+	const [adding, setAdding] = useState(false);
+	const choice = useMemo(
+		() => (accounts.data === undefined ? null : accountChoiceOf(accounts.data)),
+		[accounts.data],
+	);
 	// The rows shown belong to the filters and page asked for only once loaded;
 	// a placeholder page must not be ticked under the new filters.
 	const shownItems = transactions.isPlaceholderData
@@ -245,7 +284,14 @@ function OperationsPage() {
 	};
 
 	return (
-		<Page title={t("operations.title")}>
+		<Page
+			title={t("operations.title")}
+			actions={
+				admin && choice !== null ? (
+					<Button onClick={() => setAdding(true)}>{t("transactions.add")}</Button>
+				) : undefined
+			}
+		>
 			<Tabs value={tab ?? "transactions"} onValueChange={changeTab} className="gap-3">
 				<TabsList aria-label={t("operations.tabs.label")}>
 					<TabsTrigger value="transactions" className={FLAT_TAB}>
@@ -394,6 +440,15 @@ function OperationsPage() {
 					target={selection.target}
 					total={settled.total}
 					filters={filters}
+				/>
+			)}
+
+			{admin && choice !== null && (
+				<TransactionSheet
+					account={choice}
+					open={adding}
+					transaction={null}
+					onOpenChange={setAdding}
 				/>
 			)}
 

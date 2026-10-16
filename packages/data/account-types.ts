@@ -223,6 +223,27 @@ export function supportsTrades(account: { type: AccountType; subtype: string | n
 }
 
 /**
+ * Whether an account type can be a user's default for new transactions, as
+ * Sure's `supports_default?`: the « Par défaut » caption shows only on these.
+ */
+export function supportsDefault(type: AccountType): boolean {
+	return type === "depository" || type === "credit_card";
+}
+
+/**
+ * Whether an account can be set as the default, and whether a stored default
+ * still applies, as Sure's `eligible_for_transaction_default?`: a deactivated
+ * or linked default stays stored, but the form ignores it.
+ */
+export function eligibleForTransactionDefault(account: {
+	type: AccountType;
+	active: boolean;
+	linked: boolean;
+}): boolean {
+	return supportsDefault(account.type) && account.active && !account.linked;
+}
+
+/**
  * What a bank account can become, the targets of Sure's
  * `CASH_ACCOUNT_TYPE_MAP`: only these types hold a bank's cash balance.
  */

@@ -305,6 +305,7 @@ test("a viewer reads every page with no control that writes, and the server refu
 			const row = page.locator(`[data-transaction-id="${bakery}"]`);
 			await expect(row).toBeVisible();
 			await expect(page.getByRole("checkbox")).toHaveCount(0);
+			await expectNone(page, [{ role: "button", name: "Ajouter une opération" }]);
 			await expect(page.getByText(category.name).first()).toBeVisible();
 			await expectNone(page, [{ role: "button", name: `Catégorie : ${category.name}` }]);
 			// A click on the pill reaches the row beneath: no picker, so no « Créer ».
@@ -634,6 +635,17 @@ test("a viewer reads every page with no control that writes, and the server refu
 			return response.status;
 		}, pea.id);
 		expect(deletedPosition).toBe(403);
+		const defaults = await page.evaluate(
+			async (accountId) =>
+				Promise.all(
+					["PUT", "DELETE"].map(
+						async (method) =>
+							(await fetch(`/api/accounts/${accountId}/default`, { method })).status,
+					),
+				),
+			account.id,
+		);
+		expect(defaults).toEqual([403, 403]);
 		expect(z.object({ error: z.object({ code: z.string() }) }).parse(written.body).error.code).toBe(
 			"FORBIDDEN",
 		);

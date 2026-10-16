@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { accounts } from "@archant/data/schema/accounts";
+import { rateLimits } from "@archant/data/schema/auth";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 import { securities } from "@archant/data/schema/securities";
@@ -45,7 +46,14 @@ import {
 	valid,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import {
+	addViewer,
+	buildTestApp,
+	cookieOf,
+	createTestAuth,
+	signIn,
+	withSession,
+} from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -3964,5 +3972,147 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		expect(errorBody.parse(await refused.json()).error.code).toBe("VALIDATION_ERROR");
 		expect(unknown.status).toBe(404);
 		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
+	});
+});
+
+const defaultIdBody = z.object({ data: z.object({ defaultAccountId: z.string().nullable() }) });
+
+async function defaultOf(app = buildApp()) {
+	const response = await app.request("/api/accounts");
+
+	return defaultIdBody.parse(await response.json()).data.defaultAccountId;
+}
+
+async function setDefault(id: string, app = buildApp()) {
+	const response = await app.request(`/api/accounts/${id}/default`, { method: "PUT" });
+
+	return { status: response.status, body: z.unknown().parse(await response.json()) };
+}
+
+async function removeDefault(id: string, app = buildApp()) {
+	const response = await app.request(`/api/accounts/${id}/default`, { method: "DELETE" });
+
+	return { status: response.status, body: z.unknown().parse(await response.json()) };
+}
+
+describe("the default account for new transactions", () => {
+	const silent = createLogger("silent");
+	const SECOND_ADMIN = { email: "second@example.test", password: "battery staple horse" };
+	// Not `addViewer`'s: the viewer block above created that one already.
+	const READER = { email: "reader@example.test", password: "horse staple battery" };
+	let auth: Auth;
+	let secondCookie: string;
+	let viewerCookie: string;
+
+	// Two sign-ins for the block, on a fresh allowance: Better Auth allows
+	// three per ten seconds, and the viewer block above spent one.
+	beforeAll(async () => {
+		await temp.db.delete(rateLimits);
+		auth = createTestAuth(temp.db, silent);
+		await auth.api.createUser({ body: { ...READER, name: "", data: { role: "viewer" } } });
+		viewerCookie = cookieOf(await signIn(buildTestApp(temp.db, silent, auth), READER));
+		await auth.api.createUser({ body: { ...SECOND_ADMIN, name: "", data: { role: "admin" } } });
+		secondCookie = cookieOf(await signIn(buildTestApp(temp.db, silent, auth), SECOND_ADMIN));
+	});
+
+	const second = () => withSession(buildTestApp(temp.db, silent, auth), secondCookie);
+	const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+	it("sets an active manual checking account as the default, then switches to another", async () => {
+		const checking = await openAccount();
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		const set = await setDefault(checking.id);
+
+		expect(set).toEqual({ status: 200, body: { data: { defaultAccountId: checking.id } } });
+		await expect(defaultOf()).resolves.toBe(checking.id);
+
+		expect((await setDefault(card.id)).status).toBe(200);
+		await expect(defaultOf()).resolves.toBe(card.id);
+	});
+
+	it("removes the default, whichever account the path names", async () => {
+		const checking = await openAccount();
+		const other = await openAccount({ name: "Livret A", subtype: "savings" });
+		await setDefault(checking.id);
+
+		const removed = await removeDefault(other.id);
+
+		expect(removed).toEqual({ status: 200, body: { data: { defaultAccountId: null } } });
+		await expect(defaultOf()).resolves.toBeNull();
+	});
+
+	it("refuses a loan, an inactive and a linked account DEFAULT_ACCOUNT_NOT_ELIGIBLE, the default kept", async () => {
+		const checking = await openAccount();
+		await setDefault(checking.id);
+		const loan = await openAccount(mortgage);
+		const inactive = await openAccount({ name: "Ancien compte" });
+		await request("PATCH", `/api/accounts/${inactive.id}`, { active: false });
+		const linked = await linkedCard(false);
+
+		const refusals = await Promise.all(
+			[loan.id, inactive.id, linked.id].map(async (id) => setDefault(id)),
+		);
+
+		for (const refused of refusals) {
+			expect(refused.status).toBe(409);
+			expect(errorBody.parse(refused.body).error.code).toBe("DEFAULT_ACCOUNT_NOT_ELIGIBLE");
+		}
+
+		await expect(defaultOf()).resolves.toBe(checking.id);
+	});
+
+	it("refuses an unknown account NOT_FOUND on either method", async () => {
+		const set = await setDefault("missing");
+		const removed = await removeDefault("missing");
+
+		expect(set.status).toBe(404);
+		expect(errorBody.parse(set.body).error.code).toBe("NOT_FOUND");
+		expect(removed.status).toBe(404);
+		expect(errorBody.parse(removed.body).error.code).toBe("NOT_FOUND");
+	});
+
+	it("keeps each administrator's default their own", async () => {
+		const checking = await openAccount();
+		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
+
+		await setDefault(checking.id);
+		await setDefault(card.id, second());
+
+		await expect(defaultOf()).resolves.toBe(checking.id);
+		await expect(defaultOf(second())).resolves.toBe(card.id);
+
+		await removeDefault(card.id, second());
+
+		await expect(defaultOf()).resolves.toBe(checking.id);
+		await expect(defaultOf(second())).resolves.toBeNull();
+	});
+
+	it("keeps a deactivated default stored, and clears a deleted one", async () => {
+		const checking = await openAccount();
+		await setDefault(checking.id);
+
+		await request("PATCH", `/api/accounts/${checking.id}`, { active: false });
+
+		await expect(defaultOf()).resolves.toBe(checking.id);
+
+		const deleted = await request("DELETE", `/api/accounts/${checking.id}`);
+
+		expect(deleted.status).toBe(200);
+		await expect(defaultOf()).resolves.toBeNull();
+	});
+
+	it("refuses a viewer FORBIDDEN on either method, nothing written", async () => {
+		const checking = await openAccount();
+		await removeDefault(checking.id);
+
+		const set = await setDefault(checking.id, viewer());
+		const removed = await removeDefault(checking.id, viewer());
+
+		expect(set.status).toBe(403);
+		expect(errorBody.parse(set.body).error.code).toBe("FORBIDDEN");
+		expect(removed.status).toBe(403);
+		await expect(defaultOf(viewer())).resolves.toBeNull();
+		await expect(defaultOf()).resolves.toBeNull();
 	});
 });

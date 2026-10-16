@@ -32,7 +32,7 @@ const pageHeader = (page: Page) =>
 /** `/api/accounts` answered with `groups`, as the API shapes them. */
 async function mockAccounts(page: Page, groups: unknown[]) {
 	await page.route("**/api/accounts", (route) =>
-		route.fulfill({ json: { data: { reportingCurrency: "EUR", groups } } }),
+		route.fulfill({ json: { data: { reportingCurrency: "EUR", defaultAccountId: null, groups } } }),
 	);
 }
 

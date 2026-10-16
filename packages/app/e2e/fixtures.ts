@@ -367,6 +367,16 @@ export function apiHelpers(request: APIRequestContext) {
 			}, Promise.resolve());
 		},
 
+		/** Clears the administrator's default account; the path's account only has to exist. */
+		async clearDefaultAccount(accountId: string) {
+			// Bodiless, so it needs the `Origin` a browser would add.
+			const response = await request.delete(`/api/accounts/${accountId}/default`, {
+				headers: sameOrigin,
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
 		async createMerchant(name: string = uniqueName("Marchand")): Promise<Created> {
 			return { id: await created(await request.post("/api/merchants", { data: { name } })), name };
 		},
