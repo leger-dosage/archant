@@ -212,6 +212,8 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.goto("/accounts");
 			await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
 			await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
+			// No row carries the menu that writes, whichever account it is.
+			await expect(page.getByRole("button", { name: /^Actions du compte /u })).toHaveCount(0);
 		});
 
 		await test.step("an account shows its rows, snapshots, trades and imports, and nothing to change them", async () => {

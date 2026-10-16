@@ -10,8 +10,9 @@ export type AccountDetailData = InferResponseType<
 	200
 >["data"];
 
-export function useAccount(id: string) {
+export function useAccount(id: string, { enabled = true }: { enabled?: boolean } = {}) {
 	return useQuery({
+		enabled,
 		queryKey: queryKeys.accounts.detail(id),
 		queryFn: async () => (await unwrap(api.accounts[":id"].$get({ param: { id } }))).data,
 		// An unknown account will not appear by asking again; the page says so.

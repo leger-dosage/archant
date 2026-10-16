@@ -2854,6 +2854,48 @@ describe("GET /api/accounts with inactive and excluded accounts", () => {
 		expect(groups[0]?.accounts).toHaveLength(3);
 	});
 
+	// Sure's `Account.listable_manual`: the list keeps an inactive account
+	// beside the others, and says which ones a bank feeds, the ones
+	// `DELETE /api/accounts/:id` refuses.
+	it("lists an inactive account in its group by name, and says which accounts are linked", async () => {
+		const manual = await openAccount({ name: "Ancien livret", subtype: "savings" });
+		const card = await linkedCard(false);
+		await patchAccount(manual.id, { active: false });
+
+		const list = z
+			.object({
+				data: z.object({
+					groups: z.array(
+						z.object({
+							classification: z.string(),
+							accounts: z.array(
+								z.object({
+									id: z.string(),
+									name: z.string(),
+									active: z.boolean(),
+									linked: z.boolean(),
+								}),
+							),
+						}),
+					),
+				}),
+			})
+			.parse((await request("GET", "/api/accounts")).body);
+		const [assets, liabilities] = list.data.groups;
+
+		expect(assets?.classification).toBe("asset");
+		expect(assets?.accounts.find((account) => account.id === manual.id)).toEqual({
+			id: manual.id,
+			name: "Ancien livret",
+			active: false,
+			linked: false,
+		});
+		expect(liabilities?.accounts.find((account) => account.id === card.id)).toMatchObject({
+			active: true,
+			linked: true,
+		});
+	});
+
 	it("reactivates an account, which counts again", async () => {
 		const client = await ownClient();
 		const account = (await (await client.$post({ json: valid })).json()).data;

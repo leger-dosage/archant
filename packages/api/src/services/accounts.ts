@@ -47,12 +47,17 @@ export type AccountSummary = {
 	/** Stored balance at the end of today; zero before the account's oldest entry. */
 	balance: MinorUnits;
 	/**
-	 * `false` once deactivated: still returned here, history kept, and hidden
-	 * by the interface from its lists.
+	 * `false` once deactivated: still returned here, history kept, listed
+	 * muted on the accounts page and hidden from the other lists, as Sure's.
 	 */
 	active: boolean;
 	/** Still listed, but left out of its group's total and of reports. */
 	excludedFromReports: boolean;
+	/**
+	 * Sure's `linked?`: a bank account feeds it. The condition `deleteAccount`
+	 * refuses on, so the row menu knows whether to offer deletion.
+	 */
+	linked: boolean;
 };
 
 export type AccountGroup = {
@@ -90,6 +95,7 @@ async function summarise(
 		balance: balance?.amount ?? toMinorUnits(0),
 		active: account.active,
 		excludedFromReports: account.excludedFromReports,
+		linked: account.bankAccountId !== null,
 	};
 }
 
@@ -99,7 +105,7 @@ const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
  * Every account with today's balance, inactive ones included, assets first
  * then liabilities, each group sorted by name and totalled in the reporting
  * currency. The whole set, not a page: a household holds a bounded number of
- * accounts. The interface decides what to hide.
+ * accounts. Each list of the interface decides what to hide.
  */
 export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
 	const date = today(deps.timeZone);

@@ -205,7 +205,15 @@
 		"excluded_other": "{{count}} comptes dans une autre devise ne sont pas comptés dans le total.",
 		"excludedFromReports": "Exclu des rapports",
 		"inactive": "Inactif",
-		"showInactive": "Afficher les comptes inactifs",
+		"inactiveHint": "inactif",
+		"rowMenu": {
+			"edit": "Modifier",
+			"disable": "Désactiver le compte",
+			"enable": "Activer le compte",
+			"excludeFromReports": "Exclure de tous les rapports",
+			"includeInReports": "Inclure dans les rapports",
+			"delete": "Supprimer le compte"
+		},
 		"form": {
 			"title": "Ajouter un compte",
 			"name": "Nom",

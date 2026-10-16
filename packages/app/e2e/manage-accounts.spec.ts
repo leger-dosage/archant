@@ -1,4 +1,4 @@
-import type { Locator, Page } from "@playwright/test";
+import type { Locator, Page, Route } from "@playwright/test";
 
 import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
@@ -247,7 +247,7 @@ test("the account's menu holds its actions, labelled by its state, and the page 
 	await page.keyboard.press("Escape");
 });
 
-test("a deactivated account leaves /accounts, the accounts column, /transactions and the filter, and comes back when reactivated", async ({
+test("deactivated from its row, an account stays on /accounts muted, leaves the accounts column, /transactions and the filter, and comes back when activated", async ({
 	page,
 	api,
 }) => {
@@ -256,30 +256,31 @@ test("a deactivated account leaves /accounts, the accounts column, /transactions
 	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-1,00" });
 	const before = await api.groupTotal("asset");
 
-	await page.goto(`/accounts/${account.id}`);
-	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Désactiver" }).click();
+	await page.goto("/accounts");
+	await expect(columnRow(page, account.name)).toBeVisible();
+	await (
+		await openMenu(page, account.name)
+	)
+		.getByRole("menuitem", { name: "Désactiver le compte" })
+		.click();
 	await expect(page.getByText(`Compte « ${account.name} » désactivé.`)).toBeVisible();
-	await expect(page.getByRole("region", { name: account.name, exact: true })).toContainText(
-		"Inactif",
-	);
+
+	// As Sure's `Account.listable_manual`: still listed, its name and balance muted.
+	const row = pageRow(page, account.name);
+	await expect(row).toBeVisible();
+	await expect(row).toHaveAccessibleName(new RegExp(`${account.name} inactif`, "u"));
+	await expect(row.getByText(account.name, { exact: true })).toHaveClass(/text-muted-foreground/u);
+	await expect(row.getByText(euros(9_900))).toHaveClass(/text-muted-foreground/u);
+	await expect(row).not.toContainText("Inactif");
 	await expect(columnRow(page, account.name)).toHaveCount(0);
 
 	// Its balance of 99,00 leaves the Actifs total.
 	expect(await api.groupTotal("asset")).toBe(before - 9_900);
-	await page
-		.getByRole("navigation", { name: "Navigation principale" })
-		.getByRole("link", { name: "Comptes", exact: true })
-		.click();
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 9_900));
-	await expect(pageRow(page, account.name)).toHaveCount(0);
-
-	await page.getByRole("switch", { name: "Afficher les comptes inactifs" }).click();
-	await expect(page).toHaveURL(/[?&]showInactive=true/u);
-	const row = page.getByRole("region", { name: "Actifs" }).getByRole("link", {
-		name: new RegExp(account.name),
-	});
-	await expect(row).toContainText("Inactif");
-	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 9_900));
+	await expect(
+		(await openMenu(page, account.name)).getByRole("menuitem", { name: "Activer le compte" }),
+	).toBeVisible();
+	await page.keyboard.press("Escape");
 
 	// As Sure's `Entry.visible`, its transactions leave /transactions and stay on
 	// its own page; the filter no longer offers it.
@@ -305,17 +306,18 @@ test("a deactivated account leaves /accounts, the accounts column, /transactions
 	await expect(page).not.toHaveURL(/[?&]account=/u);
 	await expect(accountChip).toHaveCount(0);
 
-	await page.goto("/accounts?showInactive=true");
-	await row.click();
-	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Réactiver" }).click();
+	await page.goto("/accounts");
+	await (
+		await openMenu(page, account.name)
+	)
+		.getByRole("menuitem", { name: "Activer le compte" })
+		.click();
 	await expect(page.getByText(`Compte « ${account.name} » réactivé.`)).toBeVisible();
-	await expect(page.getByRole("region", { name: account.name, exact: true })).not.toContainText(
-		"Inactif",
+	await expect(row).not.toHaveAccessibleName(/inactif/u);
+	await expect(row.getByText(account.name, { exact: true })).not.toHaveClass(
+		/text-muted-foreground/u,
 	);
 	await expect(columnRow(page, account.name)).toBeVisible();
-
-	await page.goto("/accounts");
-	await expect(pageRow(page, account.name)).not.toContainText("Inactif");
 	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before));
 
 	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
@@ -326,40 +328,30 @@ test("a deactivated account leaves /accounts, the accounts column, /transactions
 	await expect(reopened.getByRole("checkbox", { name: account.name })).toBeVisible();
 });
 
-test("the inactive switch shows only when an inactive account exists", async ({ page }) => {
-	// The shared database may hold another test's inactive account; this is
-	// what the API's list looks like without one.
-	const account = {
-		id: "00000000-0000-4000-8000-000000000000",
-		name: "Seul actif",
-		type: "depository",
-		subtype: "checking",
-		currency: "EUR",
-		balance: 1000,
-		active: true,
-		excludedFromReports: false,
-	};
-	await page.route("**/api/accounts", (route) =>
-		route.fulfill({
-			json: {
-				data: {
-					reportingCurrency: "EUR",
-					groups: [
-						{ classification: "asset", accounts: [account], total: 1000, excludedCount: 0 },
-						{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },
-					],
-				},
-			},
-		}),
-	);
+test("an inactive account is listed with no switch, an old link to the switch included", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Dormant"), openingBalance: "40,00" });
+	await api.deactivateAccount(account.id);
 
+	await page.goto("/accounts?showInactive=true");
+	await expect(
+		page
+			.getByRole("region", { name: "Actifs" })
+			.getByRole("link", { name: new RegExp(account.name) }),
+	).toBeVisible();
 	await page.goto("/accounts");
-
-	await expect(pageRow(page, "Seul actif")).toBeVisible();
-	await expect(page.getByRole("switch", { name: "Afficher les comptes inactifs" })).toHaveCount(0);
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(account.name) });
+	await expect(row).toBeVisible();
+	await expect(row.getByText(euros(4_000))).toHaveClass(/text-muted-foreground/u);
+	await expect(page.getByRole("switch")).toHaveCount(0);
+	await expect(page.getByText("Afficher les comptes inactifs")).toHaveCount(0);
 });
 
-test("an excluded account stays listed, muted with the eye-off icon, out of its group total", async ({
+test("an excluded account stays listed, the eye-off icon after its name, out of its group total", async ({
 	page,
 	api,
 }) => {
@@ -379,11 +371,101 @@ test("an excluded account stays listed, muted with the eye-off icon, out of its 
 	const row = pageRow(page, account.name);
 	await expect(row).toContainText(euros(25_000));
 	await expect(row).toContainText("Exclu des rapports");
-	await expect(row.getByText(euros(25_000))).toHaveClass(/text-muted-foreground/u);
+	// As Sure's row: the marker right after the name, the balance muted only
+	// when the account is inactive.
+	await expect(row).toHaveAccessibleName(new RegExp(`^${account.name}\\s*Exclu des rapports`, "u"));
+	await expect(row.getByText(euros(25_000))).not.toHaveClass(/text-muted-foreground/u);
 	await expect(columnRow(page, account.name)).toContainText("Exclu des rapports");
 
 	await row.getByText("Exclu des rapports").locator("..").hover();
 	await expect(page.getByRole("tooltip")).toHaveText("Exclu des rapports");
+});
+
+test("a row's menu holds Sure's items in Sure's order, excludes and deletes from the list", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ name: uniqueName("Rangée"), openingBalance: "300,00" });
+	const prefix = uniqueName("Ligne");
+	await Array.from({ length: 3 }, (_, index) => index + 1).reduce(async (previous, day) => {
+		await previous;
+		await api.addTransaction(account.id, {
+			date: daysAgo(day),
+			label: `${prefix} ${day}`,
+			amount: "-5,00",
+		});
+	}, Promise.resolve());
+
+	// No request per row on page load: the edit dialog and the count wait to be chosen.
+	const reads: string[] = [];
+	page.on("request", (request) => {
+		const { pathname } = new URL(request.url());
+
+		if (request.method() === "GET" && pathname.startsWith(`/api/accounts/${account.id}`)) {
+			reads.push(pathname);
+		}
+	});
+	await page.goto("/accounts");
+	const menu = await openMenu(page, account.name);
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Désactiver le compte",
+		"Exclure de tous les rapports",
+		"Supprimer le compte",
+	]);
+	await expect(menu.getByRole("separator")).toHaveCount(2);
+	await expectMenuIcons(menu, ["pencil-line", "toggle-right", "eye-off", "trash-2"]);
+	expect(reads).toEqual([]);
+
+	await menu.getByRole("menuitem", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(dialog).toBeHidden();
+
+	const before = await api.groupTotal("asset");
+	await (
+		await openMenu(page, account.name)
+	)
+		.getByRole("menuitem", { name: "Exclure de tous les rapports" })
+		.click();
+	await expect(page.getByText(`Compte « ${account.name} » exclu des rapports.`)).toBeVisible();
+	const row = pageRow(page, account.name);
+	await expect(row).toContainText("Exclu des rapports");
+	expect(await api.groupTotal("asset")).toBe(before - 28_500);
+	await expect(pageGroupHeader(page, "Actifs")).toContainText(euros(before - 28_500));
+	const excluded = await openMenu(page, account.name);
+	await expect(excluded.getByRole("menuitem")).toHaveText([
+		"Modifier",
+		"Désactiver le compte",
+		"Inclure dans les rapports",
+		"Supprimer le compte",
+	]);
+	await expectMenuIcons(excluded, ["pencil-line", "toggle-right", "eye", "trash-2"]);
+
+	// The confirmation waits for the count, so its title never states a wrong one.
+	const held: Route[] = [];
+	await page.route(`**/api/accounts/${account.id}/transactions*`, (route) => {
+		held.push(route);
+	});
+	const counting = page.waitForRequest((request) =>
+		request.url().includes(`/api/accounts/${account.id}/transactions`),
+	);
+	await excluded.getByRole("menuitem", { name: "Supprimer le compte" }).click();
+	await counting;
+	await expect(excluded).toBeHidden();
+	await expect(page.getByRole("alertdialog")).toHaveCount(0);
+	await Promise.all(held.map(async (route) => route.continue()));
+	await page.unroute(`**/api/accounts/${account.id}/transactions*`);
+	const confirmation = page.getByRole("alertdialog", {
+		name: `Supprimer le compte « ${account.name} » et ses 3 opérations ?`,
+	});
+	await expect(confirmation).toBeVisible();
+	await confirmation.getByRole("button", { name: "Supprimer le compte" }).click();
+	await expect(page.getByText(`Compte « ${account.name} » supprimé.`)).toBeVisible();
+	await expect(confirmation).toBeHidden();
+	await expect(row).toHaveCount(0);
+	await expect(page).toHaveURL(/\/accounts$/u);
 });
 
 test("deleting an account states its transactions, then removes it and them", async ({
@@ -463,6 +545,7 @@ test("deleting an account without transactions asks without a count, and Annuler
 		name: `Supprimer le compte « ${account.name} » ?`,
 	});
 	await expect(dialog).toBeVisible();
+	await expect(dialog.getByRole("button", { name: "Supprimer le compte" })).toBeEnabled();
 	await dialog.getByRole("button", { name: "Annuler" }).click();
 
 	await expect(dialog).toBeHidden();
