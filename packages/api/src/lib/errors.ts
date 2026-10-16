@@ -165,6 +165,12 @@ export const ERROR_STATUSES = {
 	 */
 	ACCOUNT_LINKED: 409,
 	/**
+	 * A default account for new transactions that is not an active, unlinked
+	 * depository or credit card, as Sure's `eligible_for_transaction_default?`.
+	 * Nothing is written.
+	 */
+	DEFAULT_ACCOUNT_NOT_ELIGIBLE: 409,
+	/**
 	 * A change of the Enable Banking credentials while a bank is connected:
 	 * its session belongs to the current application, so it is disconnected first.
 	 */

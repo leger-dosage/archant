@@ -15,10 +15,16 @@ import type {
 	AccountType,
 	Classification,
 } from "@archant/data/account-types";
-import { CLASSIFICATIONS, classificationOf, isSubtypeOf } from "@archant/data/account-types";
+import {
+	CLASSIFICATIONS,
+	classificationOf,
+	eligibleForTransactionDefault,
+	isSubtypeOf,
+} from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import { users } from "@archant/data/schema/auth";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 import type { Account } from "@archant/data/types";
@@ -129,6 +135,86 @@ export async function listAccounts(deps: ServiceDeps): Promise<AccountList> {
 	});
 
 	return { reportingCurrency, groups };
+}
+
+/**
+ * The account the user's new transactions start on, Sure's
+ * `users.default_account_id`, as stored: null when none. A deactivated or
+ * linked one is still returned; the form ignores it while it is not eligible.
+ */
+export async function getDefaultAccountId(
+	deps: ServiceDeps,
+	userId: string,
+): Promise<string | null> {
+	const user = await deps.db
+		.select({ defaultAccountId: users.defaultAccountId })
+		.from(users)
+		.where(eq(users.id, userId))
+		.get();
+
+	return user?.defaultAccountId ?? null;
+}
+
+/**
+ * Makes an account the user's default, as Sure's `set_default`: only an
+ * account `eligibleForTransactionDefault` holds for, else
+ * `DEFAULT_ACCOUNT_NOT_ELIGIBLE`. Another user's default is untouched.
+ */
+export async function setDefaultAccount(
+	deps: ServiceDeps,
+	userId: string,
+	accountId: string,
+): Promise<{ defaultAccountId: string | null }> {
+	const account = await deps.db
+		.select({ type: accounts.type, active: accounts.active, bankAccountId: accounts.bankAccountId })
+		.from(accounts)
+		.where(eq(accounts.id, accountId))
+		.get();
+
+	if (account === undefined) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	if (
+		!eligibleForTransactionDefault({
+			type: account.type,
+			active: account.active,
+			linked: account.bankAccountId !== null,
+		})
+	) {
+		throw new AppError(
+			"DEFAULT_ACCOUNT_NOT_ELIGIBLE",
+			"Only cash and credit card accounts can be set as default.",
+		);
+	}
+
+	await deps.db.update(users).set({ defaultAccountId: accountId }).where(eq(users.id, userId));
+
+	return { defaultAccountId: accountId };
+}
+
+/**
+ * Clears the user's default, as Sure's `remove_default`: whichever account
+ * it was, so the path's account only has to exist.
+ */
+export async function removeDefaultAccount(
+	deps: ServiceDeps,
+	userId: string,
+	accountId: string,
+): Promise<{ defaultAccountId: string | null }> {
+	const account = await deps.db
+		.select({ id: accounts.id })
+		.from(accounts)
+		.where(eq(accounts.id, accountId))
+		.get();
+
+	if (account === undefined) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	await deps.db.update(users).set({ defaultAccountId: null }).where(eq(users.id, userId));
+
+	return { defaultAccountId: null };
 }
 
 /**

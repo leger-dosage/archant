@@ -34,6 +34,30 @@ export function useCreateAccount() {
 	});
 }
 
+/**
+ * Makes an account the signed-in user's default for new transactions, or
+ * clears it, as Sure's `set_default` and `remove_default`.
+ */
+export function useSetDefaultAccount() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (accountId: string) =>
+			(await unwrap(api.accounts[":id"].default.$put({ param: { id: accountId } }))).data,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+	});
+}
+
+export function useRemoveDefaultAccount() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (accountId: string) =>
+			(await unwrap(api.accounts[":id"].default.$delete({ param: { id: accountId } }))).data,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+	});
+}
+
 /** Saves a subset of an account's settings: name, subtype and the two flags. */
 export function useUpdateAccount(accountId: string) {
 	const invalidate = useInvalidateAccount(accountId);

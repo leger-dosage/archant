@@ -25,6 +25,7 @@ test("an empty household sees the empty state and a button to add an account", a
 			json: {
 				data: {
 					reportingCurrency: "EUR",
+					defaultAccountId: null,
 					groups: [
 						{ classification: "asset", accounts: [], total: 0, excludedCount: 0 },
 						{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },
@@ -180,6 +181,7 @@ test("a group with an account in another currency says so in its tray", async ({
 			json: {
 				data: {
 					reportingCurrency: "EUR",
+					defaultAccountId: null,
 					groups: [
 						{
 							classification: "asset",

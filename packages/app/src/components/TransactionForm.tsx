@@ -1,5 +1,6 @@
 import type { TransferLink } from "@/components/TransactionLinks";
 import type { TransactionData } from "@/hooks/useTransactions";
+import type { FormEvent } from "react";
 import type { FieldError } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -28,6 +29,13 @@ import { SplitBlock } from "@/components/TransactionSplit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { SheetFooter } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useAttachmentCount } from "@/hooks/useAttachments";
@@ -65,6 +73,36 @@ export type SheetAccount = {
 	subtype: string | null;
 };
 
+/**
+ * A new transaction from `/transactions`, whose account is picked in the
+ * form, as Sure's `account_id` select: the accounts offered, sorted, and the
+ * one it starts on, null for none.
+ */
+export type AccountChoice = {
+	accounts: readonly (SheetAccount & { name: string })[];
+	initialAccountId: string | null;
+	/** What the amount parses in until an account is picked. */
+	fallbackCurrency: CurrencyCode;
+};
+
+function isAccountChoice(account: SheetAccount | AccountChoice): account is AccountChoice {
+	return "accounts" in account;
+}
+
+/** The account a save goes to, null until one is picked, and the currency the amount parses in. */
+function accountOf(
+	account: SheetAccount | AccountChoice,
+	chosenId: string | null,
+): { chosen: SheetAccount | null; currency: CurrencyCode } {
+	if (!isAccountChoice(account)) {
+		return { chosen: account, currency: account.currency };
+	}
+
+	const chosen = account.accounts.find((option) => option.id === chosenId) ?? null;
+
+	return { chosen, currency: chosen?.currency ?? account.fallbackCurrency };
+}
+
 function sameTags(a: readonly string[], b: readonly string[]): boolean {
 	const set = new Set(a);
 
@@ -72,7 +110,8 @@ function sameTags(a: readonly string[], b: readonly string[]): boolean {
 }
 
 type TransactionFormProps = {
-	account: SheetAccount;
+	/** The fixed account, or, for a new transaction only, the accounts to pick from. */
+	account: SheetAccount | AccountChoice;
 	transaction: TransactionData | null;
 	/** After a save or a delete. */
 	onClose: () => void;
@@ -97,9 +136,14 @@ export function TransactionForm({
 	const { t } = useTranslation();
 	// A viewer reads every field, disabled, and saves nothing.
 	const admin = useIsAdmin();
-	const createTransaction = useCreateTransaction(account.id);
-	const updateTransaction = useUpdateTransaction(account.id);
-	const deleteTransaction = useDeleteTransaction(account.id);
+	const choice = isAccountChoice(account) ? account : null;
+	const [chosenId, setChosenId] = useState(choice?.initialAccountId ?? null);
+	const [accountMissing, setAccountMissing] = useState(false);
+	const { chosen, currency } = accountOf(account, chosenId);
+	const accountId = chosen?.id ?? "";
+	const createTransaction = useCreateTransaction(accountId);
+	const updateTransaction = useUpdateTransaction(accountId);
+	const deleteTransaction = useDeleteTransaction(accountId);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [transfer, setTransfer] = useState<TransferLink>(transaction?.transfer ?? null);
 	// Hidden once resolved here; a refetch clearing the flag hides it too.
@@ -138,7 +182,9 @@ export function TransactionForm({
 	// receipt that goes; a failed read releases it.
 	const attachmentCountUnknown = countingAttachments || (splitParent && split.isPending);
 	const formRef = useRef<HTMLFormElement>(null);
-	const schema = useMemo(() => transactionFormSchema(account.currency), [account.currency]);
+	// Rebuilt when another account is picked: the typed amount stays, and parses
+	// in that account's currency.
+	const schema = useMemo(() => transactionFormSchema(currency), [currency]);
 	const form = useForm<TransactionFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
 		// there, into minor units of the account's currency.
@@ -154,9 +200,11 @@ export function TransactionForm({
 	const merchant = useController({ control: form.control, name: "merchantId" });
 	const tagIds = useController({ control: form.control, name: "tagIds" });
 
+	const accountChanged = choice !== null && chosenId !== choice.initialAccountId;
+
 	useEffect(() => {
-		onDirtyChange(isDirty);
-	}, [isDirty, onDirtyChange]);
+		onDirtyChange(isDirty || accountChanged);
+	}, [isDirty, accountChanged, onDirtyChange]);
 
 	const showError = (error: unknown) => {
 		const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
@@ -172,6 +220,11 @@ export function TransactionForm({
 	};
 
 	const submit = form.handleSubmit(async (values) => {
+		// Said under « Compte » by `save`; nothing is sent.
+		if (chosen === null) {
+			return;
+		}
+
 		try {
 			if (transaction === null) {
 				// A new transaction is always counted, starts « Sans catégorie » and
@@ -212,6 +265,14 @@ export function TransactionForm({
 			showError(error);
 		}
 	});
+
+	const save = (event?: FormEvent<HTMLFormElement>) => {
+		if (chosen === null) {
+			setAccountMissing(true);
+		}
+
+		void submit(event);
+	};
 
 	const remove = async () => {
 		if (transaction === null) {
@@ -260,7 +321,7 @@ export function TransactionForm({
 						return;
 					}
 
-					void submit(event);
+					save(event);
 				}}
 				onKeyDown={(event) => {
 					// Same bubbling: ⌘Enter in a dialog of a block is that dialog's.
@@ -273,7 +334,7 @@ export function TransactionForm({
 						// The button is disabled while saving; the shortcut must be too,
 						// or a double press records the transaction twice.
 						if (!form.formState.isSubmitting) {
-							void submit();
+							save();
 						}
 					}
 				}}
@@ -293,21 +354,25 @@ export function TransactionForm({
 				{transaction !== null && (
 					<SplitBlock
 						transaction={transaction}
-						currency={account.currency}
+						currency={currency}
 						splittable={splittable}
 						dirty={isDirty}
 						onDone={onCloseFocusing}
 					/>
 				)}
 				{/* The ledger's conversion refuses what it refuses a split (AD-20). */}
-				{transaction !== null && admin && supportsTrades(account) && splittable && (
-					<ConvertBlock
-						transaction={transaction}
-						currency={account.currency}
-						dirty={isDirty}
-						onConverted={onClose}
-					/>
-				)}
+				{transaction !== null &&
+					admin &&
+					chosen !== null &&
+					supportsTrades(chosen) &&
+					splittable && (
+						<ConvertBlock
+							transaction={transaction}
+							currency={currency}
+							dirty={isDirty}
+							onConverted={onClose}
+						/>
+					)}
 				{transaction !== null && duplicate && (
 					<DuplicateBlock
 						transaction={transaction}
@@ -357,6 +422,40 @@ export function TransactionForm({
 						/>
 						<FieldMessage id="transaction-label-error" error={errors.label} />
 					</div>
+
+					{/* After the description, as Sure's `transactions/_form`. */}
+					{choice !== null && (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="transaction-account">{t("transactions.form.account")}</Label>
+							<Select
+								value={chosenId ?? ""}
+								onValueChange={(value) => {
+									setChosenId(value);
+									setAccountMissing(false);
+								}}
+							>
+								<SelectTrigger
+									id="transaction-account"
+									className="w-full"
+									aria-invalid={accountMissing}
+									{...(accountMissing ? { "aria-describedby": "transaction-account-error" } : {})}
+								>
+									<SelectValue placeholder={t("transactions.form.accountPlaceholder")} />
+								</SelectTrigger>
+								<SelectContent>
+									{choice.accounts.map((option) => (
+										<SelectItem key={option.id} value={option.id}>
+											{option.name}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<FieldMessage
+								id="transaction-account-error"
+								error={accountMissing ? { type: "too_small" } : undefined}
+							/>
+						</div>
+					)}
 
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-amount">{t("transactions.form.amount")}</Label>

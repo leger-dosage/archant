@@ -68,6 +68,7 @@ async function fixedAccounts(page: Page) {
 			json: {
 				data: {
 					reportingCurrency: "EUR",
+					defaultAccountId: null,
 					groups: [
 						{
 							classification: "asset",
@@ -211,6 +212,7 @@ test("a tab without accounts says so", async ({ page }) => {
 			json: {
 				data: {
 					reportingCurrency: "EUR",
+					defaultAccountId: null,
 					groups: [
 						{
 							classification: "asset",
@@ -239,6 +241,7 @@ test("a household without accounts sees « Ajouter un compte » alone in the col
 			json: {
 				data: {
 					reportingCurrency: "EUR",
+					defaultAccountId: null,
 					groups: [
 						{ classification: "asset", accounts: [], total: 0, excludedCount: 0 },
 						{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },

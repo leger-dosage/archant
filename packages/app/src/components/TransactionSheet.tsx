@@ -1,4 +1,4 @@
-import type { SheetAccount } from "@/components/TransactionForm";
+import type { AccountChoice, SheetAccount } from "@/components/TransactionForm";
 import type { TransactionData } from "@/hooks/useTransactions";
 
 import { useCallback, useRef, useState } from "react";
@@ -21,7 +21,8 @@ const rowById = (id: string) =>
 	document.querySelector<HTMLElement>(`[data-transaction-id="${CSS.escape(id)}"]`);
 
 type TransactionSheetProps = {
-	account: SheetAccount;
+	/** The fixed account, or, to add from `/transactions`, the accounts to pick from. */
+	account: SheetAccount | AccountChoice;
 	open: boolean;
 	/** `null` to add a new transaction. */
 	transaction: TransactionData | null;

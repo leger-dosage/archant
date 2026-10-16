@@ -36,6 +36,7 @@ function listOf(
 ): AccountListData {
 	return {
 		reportingCurrency: "EUR",
+		defaultAccountId: null,
 		groups: [
 			{ classification: "asset", accounts: assets, total: toMinorUnits(0), excludedCount: 0 },
 			{

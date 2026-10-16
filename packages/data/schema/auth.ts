@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { USER_ROLES } from "../user-roles.ts";
+import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
 
 /**
@@ -44,6 +45,13 @@ export const users = sqliteTable(
 		// The `twoFactor` plugin's, `input: false`: only its own endpoints, after
 		// a valid code or the password, turn it on or off.
 		twoFactorEnabled: integer("two_factor_enabled", { mode: "boolean" }).default(false),
+		// Sure's `users.default_account_id`: the account a new transaction
+		// starts on, per user. Deleting the account clears it, as Sure's
+		// `on_delete: :nullify`; deactivating or linking it keeps it, and the
+		// form ignores it while the account is not eligible.
+		defaultAccountId: text("default_account_id").references(() => accounts.id, {
+			onDelete: "set null",
+		}),
 	},
 	(table) => [check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`)],
 );

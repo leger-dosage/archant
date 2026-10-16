@@ -1,5 +1,7 @@
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
+import type { ServiceDeps } from "../services/deps.ts";
 import type { ImportDeps } from "../services/imports.ts";
+import type { SessionEnv } from "./middleware/auth.ts";
 
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -18,8 +20,11 @@ import {
 	createAccount,
 	deleteAccount,
 	getAccount,
+	getDefaultAccountId,
 	listAccounts,
+	removeDefaultAccount,
 	setAccountOpeningBalance,
+	setDefaultAccount,
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
@@ -35,10 +40,23 @@ import { loanPayoffChart, loanSchedule } from "../services/loans.ts";
 import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
+import { signedInUser } from "./middleware/roles.ts";
+
+/**
+ * The list with the signed-in user's default account, Sure's
+ * `users.default_account_id`; the assistant's `get_accounts` reads
+ * `listAccounts` alone, without it.
+ */
+async function listFor(deps: ServiceDeps, userId: string) {
+	return {
+		...(await listAccounts(deps)),
+		defaultAccountId: await getDefaultAccountId(deps, userId),
+	};
+}
 
 export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
-	return new Hono()
-		.get("/", async (c) => c.json({ data: await listAccounts(deps) }, 200))
+	return new Hono<SessionEnv>()
+		.get("/", async (c) => c.json({ data: await listFor(deps, signedInUser(c).id) }, 200))
 		.post("/", validated("json", createAccountSchema), async (c) =>
 			c.json({ data: await createAccount(deps, c.req.valid("json")) }, 201),
 		)
@@ -48,6 +66,15 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		)
 		.delete("/:id", async (c) =>
 			c.json({ data: await deleteAccount(deps, c.req.param("id")) }, 200),
+		)
+		.put("/:id/default", async (c) =>
+			c.json({ data: await setDefaultAccount(deps, signedInUser(c).id, c.req.param("id")) }, 200),
+		)
+		.delete("/:id/default", async (c) =>
+			c.json(
+				{ data: await removeDefaultAccount(deps, signedInUser(c).id, c.req.param("id")) },
+				200,
+			),
 		)
 		.get("/:id/balances", validated("query", balanceQuerySchema), async (c) =>
 			c.json(

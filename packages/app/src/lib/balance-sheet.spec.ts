@@ -41,6 +41,7 @@ const totalOf = (accounts: AccountSummaryData[]) =>
 function listOf(assets: AccountSummaryData[], liabilities: AccountSummaryData[] = []) {
 	return {
 		reportingCurrency: "EUR",
+		defaultAccountId: null,
 		groups: [
 			{ classification: "asset", accounts: assets, total: totalOf(assets), excludedCount: 0 },
 			{

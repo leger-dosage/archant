@@ -568,6 +568,13 @@
       "when": 1792136714785,
       "tag": "0080_trade_decimals",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "6",
+      "when": 1792153453843,
+      "tag": "0081_default_account",
+      "breakpoints": true
     }
   ]
 }

@@ -5,12 +5,16 @@ import {
 	EyeIcon,
 	EyeOffIcon,
 	PencilLineIcon,
+	StarIcon,
+	StarOffIcon,
 	ToggleLeftIcon,
 	ToggleRightIcon,
 	Trash2Icon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+
+import { eligibleForTransactionDefault } from "@archant/data/account-types";
 
 import { DeleteAccountDialog } from "@/components/DeleteAccountDialog";
 import { EditAccountDialog } from "@/components/EditAccountDialog";
@@ -23,18 +27,26 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAccount } from "@/hooks/useAccount";
+import { useRemoveDefaultAccount, useSetDefaultAccount } from "@/hooks/useAccounts";
 import { useAccountToggles } from "@/hooks/useAccountToggles";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
 /**
  * The menu at the end of an account's row on `/accounts`, as Sure's
- * `accounts/_account`: its items, words, icons and order. Sure's sharing,
- * provider and default items have no counterpart here yet. The edit
+ * `accounts/_account`: its items, words, icons and order. Sure's sharing
+ * and provider items have no counterpart here yet. The edit
  * dialog's account and the confirmation's count load only once chosen, so
  * the list sends no request per row.
  */
-export function AccountRowMenu({ account }: { account: AccountSummaryData }) {
+export function AccountRowMenu({
+	account,
+	isDefault,
+}: {
+	account: AccountSummaryData;
+	/** Whether it is the signed-in user's default account for new transactions. */
+	isDefault: boolean;
+}) {
 	const { t } = useTranslation();
 	const trigger = useRef<HTMLButtonElement>(null);
 	const [editing, setEditing] = useState(false);
@@ -43,6 +55,11 @@ export function AccountRowMenu({ account }: { account: AccountSummaryData }) {
 	const [confirming, setConfirming] = useState(false);
 	const detail = useAccount(account.id, { enabled: editing });
 	const toggles = useAccountToggles(account);
+	const setDefault = useSetDefaultAccount();
+	const removeDefault = useRemoveDefaultAccount();
+	const defaultPending = setDefault.isPending || removeDefault.isPending;
+	// No toast on success, as Sure's redirect carries no flash.
+	const onDefaultError = { onError: (error: unknown) => showErrorToast(errorCodeOf(error)) };
 	const [editOpenedAt, setEditOpenedAt] = useState(0);
 	// Only an error since this opening counts: an older one is asked again first.
 	const editFailed = editing && detail.isError && detail.errorUpdatedAt >= editOpenedAt;
@@ -104,6 +121,25 @@ export function AccountRowMenu({ account }: { account: AccountSummaryData }) {
 								: "accounts.rowMenu.excludeFromReports",
 						)}
 					</DropdownMenuItem>
+					{isDefault ? (
+						<DropdownMenuItem
+							disabled={defaultPending}
+							onSelect={() => removeDefault.mutate(account.id, onDefaultError)}
+						>
+							<StarOffIcon aria-hidden="true" className="size-3.5" />
+							{t("accounts.rowMenu.removeDefault")}
+						</DropdownMenuItem>
+					) : (
+						eligibleForTransactionDefault(account) && (
+							<DropdownMenuItem
+								disabled={defaultPending}
+								onSelect={() => setDefault.mutate(account.id, onDefaultError)}
+							>
+								<StarIcon aria-hidden="true" className="size-3.5" />
+								{t("accounts.rowMenu.setDefault")}
+							</DropdownMenuItem>
+						)
+					)}
 					{/* Sure's `!account.linked?`: the server refuses it with ACCOUNT_LINKED. */}
 					{!account.linked && (
 						<>

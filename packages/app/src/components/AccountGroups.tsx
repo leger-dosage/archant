@@ -3,6 +3,8 @@ import type { AccountListData } from "@/hooks/useAccounts";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
+import { supportsDefault } from "@archant/data/account-types";
+
 import { AccountRowMenu } from "@/components/AccountRowMenu";
 import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -73,6 +75,12 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 												<p className="text-xs text-muted-foreground">
 													{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
 												</p>
+												{/* Sure's `supports_default? && is_default`, without its `opacity-50`, which fails contrast. */}
+												{account.id === list.defaultAccountId && supportsDefault(account.type) && (
+													<p className="text-xs text-muted-foreground">
+														{t("accounts.defaultLabel")}
+													</p>
+												)}
 											</div>
 											<Money
 												amount={account.balance}
@@ -81,7 +89,12 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 												className="shrink-0"
 											/>
 										</Link>
-										{admin && <AccountRowMenu account={account} />}
+										{admin && (
+											<AccountRowMenu
+												account={account}
+												isDefault={account.id === list.defaultAccountId}
+											/>
+										)}
 									</li>
 								))}
 							</ul>

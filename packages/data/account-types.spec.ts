@@ -8,6 +8,7 @@ import {
 	classificationOf,
 	creditCardDetailsOf,
 	cryptoDetailsOf,
+	eligibleForTransactionDefault,
 	holdsSecurities,
 	isAccountSubtype,
 	isBankAccountTarget,
@@ -16,6 +17,7 @@ import {
 	loanDetailsOf,
 	transactionsMoveBalance,
 	propertyDetailsOf,
+	supportsDefault,
 	supportsTrades,
 	vehicleDetailsOf,
 } from "./account-types.ts";
@@ -226,6 +228,28 @@ describe("trades and holdings", () => {
 		expect(supportsTrades({ type: "crypto", subtype: "wallet" })).toBe(false);
 		expect(supportsTrades({ type: "crypto", subtype: null })).toBe(false);
 		expect(supportsTrades({ type: "depository", subtype: "checking" })).toBe(false);
+	});
+
+	it("support a default only on a depository or a credit card, as Sure's `supports_default?`", () => {
+		expect(ACCOUNT_TYPE_IDS.filter((type) => supportsDefault(type))).toEqual([
+			"depository",
+			"credit_card",
+		]);
+	});
+
+	it("make an active, unlinked depository or credit card eligible as the default, as Sure's `eligible_for_transaction_default?`", () => {
+		const eligible = { active: true, linked: false };
+
+		expect(eligibleForTransactionDefault({ type: "depository", ...eligible })).toBe(true);
+		expect(eligibleForTransactionDefault({ type: "credit_card", ...eligible })).toBe(true);
+		expect(eligibleForTransactionDefault({ type: "loan", ...eligible })).toBe(false);
+		expect(eligibleForTransactionDefault({ type: "investment", ...eligible })).toBe(false);
+		expect(
+			eligibleForTransactionDefault({ type: "depository", active: false, linked: false }),
+		).toBe(false);
+		expect(eligibleForTransactionDefault({ type: "depository", active: true, linked: true })).toBe(
+			false,
+		);
 	});
 });
 
