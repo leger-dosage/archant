@@ -656,7 +656,7 @@ test("an account's tabs, the creation and import dialogs, the bank picker and a 
 
 	await page.goto("/accounts");
 	await pageHeader(page).getByRole("button", { name: "Ajouter un compte" }).click();
-	const create = page.getByRole("dialog", { name: "Ajouter un compte" });
+	const create = page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" });
 	await expect(create).toHaveCSS("width", "550px");
 	await scan("account creation dialog");
 

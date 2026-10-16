@@ -30,12 +30,7 @@ const errorId = (field: Field) => `property-${field}-error`;
 
 const isAreaUnit = (value: string): value is AreaUnit => AREA_UNITS.some((unit) => unit === value);
 
-/**
- * A property's details in Sure's order and rows (`properties/_form`), as the
- * create dialog and the account edit dialog both edit them, every one
- * optional.
- */
-export function PropertyDetailsFields({ value, onChange, errorOf }: PropertyDetailsFieldsProps) {
+function usePropertyInput({ value, onChange, errorOf }: PropertyDetailsFieldsProps) {
 	const { t } = useTranslation();
 	const set = (patch: Partial<PropertyDetailsInput>) => onChange({ ...value, ...patch });
 	const input = (
@@ -67,6 +62,14 @@ export function PropertyDetailsFields({ value, onChange, errorOf }: PropertyDeta
 		);
 	};
 
+	return { set, input };
+}
+
+/** The year built and the area, Sure's `properties/_overview_fields`. */
+export function PropertyOverviewFields(props: PropertyDetailsFieldsProps) {
+	const { t } = useTranslation();
+	const { set, input } = usePropertyInput(props);
+
 	return (
 		<>
 			{input("yearBuilt", {
@@ -81,7 +84,7 @@ export function PropertyDetailsFields({ value, onChange, errorOf }: PropertyDeta
 				<div className="flex min-w-0 flex-1 flex-col gap-1.5">
 					<Label htmlFor="property-areaUnit">{t("propertyDetails.areaUnit")}</Label>
 					<Select
-						value={value.areaUnit ?? "sqm"}
+						value={props.value.areaUnit ?? "sqm"}
 						onValueChange={(areaUnit) => {
 							if (isAreaUnit(areaUnit)) {
 								set({ areaUnit });
@@ -101,7 +104,16 @@ export function PropertyDetailsFields({ value, onChange, errorOf }: PropertyDeta
 					</Select>
 				</div>
 			</div>
+		</>
+	);
+}
 
+/** The address, Sure's `properties/address`. */
+export function PropertyAddressFields(props: PropertyDetailsFieldsProps) {
+	const { input } = usePropertyInput(props);
+
+	return (
+		<>
 			{input("addressLine1")}
 
 			<div className="flex gap-3">
@@ -113,6 +125,20 @@ export function PropertyDetailsFields({ value, onChange, errorOf }: PropertyDeta
 				{input("postalCode")}
 				{input("country")}
 			</div>
+		</>
+	);
+}
+
+/**
+ * A property's details in Sure's order and rows (`properties/_form`), as the
+ * account edit dialog edits them, every one optional; the creation steps
+ * show the two parts apart.
+ */
+export function PropertyDetailsFields(props: PropertyDetailsFieldsProps) {
+	return (
+		<>
+			<PropertyOverviewFields {...props} />
+			<PropertyAddressFields {...props} />
 		</>
 	);
 }

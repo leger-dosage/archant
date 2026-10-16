@@ -78,7 +78,7 @@ test("« Ajouter un compte » in the page header opens the account dialog", asyn
 	await page.goto("/");
 	await pageHeader(page).getByRole("button", { name: "Ajouter un compte" }).click();
 
-	await expect(page.getByRole("dialog", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" })).toBeVisible();
 });
 
 test("the net worth shows its trend arrow in the trend colour, and its value uncoloured", async ({
@@ -417,7 +417,7 @@ test("a household without accounts sees the empty state", async ({ page }) => {
 	await expect(bilan(page)).toHaveCount(0);
 
 	await empty.getByRole("button", { name: "Ajouter un compte" }).click();
-	await expect(page.getByRole("dialog", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" })).toBeVisible();
 });
 
 // Story 6.2: monthly income and expenses by category. Each test owns a month

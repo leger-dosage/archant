@@ -1,6 +1,7 @@
 import type { Page } from "@playwright/test";
 
 import { expect, test, uniqueName } from "./fixtures.ts";
+import { startAccount } from "./new-account.ts";
 
 // Story 28.15: an account's institution and notes, in Sure's closed
 // « Détails supplémentaires », and the institution on the accounts page's
@@ -19,9 +20,12 @@ test("an account created with its institution and notes shows the institution on
 	const institution = uniqueName("BNP");
 
 	await page.goto("/accounts");
-	await page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }).click();
-	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
-	await dialog.getByLabel("Nom", { exact: true }).fill(name);
+	const dialog = await startAccount(
+		page,
+		page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }),
+		"depository",
+	);
+	await dialog.getByLabel("Nom du compte").fill(name);
 	await dialog.getByLabel("Solde à la date :").fill("100,00");
 
 	// Closed until asked for, as Sure's `<details>`.
@@ -38,8 +42,8 @@ test("an account created with its institution and notes shows the institution on
 		"Stockez des informations supplémentaires comme les numéros de compte, codes de tri, IBAN, numéros de routage, etc.",
 	);
 	await expect(dialog.getByLabel("Notes")).toHaveAttribute("rows", "4");
-	// Creation holds no exclusion switch: Story 28.16 rebuilds it in Sure's steps.
-	await expect(dialog.getByRole("switch")).toHaveCount(0);
+	// Last in the disclosure, as Sure's form; off unless asked.
+	await expect(dialog.getByRole("switch", { name: "Exclure des rapports" })).not.toBeChecked();
 
 	await institutionName.fill(` ${institution} `);
 	await dialog.getByLabel("Domaine de l'institution").fill("bnp.fr");

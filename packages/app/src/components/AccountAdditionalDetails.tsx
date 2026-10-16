@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 export const ADDITIONAL_DETAIL_NAMES = ["institutionName", "institutionDomain", "notes"] as const;
@@ -26,7 +27,7 @@ type AccountAdditionalDetailsProps = {
 	 * the domain keeps the generic placeholder.
 	 */
 	bankName?: string | null | undefined;
-	/** What follows the notes inside the disclosure: the edit dialog's exclusion switch, as in Sure's form. */
+	/** What follows the notes inside the disclosure: the exclusion switch, as in Sure's form. */
 	children?: ReactNode;
 };
 
@@ -116,5 +117,44 @@ export function AccountAdditionalDetails({
 				{children}
 			</div>
 		</details>
+	);
+}
+
+type ExcludedFromReportsSwitchProps = {
+	id: string;
+	checked: boolean;
+	onCheckedChange: (checked: boolean) => void;
+	onBlur: () => void;
+};
+
+/**
+ * Sure's `exclude_from_reports` toggle, last in « Détails supplémentaires »
+ * of both the creation and the edit form.
+ */
+export function ExcludedFromReportsSwitch({
+	id,
+	checked,
+	onCheckedChange,
+	onBlur,
+}: ExcludedFromReportsSwitchProps) {
+	const { t } = useTranslation();
+
+	return (
+		<div className="flex items-start gap-3">
+			<Switch
+				id={id}
+				checked={checked}
+				onCheckedChange={onCheckedChange}
+				onBlur={onBlur}
+				aria-describedby={`${id}-hint`}
+				className="mt-0.5"
+			/>
+			<div className="flex flex-col gap-1">
+				<Label htmlFor={id}>{t("accountActions.form.excludedFromReports")}</Label>
+				<p id={`${id}-hint`} className="text-xs text-muted-foreground">
+					{t("accountActions.form.excludedFromReportsHint")}
+				</p>
+			</div>
+		</div>
 	);
 }

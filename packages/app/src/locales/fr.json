@@ -127,6 +127,55 @@
 	"accounts": {
 		"title": "Comptes",
 		"add": "Ajouter un compte",
+		"types": {
+			"depository": "Liquidités",
+			"investment": "Investissement",
+			"crypto": "Cryptomonnaie",
+			"property": "Bien immobilier",
+			"vehicle": "Véhicule",
+			"credit_card": "Carte de crédit",
+			"loan": "Prêt",
+			"other_asset": "Autre actif",
+			"other_liability": "Autre passif"
+		},
+		"new": {
+			"title": "Que voulez-vous ajouter ?",
+			"back": "Retour",
+			"select": "Sélectionnez",
+			"navigate": "Naviguer",
+			"close": "Fermer",
+			"method": {
+				"title": "Comment voulez-vous l'ajouter ?",
+				"manualEntry": "Saisir le solde du compte",
+				"linkWithProvider": "Lier avec Enable Banking"
+			},
+			"formTitles": {
+				"depository": "Saisir le solde du compte",
+				"investment": "Saisir le solde du compte",
+				"crypto": "Saisir le solde du compte",
+				"credit_card": "Saisir les détails de la carte de crédit",
+				"loan": "Saisir les détails du prêt",
+				"vehicle": "Saisir les détails du véhicule",
+				"other_asset": "Saisir les détails de l'actif",
+				"other_liability": "Saisir les détails de la dette"
+			},
+			"subtype": "Type",
+			"loanSubtypePrompt": "Sélectionner le type de prêt",
+			"property": {
+				"title": "Saisir les détails de la propriété",
+				"manualTitle": "Saisir la propriété manuellement",
+				"steps": "Étapes",
+				"overview": "Vue d'ensemble",
+				"value": "Valeur",
+				"address": "Adresse",
+				"name": "Nom",
+				"namePlaceholder": "Maison de vacances",
+				"type": "Type de propriété",
+				"typePrompt": "Sélectionnez le type",
+				"marketValue": "Valeur marchande estimée",
+				"next": "Suivant"
+			}
+		},
 		"empty": {
 			"title": "Aucun compte pour l'instant",
 			"description": "Ajoutez un compte à la main ou connectez une banque pour suivre vos soldes."
@@ -227,15 +276,12 @@
 			"delete": "Supprimer le compte"
 		},
 		"form": {
-			"title": "Ajouter un compte",
-			"name": "Nom",
-			"type": "Type",
+			"name": "Nom du compte",
 			"currency": "Devise",
 			"balance": "Solde à la date :",
 			"openingDate": "Date du solde d'ouverture",
 			"pickDate": "Choisir une date",
 			"submit": "Ajouter le compte",
-			"cancel": "Annuler",
 			"created": "Compte « {{name}} » ajouté.",
 			"datePlaceholder": "jj/mm/aaaa",
 			"otherAssetNotice": "Les autres actifs sont suivis via des valorisations manuelles à l'aide de « $t(snapshots.add) », et non via des transactions. Les flux de trésorerie n'affecteront pas le solde du compte."

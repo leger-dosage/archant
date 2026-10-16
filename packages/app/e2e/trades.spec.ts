@@ -2,6 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { formatTableDate } from "../src/lib/balance-change.ts";
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
+import { chooseSubtype, startAccount } from "./new-account.ts";
 
 // Story 22.2: buys and sales on an investment account, under « Ordres ».
 // The suite's server keeps price fetching off unless a test turns it on, and
@@ -416,11 +417,13 @@ test("a crypto exchange created through the dialog records a buy of 0,0001666666
 	const date = daysAgo(2);
 
 	await page.goto("/accounts");
-	await page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }).click();
-	const create = page.getByRole("dialog", { name: "Ajouter un compte" });
-	await create.getByLabel("Nom", { exact: true }).fill(name);
-	await create.getByRole("combobox", { name: "Type" }).click();
-	await page.getByRole("option", { name: "Plateforme d'échange crypto" }).click();
+	const create = await startAccount(
+		page,
+		page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }),
+		"crypto",
+	);
+	await create.getByLabel("Nom du compte").fill(name);
+	await chooseSubtype(page, create, "Plateforme d'échange crypto");
 	await expect(create.getByRole("combobox", { name: "Traitement fiscal" })).toHaveText("Imposable");
 	await expect(
 		create.getByRole("combobox", { name: "Traitement fiscal" }),

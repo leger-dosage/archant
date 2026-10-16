@@ -257,7 +257,7 @@ test("a household without accounts sees « Ajouter un compte » alone in the col
 	await expect(column(page).getByRole("link")).toHaveCount(0);
 
 	await column(page).getByRole("button", { name: "Ajouter un compte" }).click();
-	await expect(page.getByRole("dialog", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" })).toBeVisible();
 });
 
 test("the folded accounts column stays folded after a reload", async ({ page }) => {
