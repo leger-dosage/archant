@@ -6034,13 +6034,17 @@ So that coins held on a platform or in a wallet count in net worth, as Sure.
 **When** a cash-flow report runs
 **Then** it is left out, as Sure's `Family#tax_advantaged_account_ids`
 
+**Given** a trade or a holding
+**When** it is stored
+**Then** its quantity keeps 18 decimals and a trade's price 10, as Sure's `trades.qty` and `holdings.qty` `decimal(34,18)` and `trades.price` `decimal(19,10)`, so a buy of 10 € of a coin at 60 000 € keeps 0.000166666666666667; an existing trade or holding keeps its value exactly
+
 **Given** the change
 **When** it lands
 **Then** AD-22 changes with this story
 
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
-**Then** Vitest covers trades by subtype, holdings, tax treatment and the export; Playwright creates an exchange account and records a buy
+**Then** Vitest covers trades by subtype, holdings, tax treatment, the precision migration and the export; Playwright creates an exchange account and records a buy of 0.000166666666666667
 
 ### Story 28.12: Inactive accounts listed, and a menu on each account row
 

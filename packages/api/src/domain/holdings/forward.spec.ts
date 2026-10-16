@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 
+import {
+	quantity as q,
+	quantityFromMicros,
+	tradePrice as p,
+	tradePriceFromMicros,
+} from "../../testing/decimals.ts";
 import { forwardHoldings } from "./forward.ts";
 
 const micros = toMicros;
@@ -21,8 +27,9 @@ const trade = (
 ): HoldingTrade => ({
 	date,
 	securityId,
-	quantity: micros(quantity),
-	price: micros(price),
+	// Millionths, as these cases were written before AD-22 took Sure's decimals.
+	quantity: quantityFromMicros(quantity),
+	price: tradePriceFromMicros(price),
 	fee: toMinorUnits(fee),
 });
 
@@ -30,6 +37,15 @@ const price = (date: string, value: number, securityId = LVMH): StoredPrice => (
 	securityId,
 	date,
 	price: micros(value),
+});
+
+/** A trade at Sure's decimals, typed as plain decimal text. */
+const exact = (date: string, quantity: string, value: string, fee = 0): HoldingTrade => ({
+	date,
+	securityId: LVMH,
+	quantity: q(quantity),
+	price: p(value),
+	fee: toMinorUnits(fee),
 });
 
 // A buy of 10 LVMH at 612.40 € on 2026-09-10, the d of the I/O matrix.
@@ -55,7 +71,7 @@ describe("forwardHoldings", () => {
 			{
 				securityId: LVMH,
 				date: "2026-09-10",
-				quantity: 10_000_000,
+				quantity: "10",
 				price: 612_400_000,
 				amount: 612_400,
 				costBasis: 612_400_000,
@@ -70,7 +86,7 @@ describe("forwardHoldings", () => {
 				until: "2026-09-10",
 				trades: [trade("2026-09-10", 10_000_000, 612_400_000, LVMH, 250)],
 			}),
-		).toEqual(["2026-09-10 lvmh 10000000 612400000 612400 612650000"]);
+		).toEqual(["2026-09-10 lvmh 10 612400000 612400 612650000"]);
 	});
 
 	it("averages the buys with their fees, and leaves a sale's fee out", () => {
@@ -85,9 +101,9 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 100000000 100000 100100000",
-			"2026-09-11 lvmh 20000000 110000000 220000 105200000",
-			"2026-09-12 lvmh 15000000 120000000 180000 105200000",
+			"2026-09-10 lvmh 10 100000000 100000 100100000",
+			"2026-09-11 lvmh 20 110000000 220000 105200000",
+			"2026-09-12 lvmh 15 120000000 180000 105200000",
 		]);
 	});
 
@@ -99,21 +115,21 @@ describe("forwardHoldings", () => {
 				currency: "JPY",
 				trades: [trade("2026-09-10", 3_000_000, 1_000_000_000, LVMH, 10)],
 			}),
-		).toEqual(["2026-09-10 lvmh 3000000 1000000000 3000 1003333333"]);
+		).toEqual(["2026-09-10 lvmh 3 1000000000 3000 1003333333"]);
 	});
 
 	it("takes a provider's price, then carries it over a day without one", () => {
 		expect(rows({ ...bought, prices: [price("2026-09-11", 650_000_000)] })).toEqual([
-			"2026-09-10 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-11 lvmh 10000000 650000000 650000 612400000",
-			"2026-09-12 lvmh 10000000 650000000 650000 612400000",
+			"2026-09-10 lvmh 10 612400000 612400 612400000",
+			"2026-09-11 lvmh 10 650000000 650000 612400000",
+			"2026-09-12 lvmh 10 650000000 650000 612400000",
 		]);
 	});
 
 	it("prefers the day's stored price to the day's trade", () => {
 		expect(
 			rows({ ...bought, until: "2026-09-10", prices: [price("2026-09-10", 640_000_000)] }),
-		).toEqual(["2026-09-10 lvmh 10000000 640000000 640000 612400000"]);
+		).toEqual(["2026-09-10 lvmh 10 640000000 640000 612400000"]);
 	});
 
 	it("weighs the average cost by quantity", () => {
@@ -127,8 +143,8 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 100000000 100000 100000000",
-			"2026-09-11 lvmh 40000000 200000000 800000 175000000",
+			"2026-09-10 lvmh 10 100000000 100000 100000000",
+			"2026-09-11 lvmh 40 200000000 800000 175000000",
 		]);
 	});
 
@@ -143,8 +159,8 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-11 lvmh 6000000 650000000 390000 612400000",
+			"2026-09-10 lvmh 10 612400000 612400 612400000",
+			"2026-09-11 lvmh 6 650000000 390000 612400000",
 		]);
 	});
 
@@ -160,10 +176,10 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 612400000 612400 612400000",
+			"2026-09-10 lvmh 10 612400000 612400 612400000",
 			"2026-09-11 lvmh 0 650000000 0 null",
 			"2026-09-12 lvmh 0 650000000 0 null",
-			"2026-09-13 lvmh 5000000 700000000 350000 700000000",
+			"2026-09-13 lvmh 5 700000000 350000 700000000",
 		]);
 	});
 
@@ -184,8 +200,8 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-11 lvmh 7000000 720000000 504000 720000000",
+			"2026-09-10 lvmh 10 612400000 612400 612400000",
+			"2026-09-11 lvmh 7 720000000 504000 720000000",
 		]);
 	});
 
@@ -201,8 +217,8 @@ describe("forwardHoldings", () => {
 					],
 				}),
 			).toEqual([
-				"2026-09-10 lvmh 10000000 612400000 612400 612400000",
-				"2026-09-11 lvmh -5000000 650000000 -325000 null",
+				"2026-09-10 lvmh 10 612400000 612400 612400000",
+				"2026-09-11 lvmh -5 650000000 -325000 null",
 			]);
 		});
 
@@ -217,7 +233,7 @@ describe("forwardHoldings", () => {
 						trade("2026-09-12", 8_000_000, 700_000_000),
 					],
 				}).at(-1),
-			).toBe("2026-09-12 lvmh 3000000 700000000 210000 700000000");
+			).toBe("2026-09-12 lvmh 3 700000000 210000 700000000");
 		});
 
 		it("keeps the cost basis of what the tracker holds while the position stays below zero", () => {
@@ -233,8 +249,8 @@ describe("forwardHoldings", () => {
 					],
 				}).slice(2),
 			).toEqual([
-				"2026-09-12 lvmh -2000000 700000000 -140000 700000000",
-				"2026-09-13 lvmh -1000000 800000000 -80000 725000000",
+				"2026-09-12 lvmh -2 700000000 -140000 700000000",
+				"2026-09-13 lvmh -1 800000000 -80000 725000000",
 			]);
 		});
 
@@ -249,7 +265,7 @@ describe("forwardHoldings", () => {
 						trade("2026-09-10", 4_000_000, 800_000_000),
 					],
 				}),
-			).toEqual(["2026-09-10 lvmh 2000000 800000000 160000 757142857"]);
+			).toEqual(["2026-09-10 lvmh 2 800000000 160000 757142857"]);
 		});
 
 		it("relieves a sale at the average, which it leaves, and does nothing while the tracker holds nothing", () => {
@@ -264,9 +280,9 @@ describe("forwardHoldings", () => {
 					],
 				}),
 			).toEqual([
-				"2026-09-10 lvmh -5000000 600000000 -300000 null",
-				"2026-09-11 lvmh 3000000 700000000 210000 700000000",
-				"2026-09-12 lvmh 1000000 750000000 75000 700000000",
+				"2026-09-10 lvmh -5 600000000 -300000 null",
+				"2026-09-11 lvmh 3 700000000 210000 700000000",
+				"2026-09-12 lvmh 1 750000000 75000 700000000",
 			]);
 		});
 	});
@@ -286,9 +302,9 @@ describe("forwardHoldings", () => {
 				],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 2000000 1000001 200 1000000",
-			"2026-09-11 lvmh 2000000 1000001 200 1000000",
-			"2026-09-11 air-liquide 3000000 5000 2 5000",
+			"2026-09-10 lvmh 2 1000001 200 1000000",
+			"2026-09-11 lvmh 2 1000001 200 1000000",
+			"2026-09-11 air-liquide 3 5000 2 5000",
 		]);
 	});
 
@@ -300,7 +316,7 @@ describe("forwardHoldings", () => {
 				currency: "JPY",
 				trades: [trade("2026-09-10", 2_000_000, 1_500_500_000)],
 			}),
-		).toEqual(["2026-09-10 lvmh 2000000 1500500000 3001 1500500000"]);
+		).toEqual(["2026-09-10 lvmh 2 1500500000 3001 1500500000"]);
 	});
 
 	it("starts each security on its own first trade, the others carried beside it", () => {
@@ -314,11 +330,11 @@ describe("forwardHoldings", () => {
 				prices: [price("2026-09-12", 182_000_000, AIR)],
 			}),
 		).toEqual([
-			"2026-09-10 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-11 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-11 air-liquide 2000000 180000000 36000 180000000",
-			"2026-09-12 lvmh 10000000 612400000 612400 612400000",
-			"2026-09-12 air-liquide 2000000 182000000 36400 180000000",
+			"2026-09-10 lvmh 10 612400000 612400 612400000",
+			"2026-09-11 lvmh 10 612400000 612400 612400000",
+			"2026-09-11 air-liquide 2 180000000 36000 180000000",
+			"2026-09-12 lvmh 10 612400000 612400 612400000",
+			"2026-09-12 air-liquide 2 182000000 36400 180000000",
 		]);
 	});
 
@@ -330,7 +346,7 @@ describe("forwardHoldings", () => {
 
 		it("replays the trades before it for the quantity and the cost basis, at the last trade's price", () => {
 			expect(rows({ ...bought, until: "2026-09-10", trades: earlier })).toEqual([
-				"2026-09-10 lvmh 40000000 200000000 800000 175000000",
+				"2026-09-10 lvmh 40 200000000 800000 175000000",
 			]);
 		});
 
@@ -342,7 +358,7 @@ describe("forwardHoldings", () => {
 					trades: earlier,
 					pricesBefore: new Map([[LVMH, price("2026-09-08", 210_000_000)]]),
 				}),
-			).toEqual(["2026-09-10 lvmh 40000000 210000000 840000 175000000"]);
+			).toEqual(["2026-09-10 lvmh 40 210000000 840000 175000000"]);
 		});
 
 		it("carries the stored price of the last trade's own day over that trade", () => {
@@ -353,7 +369,7 @@ describe("forwardHoldings", () => {
 					trades: earlier,
 					pricesBefore: new Map([[LVMH, price("2026-09-05", 205_000_000)]]),
 				}),
-			).toEqual(["2026-09-10 lvmh 40000000 205000000 820000 175000000"]);
+			).toEqual(["2026-09-10 lvmh 40 205000000 820000 175000000"]);
 		});
 
 		it("carries the last trade's price when it is later than the last stored one", () => {
@@ -364,7 +380,7 @@ describe("forwardHoldings", () => {
 					trades: earlier,
 					pricesBefore: new Map([[LVMH, price("2026-09-04", 150_000_000)]]),
 				}),
-			).toEqual(["2026-09-10 lvmh 40000000 200000000 800000 175000000"]);
+			).toEqual(["2026-09-10 lvmh 40 200000000 800000 175000000"]);
 		});
 
 		it("adds the day's trades to the replayed state", () => {
@@ -381,5 +397,51 @@ describe("forwardHoldings", () => {
 	it("gives nothing when the start is past the end, or before any trade", () => {
 		expect(forwardHoldings({ ...bought, from: "2026-09-13" })).toEqual([]);
 		expect(forwardHoldings({ ...bought, trades: [] })).toEqual([]);
+	});
+
+	describe("at Sure's decimals", () => {
+		it("values a buy of 0.000166666666666667 at 60 000 € at 10,00 €, the quantity as typed", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-10",
+					trades: [exact("2026-09-10", "0.000166666666666667", "60000")],
+				}),
+			).toEqual(["2026-09-10 lvmh 0.000166666666666667 60000000000 1000 60000000000"]);
+		});
+
+		it("keeps eighteen decimals of a large quantity across buys and a sale", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-11",
+					trades: [
+						exact("2026-09-10", "12345.123456789012345678", "1"),
+						exact("2026-09-11", "0.000000000000000001", "1"),
+						exact("2026-09-11", "-0.5", "1"),
+					],
+				}),
+			).toEqual([
+				"2026-09-10 lvmh 12345.123456789012345678 1000000 1234512 1000000",
+				"2026-09-11 lvmh 12344.623456789012345679 1000000 1234462 1000000",
+			]);
+		});
+
+		it("rounds a day's last trade price half to even to the millionth its holdings keep", () => {
+			expect(
+				rows({
+					...bought,
+					until: "2026-09-11",
+					trades: [
+						exact("2026-09-10", "1000", "0.0000015"),
+						exact("2026-09-11", "1000", "0.0000025"),
+					],
+				}),
+			).toEqual([
+				// The cost basis, a millionth and a half, ties to the even two.
+				"2026-09-10 lvmh 1000 2 0 2",
+				"2026-09-11 lvmh 2000 2 0 2",
+			]);
+		});
 	});
 });

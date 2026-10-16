@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import type { TransactionFormInput } from "@archant/api/schemas/transactions";
 import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { AccountType } from "@archant/data/account-types";
+import { supportsTrades } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
@@ -59,8 +60,9 @@ type FieldName = (typeof FIELD_NAMES)[number];
 export type SheetAccount = {
 	id: string;
 	currency: CurrencyCode;
-	/** An investment account's lines can be converted into trades. */
+	/** An investment account's or a crypto exchange's lines can be converted into trades. */
 	type: AccountType;
+	subtype: string | null;
 };
 
 function sameTags(a: readonly string[], b: readonly string[]): boolean {
@@ -298,7 +300,7 @@ export function TransactionForm({
 					/>
 				)}
 				{/* The ledger's conversion refuses what it refuses a split (AD-20). */}
-				{transaction !== null && admin && account.type === "investment" && splittable && (
+				{transaction !== null && admin && supportsTrades(account) && splittable && (
 					<ConvertBlock
 						transaction={transaction}
 						currency={account.currency}

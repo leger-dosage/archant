@@ -2,7 +2,7 @@ import type { TradeInput, TradePatchInput } from "../schemas/trades.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { TradeRecord } from "./ledger/trades.ts";
 
-import { formatMicros } from "@archant/data/micros";
+import { holdsSecurities, supportsTrades } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -15,35 +15,32 @@ import {
 	findTrade,
 	listTrades,
 	recordTrade,
+	tradesNotSupported,
 	updateTrade as updateLedgerTrade,
 } from "./ledger/trades.ts";
 
-/** A trade as the API answers it: quantity and price as plain decimal strings. */
-export type TradeData = Omit<TradeRecord, "quantity" | "price"> & {
-	/** Unsigned: `side` gives the sign. */
-	quantity: string;
-	/** Per unit, in the account's currency. */
-	price: string;
-};
+/**
+ * A trade as the API answers it: quantity and price as their canonical
+ * decimal text, Sure's decimal, never a JSON number that would round them.
+ */
+export type TradeData = TradeRecord;
 
 export type TradePage = { items: TradeData[]; page: number; pageSize: number; total: number };
 
-const notAnInvestmentAccount = () =>
-	new AppError("NOT_AN_INVESTMENT_ACCOUNT", "Only an investment account holds trades.");
-
-function toData({ quantity, price, ...record }: TradeRecord): TradeData {
-	return { ...record, quantity: formatMicros(quantity), price: formatMicros(price) };
-}
-
-/** The account's currency, refused unless it is an investment account. */
-export async function investmentCurrency(
+/**
+ * The account's currency, refused unless the account takes new trades,
+ * Sure's `supports_trades?`, or with `held`, unless it holds securities,
+ * which is all editing a trade asks (AD-22).
+ */
+export async function tradeCurrency(
 	deps: ServiceDeps,
 	accountId: string,
+	{ held = false }: { held?: boolean } = {},
 ): Promise<CurrencyCode> {
 	const account = await getAccount(deps, accountId);
 
-	if (account.type !== "investment") {
-		throw notAnInvestmentAccount();
+	if (held ? !holdsSecurities(account.type) : !supportsTrades(account)) {
+		throw tradesNotSupported();
 	}
 
 	if (!isCurrencyCode(account.currency)) {
@@ -61,13 +58,13 @@ export async function getTrade(deps: ServiceDeps, id: string): Promise<TradeData
 		throw new AppError("NOT_FOUND", "No trade has this id.");
 	}
 
-	return toData(record);
+	return record;
 }
 
 /**
  * A page of one account's trades, most recent first, only those in
  * `securityId` when it is given. Any account answers, a page with no trade
- * for one that is not an investment account.
+ * for one that holds no securities.
  */
 export async function listAccountTrades(
 	deps: ServiceDeps,
@@ -77,7 +74,7 @@ export async function listAccountTrades(
 	await getAccount(deps, accountId);
 	const { items, total } = await listTrades(deps, accountId, page);
 
-	return { items: items.map(toData), page: page.page, pageSize: page.pageSize, total };
+	return { items, page: page.page, pageSize: page.pageSize, total };
 }
 
 /** Records a buy, a sale, a dividend or interest on the user's behalf. */
@@ -86,7 +83,7 @@ export async function createTrade(
 	accountId: string,
 	input: TradeInput,
 ): Promise<TradeData> {
-	const currency = await investmentCurrency(deps, accountId);
+	const currency = await tradeCurrency(deps, accountId);
 	const parsed = createTradeSchema(currency).safeParse(input);
 
 	if (!parsed.success) {
@@ -108,7 +105,7 @@ export async function updateTrade(
 	input: TradePatchInput,
 ): Promise<TradeData> {
 	const current = await getTrade(deps, id);
-	const currency = await investmentCurrency(deps, current.accountId);
+	const currency = await tradeCurrency(deps, current.accountId, { held: true });
 	const parsed = updateTradeSchema(currency).safeParse(input);
 
 	if (!parsed.success) {

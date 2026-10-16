@@ -5,6 +5,7 @@ import type {
 	AccountSubtype,
 	AccountType,
 	CreditCardDetails,
+	CryptoDetails,
 	LoanDetails,
 	LoanRateChange,
 	PropertyDetails,
@@ -19,6 +20,7 @@ import {
 	LOAN_RATE_TYPES,
 	MAX_LOAN_TERM_MONTHS,
 	MILEAGE_UNITS,
+	TAX_TREATMENTS,
 	isAccountSubtype,
 	isSubtypeOf,
 } from "@archant/data/account-types";
@@ -415,6 +417,16 @@ export const vehicleDetailsInputSchema = z.object({
 
 export type VehicleDetailsInput = z.input<typeof vehicleDetailsInputSchema>;
 
+/**
+ * A crypto account's tax treatment, Sure's `Crypto.tax_treatments`: any
+ * other value is refused, as Sure's enum; none is `taxable`, its default.
+ */
+export const cryptoDetailsInputSchema = z.object({
+	taxTreatment: z.enum(TAX_TREATMENTS).optional(),
+});
+
+export type CryptoDetailsInput = z.input<typeof cryptoDetailsInputSchema>;
+
 type DetailsIssue<Field extends string> = {
 	field: Field;
 	code: "invalid_number" | "too_long" | "invalid_year" | "invalid_area" | "invalid_mileage";
@@ -513,7 +525,8 @@ function parseVehicleDetails(input: VehicleDetailsInput): {
 const accountDetailsInputSchema = loanDetailsInputSchema
 	.extend(creditCardDetailsInputSchema.shape)
 	.extend(propertyDetailsInputSchema.shape)
-	.extend(vehicleDetailsInputSchema.shape);
+	.extend(vehicleDetailsInputSchema.shape)
+	.extend(cryptoDetailsInputSchema.shape);
 
 type AccountDetailsInput = z.input<typeof accountDetailsInputSchema>;
 
@@ -585,6 +598,14 @@ const DETAILS_BY_TYPE = {
 			}
 
 			return { details: parsed.details, issues };
+		},
+	},
+	crypto: {
+		fields: cryptoDetailsInputSchema.keyof().options,
+		parse: (input: AccountDetailsInput): ParsedDetails => {
+			const details: CryptoDetails = { taxTreatment: input.taxTreatment ?? "taxable" };
+
+			return { details, issues: [] };
 		},
 	},
 } satisfies Partial<
@@ -694,8 +715,8 @@ const accountCreationSchema = (dialog: boolean) =>
 			// Every day from the opening date gets a balance row, written under the
 			// write lock: year 1 would mean 740 000 rows in one transaction.
 			openingDate: z.iso.date().refine((date) => date >= EARLIEST_OPENING_DATE, "date_too_early"),
-			// A loan's, a credit card's, a property's or a vehicle's only; any
-			// other type refuses them.
+			// A loan's, a credit card's, a property's, a vehicle's or a crypto
+			// account's only; any other type refuses them.
 			details: accountDetailsInputSchema.optional(),
 		})
 		// Runs even when another field failed, so the form shows every error at
@@ -777,6 +798,7 @@ export const updateAccountSchema = z
 				creditCardDetailsInputSchema.required(),
 				propertyDetailsInputSchema.required(),
 				vehicleDetailsInputSchema.required(),
+				cryptoDetailsInputSchema.required(),
 			])
 			.optional(),
 		treatBalanceAsAvailableCredit: z.boolean().optional(),

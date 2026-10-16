@@ -554,6 +554,20 @@
       "when": 1792093971318,
       "tag": "0078_other_asset_and_liability",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "6",
+      "when": 1792136598306,
+      "tag": "0079_crypto_accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "6",
+      "when": 1792136714785,
+      "tag": "0080_trade_decimals",
+      "breakpoints": true
     }
   ]
 }

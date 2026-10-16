@@ -555,6 +555,14 @@ describe("detection as Sure's identifier", () => {
 		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 0 });
 		await expect(stored()).resolves.toEqual([]);
 	});
+
+	it("leaves a crypto account out, as an investment one, Sure's #3565", async () => {
+		const wallet = await account("Crypto", { type: "crypto", subtype: "wallet" });
+		await addRows(wallet, ["2026-07-10", "2026-08-10", "2026-09-10"], "ACHAT BTC", 10_000);
+
+		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 0 });
+		await expect(stored()).resolves.toEqual([]);
+	});
 });
 
 describe("deleteRecurring", () => {

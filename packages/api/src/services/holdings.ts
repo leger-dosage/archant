@@ -5,6 +5,7 @@ import type { CurrentHolding, LastHeldHolding } from "./ledger/holdings.ts";
 
 import { and, eq, inArray } from "drizzle-orm";
 
+import { holdsSecurities } from "@archant/data/account-types";
 import type { Micros } from "@archant/data/micros";
 import { formatMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
@@ -91,7 +92,7 @@ export async function listPositions(deps: ServiceDeps, accountId: string): Promi
 
 			return {
 				security: holding.security,
-				quantity: formatMicros(holding.quantity),
+				quantity: holding.quantity,
 				price: formatMicros(holding.price),
 				priceDate: holding.priceDate,
 				amount: holding.amount,
@@ -136,8 +137,8 @@ export type HoldingsAcrossAccounts = {
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
 /**
- * Each security's last held row on every active investment account, as
- * Sure's `get_holdings` reads its investment accounts' holdings: a security
+ * Each security's last held row on every active investment or crypto
+ * account, as Sure's `get_holdings` reads its accounts' holdings: a security
  * sold out stays listed at its last quantity. An inactive account is left
  * out, as Sure keeps to visible accounts; one excluded from reports is not,
  * as Sure's is not either. The total sums what is listed, sold-out rows
@@ -152,16 +153,19 @@ export async function listHoldings(
 	const day = today(deps.timeZone);
 	const named = await idsNamed(deps, "accounts", filter.accountNames);
 	const ids = [filter.accountIds, named].filter((list) => list !== undefined);
-	const rows = await deps.db
-		.select({ id: accounts.id, name: accounts.name, currency: accounts.currency })
-		.from(accounts)
-		.where(
-			and(
-				eq(accounts.type, "investment"),
-				eq(accounts.active, true),
-				...ids.map((list) => inArray(accounts.id, [...list])),
-			),
-		);
+	const rows = (
+		await deps.db
+			.select({
+				id: accounts.id,
+				name: accounts.name,
+				type: accounts.type,
+				currency: accounts.currency,
+			})
+			.from(accounts)
+			.where(and(eq(accounts.active, true), ...ids.map((list) => inArray(accounts.id, [...list]))))
+	)
+		.filter((account) => holdsSecurities(account.type))
+		.map(({ type: _type, ...account }) => account);
 	const tickers =
 		filter.tickers === undefined
 			? undefined

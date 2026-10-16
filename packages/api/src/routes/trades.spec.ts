@@ -215,7 +215,7 @@ describe("POST /api/accounts/:id/trades", () => {
 		const { status, body } = await postTrade(account.id, buyBody(securityId));
 
 		expect(status).toBe(409);
-		expect(errorBody.parse(body).error.code).toBe("NOT_AN_INVESTMENT_ACCOUNT");
+		expect(errorBody.parse(body).error.code).toBe("TRADES_NOT_SUPPORTED");
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {
@@ -227,7 +227,9 @@ describe("POST /api/accounts/:id/trades", () => {
 	it.each([
 		[{ quantity: "0" }, "quantity", "invalid_quantity"],
 		[{ quantity: "-1" }, "quantity", "invalid_quantity"],
-		[{ quantity: "1,2345678" }, "quantity", "invalid_quantity"],
+		// One decimal past Sure's 18 is refused, never rounded.
+		[{ quantity: "1,0000000000000000001" }, "quantity", "invalid_quantity"],
+		[{ price: "1,00000000001" }, "price", "invalid_price"],
 		[{ price: "abc" }, "price", "invalid_price"],
 		[{ price: "-1" }, "price", "invalid_price"],
 		[{ fee: "1,234" }, "fee", "invalid_amount"],
@@ -636,7 +638,7 @@ describe("POST /api/transactions/:id/trade", () => {
 		expect(again.status).toBe(409);
 		expect(errorBody.parse(again.body).error.code).toBe("NOT_CONVERTIBLE");
 		expect(other.status).toBe(409);
-		expect(errorBody.parse(other.body).error.code).toBe("NOT_AN_INVESTMENT_ACCOUNT");
+		expect(errorBody.parse(other.body).error.code).toBe("TRADES_NOT_SUPPORTED");
 		expect(unknown.status).toBe(404);
 	});
 
@@ -647,5 +649,99 @@ describe("POST /api/transactions/:id/trade", () => {
 
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.code).toBe("VALIDATION_ERROR");
+	});
+});
+
+/** A crypto account opened on 2026-09-01 with 1 000,00 €. */
+async function openCrypto(subtype: "exchange" | "wallet") {
+	return openAccount({
+		name: "Crypto",
+		type: "crypto",
+		subtype,
+		openingBalance: "1 000,00",
+		openingDate: "2026-09-01",
+	});
+}
+
+/** Story 28.11's buy: 0,01 at 50 000 € with 2,00 € of fees. */
+const bitcoin = (securityId: string, overrides: Record<string, unknown> = {}) =>
+	buyBody(securityId, { quantity: "0,01", price: "50 000", fee: "2,00", ...overrides });
+
+describe("crypto accounts", () => {
+	it("records a buy of 0,01 at 50 000 € on an exchange: 502 € of cash out, a position of 500 €", async () => {
+		const exchange = await openCrypto("exchange");
+		const securityId = await newSecurity();
+
+		const trade = await recorded(exchange.id, bitcoin(securityId));
+
+		expect(trade).toMatchObject({ quantity: "0.01", price: "50000", fee: 200, amount: -50_200 });
+		await expect(cashOf(exchange.id)).resolves.toBe(100_000 - 50_200);
+		await expect(positionsOf(exchange.id)).resolves.toMatchObject([
+			{ quantity: "0.01", amount: 50_000, costBasis: "50200" },
+		]);
+		await expect(balanceOf(exchange.id)).resolves.toBe(100_000 - 200);
+	});
+
+	it("refuses a trade and a conversion on a wallet with TRADES_NOT_SUPPORTED", async () => {
+		const wallet = await openCrypto("wallet");
+		const securityId = await newSecurity();
+		const line = await lineOf(wallet.id, "-502,00");
+
+		const trade = await postTrade(wallet.id, bitcoin(securityId));
+		const conversion = await request(
+			"POST",
+			`/api/transactions/${line}/trade`,
+			convertBody(securityId, { quantity: "0,01", price: "50 000" }),
+		);
+
+		for (const { status, body } of [trade, conversion]) {
+			expect(status).toBe(409);
+			expect(errorBody.parse(body).error).toEqual({
+				code: "TRADES_NOT_SUPPORTED",
+				message: "Account does not support trades",
+			});
+		}
+	});
+
+	it("keeps an exchange's trade editable and its position once it becomes a wallet", async () => {
+		const exchange = await openCrypto("exchange");
+		const securityId = await newSecurity();
+		const trade = await recorded(exchange.id, bitcoin(securityId));
+		await request("PATCH", `/api/accounts/${exchange.id}`, { subtype: "wallet" });
+
+		const { status, body } = await request("PATCH", `/api/trades/${trade.id}`, {
+			quantity: "0,02",
+		});
+
+		expect(status, JSON.stringify(body)).toBe(200);
+		expect(tradeBody.parse(body).data).toMatchObject({ quantity: "0.02", amount: -100_200 });
+		await expect(positionsOf(exchange.id)).resolves.toMatchObject([{ quantity: "0.02" }]);
+	});
+
+	it("records 0,000166666666666667 at 60 000 € as typed, a position of 10,00 €, and 12 345,123456789012345678 exactly", async () => {
+		const exchange = await openCrypto("exchange");
+		const small = await newSecurity();
+		const large = await newSecurity();
+
+		const smallTrade = await recorded(
+			exchange.id,
+			bitcoin(small, { quantity: "0,000166666666666667", price: "60 000", fee: "0" }),
+		);
+		const largeTrade = await recorded(
+			exchange.id,
+			bitcoin(large, { quantity: "12 345,123456789012345678", price: "0,0000000001", fee: "0" }),
+		);
+
+		expect(smallTrade).toMatchObject({ quantity: "0.000166666666666667", amount: -1000 });
+		expect(largeTrade).toMatchObject({
+			quantity: "12345.123456789012345678",
+			price: "0.0000000001",
+		});
+		await expect(positionsOf(exchange.id)).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ quantity: "0.000166666666666667", amount: 1000 }),
+				expect.objectContaining({ quantity: "12345.123456789012345678" }),
+			]),
+		);
 	});
 });

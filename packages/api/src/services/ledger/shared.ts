@@ -1,10 +1,9 @@
 import type { ServiceDeps } from "../deps.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 
-import { and, inArray, isNotNull, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
 import { QueryBuilder, alias } from "drizzle-orm/sqlite-core";
 
-import { toMicros } from "@archant/data/micros";
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
@@ -138,11 +137,34 @@ export async function refuseSplit(
 	}
 }
 
+// A quantity is canonical decimal text (`decimals.ts`), so its sign reads from
+// the text: zero is exactly `'0'`, below zero starts with `-`. The literals
+// stay in the query's text, never bound: SQLite proves a partial index
+// applies only from it.
+
+/** A quantity other than zero. */
+export function quantityNotZero(quantity: SQLWrapper): SQL {
+	return sql`${quantity} <> '0'`;
+}
+
+/** A quantity above zero. */
+export function quantityAboveZero(quantity: SQLWrapper): SQL {
+	return sql`(${quantity} <> '0' and ${quantity} not like '-%')`;
+}
+
+/**
+ * A quantity of zero or below: the `where` of the partial index
+ * `holdings_not_held`, word for word.
+ */
+export function quantityNotAboveZero(quantity: SQLWrapper): SQL {
+	return sql`(${quantity} = '0' or ${quantity} like '-%')`;
+}
+
 /**
  * Trades that move a quantity: holdings and the held securities drop an
  * income, as Sure's `PortfolioCache` drops a trade of quantity zero.
  */
-export const movesQuantity = ne(trades.quantity, toMicros(0));
+export const movesQuantity = quantityNotZero(trades.quantity);
 
 /** A trade's security, typed as never null where `movesQuantity` holds: only interest is on cash. */
 export const tradedSecurityId = sql<string>`${trades.securityId}`;

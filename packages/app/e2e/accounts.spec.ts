@@ -361,6 +361,55 @@ test("the owner's ING mortgage created through the form is listed under « Passi
 	await expect(edit.getByRole("combobox", { name: "Type d'assurance" })).toHaveText("Constante");
 });
 
+// Story 28.11: Sure's `cryptos/_form`, its subtype and tax treatment in both dialogs.
+test("a crypto account's tax treatment and subtype typed at creation read back in its edit dialog, and change there", async ({
+	page,
+}) => {
+	const name = uniqueName("Crypto");
+
+	await page.goto("/accounts");
+	await addAccount(page).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Plateforme d'échange crypto" }).click();
+	await dialog.getByRole("combobox", { name: "Traitement fiscal" }).click();
+	await page.getByRole("option", { name: "Exonéré d'impôt" }).click();
+	await dialog.getByLabel("Solde à la date :").fill("1 000,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(dialog).toBeHidden();
+
+	await page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) })
+		.click();
+	const openEdit = async () => {
+		await page.getByRole("button", { name: `Actions du compte ${name}` }).click();
+		await page.getByRole("menuitem", { name: "Modifier" }).click();
+
+		return page.getByRole("dialog", { name: "Modifier le compte" });
+	};
+	const edit = await openEdit();
+	await expect(edit.getByRole("combobox", { name: "Type" })).toHaveText(
+		"Plateforme d'échange crypto",
+	);
+	await expect(edit.getByRole("combobox", { name: "Traitement fiscal" })).toHaveText(
+		"Exonéré d'impôt",
+	);
+	await edit.getByRole("combobox", { name: "Traitement fiscal" }).click();
+	await page.getByRole("option", { name: "Imposition différée" }).click();
+	await edit.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Portefeuille crypto" }).click();
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(edit).toBeHidden();
+
+	const again = await openEdit();
+	await expect(again.getByRole("combobox", { name: "Type" })).toHaveText("Portefeuille crypto");
+	await expect(again.getByRole("combobox", { name: "Traitement fiscal" })).toHaveText(
+		"Imposition différée",
+	);
+});
+
 // Story 28.2: Sure's `credit_cards/_form`, its fields in its order and rows.
 test("a card's details typed at creation read back in its edit dialog, with no toggle unlinked", async ({
 	page,

@@ -16,6 +16,7 @@ import { securityPrices } from "@archant/data/schema/securities";
 import { taggings } from "@archant/data/schema/taggings";
 import { trades } from "@archant/data/schema/trades";
 
+import { quantity as qty, quantityFromMicros, tradePrice } from "../../testing/decimals.ts";
 import {
 	add,
 	addStandard,
@@ -180,8 +181,8 @@ describe("holdingPages", () => {
 					side: "buy",
 					security,
 					date,
-					quantity: toMicros(2_000_000),
-					price: toMicros(10_500_000),
+					quantity: qty("2"),
+					price: tradePrice("10.5"),
 					fee: toMinorUnits(0),
 				},
 				{ origin: "user" },
@@ -210,7 +211,7 @@ describe("holdingPages", () => {
 			rows.find((row) => row.date === "2026-09-15" && row.security.name === "Parts sociales"),
 		).toMatchObject({
 			accountId: pea.id,
-			quantity: 2_000_000,
+			quantity: "2",
 			price: 10_500_000,
 			amount: 2100,
 			costBasis: 10_500_000,
@@ -232,8 +233,8 @@ describe("the cost basis locks and typed prices", () => {
 					side,
 					security: { source: "manual", isin: "FR0010315771", name: "Fonds verrouillé" },
 					date,
-					quantity: toMicros(quantity),
-					price: toMicros(10_500_000),
+					quantity: quantityFromMicros(quantity),
+					price: tradePrice("10.5"),
 					fee: toMinorUnits(0),
 				},
 				{ origin: "user" },

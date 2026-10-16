@@ -13,6 +13,7 @@ import { and, asc, between, desc, eq, inArray, isNull, ne, or, sql } from "drizz
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
+import { holdsSecurities } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { BillType } from "@archant/data/recurring";
@@ -188,8 +189,8 @@ type Candidate = Omit<Awaited<ReturnType<typeof ruleCandidates>>[number], "trans
 /**
  * Six months of transactions, split parents left out for their children, every
  * account read as Sure's identifier does. `detectable` also leaves out the
- * investment accounts, whose dividends and contributions recur without being
- * bills, as Sure's `NON_BILLABLE_ACCOUNTABLE_TYPES`. `creditCards` are the
+ * investment and crypto accounts, whose dividends and contributions recur
+ * without being bills, as Sure's `NON_BILLABLE_ACCOUNTABLE_TYPES`. `creditCards` are the
  * accounts the classifier reads a flat charge on. A transfer's outflow carries
  * the account it pays into, which a recurring transfer reads.
  */
@@ -208,14 +209,14 @@ export async function loadCandidates(
 				: { ...row.transfer, intoAccountId: destinations.get(row.id) ?? null },
 	}));
 	const types = await tx.select({ id: accounts.id, type: accounts.type }).from(accounts);
-	const of = (type: AccountType) =>
-		new Set(types.filter((account) => account.type === type).map((account) => account.id));
-	const investments = of("investment");
+	const of = (keep: (type: AccountType) => boolean) =>
+		new Set(types.filter((account) => keep(account.type)).map((account) => account.id));
+	const holdingSecurities = of(holdsSecurities);
 
 	return {
 		candidates,
-		detectable: candidates.filter((candidate) => !investments.has(candidate.accountId)),
-		creditCards: of("credit_card"),
+		detectable: candidates.filter((candidate) => !holdingSecurities.has(candidate.accountId)),
+		creditCards: of((type) => type === "credit_card"),
 	};
 }
 

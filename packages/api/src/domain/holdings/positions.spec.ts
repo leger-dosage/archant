@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 
+import { quantity as q } from "../../testing/decimals.ts";
 import { positionFigures, weightOf } from "./positions.ts";
 
 const total = toMinorUnits(1_000_000);
@@ -13,7 +14,7 @@ describe("positionFigures", () => {
 		expect(
 			positionFigures(
 				{
-					quantity: toMicros(100_000_000),
+					quantity: q("100"),
 					amount: toMinorUnits(600_000),
 					costBasis: toMicros(50_000_000),
 				},
@@ -26,7 +27,7 @@ describe("positionFigures", () => {
 	it("gives a line worth nothing a zero weight and a loss of its whole cost", () => {
 		expect(
 			positionFigures(
-				{ quantity: toMicros(3_000_000), amount: toMinorUnits(0), costBasis: toMicros(10_000_000) },
+				{ quantity: q("3"), amount: toMinorUnits(0), costBasis: toMicros(10_000_000) },
 				total,
 				"EUR",
 			),
@@ -36,7 +37,7 @@ describe("positionFigures", () => {
 	it("counts a free share's whole value as gain, with no percentage", () => {
 		expect(
 			positionFigures(
-				{ quantity: toMicros(2_000_000), amount: toMinorUnits(12_000), costBasis: toMicros(0) },
+				{ quantity: q("2"), amount: toMinorUnits(12_000), costBasis: toMicros(0) },
 				total,
 				"EUR",
 			),
@@ -46,7 +47,7 @@ describe("positionFigures", () => {
 	it("gives no book value, gain or percentage without a cost basis", () => {
 		expect(
 			positionFigures(
-				{ quantity: toMicros(2_000_000), amount: toMinorUnits(12_000), costBasis: null },
+				{ quantity: q("2"), amount: toMinorUnits(12_000), costBasis: null },
 				total,
 				"EUR",
 			),
@@ -57,7 +58,7 @@ describe("positionFigures", () => {
 		// 1 of 3: 33.3333333… %; a gain of 1 on 3.
 		expect(
 			positionFigures(
-				{ quantity: toMicros(1_000_000), amount: toMinorUnits(4), costBasis: toMicros(30_000) },
+				{ quantity: q("1"), amount: toMinorUnits(4), costBasis: toMicros(30_000) },
 				toMinorUnits(12),
 				"EUR",
 			),
@@ -68,7 +69,7 @@ describe("positionFigures", () => {
 		// Cash of −7 000 € beside 6 000 € of holdings.
 		const negative = positionFigures(
 			{
-				quantity: toMicros(100_000_000),
+				quantity: q("100"),
 				amount: toMinorUnits(600_000),
 				costBasis: toMicros(50_000_000),
 			},
@@ -86,7 +87,7 @@ describe("positionFigures", () => {
 		expect(
 			positionFigures(
 				{
-					quantity: toMicros(1_000_000_000_000),
+					quantity: q("1000000"),
 					amount: toMinorUnits(600_000),
 					costBasis: toMicros(10_000_000_000_000),
 				},
@@ -101,7 +102,7 @@ describe("positionFigures", () => {
 		expect(
 			positionFigures(
 				{
-					quantity: toMicros(-2_000_000),
+					quantity: q("-2"),
 					amount: toMinorUnits(-144_000),
 					costBasis: toMicros(700_000_000),
 				},
@@ -116,7 +117,7 @@ describe("positionFigures", () => {
 		expect(
 			positionFigures(
 				{
-					quantity: toMicros(-1_000_000_000_000),
+					quantity: q("-1000000"),
 					amount: toMinorUnits(-600_000),
 					costBasis: toMicros(10_000_000_000_000),
 				},
@@ -131,7 +132,7 @@ describe("positionFigures", () => {
 		expect(
 			positionFigures(
 				{
-					quantity: toMicros(1_000_000),
+					quantity: q("1"),
 					amount: toMinorUnits(100_000_000),
 					costBasis: toMicros(10_000),
 				},

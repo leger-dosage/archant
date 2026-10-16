@@ -1,6 +1,7 @@
 import type { IsoDate } from "./dates.ts";
 
 import type { AccountType } from "@archant/data/account-types";
+import { holdsSecurities } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import type { EntryKind } from "@archant/data/schema/entries";
 import type { TransferKind } from "@archant/data/transfer-kinds";
@@ -74,21 +75,27 @@ export function isTransferCandidate(a: TransferSide, b: TransferSide, windowDays
 /**
  * The kind of a transfer, as Sure's `Transfer::Creator#outflow_transaction_kind`:
  * the inflow account's type decides, so a card paying off a loan is a loan
- * payment too. Only an investment looks at the outflow side as well: money
- * moved between two investments, or out of one into a depository, is an
- * internal move, so an arbitrage from a PEA to an assurance-vie never counts
- * as spending.
+ * payment too. Only an investment or a crypto account looks at the outflow
+ * side as well: money moved between two of them, or out of one into a
+ * depository, is an internal move, so an arbitrage from a PEA to an
+ * assurance-vie never counts as spending.
  */
 export function transferKindOf(
 	inflowAccountType: AccountType,
 	outflowAccountType: AccountType,
 ): TransferKind {
+	// Sure's `investment? || crypto?`: money landing on either is a
+	// contribution, unless it left one of them.
+	const contribution = holdsSecurities(outflowAccountType)
+		? "internal_move"
+		: "investment_contribution";
 	// A record, so a new account type does not compile until it names its kind.
 	const kinds: Record<AccountType, TransferKind> = {
 		depository: "internal_move",
 		credit_card: "credit_card_payment",
 		loan: "loan_payment",
-		investment: outflowAccountType === "investment" ? "internal_move" : "investment_contribution",
+		investment: contribution,
+		crypto: contribution,
 		// Sure's `Transfer::Creator` falls through to `funds_movement` for both.
 		property: "internal_move",
 		vehicle: "internal_move",

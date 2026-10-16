@@ -6,6 +6,7 @@ import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 
+import { quantity as qty, tradePrice } from "../testing/decimals.ts";
 import {
 	deps,
 	openChecking,
@@ -48,8 +49,8 @@ async function buy(accountId: string, securityId: string, fields: Partial<OrderI
 			side: "buy",
 			security: { source: "known", id: securityId },
 			date: "2026-09-10",
-			quantity: toMicros(100_000_000),
-			price: toMicros(50_000_000),
+			quantity: qty("100"),
+			price: tradePrice("50"),
 			fee: toMinorUnits(0),
 			...fields,
 		},
@@ -84,7 +85,7 @@ async function twoLines(opening = 900_000) {
 	const a = await newSecurity("A");
 	const b = await newSecurity("B");
 	await buy(pea.id, a);
-	await buy(pea.id, b, { quantity: toMicros(10_000_000), price: toMicros(0) });
+	await buy(pea.id, b, { quantity: qty("10"), price: tradePrice("0") });
 	await price(a, 60_000_000);
 
 	return { pea, a, b };
@@ -155,8 +156,8 @@ describe("listPositions", () => {
 		await buy(pea.id, c, {
 			side: "sell",
 			date: "2026-09-16",
-			quantity: toMicros(5_000_000),
-			price: toMicros(40_000_000),
+			quantity: qty("5"),
+			price: tradePrice("40"),
 		});
 
 		const holdings = await listPositions(deps(), pea.id);
@@ -238,16 +239,16 @@ describe("setCostBasis and unlockCostBasis", () => {
 
 		await expect(setCostBasis(deps(), pea.id, a, { costBasis: "-1" })).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
-			fields: [{ path: "costBasis", code: "invalid_price" }],
+			fields: [{ path: "costBasis", code: "invalid_cost_basis" }],
 		});
 		await expect(setCostBasis(deps(), pea.id, a, { costBasis: "4O" })).rejects.toMatchObject({
-			fields: [{ path: "costBasis", code: "invalid_price" }],
+			fields: [{ path: "costBasis", code: "invalid_cost_basis" }],
 		});
 		await expect(setCostBasis(deps(), checking.id, a, { costBasis: "40" })).rejects.toMatchObject({
-			code: "NOT_AN_INVESTMENT_ACCOUNT",
+			code: "TRADES_NOT_SUPPORTED",
 		});
 		await expect(unlockCostBasis(deps(), checking.id, a)).rejects.toMatchObject({
-			code: "NOT_AN_INVESTMENT_ACCOUNT",
+			code: "TRADES_NOT_SUPPORTED",
 		});
 		await expect(setCostBasis(deps(), "nope", a, { costBasis: "40" })).rejects.toMatchObject({
 			code: "NOT_FOUND",

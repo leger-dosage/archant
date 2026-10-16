@@ -11,6 +11,7 @@
 		"./category-presets": "./category-presets.ts",
 		"./client": "./client.ts",
 		"./csv-mapping": "./csv-mapping.ts",
+		"./decimals": "./decimals.ts",
 		"./goals": "./goals.ts",
 		"./micros": "./micros.ts",
 		"./migrate": "./migrate.ts",

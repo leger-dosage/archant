@@ -75,6 +75,14 @@ const relativeLoan = {
 	openingBalance: "2 000,00",
 } as const;
 
+// Story 28.11's matrix: an exchange holding 1 000 €.
+const exchange = {
+	name: "Kraken",
+	type: "crypto",
+	subtype: "exchange",
+	openingBalance: "1 000,00",
+} as const;
+
 // A loan whose terms are all unknown, as created without details.
 const noTerms = {
 	originalAmount: null,
@@ -1136,6 +1144,68 @@ describe("POST /api/accounts", () => {
 		await expect(accountCount()).resolves.toBe(before);
 	});
 
+	it("creates a crypto exchange, a wallet and one without a subtype, each taxable unless told, in the assets", async () => {
+		const client = testClient(buildApp()).api.accounts;
+
+		const created = await Promise.all([
+			client.$post({ json: { ...valid, ...exchange } }),
+			client.$post({
+				json: {
+					...valid,
+					...exchange,
+					name: "Ledger",
+					subtype: "wallet",
+					details: { taxTreatment: "tax_exempt" },
+				},
+			}),
+			client.$post({ json: { ...valid, ...exchange, name: "Crypto", subtype: null } }),
+		]);
+
+		expect(created.map((response) => response.status)).toEqual([201, 201, 201]);
+		const details = await Promise.all(
+			created.map(async (response) => {
+				const { data } = await response.json();
+
+				return (await request("GET", `/api/accounts/${data.id}`)).body;
+			}),
+		);
+		expect(details).toMatchObject([
+			{
+				data: {
+					type: "crypto",
+					subtype: "exchange",
+					classification: "asset",
+					balance: 100000,
+					details: { taxTreatment: "taxable" },
+				},
+			},
+			{ data: { subtype: "wallet", details: { taxTreatment: "tax_exempt" } } },
+			{ data: { subtype: null, details: { taxTreatment: "taxable" } } },
+		]);
+	});
+
+	it("refuses a tax treatment Sure's enum lacks, and a crypto subtype it does not name", async () => {
+		const before = await accountCount();
+
+		const treatment = await postRaw({
+			...valid,
+			...exchange,
+			details: { taxTreatment: "tax_advantaged" },
+		});
+		const subtype = await postRaw({ ...valid, ...exchange, subtype: "brokerage" });
+
+		expect(treatment.status).toBe(400);
+		expect(treatment.body.error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "details.taxTreatment" }],
+		});
+		expect(subtype.status).toBe(400);
+		expect(subtype.body.error).toMatchObject({
+			fields: [{ path: "subtype", code: "invalid_subtype" }],
+		});
+		await expect(accountCount()).resolves.toBe(before);
+	});
+
 	it("answers a body that is not JSON with VALIDATION_ERROR", async () => {
 		const { status, body } = await postRaw("{");
 
@@ -1890,6 +1960,23 @@ describe("PATCH /api/accounts/:id", () => {
 				fields: [{ path: "subtype", code: "invalid_subtype" }],
 			});
 		}
+	});
+
+	it("moves a crypto exchange to a wallet and its tax treatment to tax-deferred, a third value refused", async () => {
+		const account = await openAccount(exchange);
+
+		const moved = await patchAccount(account.id, {
+			subtype: "wallet",
+			details: { taxTreatment: "tax_deferred" },
+		});
+		const refused = await patchAccount(account.id, { details: { taxTreatment: "exempt" } });
+
+		expect(moved.status).toBe(200);
+		expect(moved.body).toMatchObject({
+			data: { subtype: "wallet", details: { taxTreatment: "tax_deferred" } },
+		});
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.code).toBe("VALIDATION_ERROR");
 	});
 
 	it("clears a PEA's subtype, as Sure's blank investment", async () => {
@@ -3154,13 +3241,11 @@ describe("GET /api/accounts/:id/holdings and the cost basis lock", () => {
 
 		expect(invalid.status).toBe(400);
 		expect(errorBody.parse(await invalid.json()).error.fields).toEqual([
-			{ path: "costBasis", code: "invalid_price" },
+			{ path: "costBasis", code: "invalid_cost_basis" },
 		]);
 		expect(notHeld.status).toBe(404);
 		expect(notInvestment.status).toBe(409);
-		expect(errorBody.parse(await notInvestment.json()).error.code).toBe(
-			"NOT_AN_INVESTMENT_ACCOUNT",
-		);
+		expect(errorBody.parse(await notInvestment.json()).error.code).toBe("TRADES_NOT_SUPPORTED");
 	});
 });
 

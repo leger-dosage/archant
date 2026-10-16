@@ -1,12 +1,15 @@
 import type {
+	CryptoDetailsInput,
 	PropertyDetailsInput,
 	UpdateAccountInput,
 	VehicleDetailsInput,
 } from "@archant/api/schemas/accounts";
 import type {
 	AreaUnit,
+	CryptoDetails,
 	MileageUnit,
 	PropertyDetails,
+	TaxTreatment,
 	VehicleDetails,
 } from "@archant/data/account-types";
 
@@ -21,6 +24,25 @@ type CompleteVehicleInput = Extract<
 	NonNullable<UpdateAccountInput["details"]>,
 	{ mileageUnit: MileageUnit }
 >;
+
+/** A crypto account's details, as a PATCH must send them. */
+type CompleteCryptoInput = Extract<
+	NonNullable<UpdateAccountInput["details"]>,
+	{ taxTreatment: TaxTreatment }
+>;
+
+/** Where the API's field errors on a crypto account's details land in either account form. */
+export const CRYPTO_FIELD_NAMES = ["details.taxTreatment"] as const;
+
+/** A crypto account's typed details, `taxable` unless chosen, as Sure's default. */
+export function completeCryptoInput(details: CryptoDetailsInput | undefined): CompleteCryptoInput {
+	return { taxTreatment: details?.taxTreatment ?? "taxable" };
+}
+
+/** A crypto account's stored details as its edit form holds them. */
+export function cryptoDetailsToInput(details: CryptoDetails | null): CompleteCryptoInput {
+	return { taxTreatment: details?.taxTreatment ?? "taxable" };
+}
 
 /** Where the API's field errors on a property's details land in either account form. */
 export const PROPERTY_FIELD_NAMES = [

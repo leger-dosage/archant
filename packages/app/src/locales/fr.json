@@ -98,6 +98,7 @@
 			"types": {
 				"depository": "Comptes bancaires",
 				"investment": "Investissement",
+				"crypto": "Cryptomonnaies",
 				"property": "Bien immobilier",
 				"vehicle": "Véhicule",
 				"other_asset": "Autres actifs",
@@ -162,6 +163,9 @@
 			"trust": "Fiducie",
 			"other_investment": "Autre",
 			"brokerage": "Compte-titres",
+			"crypto": "Cryptomonnaie",
+			"wallet": "Portefeuille",
+			"exchange": "Plateforme d'échange",
 			"single_family_home": "Maison",
 			"multi_family_home": "Maison plurifamiliale",
 			"condominium": "Copropriété",
@@ -188,7 +192,9 @@
 			"angel": "Investissement providentiel",
 			"trust": "Fiducie",
 			"other_investment": "Autre investissement",
-			"brokerage": "Compte-titres"
+			"brokerage": "Compte-titres",
+			"wallet": "Portefeuille crypto",
+			"exchange": "Plateforme d'échange crypto"
 		},
 		"subtypeRegions": {
 			"eu": "Europe",
@@ -296,6 +302,15 @@
 		"postalCodePlaceholder": "75000",
 		"country": "Pays",
 		"countryPlaceholder": "FR"
+	},
+	"cryptoDetails": {
+		"taxTreatment": "Traitement fiscal",
+		"taxTreatmentHint": "La plupart des cryptomonnaies sont détenues dans des comptes imposables. Sélectionnez une autre option si elles sont détenues dans un compte fiscalement avantageux.",
+		"taxTreatments": {
+			"taxable": "Imposable",
+			"tax_deferred": "Imposition différée",
+			"tax_exempt": "Exonéré d'impôt"
+		}
 	},
 	"vehicleDetails": {
 		"make": "Marque",
@@ -2580,8 +2595,9 @@
 			"no_expenses": "Aucun mois ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
 			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type.",
-			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, six décimales au plus. Exemple : 12,5.",
-			"invalid_price": "Prix invalide : un nombre positif ou nul, six décimales au plus. Exemple : 612,40.",
+			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, 18 décimales au plus. Exemple : 12,5.",
+			"invalid_price": "Prix invalide : un nombre positif ou nul, 10 décimales au plus. Exemple : 612,40.",
+			"invalid_cost_basis": "PRU invalide : un nombre positif ou nul, six décimales au plus. Exemple : 612,40.",
 			"invalid_isin": "ISIN invalide : deux lettres, neuf lettres ou chiffres, puis un chiffre de contrôle.",
 			"not_held": "Le compte ne détenait pas ce titre à cette date.",
 			"amount_mismatch": "Quantité × prix ne laisse pas de frais positifs ou nuls pour le montant de l'opération.",
@@ -2602,6 +2618,6 @@
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "Un virement récurrent existe déjà pour cette paire de comptes.",
 		"PAYMENT_EXCEEDS_TRANSACTION": "Le montant de cette opération paie déjà d'autres échéances.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
-		"NOT_AN_INVESTMENT_ACCOUNT": "Seul un compte d'investissement reçoit des ordres."
+		"TRADES_NOT_SUPPORTED": "Ce compte ne prend pas en charge les ordres : seuls un compte d'investissement et une plateforme d'échange crypto en reçoivent."
 	}
 }

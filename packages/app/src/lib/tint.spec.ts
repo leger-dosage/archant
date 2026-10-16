@@ -1,5 +1,6 @@
 import {
 	ArrowLeftRightIcon,
+	BitcoinIcon,
 	CarIcon,
 	ChartLineIcon,
 	CircleDashedIcon,
@@ -31,6 +32,7 @@ describe.each(MODES)("in %s mode", (mode) => {
 	it.each([
 		["depository", LandmarkIcon, "#9d6fe8"],
 		["investment", ChartLineIcon, "#4ea7fc"],
+		["crypto", BitcoinIcon, "#737373"],
 		["property", HouseIcon, "#00b8cc"],
 		["vehicle", CarIcon, "#e2609c"],
 		["credit_card", CreditCardIcon, "#eb5757"],

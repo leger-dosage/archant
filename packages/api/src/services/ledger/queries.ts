@@ -8,7 +8,7 @@ import type { SQL } from "drizzle-orm";
 import { and, asc, count, desc, eq, inArray, not, notInArray, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
-import { TAX_ADVANTAGED_SUBTYPES } from "@archant/data/account-types";
+import { isTaxAdvantaged } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -434,14 +434,22 @@ export async function listTransactions(
 	return { items, total: await countTransactions(deps, filter) };
 }
 
-/** The accounts of `TAX_ADVANTAGED_SUBTYPES`, whatever their state. */
+/**
+ * The tax-advantaged accounts, whatever their state, as Sure's
+ * `Family#tax_advantaged_account_ids`: a crypto account's tax treatment is
+ * in its details, so the accounts are read whole and kept by `isTaxAdvantaged`.
+ */
 async function taxAdvantagedAccountIds(deps: ServiceDeps): Promise<string[]> {
 	const rows = await deps.db
-		.select({ id: accounts.id })
-		.from(accounts)
-		.where(inArray(accounts.subtype, [...TAX_ADVANTAGED_SUBTYPES]));
+		.select({
+			id: accounts.id,
+			type: accounts.type,
+			subtype: accounts.subtype,
+			details: accounts.details,
+		})
+		.from(accounts);
 
-	return rows.map((row) => row.id);
+	return rows.filter(isTaxAdvantaged).map((row) => row.id);
 }
 
 /** The sum of the amounts of the rows `condition` holds for, `0` when none does. */

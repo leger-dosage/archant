@@ -17,6 +17,7 @@ const SURE_TYPES = {
 	credit_card: "CreditCard",
 	loan: "Loan",
 	investment: "Investment",
+	crypto: "Crypto",
 	property: "Property",
 	vehicle: "Vehicle",
 	other_asset: "OtherAsset",

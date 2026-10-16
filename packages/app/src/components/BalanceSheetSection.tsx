@@ -21,6 +21,7 @@ const shareFormat = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFr
 const TYPE_COLOURS = {
 	depository: "var(--type-depository)",
 	investment: "var(--type-investment)",
+	crypto: "var(--type-crypto)",
 	property: "var(--type-property)",
 	vehicle: "var(--type-vehicle)",
 	credit_card: "var(--type-credit-card)",

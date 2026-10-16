@@ -7,6 +7,8 @@ import {
 	balanceTypeOf,
 	classificationOf,
 	creditCardDetailsOf,
+	cryptoDetailsOf,
+	holdsSecurities,
 	isAccountSubtype,
 	isBankAccountTarget,
 	isSubtypeOf,
@@ -14,6 +16,7 @@ import {
 	loanDetailsOf,
 	transactionsMoveBalance,
 	propertyDetailsOf,
+	supportsTrades,
 	vehicleDetailsOf,
 } from "./account-types.ts";
 import { toMinorUnits } from "./money.ts";
@@ -26,6 +29,7 @@ describe("account types", () => {
 		expect(classificationOf("vehicle")).toBe("asset");
 		expect(classificationOf("credit_card")).toBe("liability");
 		expect(classificationOf("loan")).toBe("liability");
+		expect(classificationOf("crypto")).toBe("asset");
 		expect(classificationOf("other_asset")).toBe("asset");
 		expect(classificationOf("other_liability")).toBe("liability");
 	});
@@ -36,6 +40,7 @@ describe("account types", () => {
 			["credit_card", "cash"],
 			["loan", "non_cash"],
 			["investment", "investment"],
+			["crypto", "investment"],
 			["property", "non_cash"],
 			["vehicle", "non_cash"],
 			["other_asset", "non_cash"],
@@ -58,6 +63,7 @@ describe("account types", () => {
 			"credit_card",
 			"loan",
 			"investment",
+			"crypto",
 			"property",
 			"vehicle",
 			"other_asset",
@@ -87,6 +93,8 @@ describe("account types", () => {
 			"angel",
 			"trust",
 			"brokerage",
+			"wallet",
+			"exchange",
 			"single_family_home",
 			"multi_family_home",
 			"condominium",
@@ -135,6 +143,11 @@ describe("account types", () => {
 		expect(isSubtypeOf("vehicle", null)).toBe(true);
 		expect(isSubtypeOf("vehicle", "car")).toBe(false);
 		expect(isSubtypeOf("vehicle", "apartment")).toBe(false);
+		expect(isSubtypeOf("crypto", null)).toBe(true);
+		expect(isSubtypeOf("crypto", "wallet")).toBe(true);
+		expect(isSubtypeOf("crypto", "exchange")).toBe(true);
+		expect(isSubtypeOf("crypto", "brokerage")).toBe(false);
+		expect(isSubtypeOf("investment", "exchange")).toBe(false);
 		expect(isSubtypeOf("other_asset", null)).toBe(true);
 		expect(isSubtypeOf("other_asset", "savings")).toBe(false);
 		expect(isSubtypeOf("other_liability", null)).toBe(true);
@@ -164,6 +177,16 @@ describe("bank account targets", () => {
 	});
 });
 
+const investment = (subtype: string | null) =>
+	({ type: "investment", subtype, details: null }) as const;
+
+const cryptoAccount = (taxTreatment: "taxable" | "tax_deferred" | "tax_exempt" | null) =>
+	({
+		type: "crypto",
+		subtype: "exchange",
+		details: taxTreatment === null ? null : { taxTreatment },
+	}) as const;
+
 describe("tax-advantaged accounts", () => {
 	it("are Sure's tax-advantaged and tax-deferred subtypes, never a taxable one or none", () => {
 		for (const subtype of [
@@ -174,12 +197,35 @@ describe("tax-advantaged accounts", () => {
 			"pension",
 			"retirement",
 		]) {
-			expect(isTaxAdvantaged(subtype)).toBe(true);
+			expect(isTaxAdvantaged(investment(subtype))).toBe(true);
 		}
 		for (const subtype of ["brokerage", "mutual_fund", "gold", "angel", "trust", "other"]) {
-			expect(isTaxAdvantaged(subtype)).toBe(false);
+			expect(isTaxAdvantaged(investment(subtype))).toBe(false);
 		}
-		expect(isTaxAdvantaged(null)).toBe(false);
+		expect(isTaxAdvantaged(investment(null))).toBe(false);
+		expect(isTaxAdvantaged({ type: "loan", subtype: "other", details: null })).toBe(false);
+	});
+
+	it("are crypto accounts held tax-deferred or tax-exempt, as Sure's `Family#tax_advantaged_account_ids`", () => {
+		expect(isTaxAdvantaged(cryptoAccount("tax_deferred"))).toBe(true);
+		expect(isTaxAdvantaged(cryptoAccount("tax_exempt"))).toBe(true);
+		expect(isTaxAdvantaged(cryptoAccount("taxable"))).toBe(false);
+		expect(isTaxAdvantaged(cryptoAccount(null))).toBe(false);
+	});
+});
+
+describe("trades and holdings", () => {
+	it("hold securities on an investment or a crypto account, Sure's `Investment || Crypto`", () => {
+		expect(ACCOUNT_TYPE_IDS.filter(holdsSecurities)).toEqual(["investment", "crypto"]);
+	});
+
+	it("take new trades on any investment account and a crypto exchange, as Sure's `supports_trades?`", () => {
+		expect(supportsTrades({ type: "investment", subtype: null })).toBe(true);
+		expect(supportsTrades({ type: "investment", subtype: "pea" })).toBe(true);
+		expect(supportsTrades({ type: "crypto", subtype: "exchange" })).toBe(true);
+		expect(supportsTrades({ type: "crypto", subtype: "wallet" })).toBe(false);
+		expect(supportsTrades({ type: "crypto", subtype: null })).toBe(false);
+		expect(supportsTrades({ type: "depository", subtype: "checking" })).toBe(false);
 	});
 });
 
@@ -241,6 +287,15 @@ describe("account details", () => {
 		expect(propertyDetailsOf({ type: "property", details: vehicle })).toBeNull();
 		expect(propertyDetailsOf({ type: "vehicle", details: property })).toBeNull();
 		expect(propertyDetailsOf({ type: "property", details: null })).toBeNull();
+	});
+
+	it("reads a crypto account's tax treatment on a crypto account only", () => {
+		const crypto = { taxTreatment: "tax_exempt" } as const;
+
+		expect(cryptoDetailsOf({ type: "crypto", details: crypto })).toBe(crypto);
+		expect(cryptoDetailsOf({ type: "crypto", details: vehicle })).toBeNull();
+		expect(cryptoDetailsOf({ type: "investment", details: crypto })).toBeNull();
+		expect(cryptoDetailsOf({ type: "crypto", details: null })).toBeNull();
 	});
 
 	it("reads a vehicle's details on a vehicle only", () => {

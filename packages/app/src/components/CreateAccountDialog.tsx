@@ -11,6 +11,7 @@ import { createAccountFormSchema } from "@archant/api/schemas/accounts";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
+import { CryptoDetailsFields } from "@/components/CryptoDetailsFields";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
@@ -40,8 +41,10 @@ import { useCreateAccount } from "@/hooks/useAccounts";
 import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import {
+	CRYPTO_FIELD_NAMES,
 	PROPERTY_FIELD_NAMES,
 	VEHICLE_FIELD_NAMES,
+	completeCryptoInput,
 	completePropertyInput,
 	completeVehicleInput,
 } from "@/lib/asset-details";
@@ -66,6 +69,7 @@ const FIELD_NAMES = [
 	...CREDIT_CARD_FIELD_NAMES,
 	...PROPERTY_FIELD_NAMES,
 	...VEHICLE_FIELD_NAMES,
+	...CRYPTO_FIELD_NAMES,
 ] as const;
 
 const defaults = (): CreateAccountInput => ({
@@ -82,6 +86,7 @@ const defaults = (): CreateAccountInput => ({
 		...completeCreditCardInput(undefined),
 		...completePropertyInput(undefined),
 		...completeVehicleInput(undefined),
+		...completeCryptoInput(undefined),
 	},
 });
 
@@ -98,6 +103,8 @@ function chosenDetails(values: CreateAccountInput): CreateAccountInput["details"
 			return completePropertyInput(values.details);
 		case "vehicle":
 			return completeVehicleInput(values.details);
+		case "crypto":
+			return completeCryptoInput(values.details);
 		default:
 			return undefined;
 	}
@@ -218,6 +225,18 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 							</SelectTrigger>
 							<SelectContent>
 								{ACCOUNT_KINDS.map((option) => {
+									// Sure's long labels for a crypto subtype, its type's name
+									// without one, as the blank investment.
+									if (option.type === "crypto") {
+										return (
+											<SelectItem key={option.id} value={option.id}>
+												{option.id === "crypto"
+													? t("accounts.subtypes.crypto")
+													: t(`accounts.subtypeLongs.${option.id}`)}
+											</SelectItem>
+										);
+									}
+
 									if (option.type !== "investment") {
 										return (
 											<SelectItem key={option.id} value={option.id}>
@@ -324,6 +343,14 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 								details.field.onChange({ ...details.field.value, ...property })
 							}
 							errorOf={(field) => errorAt(errors, `details.${field}`)}
+						/>
+					)}
+
+					{type === "crypto" && (
+						<CryptoDetailsFields
+							value={completeCryptoInput(details.field.value)}
+							onChange={(crypto) => details.field.onChange({ ...details.field.value, ...crypto })}
+							error={errorAt(errors, "details.taxTreatment")}
 						/>
 					)}
 

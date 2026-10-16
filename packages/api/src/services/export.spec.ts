@@ -1049,6 +1049,63 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes a crypto exchange as Sure's Crypto, its tax treatment in its accountable, its eighteen decimals as text", async () => {
+		const { db } = await ownDatabase();
+		const exchange = await account({
+			name: "Kraken",
+			type: "crypto",
+			subtype: "exchange",
+			openingBalance: "1 000",
+			details: { taxTreatment: "tax_exempt" },
+		});
+		const wallet = await account({ name: "Ledger", type: "crypto", subtype: "wallet" });
+		const bitcoin = await insertSecurity(
+			db,
+			{ ticker: "BTC-EUR", mic: null, name: "Bitcoin" },
+			{ held: false },
+		);
+		await created(`/api/accounts/${exchange}/trades`, {
+			side: "buy",
+			security: { source: "known", id: bitcoin },
+			date: "2026-09-10",
+			quantity: "0,000166666666666667",
+			price: "60 000",
+			fee: "0",
+		});
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+		const openings = new Map(
+			archive
+				.of("Valuation")
+				.filter((row) => row["kind"] === "opening_anchor")
+				.map((row) => [row["account_id"], row["name"]]),
+		);
+
+		expect(accounts.get(exchange)).toMatchObject({
+			accountable_type: "Crypto",
+			subtype: "exchange",
+			accountable: { subtype: "exchange", tax_treatment: "tax_exempt" },
+			archant: { type: "crypto", subtype: "exchange" },
+		});
+		expect(accounts.get(wallet)).toMatchObject({
+			accountable_type: "Crypto",
+			accountable: { subtype: "wallet", tax_treatment: "taxable" },
+		});
+		expect(openings.get(exchange)).toBe("Opening account value");
+		expect(archive.of("Trade")).toEqual([
+			expect.objectContaining({ qty: "0.000166666666666667", price: "60000", amount: "10.00" }),
+		]);
+		expect(archive.of("Holding").at(-1)).toMatchObject({
+			qty: "0.000166666666666667",
+			amount: "10.00",
+		});
+		expect(archive.csv("trades.csv").slice(1)).toEqual([
+			["2026-09-10", "Kraken", "BTC-EUR", "0.000166666666666667", "60000", "10.00", "EUR"],
+		]);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes a loan's terms Sure saves without amortising them, and passes its preflight", async () => {
 		await ownDatabase();
 		const loan = await account({

@@ -1,12 +1,12 @@
 import { and, eq, lt } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
-import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
 import { holdings } from "@archant/data/schema/holdings";
 import { securities } from "@archant/data/schema/securities";
 
+import { quantity as qty, tradePrice } from "../../testing/decimals.ts";
 import {
 	add,
 	deps,
@@ -67,8 +67,8 @@ async function peaWithBuy() {
 			side: "buy",
 			security: { source: "known", id: securityId },
 			date: "2026-09-10",
-			quantity: toMicros(10_000_000),
-			price: toMicros(612_400_000),
+			quantity: qty("10"),
+			price: tradePrice("612.4"),
 			fee: toMinorUnits(250),
 		},
 		user,

@@ -5,6 +5,7 @@ import {
 	LOAN_INSURANCE_TYPES,
 	LOAN_RATE_TYPES,
 	MILEAGE_UNITS,
+	TAX_TREATMENTS,
 } from "@archant/data/account-types";
 
 // What Sure's `SureImport` checks before it imports an `all.ndjson`, written
@@ -289,6 +290,8 @@ const SCHEMAS = {
 			year: z.int32().nullable().optional(),
 			mileage_value: z.int32().nullable().optional(),
 			mileage_unit: z.enum(MILEAGE_UNITS).nullable().optional(),
+			// A crypto account's, as Sure's `Crypto#tax_treatment` enum.
+			tax_treatment: z.enum(TAX_TREATMENTS).nullable().optional(),
 		}),
 		archant,
 	}),

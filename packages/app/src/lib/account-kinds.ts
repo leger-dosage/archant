@@ -39,6 +39,11 @@ export const ACCOUNT_KINDS = [
 	{ id: "other_investment", type: "investment", subtype: "other" },
 	// Sure's `brokerage`, labelled « Compte-titres ».
 	{ id: "brokerage", type: "investment", subtype: "brokerage" },
+	// Right after investments, as Sure's `Accountable::TYPES`: a crypto account
+	// without a subtype, named as Sure names the type, then `Crypto::SUBTYPES`.
+	{ id: "crypto", type: "crypto", subtype: null },
+	{ id: "wallet", type: "crypto", subtype: "wallet" },
+	{ id: "exchange", type: "crypto", subtype: "exchange" },
 	// Sure's `Property::SUBTYPES`, in its order.
 	{ id: "single_family_home", type: "property", subtype: "single_family_home" },
 	{ id: "multi_family_home", type: "property", subtype: "multi_family_home" },
@@ -79,3 +84,9 @@ export const INVESTMENT_REGIONS = [
 	},
 	{ id: "us", kinds: ["brokerage"] },
 ] as const satisfies readonly { id: string; kinds: readonly AccountKindId[] }[];
+
+/**
+ * The crypto subtypes, as Sure's `Crypto::SUBTYPES`; each kind's label in a
+ * select is under `accounts.subtypeLongs`, Sure's long label.
+ */
+export const CRYPTO_KINDS = ["wallet", "exchange"] as const satisfies readonly AccountKindId[];

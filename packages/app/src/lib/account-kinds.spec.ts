@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import fr from "../locales/fr.json";
-import { ACCOUNT_KINDS, INVESTMENT_REGIONS, kindOf } from "./account-kinds.ts";
+import { ACCOUNT_KINDS, CRYPTO_KINDS, INVESTMENT_REGIONS, kindOf } from "./account-kinds.ts";
 
 describe("kindOf", () => {
 	it("tells a loan's `other` from an investment's", () => {
@@ -19,6 +19,21 @@ describe("kindOf", () => {
 		expect(kindOf("investment", "pea")).toBe("pea");
 		expect(kindOf("investment", "pillar_3a")).toBe("pillar_3a");
 		expect(kindOf("investment", null)).toBe("investment");
+	});
+
+	it("names a crypto account by its subtype, one without as the type, right after the investments as Sure's", () => {
+		expect(kindOf("crypto", "wallet")).toBe("wallet");
+		expect(kindOf("crypto", "exchange")).toBe("exchange");
+		expect(kindOf("crypto", null)).toBe("crypto");
+		const crypto = ACCOUNT_KINDS.findIndex((kind) => kind.id === "crypto");
+		expect(ACCOUNT_KINDS[crypto - 1]?.id).toBe("brokerage");
+		expect(
+			ACCOUNT_KINDS.slice(crypto, crypto + 3).map((kind) => fr.accounts.subtypes[kind.id]),
+		).toEqual(["Cryptomonnaie", "Portefeuille", "Plateforme d'échange"]);
+		expect(CRYPTO_KINDS.map((kind) => fr.accounts.subtypeLongs[kind])).toEqual([
+			"Portefeuille crypto",
+			"Plateforme d'échange crypto",
+		]);
 	});
 
 	it("names a property by its subtype, and a vehicle by its type", () => {
