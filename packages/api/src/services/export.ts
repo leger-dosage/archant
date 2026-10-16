@@ -880,6 +880,11 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					subtype,
 					status: account.active ? "active" : "disabled",
 					exclude_from_reports: account.excludedFromReports,
+					// Sure's `as_json` calls each reader, so the name falls back to the
+					// linked bank's, as its `Account#institution_name`.
+					institution_name: account.institutionName ?? account.bankName,
+					institution_domain: account.institutionDomain,
+					notes: account.notes,
 					created_at: timestamp(account.createdAt),
 					updated_at: timestamp(account.updatedAt),
 					accountable: {

@@ -71,6 +71,15 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 													{account.excludedFromReports && (
 														<ExcludedMarker label={t("accounts.excludedFromReports")} />
 													)}
+													{/* Sure's `Account#institution_name`, the bank's when none was typed. */}
+													{account.institutionName !== null && (
+														<span className="hidden min-w-0 truncate text-muted-foreground sm:inline">
+															{/* Read as a pause rather than « puce », so the name and the institution do not run together. */}
+															<span aria-hidden="true">• </span>
+															<span className="sr-only">, </span>
+															{account.institutionName}
+														</span>
+													)}
 												</p>
 												<p className="text-xs text-muted-foreground">
 													{t(`accounts.subtypes.${kindOf(account.type, account.subtype)}`)}
@@ -79,6 +88,12 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 												{account.id === list.defaultAccountId && supportsDefault(account.type) && (
 													<p className="text-xs text-muted-foreground">
 														{t("accounts.defaultLabel")}
+													</p>
+												)}
+												{/* On a phone, the institution under the name rather than beside it, as Sure's row. */}
+												{account.institutionName !== null && (
+													<p className="truncate text-xs text-muted-foreground sm:hidden">
+														{account.institutionName}
 													</p>
 												)}
 											</div>

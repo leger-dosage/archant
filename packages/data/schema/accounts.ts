@@ -33,6 +33,12 @@ export const accounts = sqliteTable(
 		bankAccountId: text("bank_account_id").references(() => bankAccounts.id, {
 			onDelete: "set null",
 		}),
+		// Sure's `institution_name`, `institution_domain` and `notes`, typed in
+		// « Détails supplémentaires »; null when blank. A linked account without
+		// a name shows its bank's.
+		institutionName: text("institution_name"),
+		institutionDomain: text("institution_domain"),
+		notes: text("notes"),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

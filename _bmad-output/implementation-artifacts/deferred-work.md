@@ -297,3 +297,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-11-crypto-accounts.md`
   summary: A holding whose amount passes `MAX_MINOR_UNITS`, or a position whose summed quantity passes 16 integer digits, throws in `domain/holdings/forward.ts` and turns every recompute of the account into a 500.
   evidence: `forwardHoldings` calls `toMinorUnits` and `formatQuantity` without bounds; a free buy of 10¹⁵ units later priced, or two buys of 9 999 999 999 999 999 units, reach it. Integer millionths overflowed the same way before Story 28.11.
+
+## Deferred from: code review of spec-28-15-account-notes-and-institution (2026-10-16)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-15-account-notes-and-institution.md`
+  summary: The creation dialog's mapping of a server refusal onto « Nom de l'institution », « Domaine de l'institution » and « Notes » has no test.
+  evidence: Replacing `errorOf` in `CreateAccountDialog.tsx` with `() => undefined` breaks no test; the form's schema refuses the same lengths first, so only a server-only refusal would reach it.

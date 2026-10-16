@@ -260,6 +260,10 @@ const SCHEMAS = {
 		subtype: z.string().nullable(),
 		status: z.enum(["active", "disabled", "draft"]),
 		exclude_from_reports: z.boolean(),
+		// Sure's `Family::DataImporter` reads the three back as they are.
+		institution_name: z.string().nullable(),
+		institution_domain: z.string().nullable(),
+		notes: z.string().nullable(),
 		...stamps,
 		accountable: z.strictObject({
 			subtype: z.string().nullable(),

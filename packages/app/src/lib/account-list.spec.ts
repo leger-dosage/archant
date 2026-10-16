@@ -20,6 +20,7 @@ const account = (
 	active: true,
 	excludedFromReports: false,
 	linked: false,
+	institutionName: null,
 });
 
 describe("accountsByName", () => {

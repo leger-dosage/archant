@@ -10,6 +10,10 @@ import type { CreateAccountInput } from "@archant/api/schemas/accounts";
 import { createAccountFormSchema } from "@archant/api/schemas/accounts";
 import { CURRENCY_CODES, DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
+import {
+	ADDITIONAL_DETAIL_NAMES,
+	AccountAdditionalDetails,
+} from "@/components/AccountAdditionalDetails";
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { CryptoDetailsFields } from "@/components/CryptoDetailsFields";
 import { DateField } from "@/components/DateField";
@@ -65,6 +69,7 @@ const TOP_FIELD_NAMES = [
 
 const FIELD_NAMES = [
 	...TOP_FIELD_NAMES,
+	...ADDITIONAL_DETAIL_NAMES,
 	...LOAN_FIELD_NAMES,
 	...CREDIT_CARD_FIELD_NAMES,
 	...PROPERTY_FIELD_NAMES,
@@ -88,6 +93,9 @@ const defaults = (): CreateAccountInput => ({
 		...completeVehicleInput(undefined),
 		...completeCryptoInput(undefined),
 	},
+	institutionName: "",
+	institutionDomain: "",
+	notes: "",
 });
 
 const schemaResolver = zodResolver(createAccountFormSchema, undefined, { raw: true });
@@ -361,6 +369,12 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 							errorOf={(field) => errorAt(errors, `details.${field}`)}
 						/>
 					)}
+
+					<AccountAdditionalDetails
+						idPrefix=""
+						register={(name) => form.register(name)}
+						errorOf={(name) => errors[name]}
+					/>
 				</form>
 				<DialogFooter>
 					<Button type="button" variant="outline" onClick={() => close(false)}>

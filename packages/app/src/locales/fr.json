@@ -207,6 +207,15 @@
 		"inactive": "Inactif",
 		"inactiveHint": "inactif",
 		"defaultLabel": "Par défaut",
+		"additionalDetails": {
+			"title": "Détails supplémentaires",
+			"institutionName": "Nom de l'institution",
+			"institutionNamePlaceholder": "ex., Banque Populaire",
+			"institutionDomain": "Domaine de l'institution",
+			"institutionDomainPlaceholder": "ex., banquepopulaire.fr",
+			"notes": "Notes",
+			"notesPlaceholder": "Stockez des informations supplémentaires comme les numéros de compte, codes de tri, IBAN, numéros de routage, etc."
+		},
 		"rowMenu": {
 			"edit": "Modifier",
 			"disable": "Désactiver le compte",
