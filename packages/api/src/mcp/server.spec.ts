@@ -665,6 +665,23 @@ describe("the tools", () => {
 		}
 	});
 
+	it("get_accounts lists a crypto account as Sure's Crypto, an asset", async () => {
+		const exchange = await openAccount({
+			name: "Kraken",
+			type: "crypto",
+			subtype: "exchange",
+			openingBalance: "1 000,00",
+		});
+
+		const listed = accountsOf(await callTool(bare, tokens.access_token, "get_accounts"));
+
+		expect(listed.find((row) => row.id === exchange.id)).toMatchObject({
+			classification: "asset",
+			type: "Crypto",
+			balance: "1000.0",
+		});
+	});
+
 	it("get_accounts lists an other asset and an other liability as Sure's OtherAsset and OtherLiability", async () => {
 		const jewellery = await openAccount({
 			name: "Bijoux",

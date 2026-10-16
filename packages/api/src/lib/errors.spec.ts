@@ -25,7 +25,7 @@ describe("AppError", () => {
 		expect(new AppError("PRICE_FROM_PROVIDER", "x").status).toBe(409);
 		expect(new AppError("PRICE_PROVIDER_ERROR", "x").status).toBe(502);
 		expect(new AppError("PRICE_UNAVAILABLE", "x").status).toBe(502);
-		expect(new AppError("NOT_AN_INVESTMENT_ACCOUNT", "x").status).toBe(409);
+		expect(new AppError("TRADES_NOT_SUPPORTED", "x").status).toBe(409);
 		expect(new AppError("NOT_CONVERTIBLE", "x").status).toBe(409);
 	});
 

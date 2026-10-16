@@ -2959,14 +2959,15 @@ const insertTrade = (
 	{
 		securityId = "s1",
 		incomeKind = null,
-		quantity = 10_000_000,
-		price = 612_400_000,
+		quantity = "10",
+		price = "612.4",
 		fee = 250,
 	}: {
 		securityId?: string | null;
 		incomeKind?: string | null;
-		quantity?: number;
-		price?: number;
+		// Text since 0080, millionths before.
+		quantity?: string | number;
+		price?: string | number;
 		fee?: number;
 	} = {},
 ) =>
@@ -3037,14 +3038,14 @@ describe("trades", () => {
 		await insertEntry(database, "e4", "trade", null);
 		await insertEntry(database, "e5", "trade", null);
 		await insertEntry(database, "e6", "trade", null);
-		await expect(insertTrade(database, "e3", { quantity: 0 })).rejects.toThrow();
-		await expect(insertTrade(database, "e3", { price: -1 })).rejects.toThrow();
+		await expect(insertTrade(database, "e3", { quantity: "0" })).rejects.toThrow();
+		await expect(insertTrade(database, "e3", { price: "-1" })).rejects.toThrow();
 		await expect(insertTrade(database, "e3", { fee: -1 })).rejects.toThrow();
 		await expect(insertTrade(database, "e3", { securityId: "nope" })).rejects.toThrow();
 		await expect(insertTrade(database, "nope")).rejects.toThrow();
 		// A sale, a free share and no fee are all real trades.
-		await expect(insertTrade(database, "e4", { quantity: -4_000_000 })).resolves.toBeDefined();
-		await expect(insertTrade(database, "e5", { price: 0 })).resolves.toBeDefined();
+		await expect(insertTrade(database, "e4", { quantity: "-4" })).resolves.toBeDefined();
+		await expect(insertTrade(database, "e5", { price: "0" })).resolves.toBeDefined();
 		await expect(insertTrade(database, "e6", { fee: 0 })).resolves.toBeDefined();
 
 		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
@@ -3081,16 +3082,16 @@ describe("trades", () => {
 				entryId: "e1",
 				securityId: "s1",
 				incomeKind: null,
-				quantity: 10_000_000,
-				price: 612_400_000,
+				quantity: "10",
+				price: "612.4",
 				fee: 250,
 			},
 			{
 				entryId: "e2",
 				securityId: "s1",
 				incomeKind: null,
-				quantity: -4_000_000,
-				price: 650_000_000,
+				quantity: "-4",
+				price: "650",
 				fee: 0,
 			},
 		]);
@@ -3114,7 +3115,7 @@ describe("trades", () => {
 			["e1", "e2", "e3", "e4"].map(async (id) => insertEntry(database, id, "trade", null)),
 		);
 
-		const income = { quantity: 0, price: 0, fee: 0 };
+		const income = { quantity: "0", price: "0", fee: 0 };
 
 		await expect(
 			insertTrade(database, "e1", { ...income, incomeKind: "dividend" }),
@@ -3131,12 +3132,12 @@ describe("trades", () => {
 		).rejects.toThrow();
 		await expect(insertTrade(database, "e4", { securityId: null })).rejects.toThrow();
 		// A buy of nothing, an income that moves a quantity, a price or a fee.
-		await expect(insertTrade(database, "e4", { quantity: 0 })).rejects.toThrow();
+		await expect(insertTrade(database, "e4", { quantity: "0" })).rejects.toThrow();
 		await expect(
-			insertTrade(database, "e4", { ...income, incomeKind: "dividend", quantity: 1 }),
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", quantity: "1" }),
 		).rejects.toThrow();
 		await expect(
-			insertTrade(database, "e4", { ...income, incomeKind: "dividend", price: 1 }),
+			insertTrade(database, "e4", { ...income, incomeKind: "dividend", price: "1" }),
 		).rejects.toThrow();
 		await expect(
 			insertTrade(database, "e4", { ...income, incomeKind: "dividend", fee: 1 }),
@@ -3151,14 +3152,15 @@ const insertHolding = (
 	{
 		date = "2026-09-10",
 		securityId = "s1",
-		quantity = 10_000_000,
+		quantity = "10",
 		price = 612_400_000,
 		amount = 612_400,
 		costBasis = 612_400_000,
 	}: {
 		date?: string;
 		securityId?: string;
-		quantity?: number;
+		// Text since 0080, millionths before.
+		quantity?: string | number;
 		price?: number;
 		amount?: number;
 		costBasis?: number | null;
@@ -3210,13 +3212,13 @@ describe("holdings", () => {
 		await expect(insertHolding(database, { securityId: "s2" })).resolves.toBeDefined();
 		// A day after a full sale: nothing held, no cost basis, still a row.
 		await expect(
-			insertHolding(database, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null }),
+			insertHolding(database, { date: "2026-09-11", quantity: "0", amount: 0, costBasis: null }),
 		).resolves.toBeDefined();
 		// A sale above what was held, as Sure's `ForwardCalculator`.
 		await expect(
 			insertHolding(database, {
 				date: "2026-09-12",
-				quantity: -5_000_000,
+				quantity: "-5",
 				amount: -306_200,
 				costBasis: null,
 			}),
@@ -3235,7 +3237,7 @@ describe("holdings", () => {
 		const before = await migratedBefore("0076");
 		await insertAccount(before, "a1", "investment", "pea");
 		await insertSecurity(before, "s1");
-		await insertHolding(before);
+		await insertHolding(before, { quantity: 10_000_000 });
 		await insertHolding(before, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null });
 		await expect(
 			insertHolding(before, { date: "2026-09-12", quantity: -1, amount: -1, costBasis: null }),
@@ -3247,11 +3249,11 @@ describe("holdings", () => {
 		await expect(
 			database.all(sql`select date, quantity, amount, cost_basis from holdings order by date`),
 		).resolves.toEqual([
-			{ date: "2026-09-10", quantity: 10_000_000, amount: 612_400, cost_basis: 612_400_000 },
-			{ date: "2026-09-11", quantity: 0, amount: 0, cost_basis: null },
+			{ date: "2026-09-10", quantity: "10", amount: 612_400, cost_basis: 612_400_000 },
+			{ date: "2026-09-11", quantity: "0", amount: 0, cost_basis: null },
 		]);
 		await expect(
-			insertHolding(database, { date: "2026-09-12", quantity: -1, amount: -1, costBasis: null }),
+			insertHolding(database, { date: "2026-09-12", quantity: "-1", amount: -1, costBasis: null }),
 		).resolves.toBeDefined();
 		await expect(
 			database.all(
@@ -3282,6 +3284,155 @@ describe("holdings", () => {
 		await database.run(sql`delete from accounts where id = 'a1'`);
 
 		await expect(database.all(sql`select * from cost_basis_locks`)).resolves.toEqual([]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
+describe("trade decimals", () => {
+	it("writes every quantity and trade price at 0080 as its exact canonical text, holdings untouched", async () => {
+		const before = await migratedBefore("0080");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertSecurity(before, "s1");
+		await Promise.all(
+			["e1", "e2", "e3", "e4", "e5"].map(async (id) => insertEntry(before, id, "trade", null)),
+		);
+		await insertTrade(before, "e1", { quantity: 1_500_000, price: 612_400_000 });
+		await insertTrade(before, "e2", { quantity: -4_000_000, price: 650_000_000, fee: 0 });
+		await insertTrade(before, "e3", { quantity: 1, price: 1 });
+		await insertTrade(before, "e4", { quantity: 123_456_789_012, price: 0 });
+		await insertTrade(before, "e5", {
+			incomeKind: "dividend",
+			quantity: 0,
+			price: 0,
+			fee: 0,
+		});
+		await insertHolding(before, { quantity: 1_500_000, amount: 918_600 });
+		await insertHolding(before, { date: "2026-09-11", quantity: 0, amount: 0, costBasis: null });
+		await insertHolding(before, {
+			date: "2026-09-12",
+			quantity: -2_500_000,
+			amount: -1_531_000,
+			costBasis: null,
+		});
+		await insertHolding(before, {
+			date: "2026-09-13",
+			quantity: 10_000_010,
+			amount: 6_124_006,
+			costBasis: 612_345_678,
+		});
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as id, quantity, price, fee, typeof(quantity) as kind from trades order by entry_id`,
+			),
+		).resolves.toEqual([
+			{ id: "e1", quantity: "1.5", price: "612.4", fee: 250, kind: "text" },
+			{ id: "e2", quantity: "-4", price: "650", fee: 0, kind: "text" },
+			{ id: "e3", quantity: "0.000001", price: "0.000001", fee: 250, kind: "text" },
+			{ id: "e4", quantity: "123456.789012", price: "0", fee: 250, kind: "text" },
+			{ id: "e5", quantity: "0", price: "0", fee: 0, kind: "text" },
+		]);
+		await expect(
+			database.all(
+				sql`select date, quantity, price, amount, cost_basis as costBasis from holdings order by date`,
+			),
+		).resolves.toEqual([
+			{
+				date: "2026-09-10",
+				quantity: "1.5",
+				price: 612_400_000,
+				amount: 918_600,
+				costBasis: 612_400_000,
+			},
+			{ date: "2026-09-11", quantity: "0", price: 612_400_000, amount: 0, costBasis: null },
+			{
+				date: "2026-09-12",
+				quantity: "-2.5",
+				price: 612_400_000,
+				amount: -1_531_000,
+				costBasis: null,
+			},
+			{
+				date: "2026-09-13",
+				quantity: "10.00001",
+				price: 612_400_000,
+				amount: 6_124_006,
+				costBasis: 612_345_678,
+			},
+		]);
+		await expect(
+			database.all(
+				sql`select name, sql from sqlite_master where type = 'index' and tbl_name = 'holdings' and sql is not null`,
+			),
+		).resolves.toEqual([
+			{
+				name: "holdings_not_held",
+				sql: "CREATE INDEX `holdings_not_held` ON `holdings` (`account_id`,`security_id`,`date`,`quantity`) WHERE quantity = '0' or quantity like '-%'",
+			},
+		]);
+		await expect(
+			database.all(
+				sql`select name from pragma_index_list('trades') where name = 'trades_security'`,
+			),
+		).resolves.toHaveLength(1);
+		await expect(database.run(sql`delete from entries where id = 'e1'`)).rejects.toThrow();
+		await expect(database.run(sql`delete from securities where id = 's1'`)).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds Sure's eighteen decimals of a quantity and ten of a price after 0080", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "crypto", "exchange");
+		await insertSecurity(database, "s1");
+		await insertEntry(database, "e1", "trade", null);
+		await insertEntry(database, "e2", "trade", null);
+
+		await expect(
+			insertTrade(database, "e1", {
+				quantity: "12345.123456789012345678",
+				price: "60000.0123456789",
+			}),
+		).resolves.toBeDefined();
+		await expect(
+			insertTrade(database, "e2", { quantity: "-0.000166666666666667" }),
+		).resolves.toBeDefined();
+		await expect(
+			database.all(sql`select quantity, price from trades order by entry_id`),
+		).resolves.toEqual([
+			{ quantity: "12345.123456789012345678", price: "60000.0123456789" },
+			{ quantity: "-0.000166666666666667", price: "612.4" },
+		]);
+	});
+});
+
+describe("crypto accounts", () => {
+	it("keeps every account at 0079, then takes Sure's crypto with a wallet, an exchange or no subtype", async () => {
+		const before = await migratedBefore("0079");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertAccount(before, "a2", "other_asset", null);
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await expect(insertAccount(before, "a3", "crypto", "wallet")).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+		await expect(
+			database.all(sql`select id, type, subtype from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "investment", subtype: "pea" },
+			{ id: "a2", type: "other_asset", subtype: null },
+		]);
+		await expect(insertAccount(database, "b1", "crypto", "wallet")).resolves.toBeDefined();
+		await expect(insertAccount(database, "b2", "crypto", "exchange")).resolves.toBeDefined();
+		await expect(insertAccount(database, "b3", "crypto", null)).resolves.toBeDefined();
+		await expect(insertAccount(database, "b4", "crypto", "brokerage")).rejects.toThrow();
+		await expect(insertAccount(database, "b5", "investment", "exchange")).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });

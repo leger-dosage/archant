@@ -14,13 +14,36 @@ function issuesOf(result: {
 	return (result.error?.issues ?? []).map((issue) => [issue.path.join("."), issue.message]);
 }
 
+describe("createTradeSchema at Sure's decimals", () => {
+	const schema = createTradeSchema("EUR");
+	const order = { side: "buy", security: known, date: "2026-09-10", fee: "0" } as const;
+
+	it("takes eighteen decimals of a quantity and ten of a price, as typed", () => {
+		expect(
+			schema.parse({ ...order, quantity: "0,000166666666666667", price: "60 000" }),
+		).toMatchObject({ quantity: "0.000166666666666667", price: "60000" });
+		expect(
+			schema.parse({ ...order, quantity: "12 345,123456789012345678", price: "0,0000000001" }),
+		).toMatchObject({ quantity: "12345.123456789012345678", price: "0.0000000001" });
+	});
+
+	it("refuses a nineteenth decimal of a quantity and an eleventh of a price, never rounding", () => {
+		expect(
+			issuesOf(schema.safeParse({ ...order, quantity: "0,0000000000000000001", price: "1" })),
+		).toEqual([["quantity", "invalid_quantity"]]);
+		expect(issuesOf(schema.safeParse({ ...order, quantity: "1", price: "0,00000000001" }))).toEqual(
+			[["price", "invalid_price"]],
+		);
+	});
+});
+
 describe("convertTradeSchema", () => {
 	// −6 126,50 €: 10 at 612,40 leaves 2,50 € of fees.
 	const schema = convertTradeSchema("EUR", toMinorUnits(-612_650));
 
 	it("parses a buy the amount covers, and an income", () => {
 		expect(schema.parse({ side: "buy", security: known, quantity: "10", price: "612,40" })).toEqual(
-			{ side: "buy", security: known, quantity: 10_000_000, price: 612_400_000 },
+			{ side: "buy", security: known, quantity: "10", price: "612.4" },
 		);
 		expect(
 			convertTradeSchema("EUR", toMinorUnits(300)).parse({ side: "interest", security: null }),

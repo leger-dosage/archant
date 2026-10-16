@@ -2,7 +2,6 @@ import type { TempDatabase } from "./temp-database.ts";
 
 import { randomUUID } from "node:crypto";
 
-import { toMicros } from "@archant/data/micros";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { securities } from "@archant/data/schema/securities";
@@ -11,6 +10,7 @@ import { addDays, today } from "../domain/dates.ts";
 import { createAccount, deleteAccount } from "../services/ledger/accounts.ts";
 import { oneByOne } from "../services/ledger/shared.ts";
 import { recordTrade } from "../services/ledger/trades.ts";
+import { quantity, tradePrice } from "./decimals.ts";
 
 const TIME_ZONE = "Europe/Paris";
 
@@ -84,8 +84,8 @@ export async function holdSecurity(
 			side: "buy",
 			security: { source: "known", id: securityId },
 			date,
-			quantity: toMicros(1_000_000),
-			price: toMicros(1_000_000),
+			quantity: quantity("1"),
+			price: tradePrice("1"),
 			fee: toMinorUnits(0),
 		},
 		{ origin: "user" },

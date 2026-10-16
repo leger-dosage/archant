@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react";
 
 import {
 	ArrowLeftRightIcon,
+	BitcoinIcon,
 	CarIcon,
 	ChartLineIcon,
 	CircleDashedIcon,
@@ -50,6 +51,8 @@ export type Tint = {
 export const ACCOUNT_TYPE_TINTS = {
 	depository: { color: "#9d6fe8", icon: LandmarkIcon },
 	investment: { color: "#4ea7fc", icon: ChartLineIcon },
+	// Sure's `Crypto.color` and its `bitcoin` icon.
+	crypto: { color: "#737373", icon: BitcoinIcon },
 	property: { color: "#00b8cc", icon: HouseIcon },
 	vehicle: { color: "#e2609c", icon: CarIcon },
 	credit_card: { color: "#eb5757", icon: CreditCardIcon },

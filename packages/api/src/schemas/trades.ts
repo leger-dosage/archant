@@ -1,8 +1,8 @@
 import { z } from "zod";
 
+import type { Quantity, TradePrice } from "@archant/data/decimals";
+import { readQuantity, readTradePrice } from "@archant/data/decimals";
 import { INCOME_KINDS } from "@archant/data/income-kinds";
-import type { Micros } from "@archant/data/micros";
-import { readMicros } from "@archant/data/micros";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 import type { PriceProviderId } from "@archant/data/schema/securities";
@@ -157,15 +157,19 @@ type Numbers = {
 	fee?: string | undefined;
 };
 
-/** The quantity, price and fee read, each `null` when absent or invalid. */
+/**
+ * The quantity, price and fee read, each `null` when absent or invalid: a
+ * quantity above zero up to Sure's 18 decimals, a price of zero or more up
+ * to its 10, one decimal more refused rather than rounded (AD-22).
+ */
 function numbersOf(value: Numbers, currency: CurrencyCode) {
-	const quantity = value.quantity === undefined ? null : readMicros(value.quantity);
-	const price = value.price === undefined ? null : readMicros(value.price);
+	const quantity = value.quantity === undefined ? null : readQuantity(value.quantity);
+	const price = value.price === undefined ? null : readTradePrice(value.price);
 	const fee = value.fee === undefined ? null : parseAmount(value.fee, currency);
 
 	return {
-		quantity: quantity !== null && quantity > 0 ? quantity : null,
-		price: price !== null && price >= 0 ? price : null,
+		quantity: quantity !== null && quantity !== "0" && !quantity.startsWith("-") ? quantity : null,
+		price: price !== null && !price.startsWith("-") ? price : null,
 		fee: fee !== null && fee >= 0 ? fee : null,
 	};
 }
@@ -211,7 +215,7 @@ function numbersIn(currency: CurrencyCode) {
 function checkedNumbers(
 	value: Numbers,
 	currency: CurrencyCode,
-): { quantity: Micros; price: Micros; fee: MinorUnits } {
+): { quantity: Quantity; price: TradePrice; fee: MinorUnits } {
 	const read = numbersOf(value, currency);
 
 	// Already reported by the refinement; kept so the output type never has to pretend.

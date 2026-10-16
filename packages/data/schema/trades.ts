@@ -1,5 +1,5 @@
+import type { Quantity, TradePrice } from "../decimals.ts";
 import type { IncomeKind } from "../income-kinds.ts";
-import type { Micros } from "../micros.ts";
 import type { MinorUnits } from "../money.ts";
 
 import { sql } from "drizzle-orm";
@@ -30,10 +30,13 @@ export const trades = sqliteTable(
 		securityId: text("security_id").references(() => securities.id, { onDelete: "restrict" }),
 		/** `null` for a buy or a sale. */
 		incomeKind: text("income_kind").$type<IncomeKind>(),
-		/** Millionths of a unit, signed: positive for a buy, negative for a sale, zero for an income. */
-		quantity: integer("quantity").$type<Micros>().notNull(),
-		/** Millionths of the account currency's major unit, per unit. */
-		price: integer("price").$type<Micros>().notNull(),
+		/**
+		 * Units as canonical decimal text, up to 18 decimals (`decimals.ts`):
+		 * positive for a buy, negative for a sale, `0` for an income.
+		 */
+		quantity: text("quantity").$type<Quantity>().notNull(),
+		/** The account currency's major unit per unit, canonical decimal text up to 10 decimals. */
+		price: text("price").$type<TradePrice>().notNull(),
 		/** Minor units of the account's currency. */
 		fee: integer("fee").$type<MinorUnits>().notNull(),
 	},
@@ -47,17 +50,19 @@ export const trades = sqliteTable(
 		// Holdings drop a trade of quantity zero, as Sure's `PortfolioCache`: a
 		// buy of nothing would vanish, and an income that moved a quantity
 		// would change what the account holds.
+		// The sign reads from the canonical text: zero is `'0'`, below zero
+		// starts with `-`.
 		check(
 			"trades_quantity_check",
-			sql`(${table.incomeKind} is null and ${table.quantity} <> 0) or (${table.incomeKind} is not null and ${table.quantity} = 0)`,
+			sql`(${table.incomeKind} is null and ${table.quantity} <> '0') or (${table.incomeKind} is not null and ${table.quantity} = '0')`,
 		),
 		// Zero is a real price: a free share is still a buy.
-		check("trades_price_check", sql`${table.price} >= 0`),
+		check("trades_price_check", sql`${table.price} not like '-%'`),
 		check("trades_fee_check", sql`${table.fee} >= 0`),
 		// An income is its amount alone.
 		check(
 			"trades_income_figures_check",
-			sql`${table.incomeKind} is null or (${table.price} = 0 and ${table.fee} = 0)`,
+			sql`${table.incomeKind} is null or (${table.price} = '0' and ${table.fee} = 0)`,
 		),
 		// Sure's `Security.cash_for`: only interest is paid on cash. `is not
 		// null` spelled out: a null comparison would let a buy through.

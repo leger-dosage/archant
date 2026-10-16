@@ -1,3 +1,4 @@
+import type { Quantity } from "@archant/data/decimals";
 import type { Micros } from "@archant/data/micros";
 import { divideHalfEven, toMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
@@ -53,7 +54,7 @@ export type PositionFigures = {
  * and its percentage, and the weight in the account's total (AD-22).
  */
 export function positionFigures(
-	position: { quantity: Micros; amount: MinorUnits; costBasis: Micros | null },
+	position: { quantity: Quantity; amount: MinorUnits; costBasis: Micros | null },
 	total: MinorUnits,
 	currency: string,
 ): PositionFigures {

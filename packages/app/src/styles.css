@@ -55,6 +55,7 @@
 	--color-trend-down: var(--trend-down);
 	--color-type-depository: var(--type-depository);
 	--color-type-investment: var(--type-investment);
+	--color-type-crypto: var(--type-crypto);
 	--color-type-property: var(--type-property);
 	--color-type-vehicle: var(--type-vehicle);
 	--color-type-credit-card: var(--type-credit-card);
@@ -130,6 +131,7 @@
 	--trend-down: #eb5757;
 	--type-depository: #9d6fe8;
 	--type-investment: #4ea7fc;
+	--type-crypto: #737373;
 	--type-property: #00b8cc;
 	--type-vehicle: #e2609c;
 	--type-credit-card: #eb5757;

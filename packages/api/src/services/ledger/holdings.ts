@@ -9,20 +9,19 @@ import {
 	desc,
 	eq,
 	exists,
-	gt,
 	gte,
 	inArray,
 	isNotNull,
 	lte,
 	max,
 	min,
-	ne,
 	not,
 	sql,
 } from "drizzle-orm";
 
+import { holdsSecurities } from "@archant/data/account-types";
+import type { Quantity } from "@archant/data/decimals";
 import type { Micros } from "@archant/data/micros";
-import { toMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
 import { MAX_MINOR_UNITS, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -39,8 +38,15 @@ import { marketValue } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
 import { historyStartOf, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
 import { stampedLocks } from "./patch.ts";
-import { invalidField, movesQuantity, oneByOne } from "./shared.ts";
-import { investmentAccount, resolveSecurity } from "./trades.ts";
+import {
+	invalidField,
+	movesQuantity,
+	oneByOne,
+	quantityAboveZero,
+	quantityNotAboveZero,
+	quantityNotZero,
+} from "./shared.ts";
+import { securitiesAccount, resolveSecurity } from "./trades.ts";
 
 /**
  * Values again what `securityId`'s prices from `from` on changed: each
@@ -80,9 +86,9 @@ export async function revalueHoldings(
 const FEE_COST_BASIS_KEY = "fee_cost_basis_recomputed_at";
 
 /**
- * Rewrites every investment account's holdings once per instance, so a cost
- * basis stored before a buy's fee counted in it (Story 27.5) gets that fee,
- * and returns how many accounts it recomputed. A migration cannot replay
+ * Rewrites the holdings of every account that holds securities once per
+ * instance, so a cost basis stored before a buy's fee counted in it (Story
+ * 27.5) gets that fee, and returns how many accounts it recomputed. A migration cannot replay
  * trades, so the `fee_cost_basis_recomputed_at` row is claimed in the same
  * transaction as the recompute (AD-12): a failure rolls the claim back and
  * the next start tries again, a later start recomputes nothing. No balance
@@ -105,13 +111,14 @@ export async function recomputeFeeCostBases(
 				return 0;
 			}
 
-			const investments = await tx
-				.select({ id: accounts.id, type: accounts.type, currency: accounts.currency })
-				.from(accounts)
-				.where(eq(accounts.type, "investment"))
-				.orderBy(asc(accounts.id));
+			const securitiesAccounts = (
+				await tx
+					.select({ id: accounts.id, type: accounts.type, currency: accounts.currency })
+					.from(accounts)
+					.orderBy(asc(accounts.id))
+			).filter((account) => holdsSecurities(account.type));
 
-			await oneByOne(investments, async (account) =>
+			await oneByOne(securitiesAccounts, async (account) =>
 				recomputeBalances(
 					tx,
 					account,
@@ -120,7 +127,7 @@ export async function recomputeFeeCostBases(
 				),
 			);
 
-			return investments.length;
+			return securitiesAccounts.length;
 		},
 		{ behavior: "immediate" },
 	);
@@ -140,8 +147,8 @@ export type CurrentHolding = {
 		provider: PriceProviderId | null;
 		offline: boolean;
 	};
-	/** Above zero: a security sold out is no position. */
-	quantity: Micros;
+	/** Not zero: a security sold out is no position; below zero when sold short. */
+	quantity: Quantity;
 	/** Per unit, in millionths of the account currency's major unit. */
 	price: Micros;
 	amount: MinorUnits;
@@ -192,7 +199,7 @@ function lockEndedOn(db: Reader) {
 			and(
 				eq(holdings.accountId, costBasisLocks.accountId),
 				eq(holdings.securityId, costBasisLocks.securityId),
-				sql`${holdings.quantity} <= 0`,
+				quantityNotAboveZero(holdings.quantity),
 				gte(holdings.date, costBasisLocks.lockedOn),
 			),
 		);
@@ -222,7 +229,7 @@ export async function liveCostBasisLocks(
 			and(
 				eq(holdings.accountId, costBasisLocks.accountId),
 				eq(holdings.securityId, costBasisLocks.securityId),
-				sql`${holdings.quantity} <= 0`,
+				quantityNotAboveZero(holdings.quantity),
 			),
 		);
 	const rows = await db
@@ -315,7 +322,7 @@ export async function currentHoldings(
 			and(
 				eq(holdings.accountId, accountId),
 				eq(holdings.date, date),
-				ne(holdings.quantity, toMicros(0)),
+				quantityNotZero(holdings.quantity),
 			),
 		)
 		.orderBy(desc(holdings.amount), asc(securities.name), asc(securities.id));
@@ -349,7 +356,7 @@ export type LastHeldHolding = {
 	 * Not zero: that day's quantity, a sold-out security's last one, below
 	 * zero when sold short.
 	 */
-	quantity: Micros;
+	quantity: Quantity;
 	price: Micros;
 	amount: MinorUnits;
 	/** The lock's when one stands on that day, else the calculated one. */
@@ -385,7 +392,7 @@ export async function lastHeldHoldings(
 			and(
 				inArray(holdings.accountId, [...accountIds]),
 				lte(holdings.date, day),
-				ne(holdings.quantity, toMicros(0)),
+				quantityNotZero(holdings.quantity),
 			),
 		)
 		.groupBy(holdings.accountId, holdings.securityId)
@@ -452,8 +459,8 @@ async function heldToday(
 	accountId: string,
 	securityId: string,
 	timeZone: string,
-): Promise<{ quantity: Micros; currency: string; day: IsoDate }> {
-	const account = await investmentAccount(tx, accountId);
+): Promise<{ quantity: Quantity; currency: string; day: IsoDate }> {
+	const account = await securitiesAccount(tx, accountId);
 	const day = today(timeZone);
 	const date = await lastHoldingsDay(tx, accountId, day);
 	const row =
@@ -467,7 +474,7 @@ async function heldToday(
 							eq(holdings.accountId, accountId),
 							eq(holdings.date, date),
 							eq(holdings.securityId, securityId),
-							gt(holdings.quantity, toMicros(0)),
+							quantityAboveZero(holdings.quantity),
 						),
 					)
 					.get();
@@ -584,7 +591,7 @@ export async function deletePosition(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
-			const account = await investmentAccount(tx, accountId);
+			const account = await securitiesAccount(tx, accountId);
 			const first = await firstTradeOf(tx, accountId, securityId);
 
 			if (first === null) {
@@ -656,7 +663,7 @@ export async function remapPosition(
 ): Promise<{ securityId: string }> {
 	return deps.db.transaction(
 		async (tx) => {
-			const account = await investmentAccount(tx, accountId);
+			const account = await securitiesAccount(tx, accountId);
 			const first = await firstTradeOf(tx, accountId, securityId);
 
 			if (first === null) {

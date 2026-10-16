@@ -24,6 +24,7 @@ import {
 import {
 	ACCOUNT_TYPE_IDS,
 	classificationOf,
+	holdsSecurities,
 	transactionsMoveBalance,
 } from "@archant/data/account-types";
 import type { MinorUnits, Money } from "@archant/data/money";
@@ -217,8 +218,9 @@ export async function backwardAnchor(db: Pick<ServiceDeps["db"], "select">, acco
 }
 
 /**
- * Rewrites an investment account's holdings from `from` to `until`, and
- * deletes the rows past that end; the rows before `from` stay as they are.
+ * Rewrites an investment or a crypto account's holdings from `from` to
+ * `until`, and deletes the rows past that end; the rows before `from` stay
+ * as they are.
  * The day before `from` is replayed from every earlier trade and each
  * security's last stored price before it (AD-22). Returns what each holding
  * is worth, by day.
@@ -306,8 +308,8 @@ async function recomputeHoldings(
  * Sure's `calculation_start_date`, so `affected` before it reads as that day.
  * Called by every ledger write inside its own transaction, so no commit ever
  * leaves `balances` stale (AD-2). A bank-linked account with a bank balance is
- * computed backward from it, whole; any other forward, an investment account's
- * holdings with it, from the same day, and a property's or a vehicle's from
+ * computed backward from it, whole; any other forward, an investment or a
+ * crypto account's holdings with it, from the same day, and a property's or a vehicle's from
  * its valuations alone.
  */
 export async function recomputeBalances(
@@ -339,7 +341,7 @@ export async function recomputeBalances(
 		.delete(balances)
 		.where(and(eq(balances.accountId, account.id), lt(balances.date, start)));
 
-	if (account.type === "investment") {
+	if (holdsSecurities(account.type)) {
 		await tx
 			.delete(holdings)
 			.where(and(eq(holdings.accountId, account.id), lt(holdings.date, start)));
@@ -369,9 +371,10 @@ export async function recomputeBalances(
 			),
 		);
 	const until = await lastBalanceDay(tx, account.id, timeZone);
-	// Only an investment account holds a security (AD-22).
-	const held =
-		account.type === "investment" ? await recomputeHoldings(tx, account, from, until) : [];
+	// Only an investment or a crypto account holds a security (AD-22).
+	const held = holdsSecurities(account.type)
+		? await recomputeHoldings(tx, account, from, until)
+		: [];
 
 	const rows: NewBalance[] = forwardBalances({
 		from,
@@ -454,6 +457,7 @@ export async function accountWithOpeningDate(tx: Transaction, accountId: string)
 		.select({
 			id: accounts.id,
 			type: accounts.type,
+			subtype: accounts.subtype,
 			currency: accounts.currency,
 			details: accounts.details,
 			bankAccountId: accounts.bankAccountId,

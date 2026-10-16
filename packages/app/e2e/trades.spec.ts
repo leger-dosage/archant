@@ -388,14 +388,110 @@ test("an income's amount is edited, its type and security kept", async ({ page, 
 	await expect(tradeRow(page, date)).toContainText(`+${euros(450)}`);
 });
 
-test("only an investment account has « Ordres »", async ({ page, api }) => {
-	const account = await api.openAccount();
+for (const [kind, name] of [
+	["checking", "a checking account"],
+	["wallet", "a crypto wallet"],
+] as const) {
+	test(`${name} has no « Ordres »: only an investment account and a crypto exchange take trades`, async ({
+		page,
+		api,
+	}) => {
+		const account = await api.openAccount({ kind });
 
-	await page.goto(`/accounts/${account.id}?tab=trades`);
+		await page.goto(`/accounts/${account.id}?tab=trades`);
 
-	await expect(page.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
-		"aria-selected",
-		"true",
+		await expect(page.getByRole("tab", { name: "Opérations" })).toHaveAttribute(
+			"aria-selected",
+			"true",
+		);
+		await expect(page.getByRole("tab", { name: "Ordres" })).toHaveCount(0);
+	});
+}
+
+// Story 28.11: Sure's crypto exchange takes trades at its 18 decimals.
+test("a crypto exchange created through the dialog records a buy of 0,000166666666666667 from « Ordres »", async ({
+	page,
+}) => {
+	const name = uniqueName("Plateforme");
+	const date = daysAgo(2);
+
+	await page.goto("/accounts");
+	await page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }).click();
+	const create = page.getByRole("dialog", { name: "Ajouter un compte" });
+	await create.getByLabel("Nom").fill(name);
+	await create.getByRole("combobox", { name: "Type" }).click();
+	await page.getByRole("option", { name: "Plateforme d'échange crypto" }).click();
+	await expect(create.getByRole("combobox", { name: "Traitement fiscal" })).toHaveText("Imposable");
+	await expect(
+		create.getByRole("combobox", { name: "Traitement fiscal" }),
+	).toHaveAccessibleDescription(
+		"La plupart des cryptomonnaies sont détenues dans des comptes imposables. Sélectionnez une autre option si elles sont détenues dans un compte fiscalement avantageux.",
 	);
-	await expect(page.getByRole("tab", { name: "Ordres" })).toHaveCount(0);
+	await create.getByLabel("Solde à la date :").fill("1 000,00");
+	await create.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(create).toBeHidden();
+
+	const row = page
+		.getByRole("region", { name: "Actifs" })
+		.getByRole("link", { name: new RegExp(name) });
+	await expect(row.getByText("Plateforme d'échange", { exact: true })).toBeVisible();
+	await row.click();
+	await page.getByRole("tab", { name: "Ordres" }).click();
+	await page.getByRole("button", { name: "Ajouter un ordre" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter un ordre" });
+	await searchSecurity(dialog, "Bitcoin");
+	await page.getByRole("option", { name: "Saisir un titre manuellement" }).click();
+	await fillNumbers(dialog, {
+		date,
+		quantity: "0,000166666666666667",
+		price: "60 000",
+		fee: "0",
+	});
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(tradeRow(page, date)).toContainText("0,000166666666666667 × 60 000,00 €");
+	await expect(tradeRow(page, date)).toContainText(euros(-1000));
+	// The cash less 10,00 €, plus the position worth them: the balance stays.
+	await expect(header(page, name)).toContainText(euros(100_000));
+
+	await page.getByRole("tab", { name: "Positions" }).click();
+	const cells = page
+		.getByRole("row")
+		.filter({ has: page.getByRole("button", { name: /^Bitcoin/u }) })
+		.getByRole("cell");
+	await expect(cells.nth(3)).toContainText(euros(1000));
+	await expect(cells.nth(3)).toContainText("0,000166666666666667 × 60 000,00 €");
+});
+
+test("a crypto exchange turned into a wallet keeps « Positions » and « Ordres », its trade there, with no action to record a new one", async ({
+	page,
+	api,
+	request,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("Plateforme"),
+		kind: "exchange",
+		openingBalance: "1 000,00",
+		openingDate: daysAgo(30),
+	});
+	const name = uniqueName("Bitcoin");
+	const date = daysAgo(5);
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name },
+		date,
+		quantity: "0,01",
+		price: "50 000",
+	});
+	const patched = await request.patch(`/api/accounts/${account.id}`, {
+		data: { subtype: "wallet" },
+	});
+	expect(patched.ok(), `${patched.url()} answered ${await patched.text()}`).toBe(true);
+
+	await page.goto(`/accounts/${account.id}?tab=positions`);
+	await expect(page.getByRole("button", { name: new RegExp(`^${name}`, "u") })).toBeVisible();
+
+	await page.getByRole("tab", { name: "Ordres" }).click();
+	await expect(tradeRow(page, date)).toContainText("0,01 × 50 000,00 €");
+	await expect(page.getByRole("button", { name: "Ajouter un ordre" })).toHaveCount(0);
 });

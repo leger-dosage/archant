@@ -130,6 +130,29 @@ test("a contribution matched as a transfer stays a line of the PEA, with nothing
 	await expect(sheet(page).getByRole("button", { name: "Convertir en ordre" })).toHaveCount(0);
 });
 
+// Story 28.11: only an account that takes trades converts a line, Sure's `supports_trades?`.
+for (const [kind, offered] of [
+	["exchange", 1],
+	["wallet", 0],
+] as const) {
+	test(`a line on a crypto ${kind} ${offered === 1 ? "offers" : "does not offer"} « Convertir en ordre »`, async ({
+		page,
+		api,
+	}) => {
+		const account = await api.openAccount({ name: uniqueName("Crypto"), kind });
+		const label = uniqueName("ACHAT BTC");
+		await api.addTransaction(account.id, { date: daysAgo(4), label, amount: "-50,00" });
+
+		await page.goto(`/accounts/${account.id}`);
+		await rowButton(page, label).click();
+
+		await expect(sheet(page)).toBeVisible();
+		await expect(sheet(page).getByRole("button", { name: "Convertir en ordre" })).toHaveCount(
+			offered,
+		);
+	});
+}
+
 test("a dividend line converted from its sheet becomes a trade, which the month's income never counts, as no PEA line does", async ({
 	page,
 	api,

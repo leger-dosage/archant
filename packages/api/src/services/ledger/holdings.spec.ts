@@ -1,6 +1,6 @@
 import type { TradeInput } from "./trades.ts";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import { toMicros } from "@archant/data/micros";
@@ -13,6 +13,7 @@ import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
 import { trades } from "@archant/data/schema/trades";
 
+import { quantity as qty, tradePrice } from "../../testing/decimals.ts";
 import {
 	add,
 	deps,
@@ -72,8 +73,8 @@ function buy(securityId: string, overrides: Partial<OrderInput> = {}): OrderInpu
 		side: "buy",
 		security: { source: "known", id: securityId },
 		date: "2026-09-10",
-		quantity: toMicros(10_000_000),
-		price: toMicros(612_400_000),
+		quantity: qty("10"),
+		price: tradePrice("612.4"),
 		fee: toMinorUnits(250),
 		...overrides,
 	};
@@ -82,7 +83,7 @@ function buy(securityId: string, overrides: Partial<OrderInput> = {}): OrderInpu
 const sell = (securityId: string, overrides: Partial<OrderInput> = {}) =>
 	buy(securityId, {
 		side: "sell",
-		price: toMicros(650_000_000),
+		price: tradePrice("650"),
 		fee: toMinorUnits(0),
 		...overrides,
 	});
@@ -141,8 +142,8 @@ describe("holdings in the balance recompute", () => {
 
 		const rows = await holdingsOf(pea.id);
 		expect(rows).toHaveLength(12);
-		expect(rows[0]).toBe("2026-09-10 10000000 612400000 612400 612650000");
-		expect(rows.at(-1)).toBe("2026-09-21 10000000 612400000 612400 612650000");
+		expect(rows[0]).toBe("2026-09-10 10 612400000 612400 612650000");
+		expect(rows.at(-1)).toBe("2026-09-21 10 612400000 612400 612650000");
 		await expect(dayOf(pea.id, "2026-09-09")).resolves.toEqual({
 			balance: 2_500_000,
 			cash: 2_500_000,
@@ -160,9 +161,7 @@ describe("holdings in the balance recompute", () => {
 
 		await record(pea.id, buy(securityId));
 
-		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-10 10000000 640000000 640000 612650000",
-		);
+		await expect(holdingsOf(pea.id)).resolves.toContain("2026-09-10 10 640000000 640000 612650000");
 		await expect(dayOf(pea.id, "2026-09-10")).resolves.toEqual({
 			balance: 1_887_350 + 640_000,
 			cash: 1_887_350,
@@ -179,8 +178,8 @@ describe("holdings in the balance recompute", () => {
 			pea.id,
 			buy(securityId, {
 				date: "2026-09-15",
-				quantity: toMicros(5_000_000),
-				price: toMicros(700_000_000),
+				quantity: qty("5"),
+				price: tradePrice("700"),
 				fee: toMinorUnits(0),
 			}),
 		);
@@ -190,7 +189,7 @@ describe("holdings in the balance recompute", () => {
 			"2026-09-12 0 650000000 0 null",
 			"2026-09-13 0 650000000 0 null",
 			"2026-09-14 0 650000000 0 null",
-			"2026-09-15 5000000 700000000 350000 700000000",
+			"2026-09-15 5 700000000 350000 700000000",
 		]);
 		await expect(dayOf(pea.id, "2026-09-14")).resolves.toEqual({
 			balance: 2_500_000 - 612_650 + 650_000,
@@ -247,17 +246,15 @@ describe("holdings in the balance recompute", () => {
 		const id = await record(pea.id, buy(securityId, { date: "2026-09-10" }));
 
 		const rows = await holdingsOf(pea.id);
-		expect(rows[1]).toBe("2026-09-06 10000000 1 612400 612650000");
-		expect(rows[5]).toBe("2026-09-10 20000000 612400000 1224800 612650000");
+		expect(rows[1]).toBe("2026-09-06 10 1 612400 612650000");
+		expect(rows[5]).toBe("2026-09-10 20 612400000 1224800 612650000");
 
 		await updateTrade(deps(), id, { date: "2026-09-08" }, user);
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-08 20000000 612400000 1224800 612650000",
+			"2026-09-08 20 612400000 1224800 612650000",
 		);
 		await deleteTrade(deps(), id, user);
-		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-08 10000000 612400000 612400 612650000",
-		);
+		await expect(holdingsOf(pea.id)).resolves.toContain("2026-09-08 10 612400000 612400 612650000");
 	});
 
 	it("deletes the rows past the last balance day, as the balances", async () => {
@@ -314,6 +311,7 @@ describe("recomputeFeeCostBases", () => {
 	it("puts each buy's fee in a stored cost basis once, every balance left as it was", async () => {
 		const pea = await openPea();
 		const checking = await openChecking();
+		const wallet = await openPea({ name: "Crypto", type: "crypto", subtype: "wallet" });
 		const securityId = await newSecurity();
 		await record(pea.id, buy(securityId));
 		// As a release before Story 27.5 stored it: the fee out.
@@ -330,11 +328,12 @@ describe("recomputeFeeCostBases", () => {
 				.where(eq(balances.accountId, pea.id))
 				.orderBy(asc(balances.date));
 		const before = await balancesOf();
-		// The file's other tests opened investment accounts too, all recomputed.
+		// The file's other tests opened investment accounts too, all recomputed,
+		// and a crypto account holds securities as one does.
 		const investments = await temp.db
 			.select({ id: accounts.id })
 			.from(accounts)
-			.where(eq(accounts.type, "investment"));
+			.where(inArray(accounts.type, ["investment", "crypto"]));
 		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
 
 		await expect(recomputeFeeCostBases(deps())).resolves.toBe(investments.length);
@@ -342,6 +341,7 @@ describe("recomputeFeeCostBases", () => {
 		const calls = recompute.mock.calls.map(([, account, from]) => [account.id, from]);
 		expect(calls).toHaveLength(investments.length);
 		expect(calls).toContainEqual([pea.id, "2026-09-01"]);
+		expect(calls.flat()).toContain(wallet.id);
 		expect(calls.flat()).not.toContain(checking.id);
 		const rows = await holdingsOf(pea.id);
 		expect(rows).toHaveLength(12);
@@ -365,9 +365,9 @@ describe("revalueHoldings", () => {
 
 		const rows = await holdingsOf(pea.id);
 		expect(rows.slice(0, 3)).toEqual([
-			"2026-09-10 10000000 612400000 612400 612650000",
-			"2026-09-11 10000000 650000000 650000 612650000",
-			"2026-09-12 10000000 650000000 650000 612650000",
+			"2026-09-10 10 612400000 612400 612650000",
+			"2026-09-11 10 650000000 650000 612650000",
+			"2026-09-12 10 650000000 650000 612650000",
 		]);
 		await expect(dayOf(pea.id, "2026-09-11")).resolves.toEqual({
 			balance: 2_537_350,
@@ -377,12 +377,8 @@ describe("revalueHoldings", () => {
 		// A later import starts from the price stored before it.
 		await storePrice(securityId, "2026-09-14", 660_000_000);
 		await revalue(securityId, "2026-09-14");
-		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-13 10000000 650000000 650000 612650000",
-		);
-		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-15 10000000 660000000 660000 612650000",
-		);
+		await expect(holdingsOf(pea.id)).resolves.toContain("2026-09-13 10 650000000 650000 612650000");
+		await expect(holdingsOf(pea.id)).resolves.toContain("2026-09-15 10 660000000 660000 612650000");
 	});
 
 	it("starts a later write from the last price stored before it", async () => {
@@ -396,9 +392,7 @@ describe("revalueHoldings", () => {
 		// No price from 2026-09-14 on: the recompute reads the latest one before it.
 		await snapshot(pea.id, "2026-09-14", 2_600_000);
 
-		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-14 10000000 650000000 650000 612650000",
-		);
+		await expect(holdingsOf(pea.id)).resolves.toContain("2026-09-14 10 650000000 650000 612650000");
 		await expect(dayOf(pea.id, "2026-09-14")).resolves.toEqual({
 			balance: 2_600_000,
 			cash: 2_600_000 - 650_000,
@@ -457,8 +451,8 @@ describe("currentHoldings", () => {
 			pea.id,
 			buy(fund, {
 				date: "2026-09-12",
-				quantity: toMicros(5_000_000),
-				price: toMicros(100_000_000),
+				quantity: qty("5"),
+				price: tradePrice("100"),
 				fee: toMinorUnits(0),
 			}),
 		);
@@ -477,7 +471,7 @@ describe("currentHoldings", () => {
 						provider: "yahoo",
 						offline: false,
 					},
-					quantity: 10_000_000,
+					quantity: "10",
 					price: 650_000_000,
 					amount: 650_000,
 					costBasis: 612_650_000,
@@ -494,7 +488,7 @@ describe("currentHoldings", () => {
 						provider: "yahoo",
 						offline: false,
 					},
-					quantity: 5_000_000,
+					quantity: "5",
 					price: 100_000_000,
 					amount: 50_000,
 					costBasis: 100_000_000,
@@ -535,7 +529,7 @@ describe("currentHoldings", () => {
 		await record(pea.id, buy(securityId));
 		await storePrice(securityId, "2026-09-11", 650_000_000);
 		await revalue(securityId, "2026-09-11");
-		await record(pea.id, buy(securityId, { date: "2026-09-15", price: toMicros(700_000_000) }));
+		await record(pea.id, buy(securityId, { date: "2026-09-15", price: tradePrice("700") }));
 
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
 			holdings: [{ price: 700_000_000, priceDate: "2026-09-15" }],
@@ -577,7 +571,7 @@ describe("currentHoldings", () => {
 		const short = await newSecurity("Vendu à découvert");
 		await record(pea.id, buy(held));
 		await record(pea.id, buy(short));
-		await record(pea.id, sell(short, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
+		await record(pea.id, sell(short, { date: "2026-09-12", quantity: qty("15") }));
 
 		const { holdings: rows } = await currentHoldings(temp.db, pea.id, "2026-09-21");
 
@@ -589,8 +583,8 @@ describe("currentHoldings", () => {
 				costBasis,
 			]),
 		).toEqual([
-			["Détenu", 10_000_000, 612_400, 612_650_000],
-			["Vendu à découvert", -5_000_000, -325_000, null],
+			["Détenu", "10", 612_400, 612_650_000],
+			["Vendu à découvert", "-5", -325_000, null],
 		]);
 	});
 
@@ -626,14 +620,14 @@ describe("lastHeldHoldings", () => {
 		await record(other.id, buy(soldOut));
 		await record(pea.id, sell(soldOut, { date: "2026-09-12" }));
 		await record(pea.id, sell(rebought, { date: "2026-09-12" }));
-		await record(pea.id, buy(rebought, { date: "2026-09-14", price: toMicros(700_000_000) }));
+		await record(pea.id, buy(rebought, { date: "2026-09-14", price: tradePrice("700") }));
 		setToday("2026-09-15T10:00:00Z");
 		await lock(pea.id, lockedThenSold, 400_000_000);
 		await lock(pea.id, lockEnded, 450_000_000);
 		setToday("2026-09-21T10:00:00Z");
 		await record(pea.id, sell(lockedThenSold, { date: "2026-09-16" }));
 		await record(pea.id, sell(lockEnded, { date: "2026-09-16" }));
-		await record(pea.id, buy(lockEnded, { date: "2026-09-18", price: toMicros(700_000_000) }));
+		await record(pea.id, buy(lockEnded, { date: "2026-09-18", price: tradePrice("700") }));
 		// Locked after a full sale: it stands on the position bought back.
 		await lock(pea.id, rebought, 650_000_000);
 
@@ -655,7 +649,7 @@ describe("lastHeldHoldings", () => {
 				accountId: pea.id,
 				name: "Racheté",
 				date: "2026-09-21",
-				quantity: 10_000_000,
+				quantity: "10",
 				amount: 700_000,
 				costBasis: 650_000_000,
 			},
@@ -663,7 +657,7 @@ describe("lastHeldHoldings", () => {
 				accountId: pea.id,
 				name: "Vendu",
 				date: "2026-09-11",
-				quantity: 10_000_000,
+				quantity: "10",
 				amount: 612_400,
 				costBasis: 612_650_000,
 			},
@@ -672,7 +666,7 @@ describe("lastHeldHoldings", () => {
 				accountId: pea.id,
 				name: "Verrou levé",
 				date: "2026-09-21",
-				quantity: 10_000_000,
+				quantity: "10",
 				amount: 700_000,
 				costBasis: 700_250_000,
 			},
@@ -681,7 +675,7 @@ describe("lastHeldHoldings", () => {
 				accountId: pea.id,
 				name: "Verrou puis vente",
 				date: "2026-09-15",
-				quantity: 10_000_000,
+				quantity: "10",
 				amount: 612_400,
 				costBasis: 400_000_000,
 			},
@@ -693,10 +687,10 @@ describe("lastHeldHoldings", () => {
 		const pea = await openPea();
 		const securityId = await newSecurity();
 		await record(pea.id, buy(securityId));
-		await record(pea.id, sell(securityId, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
+		await record(pea.id, sell(securityId, { date: "2026-09-12", quantity: qty("15") }));
 
 		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-21")).resolves.toMatchObject([
-			{ date: "2026-09-21", quantity: -5_000_000, amount: -325_000, costBasis: null },
+			{ date: "2026-09-21", quantity: "-5", amount: -325_000, costBasis: null },
 		]);
 		await expect(lastHeldHoldings(temp.db, [], "2026-09-21")).resolves.toEqual([]);
 	});
@@ -735,19 +729,19 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await record(pea.id, buy(securityId));
 		await lock(pea.id, securityId, 400_000_000);
 
-		await record(pea.id, buy(securityId, { date: "2026-09-15", price: toMicros(700_000_000) }));
+		await record(pea.id, buy(securityId, { date: "2026-09-15", price: tradePrice("700") }));
 		await storePrice(securityId, "2026-09-16", 710_000_000);
 		await revalue(securityId, "2026-09-16");
 
 		const [position] = (await currentHoldings(temp.db, pea.id, "2026-09-21")).holdings;
 		expect(position).toMatchObject({
-			quantity: 20_000_000,
+			quantity: "20",
 			costBasis: 400_000_000,
 			costBasisLocked: true,
 		});
 		// The holdings still carry the calculated one.
 		await expect(holdingsOf(pea.id)).resolves.toContain(
-			"2026-09-21 20000000 710000000 1420000 656450000",
+			"2026-09-21 20 710000000 1420000 656450000",
 		);
 	});
 
@@ -765,13 +759,13 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await record(pea.id, buy(securityId, { date: "2026-09-15" }));
 		setToday("2026-09-21T10:00:00Z");
 
-		await record(pea.id, sell(other, { date: "2026-09-16", quantity: toMicros(4_000_000) }));
+		await record(pea.id, sell(other, { date: "2026-09-16", quantity: qty("4") }));
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
 			holdings: [{ costBasisLocked: true }, { costBasisLocked: true }],
 		});
 
 		await record(pea.id, sell(securityId, { date: "2026-09-16" }));
-		await record(pea.id, buy(securityId, { date: "2026-09-18", price: toMicros(700_000_000) }));
+		await record(pea.id, buy(securityId, { date: "2026-09-18", price: tradePrice("700") }));
 
 		const held = (await currentHoldings(temp.db, pea.id, "2026-09-21")).holdings;
 		expect(held.find((holding) => holding.security.id === securityId)).toMatchObject({
@@ -799,23 +793,23 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await lock(pea.id, securityId, 400_000_000);
 		setToday("2026-09-21T10:00:00Z");
 
-		await record(pea.id, sell(securityId, { date: "2026-09-16", quantity: toMicros(15_000_000) }));
+		await record(pea.id, sell(securityId, { date: "2026-09-16", quantity: qty("15") }));
 		await record(
 			pea.id,
 			buy(securityId, {
 				date: "2026-09-18",
-				quantity: toMicros(8_000_000),
-				price: toMicros(700_000_000),
+				quantity: qty("8"),
+				price: tradePrice("700"),
 			}),
 		);
 
 		// 8 at 700 € and 2.50 € of fees, the tracker emptied by the sale.
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
-			holdings: [{ quantity: 3_000_000, costBasis: 700_312_500, costBasisLocked: false }],
+			holdings: [{ quantity: "3", costBasis: 700_312_500, costBasisLocked: false }],
 		});
 		await expect(liveCostBasisLocks(temp.db, pea.id)).resolves.toEqual([]);
 		await expect(lastHeldHoldings(temp.db, [pea.id], "2026-09-21")).resolves.toMatchObject([
-			{ quantity: 3_000_000, costBasis: 700_312_500 },
+			{ quantity: "3", costBasis: 700_312_500 },
 		]);
 	});
 
@@ -823,10 +817,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		const pea = await openPea();
 		const securityId = await newSecurity();
 		// A thousand units at a cost basis of a billion euros each.
-		await record(
-			pea.id,
-			buy(securityId, { quantity: toMicros(1_000_000_000), price: toMicros(1_000_000) }),
-		);
+		await record(pea.id, buy(securityId, { quantity: qty("1000"), price: tradePrice("1") }));
 
 		await expect(lock(pea.id, securityId, 1_000_000_000_000_000)).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
@@ -844,7 +835,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await record(pea.id, sell(traded, { date: "2026-09-12" }));
 		const short = await newSecurity();
 		await record(pea.id, buy(short));
-		await record(pea.id, sell(short, { date: "2026-09-12", quantity: toMicros(15_000_000) }));
+		await record(pea.id, sell(short, { date: "2026-09-12", quantity: qty("15") }));
 
 		await expect(lock(pea.id, traded, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		// Sure's `HoldingsController#update` checks `qty.positive?`.
@@ -853,7 +844,7 @@ describe("lockCostBasis and unlockCostBasis", () => {
 		await expect(lock(fresh.id, never, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(lock("nope", never, 1)).rejects.toMatchObject({ code: "NOT_FOUND" });
 		await expect(lock(checking.id, never, 1)).rejects.toMatchObject({
-			code: "NOT_AN_INVESTMENT_ACCOUNT",
+			code: "TRADES_NOT_SUPPORTED",
 		});
 		await expect(unlockCostBasis(deps(), pea.id, traded, user)).rejects.toMatchObject({
 			code: "NOT_FOUND",
@@ -928,8 +919,8 @@ async function converted(accountId: string, securityId: string) {
 		{
 			side: "buy",
 			security: { source: "known", id: securityId },
-			quantity: toMicros(10_000_000),
-			price: toMicros(612_400_000),
+			quantity: qty("10"),
+			price: tradePrice("612.4"),
 		},
 		user,
 	);
@@ -944,7 +935,7 @@ describe("deletePosition", () => {
 		const other = await newSecurity("Air Liquide");
 		await record(pea.id, buy(securityId));
 		await record(pea.id, buy(securityId, { date: "2026-09-12" }));
-		await record(pea.id, sell(securityId, { date: "2026-09-14", quantity: toMicros(5_000_000) }));
+		await record(pea.id, sell(securityId, { date: "2026-09-14", quantity: qty("5") }));
 		await record(pea.id, dividendOf(securityId));
 		await record(pea.id, buy(other, { date: "2026-09-11" }));
 		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
@@ -952,7 +943,7 @@ describe("deletePosition", () => {
 		await deletePosition(deps(), pea.id, securityId, user);
 
 		expect(recompute).toHaveBeenCalledTimes(1);
-		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-11 ${other} 10000000`]);
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-11 ${other} 10`]);
 		await expect(heldSecurities(pea.id)).resolves.toEqual([other]);
 		// The opening 25 000 € less the other buy, at 612.40 € and 2.50 € of fees.
 		await expect(dayOf(pea.id, "2026-09-21")).resolves.toEqual({
@@ -1044,7 +1035,7 @@ describe("deletePosition", () => {
 			code: "NOT_FOUND",
 		});
 		await expect(deletePosition(deps(), checking.id, securityId, user)).rejects.toMatchObject({
-			code: "NOT_AN_INVESTMENT_ACCOUNT",
+			code: "TRADES_NOT_SUPPORTED",
 		});
 		expect(recompute).not.toHaveBeenCalled();
 		await expect(tradesOf(elsewhere.id)).resolves.toHaveLength(1);
@@ -1077,7 +1068,7 @@ describe("remapPosition", () => {
 			provider: "yahoo",
 		});
 		await expect(tradesOf(pea.id)).resolves.toEqual([
-			`2026-09-10 ${target} 10000000`,
+			`2026-09-10 ${target} 10`,
 			`2026-09-15 ${target} 0`,
 		]);
 		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
@@ -1091,7 +1082,7 @@ describe("remapPosition", () => {
 		const pea = await openPea();
 		const securityId = await newSecurity();
 		const target = await newSecurity("Air Liquide");
-		await record(pea.id, buy(target, { date: "2026-09-14", quantity: toMicros(5_000_000) }));
+		await record(pea.id, buy(target, { date: "2026-09-14", quantity: qty("5") }));
 		await record(pea.id, buy(securityId));
 		const before = await dayOf(pea.id, "2026-09-21");
 		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
@@ -1103,7 +1094,7 @@ describe("remapPosition", () => {
 		expect(recompute.mock.calls[0]?.[2]).toBe("2026-09-10");
 		// 15 bought for 9 186 € and 5 € of fees.
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
-			holdings: [{ security: { id: target }, quantity: 15_000_000, costBasis: 612_733_333 }],
+			holdings: [{ security: { id: target }, quantity: "15", costBasis: 612_733_333 }],
 		});
 		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
 		await expect(dayOf(pea.id, "2026-09-21")).resolves.toEqual(before);
@@ -1142,7 +1133,7 @@ describe("remapPosition", () => {
 		const securityId = await newSecurity();
 		const target = await newSecurity("Air Liquide");
 		await record(pea.id, buy(securityId));
-		await record(pea.id, buy(target, { quantity: toMicros(5_000_000) }));
+		await record(pea.id, buy(target, { quantity: qty("5") }));
 		setToday("2026-09-15T10:00:00Z");
 		await lock(pea.id, securityId, 400_000_000);
 		setToday("2026-09-21T10:00:00Z");
@@ -1153,7 +1144,7 @@ describe("remapPosition", () => {
 
 		await expect(locksOf(pea.id)).resolves.toEqual([]);
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
-			holdings: [{ security: { id: target }, quantity: 15_000_000, costBasisLocked: false }],
+			holdings: [{ security: { id: target }, quantity: "15", costBasisLocked: false }],
 		});
 	});
 
@@ -1189,7 +1180,7 @@ describe("remapPosition", () => {
 		await remap(pea.id, securityId, { source: "known", id: target });
 
 		await expect(currentHoldings(temp.db, pea.id, "2026-09-21")).resolves.toMatchObject({
-			holdings: [{ security: { id: target }, quantity: -10_000_000 }],
+			holdings: [{ security: { id: target }, quantity: "-10" }],
 		});
 		await expect(heldSecurities(pea.id)).resolves.toEqual([target]);
 	});
@@ -1198,7 +1189,7 @@ describe("remapPosition", () => {
 		const pea = await openPea();
 		const securityId = await newSecurity();
 		const target = await newSecurity("Air Liquide");
-		await record(pea.id, buy(target, { date: "2026-09-05", quantity: toMicros(5_000_000) }));
+		await record(pea.id, buy(target, { date: "2026-09-05", quantity: qty("5") }));
 		await record(pea.id, buy(securityId));
 		const recompute = vi.spyOn(ledgerBalances, "recomputeBalances");
 
@@ -1206,10 +1197,10 @@ describe("remapPosition", () => {
 
 		expect(recompute.mock.calls[0]?.[2]).toBe("2026-09-05");
 		const rows = await holdingsOf(pea.id);
-		expect(rows[0]).toBe("2026-09-05 5000000 612400000 306200 612900000");
-		expect(rows).toContain("2026-09-09 5000000 612400000 306200 612900000");
-		expect(rows).toContain("2026-09-10 15000000 612400000 918600 612733333");
-		expect(rows.at(-1)).toBe("2026-09-21 15000000 612400000 918600 612733333");
+		expect(rows[0]).toBe("2026-09-05 5 612400000 306200 612900000");
+		expect(rows).toContain("2026-09-09 5 612400000 306200 612900000");
+		expect(rows).toContain("2026-09-10 15 612400000 918600 612733333");
+		expect(rows.at(-1)).toBe("2026-09-21 15 612400000 918600 612733333");
 	});
 
 	it("writes nothing for the same security", async () => {
@@ -1223,7 +1214,7 @@ describe("remapPosition", () => {
 		});
 
 		expect(recompute).not.toHaveBeenCalled();
-		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10`]);
 	});
 
 	it("refuses a security in another currency, and writes nothing", async () => {
@@ -1251,7 +1242,7 @@ describe("remapPosition", () => {
 			}),
 		).rejects.toMatchObject({ fields: [{ path: "security", code: "currency_mismatch" }] });
 
-		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10`]);
 		await expect(
 			temp.db.select().from(securities).where(eq(securities.ticker, ticker)),
 		).resolves.toEqual([]);
@@ -1275,11 +1266,34 @@ describe("remapPosition", () => {
 
 		await expect(
 			remap(checking.id, securityId, { source: "known", id: securityId }),
-		).rejects.toMatchObject({ code: "NOT_AN_INVESTMENT_ACCOUNT" });
+		).rejects.toMatchObject({ code: "TRADES_NOT_SUPPORTED" });
 		await expect(remap(pea.id, securityId, { source: "known", id: "nope" })).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "security", code: "invalid_value" }],
 		});
-		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10000000`]);
+		await expect(tradesOf(pea.id)).resolves.toEqual([`2026-09-10 ${securityId} 10`]);
+	});
+});
+
+describe("crypto accounts", () => {
+	it("keep their positions once an exchange becomes a wallet: listed, locked, remapped and deleted as an investment's", async () => {
+		const exchange = await openPea({ name: "Crypto", type: "crypto", subtype: "exchange" });
+		const bitcoin = await newSecurity("Bitcoin");
+		const ether = await newSecurity("Ether");
+		await record(
+			exchange.id,
+			buy(bitcoin, { quantity: qty("0.5"), price: tradePrice("60000"), fee: toMinorUnits(0) }),
+		);
+		await temp.db.update(accounts).set({ subtype: "wallet" }).where(eq(accounts.id, exchange.id));
+
+		await expect(currentHoldings(temp.db, exchange.id, "2026-09-21")).resolves.toMatchObject({
+			holdings: [{ quantity: "0.5", amount: 3_000_000, costBasis: 60_000_000_000 }],
+		});
+		await lock(exchange.id, bitcoin, 50_000_000_000);
+		await expect(liveCostBasisLocks(temp.db, exchange.id)).resolves.toHaveLength(1);
+		await remapPosition(deps(), exchange.id, bitcoin, { source: "known", id: ether });
+		await expect(heldSecurities(exchange.id)).resolves.toEqual([ether]);
+		await deletePosition(deps(), exchange.id, ether, user);
+		await expect(tradesOf(exchange.id)).resolves.toEqual([]);
 	});
 });

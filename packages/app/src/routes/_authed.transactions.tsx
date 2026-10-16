@@ -149,6 +149,7 @@ function OperationSheet({
 				id: data.id,
 				currency: data.currency,
 				type: data.type,
+				subtype: data.subtype,
 			}}
 			open={open}
 			transaction={transaction}

@@ -79,7 +79,7 @@ import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.
 import { categoryFilterNamed, idsNamed } from "./names.ts";
 import { recurringEntryIds } from "./recurring/series.ts";
 import { getReportingCurrency } from "./settings.ts";
-import { getTrade, investmentCurrency } from "./trades.ts";
+import { getTrade, tradeCurrency } from "./trades.ts";
 
 /**
  * Where a transaction came from, shown in its sheet: typed by hand, or
@@ -826,9 +826,10 @@ export async function unsplitTransaction(deps: ServiceDeps, id: string): Promise
 }
 
 /**
- * Converts a transaction of an investment account into a trade on the
- * user's behalf, as Sure's « Convertir en ordre »: the trade takes its date
- * and amount, and the transaction stays as its excluded parent (AD-20).
+ * Converts a transaction of an investment account or a crypto exchange
+ * into a trade on the user's behalf, as Sure's « Convertir en ordre »: the
+ * trade takes its date and amount, and the transaction stays as its
+ * excluded parent (AD-20).
  * Returns the trade.
  */
 export async function convertTransaction(
@@ -837,7 +838,7 @@ export async function convertTransaction(
 	input: ConvertTradeInput,
 ): Promise<TradeData> {
 	const current = await getTransaction(deps, id);
-	const currency = await investmentCurrency(deps, current.accountId);
+	const currency = await tradeCurrency(deps, current.accountId);
 	// The sign and the fee are the ledger's to check, after a line it cannot
 	// convert is refused whatever the body says.
 	const parsed = convertTradeSchema(currency, null).safeParse(input);

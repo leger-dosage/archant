@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { toMicros } from "@archant/data/micros";
 import { MAX_MINOR_UNITS, toMinorUnits } from "@archant/data/money";
 
+import {
+	quantity as q,
+	quantityFromMicros,
+	tradePrice as p,
+	tradePriceFromMicros,
+} from "../testing/decimals.ts";
 import {
 	conversionFee,
 	isIncome,
@@ -11,11 +16,16 @@ import {
 	sideOf,
 	signFits,
 	signedQuantity,
+	buyCostFits,
 	tradeAmount,
+	tradeValue,
 	typeOf,
+	unsignedQuantity,
 } from "./trades.ts";
 
-const micros = (value: number) => toMicros(value);
+// Millionths, as these cases were written before AD-22 took Sure's decimals.
+const micros = (value: number) => quantityFromMicros(value);
+const priceMicros = (value: number) => tradePriceFromMicros(value);
 
 describe("tradeAmount", () => {
 	it.each([
@@ -37,7 +47,7 @@ describe("tradeAmount", () => {
 	] as const)("%s", (_name, quantity, price, fee, currency, expected) => {
 		expect(
 			tradeAmount(
-				{ quantity: micros(quantity), price: micros(price), fee: toMinorUnits(fee) },
+				{ quantity: micros(quantity), price: priceMicros(price), fee: toMinorUnits(fee) },
 				currency,
 			),
 		).toBe(expected);
@@ -46,7 +56,7 @@ describe("tradeAmount", () => {
 	it("never returns negative zero", () => {
 		expect(
 			Object.is(
-				tradeAmount({ quantity: micros(-1), price: micros(1), fee: toMinorUnits(0) }, "EUR"),
+				tradeAmount({ quantity: micros(-1), price: priceMicros(1), fee: toMinorUnits(0) }, "EUR"),
 				0,
 			),
 		).toBe(true);
@@ -55,7 +65,7 @@ describe("tradeAmount", () => {
 	it("refuses an amount past MAX_MINOR_UNITS either way, and keeps the limit itself", () => {
 		// 100,000 shares at 1,000,000 €: 100 billion euros, MAX_MINOR_UNITS cents.
 		const quantity = micros(100_000_000_000);
-		const price = micros(1_000_000_000_000);
+		const price = priceMicros(1_000_000_000_000);
 
 		expect(tradeAmount({ quantity, price, fee: toMinorUnits(0) }, "EUR")).toBe(-MAX_MINOR_UNITS);
 		expect(tradeAmount({ quantity, price, fee: toMinorUnits(1) }, "EUR")).toBeNull();
@@ -67,10 +77,62 @@ describe("tradeAmount", () => {
 
 describe("signedQuantity and sideOf", () => {
 	it("signs a buy positive and a sale negative, and reads the side back", () => {
-		expect(signedQuantity("buy", micros(4_000_000))).toBe(4_000_000);
-		expect(signedQuantity("sell", micros(4_000_000))).toBe(-4_000_000);
-		expect(sideOf(micros(4_000_000))).toBe("buy");
-		expect(sideOf(micros(-4_000_000))).toBe("sell");
+		expect(signedQuantity("buy", q("4"))).toBe("4");
+		expect(signedQuantity("sell", q("4"))).toBe("-4");
+		expect(signedQuantity("sell", q("0.000166666666666667"))).toBe("-0.000166666666666667");
+		expect(sideOf(q("4"))).toBe("buy");
+		expect(sideOf(q("-4"))).toBe("sell");
+		expect(unsignedQuantity(q("-0.5"))).toBe("0.5");
+		expect(unsignedQuantity(q("0.5"))).toBe("0.5");
+	});
+});
+
+describe("Sure's decimals", () => {
+	it("prices a buy of 0.000166666666666667 at 60 000 € at 10,00 €, exactly as typed", () => {
+		expect(
+			tradeAmount(
+				{ quantity: q("0.000166666666666667"), price: p("60000"), fee: toMinorUnits(0) },
+				"EUR",
+			),
+		).toBe(-1000);
+	});
+
+	it("multiplies eighteen decimals by ten without a float", () => {
+		// 12 345.123456789012345678 × 0.0000000001 is 0.0000012345… €, no cent.
+		expect(tradeValue(q("12345.123456789012345678"), p("0.0000000001"), "EUR")).toBe(0n);
+		// 12 345.123456789012345678 × 1.0000000001 is 12 345.1234580235… €.
+		expect(tradeValue(q("12345.123456789012345678"), p("1.0000000001"), "EUR")).toBe(1_234_512n);
+		// A Bitcoin in yen, past what millionths of a price kept in a safe integer.
+		expect(tradeValue(q("1"), p("987654321.0123456789"), "JPY")).toBe(987_654_321n);
+	});
+
+	it("rounds a value half to even to the minor unit", () => {
+		// 0.5 × 0.01 € is half a cent: the tie goes to the even cent, zero.
+		expect(tradeValue(q("0.5"), p("0.01"), "EUR")).toBe(0n);
+		// 1.5 × 0.01 € is a cent and a half: up to two.
+		expect(tradeValue(q("1.5"), p("0.01"), "EUR")).toBe(2n);
+	});
+});
+
+describe("buyCostFits", () => {
+	it("refuses a buy whose cost per unit, its fee in it, passes a safe integer of millionths", () => {
+		// 1 € over 10⁻¹⁸ of a unit is 10¹⁸ € a unit.
+		expect(
+			buyCostFits(
+				{ quantity: q("0.000000000000000001"), price: p("0"), fee: toMinorUnits(100) },
+				"EUR",
+			),
+		).toBe(false);
+		expect(
+			buyCostFits({ quantity: q("0.000001"), price: p("60000"), fee: toMinorUnits(100) }, "EUR"),
+		).toBe(true);
+		// A sale has no cost of its own.
+		expect(
+			buyCostFits(
+				{ quantity: q("-0.000000000000000001"), price: p("0"), fee: toMinorUnits(100) },
+				"EUR",
+			),
+		).toBe(true);
 	});
 });
 
@@ -109,7 +171,7 @@ describe("signFits", () => {
 });
 
 describe("conversionFee", () => {
-	const ten = { quantity: micros(10_000_000), price: micros(612_400_000) };
+	const ten = { quantity: q("10"), price: p("612.4") };
 
 	it.each([
 		["a buy of 10 at 612.40 for −6 126.50", "buy", ten, -612_650, 250],
@@ -117,13 +179,7 @@ describe("conversionFee", () => {
 		["a sale of 10 at 612.40 for 6 121.50", "sell", ten, 612_150, 250],
 		["a sale whose amount is exactly the value", "sell", ten, 612_400, 0],
 		// 3 × 0.333335 is 1.000005 €, one cent once rounded.
-		[
-			"the value rounded as a trade's",
-			"buy",
-			{ quantity: micros(3_000_000), price: micros(333_335) },
-			-101,
-			1,
-		],
+		["the value rounded as a trade's", "buy", { quantity: q("3"), price: p("0.333335") }, -101, 1],
 	] as const)("leaves %s its fee", (_name, side, figures, amount, fee) => {
 		expect(conversionFee(side, figures, toMinorUnits(amount), "EUR")).toBe(fee);
 		// The trade it makes moves the transaction's amount exactly.
@@ -150,7 +206,7 @@ describe("conversionFee", () => {
 		expect(
 			conversionFee(
 				"sell",
-				{ quantity: micros(1_000_000_000_000), price: micros(1_000_000_000_000) },
+				{ quantity: q("1000000"), price: p("1000000") },
 				toMinorUnits(0),
 				"EUR",
 			),

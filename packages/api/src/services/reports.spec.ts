@@ -8,6 +8,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
 import { securityPrices } from "@archant/data/schema/securities";
 
+import { quantity as qty, tradePrice } from "../testing/decimals.ts";
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
@@ -199,8 +200,8 @@ describe("getNetWorth", () => {
 				side: "buy",
 				security: { source: "known", id: lvmh },
 				date: "2026-09-10",
-				quantity: toMicros(10_000_000),
-				price: toMicros(612_400_000),
+				quantity: qty("10"),
+				price: tradePrice("612.4"),
 				fee: toMinorUnits(250),
 			},
 			{ origin: "user" },
@@ -269,8 +270,8 @@ describe("getCashFlow", () => {
 			side: "buy",
 			security: { source: "known", id: lvmh },
 			date: "2026-09-10",
-			quantity: toMicros(1_000_000),
-			price: toMicros(612_400_000),
+			quantity: qty("1"),
+			price: tradePrice("612.4"),
 			fee: toMinorUnits(0),
 		});
 		await trade({
@@ -324,6 +325,31 @@ describe("getCashFlow and Sure's tax treatment", () => {
 
 		expect(cashFlow.expenses).toBe(-3_000);
 		expect(netWorth.netWorth).toBe(3 * 100_000 - 7_000);
+	});
+});
+
+describe("getCashFlow and a crypto account's tax treatment", () => {
+	it("leaves a tax-exempt crypto account's 100 € of income out, counts a taxable one's, and keeps both in net worth", async () => {
+		const exempt = await account({
+			name: "Crypto exonérée",
+			type: "crypto",
+			subtype: "exchange",
+			details: { taxTreatment: "tax_exempt" },
+		});
+		const taxable = await account({
+			name: "Crypto imposable",
+			type: "crypto",
+			subtype: "wallet",
+			details: { taxTreatment: "taxable" },
+		});
+		await spend(exempt, "2026-09-15", 10_000);
+		await spend(taxable, "2026-09-15", 2_000);
+
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const netWorth = await getNetWorth(deps(), "1M");
+
+		expect(cashFlow.income).toBe(2_000);
+		expect(netWorth.netWorth).toBe(2 * 100_000 + 12_000);
 	});
 });
 

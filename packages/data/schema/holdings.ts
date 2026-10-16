@@ -1,3 +1,4 @@
+import type { Quantity } from "../decimals.ts";
 import type { Micros } from "../micros.ts";
 import type { MinorUnits } from "../money.ts";
 
@@ -29,8 +30,11 @@ export const holdings = sqliteTable(
 			.references(() => securities.id, { onDelete: "restrict" }),
 		/** `YYYY-MM-DD`. */
 		date: text("date").notNull(),
-		/** Millionths of a unit held at the end of the day, below zero when sold short. */
-		quantity: integer("quantity").$type<Micros>().notNull(),
+		/**
+		 * Units held at the end of the day, canonical decimal text up to 18
+		 * decimals (`decimals.ts`), below zero when sold short.
+		 */
+		quantity: text("quantity").$type<Quantity>().notNull(),
 		/** Millionths of the account currency's major unit, per unit: the day's price. */
 		price: integer("price").$type<Micros>().notNull(),
 		/** `quantity × price`, in minor units of the account's currency, signed as the quantity. */
@@ -47,12 +51,14 @@ export const holdings = sqliteTable(
 		// account's days from a date on, the export pages along it.
 		primaryKey({ columns: [table.accountId, table.date, table.securityId] }),
 		// A position's days at zero or below, which end a cost basis lock: such
-		// days are few, so the lock read never walks every holding. The
-		// quantity rides along because `<= 0`, unlike `= 0`, leaves SQLite
-		// reading it to check each day, and the index then covers the read.
+		// days are few, so the lock read never walks every holding. The sign
+		// reads from the text, as `quantityNotAboveZero` in `services/ledger/shared.ts`
+		// writes it word for word. The quantity rides along because the `or`
+		// leaves SQLite reading it to check each day, and the index then
+		// covers the read.
 		index("holdings_not_held")
 			.on(table.accountId, table.securityId, table.date, table.quantity)
-			.where(sql`quantity <= 0`),
+			.where(sql`quantity = '0' or quantity like '-%'`),
 		check("holdings_price_check", sql`${table.price} >= 0`),
 	],
 );

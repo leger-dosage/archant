@@ -1,12 +1,21 @@
 import type { IsoDate } from "../dates.ts";
 
+import type { Quantity, TradePrice } from "@archant/data/decimals";
+import {
+	QUANTITY_UNIT,
+	TRADE_PRICE_UNIT,
+	formatQuantity,
+	scaledQuantity,
+	scaledTradePrice,
+	tradePriceToMicros,
+} from "@archant/data/decimals";
 import type { Micros } from "@archant/data/micros";
 import { divideHalfEven, toMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
 import { addDays } from "../dates.ts";
-import { MICROS_SQUARED, marketValue, minorUnitsPerMajor } from "../trades.ts";
+import { marketValue, minorUnitsPerMajor } from "../trades.ts";
 
 /**
  * A trade as holdings read it: its signed quantity, positive for a buy, its
@@ -15,8 +24,8 @@ import { MICROS_SQUARED, marketValue, minorUnitsPerMajor } from "../trades.ts";
 export type HoldingTrade = {
 	date: IsoDate;
 	securityId: string;
-	quantity: Micros;
-	price: Micros;
+	quantity: Quantity;
+	price: TradePrice;
 	fee: MinorUnits;
 };
 
@@ -45,7 +54,8 @@ export type HoldingsInput = {
 export type DailyHolding = {
 	securityId: string;
 	date: IsoDate;
-	quantity: Micros;
+	quantity: Quantity;
+	/** Millionths: a trade's price carried in rounds half to even (AD-22). */
 	price: Micros;
 	/** `quantity × price`, rounded half to even to the minor unit (AD-22). */
 	amount: MinorUnits;
@@ -58,7 +68,7 @@ export type DailyHolding = {
 };
 
 type Position = {
-	/** The position's quantity, below zero after a sale above what was held. */
+	/** The position's quantity in units of 10⁻¹⁸, below zero after a sale above what was held. */
 	quantity: bigint;
 	/**
 	 * What Sure's `CostBasisTracker` holds, kept apart from the quantity: never
@@ -73,6 +83,12 @@ type Position = {
 };
 
 /**
+ * Millionths in a unit of 10⁻¹⁰, the ratio between a cost basis summed at a
+ * trade price's scale and the millionths it is stored in.
+ */
+const MICROS_PER_TRADE_PRICE = TRADE_PRICE_UNIT / 1_000_000n;
+
+/**
  * Sure's `CostBasisTracker`: a buy adds `quantity × price + fee` to what it
  * holds, as Sure's `effective_trade_price`, and moves the average, rounded
  * half to even to the millionth; a sale relieves at the average, which it
@@ -82,14 +98,15 @@ type Position = {
  * zero included, as Sure's `ForwardCalculator`.
  */
 function apply(position: Position, trade: HoldingTrade, feeScale: bigint): void {
-	const quantity = BigInt(trade.quantity);
+	const quantity = scaledQuantity(trade.quantity);
 
 	if (quantity > 0n) {
+		// Summed at `quantity × trade price`'s scale, exact, then divided once.
 		position.costBasis = divideHalfEven(
-			position.tracked * (position.costBasis ?? 0n) +
-				quantity * BigInt(trade.price) +
+			position.tracked * (position.costBasis ?? 0n) * MICROS_PER_TRADE_PRICE +
+				quantity * scaledTradePrice(trade.price) +
 				BigInt(trade.fee) * feeScale,
-			position.tracked + quantity,
+			(position.tracked + quantity) * MICROS_PER_TRADE_PRICE,
 		);
 		position.tracked += quantity;
 	} else if (quantity < 0n && position.tracked > 0n) {
@@ -101,7 +118,7 @@ function apply(position: Position, trade: HoldingTrade, feeScale: bigint): void 
 	}
 
 	position.quantity += quantity;
-	position.price = trade.price;
+	position.price = tradePriceToMicros(trade.price);
 	position.pricedOn = trade.date;
 }
 
@@ -111,7 +128,7 @@ function applyTo(positions: Map<string, Position>, trade: HoldingTrade, feeScale
 		quantity: 0n,
 		tracked: 0n,
 		costBasis: null,
-		price: trade.price,
+		price: tradePriceToMicros(trade.price),
 		pricedOn: trade.date,
 	};
 
@@ -131,9 +148,9 @@ function applyTo(positions: Map<string, Position>, trade: HoldingTrade, feeScale
  */
 export function forwardHoldings(input: HoldingsInput): DailyHolding[] {
 	const positions = new Map<string, Position>();
-	// A fee in minor units of the account's currency, as millionths squared,
-	// the unit of `quantity × price`.
-	const feeScale = MICROS_SQUARED / minorUnitsPerMajor(input.currency);
+	// A fee in minor units of the account's currency, at the scale of
+	// `quantity × trade price`.
+	const feeScale = (QUANTITY_UNIT * TRADE_PRICE_UNIT) / minorUnitsPerMajor(input.currency);
 	const tradesOn = new Map<IsoDate, HoldingTrade[]>();
 
 	for (const trade of input.trades) {
@@ -161,7 +178,7 @@ export function forwardHoldings(input: HoldingsInput): DailyHolding[] {
 		}
 
 		for (const [securityId, position] of positions) {
-			const quantity = toMicros(Number(position.quantity));
+			const quantity = formatQuantity(position.quantity);
 			position.price = stored.get(`${securityId} ${date}`) ?? position.price;
 			rows.push({
 				securityId,

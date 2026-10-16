@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import type { Quantity } from "@archant/data/decimals";
 import type { Micros } from "@archant/data/micros";
 import { formatMicros } from "@archant/data/micros";
 import type { Money, MinorUnits } from "@archant/data/money";
@@ -12,8 +13,11 @@ import { READ_ONLY, decimalsOf, defineTool, formatMoney, pageOf, pageOutput } fr
 /** Sure's page of holdings, which takes no `page_size`. */
 const PAGE_SIZE = 50;
 
-/** A quantity or a price as Sure's `to_f`: the JSON number of its exact decimal text. */
+/** A price or a cost basis as Sure's `to_f`: the JSON number of its exact decimal text. */
 const numberOf = (value: Micros) => Number(formatMicros(value));
+
+/** A quantity as Sure's `to_f`: the JSON number of its canonical decimal text, as stored. */
+const quantityOf = (value: Quantity) => Number(value);
 
 /** A cost basis per unit in minor units of `currency`, rounded half up as `Money` rounds it. */
 function costMoney(costBasis: Micros, currency: string): Money {
@@ -111,7 +115,7 @@ export const getHoldings = defineTool({
 					return {
 						ticker: holding.security.ticker,
 						name: holding.security.name,
-						quantity: numberOf(holding.quantity),
+						quantity: quantityOf(holding.quantity),
 						price: numberOf(holding.price),
 						currency,
 						amount: Number(toDecimalString({ amount: holding.amount, currency })),

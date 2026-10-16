@@ -16,7 +16,12 @@ import { z } from "zod";
 
 import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
-import { propertyDetailsOf, vehicleDetailsOf } from "@archant/data/account-types";
+import {
+	holdsSecurities,
+	propertyDetailsOf,
+	supportsTrades,
+	vehicleDetailsOf,
+} from "@archant/data/account-types";
 import { isCurrencyCode } from "@archant/data/money";
 
 import { AccountMenu } from "@/components/AccountMenu";
@@ -494,17 +499,26 @@ function AccountPage() {
 		});
 	}, [name, t]);
 
-	// Only an investment account holds securities: « Ordres » is its tab alone,
-	// and a link to it on another account opens « Opérations ». « Positions »
-	// shows once the account has traded, as Sure's holdings table; a link to it
-	// before then opens « Opérations » too.
-	const investment = account.data?.type === "investment";
+	// Only an investment or a crypto account holds securities. « Ordres » shows
+	// on one that takes new trades, Sure's `supports_trades?`, an investment
+	// account or a crypto exchange, and on any other that holds securities once
+	// it has traded, so a wallet that was an exchange still lists, edits and
+	// deletes its trades, as Sure's activity feed; only an account that takes
+	// trades offers to record one, as Sure hides « Nouvelle activité ».
+	// « Positions » shows once the account has traded, as Sure's holdings
+	// table. A link to either tab where it does not show opens « Opérations ».
+	const securitiesHeld = account.data !== undefined && holdsSecurities(account.data.type);
+	const tradable = account.data !== undefined && supportsTrades(account.data);
 	// Its answer says whether « Positions » shows; asked for by a link, the
 	// tab shows while it loads or fails, with its skeleton or its error.
-	const holdings = useAccountHoldings(accountId, investment);
+	const holdings = useAccountHoldings(accountId, securitiesHeld);
 	const traded =
-		investment &&
+		securitiesHeld &&
 		(holdings.data === undefined ? requestedTab === "positions" : holdings.data.date !== null);
+	const tradesShown =
+		tradable ||
+		(securitiesHeld &&
+			(holdings.data === undefined ? requestedTab === "trades" : holdings.data.date !== null));
 	// « Échéancier » shows for a loan with a schedule, as Sure's `amortizable?`;
 	// a link to it otherwise opens « Opérations », as « Positions » does.
 	const loan = account.data?.type === "loan";
@@ -527,7 +541,7 @@ function AccountPage() {
 	const balanceHistory = useBalanceHistory(accountId, period, !charted && !deciding);
 	const payoffChart = useLoanPayoffChart(accountId, period, charted);
 	const tab =
-		(requestedTab === "trades" && account.data !== undefined && !investment) ||
+		(requestedTab === "trades" && account.data !== undefined && !tradesShown) ||
 		(requestedTab === "overview" && account.data !== undefined && !overviewed) ||
 		(requestedTab === "positions" && account.data !== undefined && !traded) ||
 		(requestedTab === "schedule" && account.data !== undefined && !scheduled)
@@ -549,6 +563,7 @@ function AccountPage() {
 					id: account.data.id,
 					currency,
 					type: account.data.type,
+					subtype: account.data.subtype,
 				}
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
@@ -714,7 +729,7 @@ function AccountPage() {
 							{t("accountDetail.tabs.positions")}
 						</TabsTrigger>
 					)}
-					{investment && (
+					{tradesShown && (
 						<TabsTrigger value="trades" className={FLAT_TAB}>
 							{t("accountDetail.tabs.trades")}
 						</TabsTrigger>
@@ -767,13 +782,13 @@ function AccountPage() {
 						/>
 					</TabsContent>
 				)}
-				{investment && (
+				{tradesShown && (
 					<TabsContent value="trades">
 						<TradesPanel
 							accountId={accountId}
 							page={tradesPage}
 							canAdd={canAddDated}
-							onAdd={admin ? openNewTrade : null}
+							onAdd={admin && tradable ? openNewTrade : null}
 							onOpen={admin ? (trade) => setTradeDialog({ open: true, trade }) : null}
 						/>
 					</TabsContent>
@@ -823,7 +838,7 @@ function AccountPage() {
 									onOpenChange={setEditingOpening}
 								/>
 							)}
-							{investment && (
+							{tradesShown && (
 								<TradeDialog
 									account={writable}
 									open={tradeDialog.open}

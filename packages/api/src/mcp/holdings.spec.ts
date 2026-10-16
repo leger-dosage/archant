@@ -336,4 +336,23 @@ describe("get_holdings", () => {
 		expect(missing.isError).toBe(true);
 		expect(missing.content[0]?.text).toMatch(/^\{"error":"page invalid_type","hint":/u);
 	});
+
+	it("lists a crypto account's holdings beside an investment's, a wallet's included, its quantity Sure's `to_f`", async () => {
+		const { db } = await ownDatabase();
+		const opened = { openingBalance: "1 000,00", openingDate: "2026-09-01" };
+		const exchange = await openOwn({
+			...opened,
+			name: "Kraken",
+			type: "crypto",
+			subtype: "exchange",
+		});
+		await buy(exchange.id, fund("Bitcoin"), "0,000166666666666667", "60 000");
+		await sendOwn("PATCH", `/api/accounts/${exchange.id}`, { subtype: "wallet" });
+
+		const result = await read({ read: await reader(db) }, { page: 1 });
+
+		expect(result.holdings).toMatchObject([
+			{ account: "Kraken", name: "Bitcoin", quantity: 0.000166666666666667, amount: 10 },
+		]);
+	});
 });

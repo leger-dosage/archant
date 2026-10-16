@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { securities } from "@archant/data/schema/securities";
 
 import { countsInCashFlow } from "../../domain/cash-flow.ts";
 import { monthRange } from "../../domain/dates.ts";
+import { quantity as qty, tradePrice } from "../../testing/decimals.ts";
 import {
 	add,
 	addStandard,
@@ -746,8 +746,8 @@ describe("trades in the cash flow", () => {
 		});
 		const order = {
 			security: { source: "known", id: securityId },
-			quantity: toMicros(10_000_000),
-			price: toMicros(10_000_000),
+			quantity: qty("10"),
+			price: tradePrice("10"),
 			fee: toMinorUnits(0),
 		} as const;
 		await trade(pea.id, { ...order, side: "buy", date: "2026-07-01" });
@@ -803,7 +803,25 @@ describe("sumTransactions and tax-advantaged accounts", () => {
 	});
 });
 
+/** A crypto exchange held under `taxTreatment`. */
+const openCrypto = (name: string, taxTreatment: "taxable" | "tax_deferred" | "tax_exempt") =>
+	openPea({ name, type: "crypto", subtype: "exchange", details: { taxTreatment } });
+
 describe("sumTransactions and Sure's tax treatment", () => {
+	it("leaves a crypto account held tax-exempt or tax-deferred out of income and expenses, and counts a taxable one", async () => {
+		const exempt = await openCrypto("Crypto exonérée", "tax_exempt");
+		const deferred = await openCrypto("Crypto différée", "tax_deferred");
+		const taxable = await openCrypto("Crypto imposable", "taxable");
+		const income = transferAmount();
+		await add(exempt.id, { amount: toMinorUnits(income), label: "Revenu" });
+		await add(deferred.id, { amount: toMinorUnits(income), label: "Revenu" });
+		await add(taxable.id, { amount: toMinorUnits(income), label: "Revenu" });
+
+		await expect(
+			sumTransactions(deps(), { accountIds: [exempt.id, deferred.id, taxable.id] }),
+		).resolves.toEqual([{ currency: "EUR", amount: 3 * income, income, expense: 0, count: 3 }]);
+	});
+
 	it("leaves a pillar 3a's and a riester's lines out of income and expenses, and counts a gold account's and a blank investment's", async () => {
 		const pillar = await openPea({ name: "Pilier 3a totaux", subtype: "pillar_3a" });
 		const riester = await openPea({ name: "Riester totaux", subtype: "riester" });

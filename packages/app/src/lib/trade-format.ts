@@ -4,10 +4,15 @@ import { isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/mon
 // `"612.4"`, read here without ever becoming a float: `Intl.NumberFormat`
 // formats the string itself.
 
-/** Six decimals at most, as AD-22 stores them. */
-const MAX_DECIMALS = 6;
+/** Sure's `decimal(34,18)` quantities, as AD-22 stores them. */
+const QUANTITY_DECIMALS = 18;
 
-const quantityFormat = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: MAX_DECIMALS });
+/** Sure's `decimal(19,10)` trade prices; a holding's price and a cost basis have six. */
+const PRICE_DECIMALS = 10;
+
+const quantityFormat = new Intl.NumberFormat("fr-FR", {
+	maximumFractionDigits: QUANTITY_DECIMALS,
+});
 
 /** `"2.5"` as `2,5`, grouped the French way; a position sold short as `−5`. */
 export function formatQuantity(quantity: string): string {
@@ -18,7 +23,8 @@ export function formatQuantity(quantity: string): string {
 
 /**
  * A unit price in its currency, as many decimals as the currency has and up
- * to six when the price carries more: `"612.4"` is `612,40 €`.
+ * to ten when the price carries more, trailing zeros dropped: `"612.4"` is
+ * `612,40 €`.
  */
 export function formatPrice(price: string, currency: string): string {
 	if (!isDecimalString(price)) {
@@ -31,7 +37,7 @@ export function formatPrice(price: string, currency: string): string {
 		style: "currency",
 		currency,
 		minimumFractionDigits: decimals,
-		maximumFractionDigits: Math.max(decimals, MAX_DECIMALS),
+		maximumFractionDigits: Math.max(decimals, PRICE_DECIMALS),
 	}).format(price);
 }
 

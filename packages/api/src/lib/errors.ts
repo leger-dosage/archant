@@ -120,10 +120,12 @@ export const ERROR_STATUSES = {
 	 */
 	GOAL_ACCOUNT_TAKEN: 409,
 	/**
-	 * A trade on an account other than an investment one: only an investment
-	 * account holds securities (AD-22). Nothing is written.
+	 * A trade on an account that takes none, as Sure's API refuses one: a new
+	 * trade or a conversion goes to an investment account or a crypto
+	 * exchange only (`supportsTrades`), a position's edits to an account that
+	 * holds securities (AD-22). Nothing is written.
 	 */
-	NOT_AN_INVESTMENT_ACCOUNT: 409,
+	TRADES_NOT_SUPPORTED: 409,
 	/**
 	 * A bill declared, or a series edited, onto the account, key, amount and
 	 * currency of another series with the same dedup scope, as Sure's

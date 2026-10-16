@@ -12,12 +12,14 @@ import type { AccountSettingsFormInput } from "@archant/api/schemas/accounts";
 import { accountSettingsFormSchema } from "@archant/api/schemas/accounts";
 import {
 	creditCardDetailsOf,
+	cryptoDetailsOf,
 	loanDetailsOf,
 	propertyDetailsOf,
 	vehicleDetailsOf,
 } from "@archant/data/account-types";
 
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
+import { CryptoDetailsFields } from "@/components/CryptoDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
@@ -44,13 +46,16 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useUpdateAccount } from "@/hooks/useAccounts";
-import { ACCOUNT_KINDS, kindOf } from "@/lib/account-kinds";
+import { ACCOUNT_KINDS, CRYPTO_KINDS, kindOf } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import {
+	CRYPTO_FIELD_NAMES,
 	PROPERTY_FIELD_NAMES,
 	VEHICLE_FIELD_NAMES,
+	completeCryptoInput,
 	completePropertyInput,
 	completeVehicleInput,
+	cryptoDetailsToInput,
 	propertyDetailsToInput,
 	vehicleDetailsToInput,
 } from "@/lib/asset-details";
@@ -72,6 +77,7 @@ const FIELD_NAMES = [
 	...CREDIT_CARD_FIELD_NAMES,
 	...PROPERTY_FIELD_NAMES,
 	...VEHICLE_FIELD_NAMES,
+	...CRYPTO_FIELD_NAMES,
 ] as const;
 
 /** Rendered for a loan only, so no other account's form ever holds a loan's `details`. */
@@ -126,6 +132,19 @@ function VehicleFields({ form }: { form: UseFormReturn<AccountSettingsFormInput>
 	);
 }
 
+/** Rendered for a crypto account only, so no other account's form ever holds its `details`. */
+function CryptoFields({ form }: { form: UseFormReturn<AccountSettingsFormInput> }) {
+	const details = useController({ control: form.control, name: "details" });
+
+	return (
+		<CryptoDetailsFields
+			value={completeCryptoInput(details.field.value)}
+			onChange={details.field.onChange}
+			error={errorAt(form.formState.errors, "details.taxTreatment")}
+		/>
+	);
+}
+
 /**
  * Sure's « Le solde correspond au crédit disponible », rendered for a card a
  * bank feeds only: the setting is its bank account's.
@@ -171,7 +190,7 @@ type EditAccountDialogProps = {
 
 /**
  * What Sure's account edit form changes: the name, the subtype within its
- * type, a loan's, a card's, a property's or a vehicle's details, a linked
+ * type, a loan's, a card's, a property's, a vehicle's or a crypto account's details, a linked
  * card's toggle and the exclusion switch. Type, currency and the opening balance stay as the
  * account was created.
  */
@@ -187,6 +206,7 @@ export function EditAccountDialog({
 	const isCard = account.type === "credit_card";
 	const isProperty = account.type === "property";
 	const isVehicle = account.type === "vehicle";
+	const isCrypto = account.type === "crypto";
 	const linkedCard = isCard && account.bankConnection !== null;
 	const values: AccountSettingsFormInput = {
 		name: account.name,
@@ -206,6 +226,7 @@ export function EditAccountDialog({
 			: {}),
 		...(isProperty ? { details: propertyDetailsToInput(propertyDetailsOf(account)) } : {}),
 		...(isVehicle ? { details: vehicleDetailsToInput(vehicleDetailsOf(account)) } : {}),
+		...(isCrypto ? { details: cryptoDetailsToInput(cryptoDetailsOf(account)) } : {}),
 		...(linkedCard
 			? { treatBalanceAsAvailableCredit: account.treatBalanceAsAvailableCredit ?? false }
 			: {}),
@@ -253,6 +274,7 @@ export function EditAccountDialog({
 				...(isCard ? { details: completeCreditCardInput(details) } : {}),
 				...(isProperty ? { details: completePropertyInput(details) } : {}),
 				...(isVehicle ? { details: completeVehicleInput(details) } : {}),
+				...(isCrypto ? { details: completeCryptoInput(details) } : {}),
 				...(linkedCard ? { treatBalanceAsAvailableCredit } : {}),
 			});
 			toast.success(t("accountActions.form.saved", { name: saved.name }));
@@ -335,6 +357,18 @@ export function EditAccountDialog({
 								<SelectContent>
 									{account.type === "investment" ? (
 										<InvestmentKindGroups blankLabel={t("accountActions.form.noSubtype")} />
+									) : account.type === "crypto" ? (
+										// Sure's `cryptos/_form`: « Aucun », then each subtype's long label.
+										<>
+											<SelectItem value={kindOf("crypto", null)}>
+												{t("accountActions.form.noSubtype")}
+											</SelectItem>
+											{CRYPTO_KINDS.map((kind) => (
+												<SelectItem key={kind} value={kind}>
+													{t(`accounts.subtypeLongs.${kind}`)}
+												</SelectItem>
+											))}
+										</>
 									) : (
 										kinds.map((kind) => (
 											<SelectItem key={kind.id} value={kind.id}>
@@ -358,6 +392,8 @@ export function EditAccountDialog({
 					{isProperty && <PropertyFields form={form} />}
 
 					{isVehicle && <VehicleFields form={form} />}
+
+					{isCrypto && <CryptoFields form={form} />}
 
 					{linkedCard && <AvailableCreditToggle form={form} />}
 

@@ -59,6 +59,15 @@ export const ACCOUNT_TYPES = {
 		],
 		subtypeOptional: true,
 	},
+	// Sure's `Crypto::SUBTYPES`: coins kept by their owner or on a platform.
+	// Sure's `Accountable::TYPES` lists it right after investments, and its
+	// balance moves as theirs, cash and holdings.
+	crypto: {
+		classification: "asset",
+		balanceType: "investment",
+		subtypes: ["wallet", "exchange"],
+		subtypeOptional: true,
+	},
 	// Sure's `Property::SUBTYPES` keys, in its order.
 	property: {
 		classification: "asset",
@@ -162,8 +171,55 @@ export const TAX_ADVANTAGED_SUBTYPES = [
 	"retirement",
 ] as const satisfies readonly AccountSubtype[];
 
-export function isTaxAdvantaged(subtype: string | null): boolean {
-	return TAX_ADVANTAGED_SUBTYPES.some((value) => value === subtype);
+/**
+ * Sure's `Crypto.tax_treatments`, in its order: a crypto account stores the
+ * one it is held under, `taxable` unless chosen.
+ */
+export const TAX_TREATMENTS = ["taxable", "tax_deferred", "tax_exempt"] as const;
+
+export type TaxTreatment = (typeof TAX_TREATMENTS)[number];
+
+/**
+ * Whether an account is tax-advantaged, as Sure's
+ * `Family#tax_advantaged_account_ids`: an investment account of a subtype in
+ * `TAX_ADVANTAGED_SUBTYPES`, or a crypto account held `tax_deferred` or
+ * `tax_exempt`.
+ */
+export function isTaxAdvantaged(account: {
+	type: AccountType;
+	subtype: string | null;
+	details: AccountDetails | null;
+}): boolean {
+	if (account.type === "crypto") {
+		const treatment = cryptoDetailsOf(account)?.taxTreatment ?? "taxable";
+
+		return treatment !== "taxable";
+	}
+
+	return (
+		account.type === "investment" &&
+		TAX_ADVANTAGED_SUBTYPES.some((value) => value === account.subtype)
+	);
+}
+
+/**
+ * Whether an account holds securities, Sure's `Investment || Crypto`: its
+ * balance is cash and holdings (AD-22). Its trades stay editable, its
+ * positions listed, whatever its subtype.
+ */
+export function holdsSecurities(type: AccountType): boolean {
+	return balanceTypeOf(type) === "investment";
+}
+
+/**
+ * Whether an account takes new trades, as Sure's `supports_trades?`: every
+ * investment account, and a crypto one only on an exchange; a wallet is
+ * filled by a provider's sync, which Archant has not.
+ */
+export function supportsTrades(account: { type: AccountType; subtype: string | null }): boolean {
+	return (
+		account.type === "investment" || (account.type === "crypto" && account.subtype === "exchange")
+	);
 }
 
 /**
@@ -282,8 +338,16 @@ export type VehicleDetails = {
 	mileageUnit: MileageUnit;
 };
 
+/** What a crypto account carries besides its balance, as Sure's `Crypto` columns. */
+export type CryptoDetails = { taxTreatment: TaxTreatment };
+
 /** What `accounts.details` holds: its own type's details, never another type's. */
-export type AccountDetails = LoanDetails | CreditCardDetails | PropertyDetails | VehicleDetails;
+export type AccountDetails =
+	| LoanDetails
+	| CreditCardDetails
+	| PropertyDetails
+	| VehicleDetails
+	| CryptoDetails;
 
 /** A loan's details, null for any other account or a loan without them. */
 export function loanDetailsOf(account: {
@@ -323,6 +387,16 @@ export function vehicleDetailsOf(account: {
 	details: AccountDetails | null;
 }): VehicleDetails | null {
 	return account.type === "vehicle" && account.details !== null && "mileageUnit" in account.details
+		? account.details
+		: null;
+}
+
+/** A crypto account's details, null for any other account or one without them. */
+export function cryptoDetailsOf(account: {
+	type: AccountType;
+	details: AccountDetails | null;
+}): CryptoDetails | null {
+	return account.type === "crypto" && account.details !== null && "taxTreatment" in account.details
 		? account.details
 		: null;
 }

@@ -16,6 +16,7 @@ import type {
 } from "@archant/data/account-types";
 import {
 	creditCardDetailsOf,
+	cryptoDetailsOf,
 	loanDetailsOf,
 	propertyDetailsOf,
 	vehicleDetailsOf,
@@ -87,6 +88,7 @@ const SURE_ACCOUNTABLE_TYPES = {
 	credit_card: "CreditCard",
 	loan: "Loan",
 	investment: "Investment",
+	crypto: "Crypto",
 	property: "Property",
 	vehicle: "Vehicle",
 	other_asset: "OtherAsset",
@@ -145,6 +147,7 @@ const VALUATION_NAMES: Record<SureAccountableType, Record<ValuationKind, string>
 		reconciliation: "Manual principal update",
 	},
 	Investment: ACCOUNT_VALUE_NAMES,
+	Crypto: ACCOUNT_VALUE_NAMES,
 	Property: VALUE_NAMES,
 	Vehicle: VALUE_NAMES,
 	OtherAsset: ACCOUNT_VALUE_NAMES,
@@ -631,8 +634,8 @@ async function* tradesCsv(readers: Readers) {
 			trade.date,
 			textCell(accounts.get(trade.accountId)?.name),
 			textCell(tradeSecurity(trade).ticker),
-			formatMicros(trade.trade.quantity),
-			formatMicros(trade.trade.price),
+			trade.trade.quantity,
+			trade.trade.price,
 			sureAmount(toMinorUnits(trade.amount), trade.currency),
 			trade.currency,
 		]),
@@ -887,6 +890,10 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 							: {}),
 						...(account.type === "property" ? propertyAccountable(propertyDetailsOf(account)) : {}),
 						...(account.type === "vehicle" ? vehicleAccountable(vehicleDetailsOf(account)) : {}),
+						// Sure's `Crypto#tax_treatment`, `taxable` by default.
+						...(account.type === "crypto"
+							? { tax_treatment: cryptoDetailsOf(account)?.taxTreatment ?? "taxable" }
+							: {}),
 					},
 					archant: {
 						type: account.type,
@@ -1146,8 +1153,8 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					exchange_operating_mic: tradeSecurity(trade).mic,
 					investment_activity_label: SURE_ACTIVITY_LABELS[typeOf(trade.trade)],
 					date: trade.date,
-					qty: formatMicros(trade.trade.quantity),
-					price: formatMicros(trade.trade.price),
+					qty: trade.trade.quantity,
+					price: trade.trade.price,
 					amount: sureAmount(toMinorUnits(trade.amount), trade.currency),
 					currency: trade.currency,
 					created_at: timestamp(trade.createdAt),
@@ -1181,12 +1188,12 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 			// whole archive, and the sync it runs after an import computes
 			// those days again from the trades.
 			page
-				.filter((row) => row.quantity >= 0)
+				.filter((row) => !row.quantity.startsWith("-"))
 				.map((row) => {
 					const lock = locks.get(`${row.accountId} ${row.securityId}`);
 					const locked =
 						lock !== undefined &&
-						row.quantity > 0 &&
+						row.quantity !== "0" &&
 						(lock.after === null || row.date > lock.after);
 					const costBasis = locked ? lock.costBasis : row.costBasis;
 
@@ -1199,7 +1206,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 							security_name: row.security.name,
 							exchange_operating_mic: row.security.mic,
 							date: row.date,
-							qty: formatMicros(row.quantity),
+							qty: row.quantity,
 							price: formatMicros(row.price),
 							amount: decimal(row.amount, row.currency),
 							currency: row.currency,

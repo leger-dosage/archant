@@ -18,6 +18,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { addDays, today } from "../domain/dates.ts";
 import { tradeAmount } from "../domain/trades.ts";
 import { createLogger } from "../lib/logger.ts";
+import { quantity as quantityOf, tradePriceFromMicros } from "../testing/decimals.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { getBudget } from "./budgets.ts";
 import { exportArchive } from "./export.ts";
@@ -242,8 +243,8 @@ async function seedInvestments() {
 	heldDays = DAYS + 1 - (monthly[0]?.day ?? 0);
 	const rows = securityIds.flatMap((securityId, security) =>
 		monthly.map(({ day, date }, month) => {
-			const quantity = toMicros(month % 12 === 11 ? -6_000_000 : 1_000_000);
-			const price = closeOf(security, day);
+			const quantity = quantityOf(month % 12 === 11 ? "-6" : "1");
+			const price = tradePriceFromMicros(closeOf(security, day));
 			const fee = toMinorUnits(100);
 
 			return {

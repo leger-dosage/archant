@@ -186,6 +186,14 @@ describe("transferKindOf", () => {
 		expect(transferKindOf("other_asset", "investment")).toBe("internal_move");
 	});
 
+	it("makes money landing on a crypto account a contribution, unless it left an investment or a crypto account, as Sure's `investment? || crypto?`", () => {
+		expect(transferKindOf("crypto", "depository")).toBe("investment_contribution");
+		expect(transferKindOf("crypto", "credit_card")).toBe("investment_contribution");
+		expect(transferKindOf("crypto", "investment")).toBe("internal_move");
+		expect(transferKindOf("crypto", "crypto")).toBe("internal_move");
+		expect(transferKindOf("investment", "crypto")).toBe("internal_move");
+	});
+
 	it("makes any other move an internal move", () => {
 		expect(transferKindOf("depository", "depository")).toBe("internal_move");
 	});

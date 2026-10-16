@@ -294,3 +294,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-7-delete-a-position-and-remap-its-security.md`
   summary: The position sheet's delete confirmation has no test for a refused deletion (dialog closed, error toast shown).
   evidence: `DeletePosition.confirm`'s catch branch in `PositionSheet.tsx` is reached by no Vitest or Playwright test; removing it breaks nothing.
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-11-crypto-accounts.md`
+  summary: A holding whose amount passes `MAX_MINOR_UNITS`, or a position whose summed quantity passes 16 integer digits, throws in `domain/holdings/forward.ts` and turns every recompute of the account into a 500.
+  evidence: `forwardHoldings` calls `toMinorUnits` and `formatQuantity` without bounds; a free buy of 10¹⁵ units later priced, or two buys of 9 999 999 999 999 999 units, reach it. Integer millionths overflowed the same way before Story 28.11.

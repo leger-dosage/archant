@@ -3,11 +3,12 @@ import type { TradeSide, TradeType } from "../../domain/trades.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, asc, count, desc, eq, gt, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, lte, sql } from "drizzle-orm";
 
+import { holdsSecurities, supportsTrades } from "@archant/data/account-types";
+import type { Quantity, TradePrice } from "@archant/data/decimals";
+import { formatQuantity, formatTradePrice } from "@archant/data/decimals";
 import type { IncomeKind } from "@archant/data/income-kinds";
-import type { Micros } from "@archant/data/micros";
-import { toMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
@@ -18,6 +19,7 @@ import { transactions } from "@archant/data/schema/transactions";
 
 import { minDate, today } from "../../domain/dates.ts";
 import {
+	buyCostFits,
 	conversionFee,
 	isIncome,
 	sideOf,
@@ -25,10 +27,17 @@ import {
 	signedQuantity,
 	tradeAmount,
 	typeOf,
+	unsignedQuantity,
 } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { invalidField, lockedBy, movesQuantity, tradedSecurityId } from "./shared.ts";
+import {
+	invalidField,
+	lockedBy,
+	movesQuantity,
+	quantityAboveZero,
+	tradedSecurityId,
+} from "./shared.ts";
 import { splitRow } from "./splits.ts";
 
 /**
@@ -61,9 +70,9 @@ export type TradeInput =
 			security: SecurityChoice;
 			date: IsoDate;
 			/** Unsigned, never zero: `side` gives the sign. */
-			quantity: Micros;
-			/** Per unit, in millionths of the account currency's major unit. */
-			price: Micros;
+			quantity: Quantity;
+			/** Per unit, in the account currency's major unit. */
+			price: TradePrice;
 			fee: MinorUnits;
 	  }
 	| {
@@ -82,8 +91,8 @@ export type TradeInput =
 export type TradePatch = {
 	side?: TradeSide | undefined;
 	date?: IsoDate | undefined;
-	quantity?: Micros | undefined;
-	price?: Micros | undefined;
+	quantity?: Quantity | undefined;
+	price?: TradePrice | undefined;
 	fee?: MinorUnits | undefined;
 	amount?: MinorUnits | undefined;
 };
@@ -93,15 +102,36 @@ export type TradePatch = {
  * quantity and price, the fee being what is left; an income's security.
  */
 export type ConversionInput =
-	| { side: TradeSide; security: SecurityChoice; quantity: Micros; price: Micros }
+	| { side: TradeSide; security: SecurityChoice; quantity: Quantity; price: TradePrice }
 	| { side: IncomeKind; security: IncomeSecurity };
 
-/** The account, refused unless it is an investment account: no other holds a security. */
-export async function investmentAccount(tx: Transaction, accountId: string) {
+export const tradesNotSupported = () =>
+	new AppError("TRADES_NOT_SUPPORTED", "Account does not support trades");
+
+/**
+ * The account, refused unless it holds securities, an investment or a crypto
+ * account (AD-22): its trades stay editable and its positions its own
+ * whatever its subtype, as Sure's.
+ */
+export async function securitiesAccount(tx: Transaction, accountId: string) {
 	const account = await accountWithOpeningDate(tx, accountId);
 
-	if (account.type !== "investment") {
-		throw new AppError("NOT_AN_INVESTMENT_ACCOUNT", "Only an investment account holds trades.");
+	if (!holdsSecurities(account.type)) {
+		throw tradesNotSupported();
+	}
+
+	return account;
+}
+
+/**
+ * The account, refused unless it takes a new trade, as Sure's
+ * `supports_trades?`: an investment account or a crypto exchange.
+ */
+async function tradingAccount(tx: Transaction, accountId: string) {
+	const account = await accountWithOpeningDate(tx, accountId);
+
+	if (!supportsTrades(account)) {
+		throw tradesNotSupported();
 	}
 
 	return account;
@@ -117,13 +147,31 @@ function refuseFutureDate(date: IsoDate, timeZone: string): void {
 	}
 }
 
-/** The cash amount, refused on the quantity when no balance could hold it. */
-function amountOf(trade: { quantity: Micros; price: Micros; fee: MinorUnits }, currency: string) {
+/**
+ * Refuses on the quantity a buy whose cost per unit no holding could store
+ * (`buyCostFits`), as a trade no balance could hold is refused.
+ */
+function refuseBuyCost(
+	trade: { quantity: Quantity; price: TradePrice; fee: MinorUnits },
+	currency: string,
+): void {
+	if (!buyCostFits(trade, currency)) {
+		throw invalidField("quantity", "too_big");
+	}
+}
+
+/** The cash amount, refused on the quantity when no balance could hold it or no holding its cost. */
+function amountOf(
+	trade: { quantity: Quantity; price: TradePrice; fee: MinorUnits },
+	currency: string,
+) {
 	const amount = tradeAmount(trade, currency);
 
 	if (amount === null) {
 		throw invalidField("quantity", "too_big");
 	}
+
+	refuseBuyCost(trade, currency);
 
 	return amount;
 }
@@ -163,7 +211,7 @@ async function refuseIncomeSecurity(
 			and(
 				eq(entries.accountId, accountId),
 				eq(trades.securityId, securityId),
-				gt(trades.quantity, toMicros(0)),
+				quantityAboveZero(trades.quantity),
 				lte(entries.date, date),
 			),
 		)
@@ -284,8 +332,8 @@ export async function resolveSecurity(
 type TradeRow = {
 	securityId: string | null;
 	incomeKind: IncomeKind | null;
-	quantity: Micros;
-	price: Micros;
+	quantity: Quantity;
+	price: TradePrice;
 	fee: MinorUnits;
 };
 
@@ -297,7 +345,7 @@ type TradeRow = {
 async function insertTrade(
 	deps: ServiceDeps,
 	tx: Transaction,
-	account: Awaited<ReturnType<typeof investmentAccount>>,
+	account: Awaited<ReturnType<typeof securitiesAccount>>,
 	trade: TradeRow & { date: IsoDate; amount: MinorUnits; parentEntryId: string | null },
 	newSecurity: Resolved["row"],
 	now: number,
@@ -331,19 +379,22 @@ async function insertTrade(
 	return id;
 }
 
+const ZERO_QUANTITY = formatQuantity(0n);
+const ZERO_PRICE = formatTradePrice(0n);
+
 /** An income's `trades` row: quantity, price and fee zero (AD-22). */
 function incomeRow(side: IncomeKind, security: IncomeSecurity): TradeRow {
 	return {
 		securityId: security?.id ?? null,
 		incomeKind: side,
-		quantity: toMicros(0),
-		price: toMicros(0),
+		quantity: ZERO_QUANTITY,
+		price: ZERO_PRICE,
 		fee: toMinorUnits(0),
 	};
 }
 
 /**
- * Records a trade on an investment account (AD-22): an entry of kind
+ * Records a trade on an investment account or a crypto exchange (AD-22): an entry of kind
  * `trade` whose amount is its cash, in the account's currency, beside its
  * `trades` row, and the security when it is new, all in one immediate
  * transaction that recomputes the balances from its date. A buy or a sale
@@ -359,7 +410,7 @@ export async function recordTrade(
 ): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
-			const account = await investmentAccount(tx, accountId);
+			const account = await tradingAccount(tx, accountId);
 			refuseFutureDate(input.date, deps.timeZone);
 
 			const now = Date.now();
@@ -451,14 +502,14 @@ function nextOrder(
 	current: CurrentTrade,
 	patch: TradePatch,
 	currency: string,
-): { quantity: Micros; price: Micros; fee: MinorUnits; amount: MinorUnits } {
+): { quantity: Quantity; price: TradePrice; fee: MinorUnits; amount: MinorUnits } {
 	if (patch.amount !== undefined) {
 		throw invalidField("amount");
 	}
 
 	const quantity = signedQuantity(
 		patch.side ?? sideOf(current.quantity),
-		patch.quantity ?? toMicros(Math.abs(current.quantity)),
+		patch.quantity ?? unsignedQuantity(current.quantity),
 	);
 	const price = patch.price ?? current.price;
 	const fee = patch.fee ?? current.fee;
@@ -581,8 +632,8 @@ export async function deleteTrade(
  * parent (AD-20): excluded, its exclusion locked, kept with its keys so a
  * re-import finds it and writes nothing, and left out of every balance and
  * report by every reader that drops a split parent. Throws `NOT_FOUND` for
- * an unknown transaction, `NOT_AN_INVESTMENT_ACCOUNT` elsewhere than on an
- * investment account, `NOT_CONVERTIBLE` for a transfer side, a pending,
+ * an unknown transaction, `TRADES_NOT_SUPPORTED` elsewhere than on an
+ * investment account or a crypto exchange, `NOT_CONVERTIBLE` for a transfer side, a pending,
  * excluded or possibly duplicated transaction, or a split's parent or
  * child, and `VALIDATION_ERROR` on `side` for an amount of the wrong sign,
  * on `price` for a fee below zero, and as a new trade does on its date,
@@ -597,7 +648,7 @@ export async function convertTransaction(
 	return deps.db.transaction(
 		async (tx) => {
 			const source = await splitRow(tx, id);
-			const account = await investmentAccount(tx, source.accountId);
+			const account = await tradingAccount(tx, source.accountId);
 
 			if (
 				source.inTransfer ||
@@ -650,6 +701,7 @@ export async function convertTransaction(
 
 				const security = await resolveSecurity(tx, input.security, account.currency, now);
 				const quantity = signedQuantity(input.side, input.quantity);
+				refuseBuyCost({ quantity, price: input.price, fee }, account.currency);
 				tradeId = await insertTrade(
 					deps,
 					tx,
@@ -691,8 +743,8 @@ export type TradeRecord = {
 	date: IsoDate;
 	side: TradeType;
 	/** Unsigned: `side` gives the sign; zero for an income. */
-	quantity: Micros;
-	price: Micros;
+	quantity: Quantity;
+	price: TradePrice;
 	fee: MinorUnits;
 	/** The cash amount (AD-5): negative for a buy, positive for an income. */
 	amount: MinorUnits;
@@ -738,7 +790,7 @@ function toRecord({ quantity, incomeKind, amount, ...row }: RecordRow): TradeRec
 	return {
 		...row,
 		side: typeOf({ quantity, incomeKind }),
-		quantity: toMicros(Math.abs(quantity)),
+		quantity: unsignedQuantity(quantity),
 		amount: toMinorUnits(amount),
 	};
 }
