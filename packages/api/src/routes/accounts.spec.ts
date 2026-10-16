@@ -1828,6 +1828,102 @@ describe("POST /api/accounts/:id/snapshots", () => {
 	});
 });
 
+async function dryRun(accountId: string, json: { date: string; balance: string }) {
+	return testClient(buildApp()).api.accounts[":id"].snapshots["dry-run"].$post({
+		param: { id: accountId },
+		json,
+	});
+}
+
+describe("POST /api/accounts/:id/snapshots/dry-run", () => {
+	it("answers the balance and the cash a new balance would set, writing nothing", async () => {
+		const account = await openPinned();
+
+		const response = await dryRun(account.id, { date: "2026-03-05", balance: "1 234,56" });
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({
+			date: "2026-03-05",
+			balance: 123456,
+			cash: 123456,
+		});
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+		await expect(balanceOnDay(account.id, "2026-03-05")).resolves.toBe(138000);
+	});
+
+	it("gives a PEA without trades its whole value as cash, as Sure's derived cash", async () => {
+		const account = await openAccount({ ...pea, openingDate: "2026-01-10" });
+
+		const response = await dryRun(account.id, { date: "2026-03-05", balance: "26 300,00" });
+
+		expect((await response.json()).data).toEqual({
+			date: "2026-03-05",
+			balance: 2630000,
+			cash: 2630000,
+		});
+	});
+
+	it("answers a null cash on a date no balance row holds", async () => {
+		const account = await openPinned();
+
+		const response = await dryRun(account.id, { date: "2025-12-01", balance: "1 000,00" });
+
+		expect((await response.json()).data).toEqual({
+			date: "2025-12-01",
+			balance: 100000,
+			cash: null,
+		});
+	});
+
+	it("refuses a blank balance with amount_required, as Sure's valuations", async () => {
+		const account = await openPinned();
+
+		const empty = await request("POST", `/api/accounts/${account.id}/snapshots/dry-run`, {
+			date: "2026-03-05",
+			balance: "",
+		});
+		const spaces = await request("POST", `/api/accounts/${account.id}/snapshots/dry-run`, {
+			date: "2026-03-05",
+			balance: "   ",
+		});
+		const saved = await postSnapshot(account.id, { date: "2026-03-05", balance: " " });
+
+		for (const { status, body } of [empty, spaces, saved]) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "balance", code: "amount_required" }],
+			});
+		}
+		await expect(snapshotsOf(account.id)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("refuses a malformed amount or date and answers NOT_FOUND for an unknown account", async () => {
+		const account = await openPinned();
+
+		const malformed = await request("POST", `/api/accounts/${account.id}/snapshots/dry-run`, {
+			date: "2026-03-05",
+			balance: "12,345",
+		});
+		const badDate = await request("POST", `/api/accounts/${account.id}/snapshots/dry-run`, {
+			date: "2026-3-05",
+			balance: "1,00",
+		});
+		const missing = await request("POST", "/api/accounts/nope/snapshots/dry-run", {
+			date: "2026-03-05",
+			balance: "1,00",
+		});
+
+		expect(errorBody.parse(malformed.body).error.fields).toEqual([
+			{ path: "balance", code: "invalid_amount" },
+		]);
+		expect(errorBody.parse(badDate.body).error.fields).toEqual([
+			{ path: "date", code: "invalid_format" },
+		]);
+		expect(missing.status).toBe(404);
+	});
+});
+
 describe("GET /api/accounts/:id/snapshots", () => {
 	it("lists snapshots most recent first, paged", async () => {
 		const account = await openPinned();
@@ -2736,6 +2832,20 @@ describe("a viewer on a loan or a position", () => {
 		expect(detail.body).toMatchObject({ data: { openingDate: "2026-01-10" } });
 	});
 
+	it("refuses a balance's dry run with FORBIDDEN, as Sure's require_account_permission!", async () => {
+		const account = await openPinned();
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const refused = await viewer.request(`/api/accounts/${account.id}/snapshots/dry-run`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date: "2026-03-05", balance: "1,00" }),
+		});
+
+		expect(refused.status).toBe(403);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+	});
+
 	it("is refused a position's deletion or remap with FORBIDDEN, nothing written", async () => {
 		const { account, securityId } = await heldFund();
 		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
@@ -2886,6 +2996,18 @@ describe("PATCH /api/accounts/:id/opening-balance", () => {
 		expect(errorBody.parse(amount.body).error.fields).toEqual([
 			{ path: "balance", code: "invalid_amount" },
 		]);
+
+		const blank = await patchOpening(account.id, { date: "2026-01-01", balance: "  " });
+
+		expect(blank.status).toBe(400);
+		expect(errorBody.parse(blank.body).error.fields).toEqual([
+			{ path: "balance", code: "amount_required" },
+		]);
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(openingDetail.parse(detail.body).data).toMatchObject({
+			openingDate: "2026-01-10",
+			openingBalance: { balance: 150000 },
+		});
 	});
 
 	it("refuses a date before 1900, as an account's creation", async () => {

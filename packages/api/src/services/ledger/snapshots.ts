@@ -234,6 +234,42 @@ export async function updateSnapshot(
 	);
 }
 
+/** What a reconciliation would set, as Sure's `ReconciliationResult` on a dry run. */
+export type ReconciliationDryRun = {
+	date: IsoDate;
+	/** Sure's `new_balance`: the stored balance the user typed (AD-5). */
+	balance: MinorUnits;
+	/**
+	 * Sure's `new_cash_balance`: the balance less what the stored row of that
+	 * day holds beyond its cash, `null` when no row holds the day.
+	 */
+	cash: MinorUnits | null;
+};
+
+/**
+ * Sure's `Account::ReconciliationManager#reconcile_balance` with `dry_run:
+ * true`: reads the day's stored row and writes nothing. As Sure's
+ * `derived_cash_balance`, the total the user sets keeps the day's holdings
+ * value, and the cash takes the rest.
+ */
+export async function reconciliationDryRun(
+	deps: Pick<ServiceDeps, "db">,
+	accountId: string,
+	input: { date: IsoDate; balance: MinorUnits },
+): Promise<ReconciliationDryRun> {
+	const row = await deps.db
+		.select({ balance: balances.balance, cash: balances.cash })
+		.from(balances)
+		.where(and(eq(balances.accountId, accountId), eq(balances.date, input.date)))
+		.get();
+
+	return {
+		date: input.date,
+		balance: input.balance,
+		cash: row === undefined ? null : toMinorUnits(input.balance - (row.balance - row.cash)),
+	};
+}
+
 /** Deletes a snapshot; the balances from its date follow the transactions again. */
 export async function deleteSnapshot(
 	deps: ServiceDeps,

@@ -139,11 +139,18 @@ describe("PATCH /api/snapshots/:id", () => {
 		const { status, body } = await request("PATCH", `/api/snapshots/${snapshot.id}`, {
 			balance: "abc",
 		});
+		const blank = await request("PATCH", `/api/snapshots/${snapshot.id}`, { balance: " " });
 
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual([
 			{ path: "balance", code: "invalid_amount" },
 		]);
+		expect(blank.status).toBe(400);
+		expect(errorBody.parse(blank.body).error.fields).toEqual([
+			{ path: "balance", code: "amount_required" },
+		]);
+		const { items } = await snapshotsOf(account.id);
+		expect(items).toMatchObject([{ id: snapshot.id, balance: 200000 }]);
 	});
 
 	it("refuses a malformed date and writes nothing", async () => {

@@ -583,6 +583,7 @@ function AccountPage() {
 			? {
 					id: writable.id,
 					currency: writable.currency,
+					type: writable.type,
 					openingDate: account.data.openingDate,
 					openingBalance: account.data.openingBalance,
 				}

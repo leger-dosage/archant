@@ -14,6 +14,7 @@ import {
 	link,
 	newBankAccount,
 	openChecking,
+	openPea,
 	openPinned,
 	setToday,
 	snapshot,
@@ -25,6 +26,7 @@ import {
 	deleteSnapshot,
 	findSnapshot,
 	listSnapshots,
+	reconciliationDryRun,
 	recordSnapshot,
 	updateSnapshot,
 } from "./snapshots.ts";
@@ -340,6 +342,44 @@ describe("updateSnapshot", () => {
 		await expect(
 			updateSnapshot(deps(), transaction, { date: "2026-03-05" }, { origin: "user" }),
 		).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+describe("reconciliationDryRun", () => {
+	it("keeps the day's holdings value and gives the cash the rest, as Sure's derived cash", async () => {
+		const account = await openPea({ openingDate: "2026-01-10" });
+		// The stored row of a day holding 8 000,00 € of positions beside 2 000,00 € of cash.
+		await temp.db
+			.update(balances)
+			.set({ balance: toMinorUnits(1_000_000), cash: toMinorUnits(200_000) })
+			.where(and(eq(balances.accountId, account.id), eq(balances.date, "2026-03-05")));
+
+		const result = await reconciliationDryRun(deps(), account.id, {
+			date: "2026-03-05",
+			balance: toMinorUnits(1_200_000),
+		});
+
+		expect(result).toEqual({ date: "2026-03-05", balance: 1_200_000, cash: 400_000 });
+		const day = await temp.db
+			.select({ balance: balances.balance })
+			.from(balances)
+			.where(and(eq(balances.accountId, account.id), eq(balances.date, "2026-03-05")))
+			.get();
+		expect(day?.balance).toBe(1_000_000);
+		await expect(listSnapshots(deps(), account.id, firstPage)).resolves.toMatchObject({
+			total: 0,
+		});
+	});
+
+	it("answers a null cash before the history starts", async () => {
+		const account = await openPinned();
+
+		await expect(
+			reconciliationDryRun(deps(), account.id, {
+				date: "2026-01-09",
+				balance: toMinorUnits(100_000),
+			}),
+		).resolves.toEqual({ date: "2026-01-09", balance: 100_000, cash: null });
 	});
 });
 

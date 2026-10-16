@@ -2,7 +2,12 @@ import type { SnapshotRejectionCode } from "../domain/balances/snapshot.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { SnapshotInput, SnapshotPatchInput } from "../schemas/snapshots.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { SnapshotRecord, ValuationFilter, ValuationRecord } from "./ledger/snapshots.ts";
+import type {
+	ReconciliationDryRun,
+	SnapshotRecord,
+	ValuationFilter,
+	ValuationRecord,
+} from "./ledger/snapshots.ts";
 
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
@@ -13,6 +18,7 @@ import {
 	findSnapshot,
 	listSnapshots,
 	listValuations as listLedgerValuations,
+	reconciliationDryRun,
 	recordSnapshot,
 	updateSnapshot as updateLedgerSnapshot,
 } from "./ledger/snapshots.ts";
@@ -109,6 +115,29 @@ export async function createSnapshot(
 	}
 
 	return { ...(await found(deps, result.id)), replacedExisting: result.replaced };
+}
+
+/**
+ * What recording `input` would set, written nowhere: Sure's `confirm_create`
+ * and `confirm_update`, which every balance form shows before it saves. The
+ * amount and the date's format are checked, not the ledger's refusals, as
+ * Sure's `prepare_reconciliation` checks nothing; those come with the save.
+ * Its route is a POST, as Sure's, so `viewerReadOnly` refuses a viewer as
+ * Sure's `require_account_permission!` does.
+ */
+export async function dryRunSnapshot(
+	deps: ServiceDeps,
+	accountId: string,
+	input: SnapshotInput,
+): Promise<ReconciliationDryRun> {
+	const currency = await currencyOf(deps, accountId);
+	const parsed = createSnapshotSchema(currency).safeParse(input);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	return reconciliationDryRun(deps, accountId, parsed.data);
 }
 
 /** Moves or changes a snapshot on the user's behalf. */
