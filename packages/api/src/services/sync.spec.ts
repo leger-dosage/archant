@@ -152,7 +152,7 @@ async function linkedAccount(connectionId: string, uid: string) {
 	await linkBankAccount(
 		deps(),
 		account.id,
-		{ bankAccountId, balance: { amount: toMinorUnits(100000), date: null } },
+		{ bankAccountId, balance: toMinorUnits(100000) },
 		{ origin: "sync" },
 	);
 
@@ -417,6 +417,27 @@ describe("syncConnection", () => {
 			),
 		).resolves.toEqual([{ source: "enable-banking", connectionId, importId: null }]);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: null });
+	});
+
+	it("dates the bank's balance today, whatever day it describes, as Sure", async () => {
+		mockProvider({
+			balances: () =>
+				HttpResponse.json({
+					balances: [
+						{
+							balance_amount: { currency: "EUR", amount: "1234.56" },
+							balance_type: "CLBD",
+							reference_date: "2026-09-22",
+						},
+					],
+				}),
+		});
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(anchorOf(accountId)).resolves.toEqual({ date: "2026-09-24", amount: 123456 });
 	});
 
 	it("reads an account's first statement from the connection's start date", async () => {
@@ -1455,7 +1476,7 @@ describe("a bank connected again", () => {
 		await linkBankAccount(
 			deps(),
 			accountId,
-			{ bankAccountId, balance: { amount: toMinorUnits(100000), date: null } },
+			{ bankAccountId, balance: toMinorUnits(100000) },
 			{ origin: "sync" },
 		);
 
@@ -1699,7 +1720,7 @@ describe("a credit card's bank balance", () => {
 		await linkBankAccount(
 			deps(),
 			accountId,
-			{ bankAccountId, balance: { amount: toMinorUnits(-90000), date: null } },
+			{ bankAccountId, balance: toMinorUnits(-90000) },
 			{ origin: "sync" },
 		);
 
@@ -1716,7 +1737,7 @@ describe("a credit card's bank balance", () => {
 		await linkBankAccount(
 			deps(),
 			accountId,
-			{ bankAccountId, balance: { amount: toMinorUnits(90000), date: null } },
+			{ bankAccountId, balance: toMinorUnits(90000) },
 			{ origin: "sync" },
 		);
 

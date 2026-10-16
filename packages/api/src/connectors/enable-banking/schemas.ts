@@ -120,8 +120,8 @@ export const balanceSchema = z.object({
 	balance_amount: z.object({ amount: z.string().min(1), currency }),
 	balance_type: z.string().min(1),
 	credit_debit_indicator: z.enum(["CRDT", "DBIT"]).nullish().catch(null),
-	// The day the balance describes: a `CLBD` often closes yesterday. Unread,
-	// the balance still counts, dated today.
+	// The day the balance describes, which only chooses among the balances,
+	// as Sure's `select_current_balance`. Unread, the balance still counts.
 	reference_date: z.string().nullable().catch(null),
 });
 

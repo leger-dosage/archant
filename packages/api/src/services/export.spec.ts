@@ -1683,7 +1683,7 @@ describe("exportArchive", () => {
 		await linkBankAccount(
 			{ db, timeZone: "Europe/Paris" },
 			linked.id,
-			{ bankAccountId: "bank-account-1", balance: { amount: toMinorUnits(500_000), date: null } },
+			{ bankAccountId: "bank-account-1", balance: toMinorUnits(500_000) },
 			{ origin: "sync" },
 		);
 

@@ -17,7 +17,7 @@ import type { Account } from "@archant/data/types";
 
 import { interpretCreditCardBalance } from "../../domain/balances/credit-card-balance.ts";
 import { toStoredBankBalance } from "../../domain/balances/stored-balance.ts";
-import { addDays, maxDate, minDate, today } from "../../domain/dates.ts";
+import { addDays, maxDate, today } from "../../domain/dates.ts";
 import {
 	accountWithOpeningDate,
 	backwardAnchor,
@@ -27,18 +27,6 @@ import {
 } from "./balances.ts";
 import { oneByOne } from "./shared.ts";
 import { snapshotOn } from "./snapshots.ts";
-
-/** A bank's balance for the anchor: signed as it prints it, and the day it describes, if it says. */
-export type AnchorBalance = { amount: MinorUnits; date: IsoDate | null };
-
-/**
- * The day a `current_anchor` holds: the one the bank's balance describes,
- * never later than today. A closing balance often describes yesterday; dated
- * today, the backward computation would subtract today's lines a second time.
- */
-export function anchorDate(balance: AnchorBalance, day: IsoDate): IsoDate {
-	return balance.date === null ? day : minDate(balance.date, day);
-}
 
 const NO_CARD_DETAILS: CreditCardDetails = {
 	availableCredit: null,
@@ -134,24 +122,29 @@ async function writeCurrentAnchor(
 }
 
 /**
- * Step 7 for a sync, written: the bank's new balance becomes the account's
- * `current_anchor`, and the one it supersedes, dated an earlier day, becomes
- * a `reconciliation` on that day, keeping its id, as Sure's
- * `Account::CurrentBalanceManager#preserve_anchor_as_reconciliation_if_stale`.
- * Each figure the bank gave then fixes its own day, so a line the bank never
- * sent moves only the days between the two figures around it (AD-8). An
- * anchor dated the new balance's day or later is updated in place, amount
- * and date, as Sure's `update_current_anchor`: a later figure the bank now
- * dates earlier is stale, and must not stay fixed. The old figure is deleted
- * instead when a snapshot already holds its day, the user's value winning as
- * AD-8 has it, or when it is dated on the opening date, which the opening
- * anchor holds. Returns the earliest date written.
+ * Step 7 for a sync, written, as Sure's
+ * `Account::CurrentBalanceManager#set_current_balance_for_linked_account`.
+ * An anchor dated after the bank's balance stays where it stands, the
+ * balance becoming the valuation of its own day (`record_historical_balance`):
+ * the one already on that day takes the amount, keeping its id and losing its
+ * import, the opening anchor on the opening date included, as Sure's
+ * `ReconciliationManager#prepare_reconciliation` finds it by date; else a new
+ * `reconciliation`. An anchor on the same day is updated in place
+ * (`update_current_anchor`). One on an earlier day becomes a
+ * `reconciliation` on that day, keeping its id
+ * (`preserve_anchor_as_reconciliation_if_stale`), and a new anchor is
+ * written: each figure the bank gave then fixes its own day, so a line the
+ * bank never sent moves only the days between the two figures around it
+ * (AD-8). The old figure is deleted instead when a snapshot already holds its
+ * day, the user's value winning as AD-8 has it, or when it is dated on the
+ * opening date, which the opening anchor holds. Returns the earliest date
+ * written.
  */
 export async function rotateCurrentAnchor(
 	tx: Transaction,
 	account: Pick<Account, "id" | "currency">,
 	anchor: { date: IsoDate; balance: MinorUnits },
-	openingDate: IsoDate,
+	opening: { id: string; date: IsoDate },
 	now: number,
 ): Promise<IsoDate> {
 	const previous = await tx
@@ -160,10 +153,21 @@ export async function rotateCurrentAnchor(
 		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "current_anchor")))
 		.get();
 
-	if (previous !== undefined && previous.date >= anchor.date) {
+	if (previous !== undefined && previous.date > anchor.date) {
+		await (anchor.date === opening.date
+			? tx
+					.update(entries)
+					.set({ amount: anchor.balance, updatedAt: now })
+					.where(eq(entries.id, opening.id))
+			: writeReconciliation(tx, account, anchor.date, anchor.balance, now));
+
+		return anchor.date;
+	}
+
+	if (previous !== undefined && previous.date === anchor.date) {
 		await tx
 			.update(entries)
-			.set({ date: anchor.date, amount: anchor.balance, updatedAt: now })
+			.set({ amount: anchor.balance, updatedAt: now })
 			.where(eq(entries.id, previous.id));
 
 		return anchor.date;
@@ -171,7 +175,7 @@ export async function rotateCurrentAnchor(
 
 	if (previous !== undefined) {
 		const kept =
-			previous.date !== openingDate &&
+			previous.date !== opening.date &&
 			(await snapshotOn(tx, account.id, previous.date)) === undefined;
 
 		await (kept
@@ -189,8 +193,9 @@ export async function rotateCurrentAnchor(
 
 /**
  * Makes `bankAccountId` feed the account, Sure's `link_existing_account`,
- * and writes the bank's balance as its `current_anchor`, dated the day the
- * balance describes: the account is then computed backward from it (AD-8).
+ * and writes the bank's balance as its `current_anchor`, dated today
+ * whatever day the bank says it describes, as Sure's `set_current_balance`:
+ * the account is then computed backward from it (AD-8).
  * `balance` is the bank's signed figure, `null` when the bank gave none,
  * which leaves the account computed forward, as does a card whose balance
  * reads as available credit with no limit to subtract it from. A card's
@@ -200,7 +205,7 @@ export async function rotateCurrentAnchor(
 export async function linkBankAccount(
 	deps: ServiceDeps,
 	accountId: string,
-	input: { bankAccountId: string; balance: AnchorBalance | null },
+	input: { bankAccountId: string; balance: MinorUnits | null },
 	_options: { origin: Origin },
 ): Promise<void> {
 	await deps.db.transaction(
@@ -213,8 +218,7 @@ export async function linkBankAccount(
 				.set({ bankAccountId: input.bankAccountId, updatedAt: now })
 				.where(eq(accounts.id, accountId));
 
-			const reported =
-				input.balance === null ? null : toStoredBankBalance(account, input.balance.amount);
+			const reported = input.balance === null ? null : toStoredBankBalance(account, input.balance);
 			const card =
 				reported === null
 					? null
@@ -231,9 +235,7 @@ export async function linkBankAccount(
 			await writeCurrentAnchor(
 				tx,
 				account,
-				input.balance === null || balance === null
-					? null
-					: { date: anchorDate(input.balance, today(deps.timeZone)), balance },
+				balance === null ? null : { date: today(deps.timeZone), balance },
 				now,
 			);
 
@@ -310,7 +312,7 @@ function unlinkReconciliations(input: {
 	return input.rows
 		.filter((row) => {
 			// The opening day belongs to the opening anchor, even when the bank's
-			// balance describes a day before it.
+			// anchor is dated before it.
 			if (row.date === input.anchorDate) {
 				return row.date > input.openingDate;
 			}

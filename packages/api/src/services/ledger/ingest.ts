@@ -39,12 +39,7 @@ import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { loadEnabledRules } from "../rule-reader.ts";
 import { getReportingCurrency } from "../settings.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import {
-	anchorDate,
-	creditCardBalanceOf,
-	rotateCurrentAnchor,
-	writeAvailableCredit,
-} from "./bank-link.ts";
+import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
@@ -645,8 +640,9 @@ function assertPreviewHolds(
 
 /**
  * Step 7 for a sync, planned: the bank's balance becomes the account's
- * `current_anchor` (AD-8), dated the day it describes and never after today;
- * the one it supersedes stays as a reconciliation (`rotateCurrentAnchor`).
+ * `current_anchor` (AD-8), dated today whatever day the bank says it
+ * describes, as Sure's `set_current_balance`; the one it supersedes stays as
+ * a reconciliation (`rotateCurrentAnchor`).
  * Skipped in another currency: FR56 wants the bank's own figure, unconverted,
  * and then nothing changes.
  */
@@ -656,12 +652,11 @@ function planCurrentAnchor(
 	day: IsoDate,
 	interpreted: MinorUnits | null,
 ): StatementBalanceOutcome {
-	const date = anchorDate(statementBalance, day);
 	const balance = interpreted ?? toStoredBankBalance(account, statementBalance.amount);
 
 	return statementBalance.currency === account.currency
-		? { status: "recorded", date, balance }
-		: { status: "skipped", date, balance, reason: "CURRENCY_MISMATCH" };
+		? { status: "recorded", date: day, balance }
+		: { status: "skipped", date: day, balance, reason: "CURRENCY_MISMATCH" };
 }
 
 /**
@@ -1039,7 +1034,7 @@ export async function ingest(
 							tx,
 							account,
 							anchorPlan,
-							openingMovedTo ?? account.openingDate,
+							{ id: account.openingId, date: openingMovedTo ?? account.openingDate },
 							now,
 						)
 					: null;
