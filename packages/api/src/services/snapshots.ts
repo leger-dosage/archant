@@ -26,15 +26,13 @@ export type SnapshotPage = {
 
 // The ledger names why it refused a snapshot; the form shows it under the
 // date. A snapshot may fall on the opening date, where it sets the opening
-// balance, except on a linked account: there the opening anchor holds the
-// date, as another snapshot would, since a snapshot may not set it.
-const REJECTION_FIELDS: Record<SnapshotRejectionCode | "OPENING_DATE", FieldError> = {
-	OPENING_DATE: { path: "date", code: "snapshot_exists" },
+// balance.
+const REJECTION_FIELDS: Record<SnapshotRejectionCode, FieldError> = {
 	DATE_IN_FUTURE: { path: "date", code: "date_in_future" },
 	SNAPSHOT_EXISTS: { path: "date", code: "snapshot_exists" },
 };
 
-function rejectionError(reason: SnapshotRejectionCode | "OPENING_DATE"): AppError {
+function rejectionError(reason: SnapshotRejectionCode): AppError {
 	return new AppError("VALIDATION_ERROR", "The request is invalid.", [REJECTION_FIELDS[reason]]);
 }
 

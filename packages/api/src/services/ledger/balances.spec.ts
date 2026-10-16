@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
 
 import { ACCOUNT_TYPE_IDS, transactionsMoveBalance } from "@archant/data/account-types";
@@ -31,6 +31,7 @@ import {
 	firstValuationOf,
 	openingDateOf,
 	recomputeBalances,
+	recomputeLinkedBalances,
 	recomputeNonCashBalances,
 } from "./balances.ts";
 import * as shared from "./shared.ts";
@@ -384,5 +385,47 @@ describe("recomputeNonCashBalances", () => {
 
 		// Claimed: a second start recomputes nothing.
 		await expect(recomputeNonCashBalances(deps())).resolves.toBe(0);
+	});
+});
+
+const linkedClaim = () =>
+	temp.db.select().from(settings).where(eq(settings.key, "linked_balances_recomputed_at")).get();
+
+describe("recomputeLinkedBalances", () => {
+	it("rolls its claim back with a failed recompute, so the next start tries again", async () => {
+		await linkedChecking();
+		vi.spyOn(shared, "oneByOne").mockRejectedValueOnce(new Error("disk full"));
+
+		await expect(recomputeLinkedBalances(deps())).rejects.toThrow("disk full");
+
+		await expect(linkedClaim()).resolves.toBeUndefined();
+	});
+
+	it("ends a linked account's opening day at its amount, once, every other account left as it was", async () => {
+		const { account } = await linkedChecking();
+		const manual = await openChecking();
+		await add(manual.id, { date: "2026-09-10" });
+		// As a release before Story 28.17 stored it: the opening day derived
+		// backward from the bank's balance.
+		await temp.db
+			.update(balances)
+			.set({ balance: toMinorUnits(100000), cash: toMinorUnits(100000) })
+			.where(and(eq(balances.accountId, account.id), eq(balances.date, "2026-09-01")));
+		const manualBefore = await history(manual.id);
+		const linked = await temp.db
+			.select({ id: accounts.id })
+			.from(accounts)
+			.where(isNotNull(accounts.bankAccountId));
+
+		await expect(recomputeLinkedBalances(deps())).resolves.toBe(linked.length);
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-01")).toBe(123456);
+		expect(days.get("2026-09-02")).toBe(100000);
+		await expect(history(manual.id)).resolves.toEqual(manualBefore);
+		await expect(linkedClaim()).resolves.toBeDefined();
+
+		// Claimed: a second start recomputes nothing.
+		await expect(recomputeLinkedBalances(deps())).resolves.toBe(0);
 	});
 });

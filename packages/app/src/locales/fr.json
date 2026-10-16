@@ -1116,7 +1116,6 @@
 			"skipped": "Le solde du relevé au {{date}} ne sera pas enregistré : {{reason}}",
 			"reasons": {
 				"DATE_IN_FUTURE": "il est daté dans le futur.",
-				"OPENING_DATE": "il tombe le jour d'ouverture d'un compte relié à une banque.",
 				"CURRENCY_MISMATCH": "sa devise diffère de celle du compte."
 			}
 		},

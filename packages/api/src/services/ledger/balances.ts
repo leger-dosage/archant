@@ -168,14 +168,15 @@ async function recomputeBackward(
 	timeZone: string,
 ): Promise<void> {
 	const movements = await bookedMovements(tx, account.id);
-	// The opening anchor's amount plays no part.
 	const reconciliations = await tx
 		.select({ date: entries.date, balance: entries.amount })
 		.from(entries)
 		.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "reconciliation")));
+	const opening = await accountWithOpeningDate(tx, account.id);
 	const rows: NewBalance[] = reverseBalances({
 		from: start,
 		anchor,
+		opening: { date: opening.openingDate, balance: toMinorUnits(opening.openingBalance) },
 		valuations: reconciliations.map((row) => ({
 			date: row.date,
 			balance: toMinorUnits(row.balance),
@@ -399,26 +400,25 @@ export async function recomputeBalances(
 	await inSequence(rows, BALANCE_ROWS_PER_INSERT, (chunk) => tx.insert(balances).values(chunk));
 }
 
-const NON_CASH_BALANCES_KEY = "non_cash_balances_recomputed_at";
-
 /**
- * Rewrites every property and vehicle account's balances once per instance,
- * so a value a release before Story 28.9 moved with a transaction returns to
- * its valuations, and returns how many accounts it recomputed. A migration
- * cannot replay entries, so the `non_cash_balances_recomputed_at` row is
- * claimed in the same transaction as the recompute (AD-12): a failure rolls
- * the claim back and the next start tries again, a later start recomputes
+ * Rewrites the balances of the accounts `where` keeps once per instance,
+ * from each one's history start, and returns how many it recomputed. A
+ * migration cannot replay entries, so the `key` row of `settings` is claimed
+ * in the same transaction as the recompute (AD-12): a failure rolls the
+ * claim back and the next start tries again, a later start recomputes
  * nothing.
  */
-export async function recomputeNonCashBalances(
+async function recomputeOnce(
 	deps: Pick<ServiceDeps, "db" | "timeZone">,
+	key: string,
+	where: SQL | undefined,
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
 			const now = Date.now();
 			const claimed = await tx
 				.insert(settings)
-				.values({ key: NON_CASH_BALANCES_KEY, value: String(now), updatedAt: now })
+				.values({ key, value: String(now), updatedAt: now })
 				.onConflictDoNothing()
 				.returning({ key: settings.key });
 
@@ -426,18 +426,13 @@ export async function recomputeNonCashBalances(
 				return 0;
 			}
 
-			const nonCash = await tx
+			const kept = await tx
 				.select({ id: accounts.id, type: accounts.type, currency: accounts.currency })
 				.from(accounts)
-				.where(
-					inArray(
-						accounts.type,
-						ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type)),
-					),
-				)
+				.where(where)
 				.orderBy(asc(accounts.id));
 
-			await oneByOne(nonCash, async (account) =>
+			await oneByOne(kept, async (account) =>
 				recomputeBalances(
 					tx,
 					account,
@@ -446,9 +441,51 @@ export async function recomputeNonCashBalances(
 				),
 			);
 
-			return nonCash.length;
+			return kept.length;
 		},
 		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Rewrites every property and vehicle account's balances once per instance,
+ * with `non_cash_balances_recomputed_at`, so a value a release before Story
+ * 28.9 moved with a transaction returns to its valuations.
+ */
+export async function recomputeNonCashBalances(
+	deps: Pick<ServiceDeps, "db" | "timeZone">,
+): Promise<number> {
+	return recomputeOnce(
+		deps,
+		"non_cash_balances_recomputed_at",
+		inArray(
+			accounts.type,
+			ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type)),
+		),
+	);
+}
+
+/**
+ * Rewrites every account computed backward from a bank balance once per instance, with
+ * `linked_balances_recomputed_at`, so a history a release before Story 28.17
+ * derived past the opening date ends that day at the opening balance.
+ */
+export async function recomputeLinkedBalances(
+	deps: Pick<ServiceDeps, "db" | "timeZone">,
+): Promise<number> {
+	return recomputeOnce(
+		deps,
+		"linked_balances_recomputed_at",
+		and(
+			isNotNull(accounts.bankAccountId),
+			inArray(
+				accounts.id,
+				deps.db
+					.select({ id: entries.accountId })
+					.from(entries)
+					.where(eq(entries.valuationKind, "current_anchor")),
+			),
+		),
 	);
 }
 

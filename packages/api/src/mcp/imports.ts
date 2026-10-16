@@ -134,12 +134,7 @@ const previewOutput = z.object({
 			),
 			recorded: formatted("The balance the owner recorded that day").optional(),
 			gap: formatted("balance minus recorded").optional(),
-			reason: z
-				.string()
-				.optional()
-				.describe(
-					"DATE_IN_FUTURE; OPENING_DATE, the opening date of an account a bank syncs; or CURRENCY_MISMATCH.",
-				),
+			reason: z.string().optional().describe("DATE_IN_FUTURE or CURRENCY_MISMATCH."),
 		})
 		.nullable()
 		.describe("What confirm does with the file's closing balance; null when the file gives none."),

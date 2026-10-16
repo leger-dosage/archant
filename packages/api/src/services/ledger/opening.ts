@@ -24,7 +24,7 @@ export type OpeningBalanceInput = {
 type OpeningBalance = { date: IsoDate; balance: MinorUnits };
 
 export type OpeningBalanceResult =
-	| { status: "rejected"; reason: "ACCOUNT_LINKED" | "DATE_IN_FUTURE" }
+	| { status: "rejected"; reason: "DATE_IN_FUTURE" }
 	| { status: "rejected"; reason: "NOT_BEFORE_OLDEST_ENTRY"; oldestEntryDate: IsoDate }
 	| {
 			status: "set";
@@ -44,9 +44,9 @@ export type OpeningBalanceResult =
  * `Account::OpeningBalanceManager`: it keeps its id and kind (AD-8 keeps
  * exactly one). The date must precede every other entry of the account,
  * pending ones and snapshots included, and not be after today: Archant's
- * balances never start after today. A linked account is refused, as Sure's
- * `set_opening_balance` refuses it: its balances derive backward from the
- * bank's and ignore the anchor's amount. In one transaction, the balances,
+ * balances never start after today. A linked account's moves too: its
+ * backward pass ends the opening date at the anchor's amount, as Sure's
+ * `Balance::ReverseCalculator`. In one transaction, the balances,
  * and an investment account's holdings, are computed again from the earlier
  * of the two dates. A dry run answers the same and writes nothing.
  */
@@ -59,10 +59,6 @@ export async function setOpeningBalance(
 	return deps.db.transaction(
 		async (tx): Promise<OpeningBalanceResult> => {
 			const account = await accountWithOpeningDate(tx, accountId);
-
-			if (account.bankAccountId !== null) {
-				return { status: "rejected", reason: "ACCOUNT_LINKED" };
-			}
 
 			if (input.date !== undefined) {
 				const oldest = await tx

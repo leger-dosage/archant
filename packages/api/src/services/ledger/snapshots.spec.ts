@@ -144,7 +144,7 @@ describe("recordSnapshot", () => {
 		});
 	});
 
-	it("refuses the opening date of a linked account, whose balances ignore the anchor's amount", async () => {
+	it("sets a linked account's opening balance on its opening date, the day ending there", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
 		await link(account.id, bank.id, 100000);
@@ -156,14 +156,17 @@ describe("recordSnapshot", () => {
 				{ date: "2026-09-01", balance: toMinorUnits(1) },
 				{ origin: "user" },
 			),
-		).resolves.toEqual({ status: "rejected", reason: "OPENING_DATE" });
+		).resolves.toMatchObject({ status: "recorded", replaced: true });
 		await expect(
 			temp.db
 				.select({ amount: entries.amount })
 				.from(entries)
 				.where(and(eq(entries.accountId, account.id), eq(entries.valuationKind, "opening_anchor")))
 				.get(),
-		).resolves.toEqual({ amount: 123456 });
+		).resolves.toEqual({ amount: 1 });
+		const days = await history(account.id);
+		expect(days.get("2026-09-01")).toBe(1);
+		expect(days.get("2026-09-02")).toBe(100000);
 	});
 
 	it("records a day before the opening date as a reconciliation the balances start from, as Sure", async () => {

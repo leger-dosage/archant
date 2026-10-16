@@ -1115,13 +1115,52 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	await toTransactions(page);
 	await expect(columnAccount(page, accountId)).toContainText(euros(123_456));
 	await page.goto(`/accounts/${accountId}?tab=snapshots`);
-	// Shown, never opened: the bank's balances ignore the opening amount.
-	await expect(page.getByRole("row", { name: "Solde d'ouverture" })).toBeVisible();
-	await expect(page.locator("[data-opening-balance]")).toHaveCount(0);
 	const yesterday = daysAgo(1);
 	const rows = page.getByRole("row", { name: new RegExp(`^${formatTableDate(yesterday)} `, "u") });
 	await expect(rows).toHaveCount(1);
 	await expect(rows.getByRole("cell").nth(1)).toHaveText(euros(120_000));
+});
+
+// Story 28.17: Sure's backward pass ends a linked account's opening day at
+// its opening balance, which the valuation drawer edits as on any account.
+test("« Solde d'ouverture » on a linked account moves the opening day, the bank's balance staying", async ({
+	page,
+}) => {
+	await connect(page);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+	await page.goto(`/accounts/${accountId}`);
+	await page.getByRole("button", { name: "Voir le tableau" }).click();
+	const day = (iso: string) =>
+		page
+			.getByRole("region", { name: "Historique du solde" })
+			.getByRole("row", { name: new RegExp(`^${formatTableDate(iso)} `, "u") });
+	await expect(day(daysAgo(19))).toBeVisible();
+	const dayAfter = await day(daysAgo(19)).textContent();
+	expect(dayAfter).not.toBeNull();
+
+	await page.getByRole("tab", { name: "Soldes" }).click();
+	await page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("button").click();
+	const sheet = page.getByRole("dialog", { name: "Solde d'ouverture" });
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(20)));
+	await sheet.getByLabel("Valeur du compte à ce jour").fill("500,00");
+	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
+
+	await expect(sheet).toBeHidden();
+	await expect(page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("cell")).toHaveText([
+		`${formatTableDate(daysAgo(20))}Solde d'ouverture`,
+		euros(50_000),
+		"—",
+		"—",
+	]);
+	await expect(day(daysAgo(20))).toContainText(euros(50_000));
+	// The next day keeps the bank's side, the gap Sure's cash adjustment.
+	await expect(day(daysAgo(19))).toHaveText(dayAfter ?? "");
+	await expect(page.getByRole("main")).toContainText(euros(123_456));
 });
 
 // As in Sure, whose importer creates what its reference no longer finds: the

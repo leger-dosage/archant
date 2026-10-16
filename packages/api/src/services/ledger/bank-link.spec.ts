@@ -65,8 +65,10 @@ describe("linkBankAccount", () => {
 		expect(days.get("2026-09-14")).toBe(-150000);
 		expect(days.get("2026-09-10")).toBe(-150000);
 		expect(days.get("2026-09-09")).toBe(-145710);
-		// The opening amount is ignored: its day is derived like any other.
-		expect(days.get("2026-09-01")).toBe(-145710);
+		expect(days.get("2026-09-02")).toBe(-145710);
+		// The opening amount ends its day, as Sure's; the gap to the next day is
+		// Sure's cash adjustment.
+		expect(days.get("2026-09-01")).toBe(123456);
 		expect(days.has("2026-08-31")).toBe(false);
 		expect(days.size).toBe(21);
 	});
@@ -90,7 +92,8 @@ describe("linkBankAccount", () => {
 		expect(days.get("2026-09-11")).toBe(50000);
 		expect(days.get("2026-09-05")).toBe(50000);
 		expect(days.get("2026-09-04")).toBe(51000);
-		expect(days.get("2026-09-01")).toBe(51000);
+		expect(days.get("2026-09-02")).toBe(51000);
+		expect(days.get("2026-09-01")).toBe(123456);
 	});
 
 	it("dates the anchor on the day the bank's balance describes, never after today", async () => {
@@ -223,7 +226,8 @@ describe("a bank-linked account", () => {
 		expect(days.get("2026-09-21")).toBe(100000);
 		expect(days.get("2026-09-05")).toBe(100000);
 		expect(days.get("2026-09-04")).toBe(102000);
-		expect(days.get("2026-09-01")).toBe(102000);
+		expect(days.get("2026-09-02")).toBe(102000);
+		expect(days.get("2026-09-01")).toBe(123456);
 	});
 
 	it("recomputes every earlier day when a transaction is deleted", async () => {
@@ -234,7 +238,8 @@ describe("a bank-linked account", () => {
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-04")).toBe(100000);
-		expect(days.get("2026-09-01")).toBe(100000);
+		expect(days.get("2026-09-02")).toBe(100000);
+		expect(days.get("2026-09-01")).toBe(123456);
 	});
 
 	it("goes forward from the bank balance for a day after it", async () => {
@@ -269,9 +274,12 @@ describe("a bank-linked account", () => {
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-21")).toBe(100000);
-		expect(days.get("2026-08-25")).toBe(100000);
-		expect(days.get("2026-08-24")).toBe(100500);
-		expect(days.get("2026-08-20")).toBe(100500);
+		expect(days.get("2026-09-02")).toBe(100000);
+		// From the opening amount, the day before the opening date starting there.
+		expect(days.get("2026-09-01")).toBe(123456);
+		expect(days.get("2026-08-25")).toBe(123456);
+		expect(days.get("2026-08-24")).toBe(123956);
+		expect(days.get("2026-08-20")).toBe(123956);
 		expect(days.has("2026-08-19")).toBe(false);
 	});
 
@@ -321,6 +329,22 @@ describe("a bank-linked account", () => {
 		});
 	});
 
+	it("reads the gap of a snapshot the day before the opening date against the opening amount", async () => {
+		const { account } = await linkedAccount();
+		await add(account.id, { date: "2026-09-01", amount: toMinorUnits(-700) });
+		await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-08-31", balance: toMinorUnits(120000) },
+			{ origin: "user" },
+		);
+
+		const { items } = await listSnapshots(deps(), account.id, { page: 1, pageSize: 50 });
+
+		// The opening day's line is undone for nothing, as the backward pass does.
+		expect(items).toMatchObject([{ date: "2026-08-31", computed: 123456, gap: 120000 - 123456 }]);
+	});
+
 	it("reads a snapshot on the bank balance's day forward, as any other account", async () => {
 		const { account } = await linkedAccount();
 		await recordSnapshot(
@@ -363,9 +387,12 @@ async function bankAccountOf(accountId: string) {
 
 describe("unlinkBankAccount", () => {
 	it("keeps every balance while the bank's figure becomes a reconciliation", async () => {
-		const { account, link: linkIt } = await linkedAt(100000);
-		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-transferAmount()) });
-		await add(account.id, { date: "2026-09-15", amount: toMinorUnits(transferAmount()) });
+		const { account, link: linkIt } = await linkedAt(100000, {
+			openingBalance: toMinorUnits(100000),
+		});
+		const amount = transferAmount();
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		await add(account.id, { date: "2026-09-15", amount: toMinorUnits(amount) });
 		await linkIt();
 		const before = await history(account.id);
 
@@ -380,7 +407,9 @@ describe("unlinkBankAccount", () => {
 	});
 
 	it("keeps every balance before the opening date, fixing the oldest line's day", async () => {
-		const { account, link: linkIt } = await linkedAt(100000);
+		const { account, link: linkIt } = await linkedAt(100000, {
+			openingBalance: toMinorUnits(100000),
+		});
 		await add(account.id, { date: "2026-08-20", amount: toMinorUnits(-1000) });
 		await add(account.id, { date: "2026-08-25", amount: toMinorUnits(-500) });
 		await linkIt();
@@ -461,7 +490,9 @@ describe("unlinkBankAccount", () => {
 	});
 
 	it("replaces a reconciliation on the bank's day with the stored balance, keeping its id", async () => {
-		const { account, link: linkIt } = await linkedAt(100000);
+		const { account, link: linkIt } = await linkedAt(100000, {
+			openingBalance: toMinorUnits(100000),
+		});
 		const recorded = await recordSnapshot(
 			deps(),
 			account.id,
@@ -509,7 +540,9 @@ describe("unlinkBankAccount", () => {
 
 		await expect(history(account.id)).resolves.toEqual(before);
 		await expect(valuationsOf(account.id)).resolves.toEqual([
-			{ kind: "opening_anchor", date: "2026-09-01", amount: before.get("2026-09-01") },
+			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
+			// The opening amount's gap to the day after, kept.
+			{ kind: "reconciliation", date: "2026-09-02", amount: before.get("2026-09-02") },
 			{ kind: "reconciliation", date: "2026-09-07", amount: 70000 },
 			{ kind: "reconciliation", date: "2026-09-08", amount: 80000 },
 			{ kind: "reconciliation", date: "2026-09-09", amount: before.get("2026-09-09") },
@@ -557,7 +590,8 @@ describe("unlinkBankAccount", () => {
 		// The bank's day starts the balances, as any entry before the opening date.
 		await expect(valuationsOf(account.id)).resolves.toEqual([
 			{ kind: "reconciliation", date: "2026-09-20", amount: 100000 },
-			{ kind: "opening_anchor", date: "2026-09-21", amount: 100000 },
+			// The opening anchor holds its day, after the bank's too.
+			{ kind: "opening_anchor", date: "2026-09-21", amount: 123456 },
 		]);
 	});
 
@@ -727,7 +761,9 @@ describe("a sync's earlier bank balances", () => {
 	});
 
 	it("leaves a pending line out of the reconciliations an unlink writes", async () => {
-		const { account, bank } = await linkedOn("2026-09-15");
+		const { account, bank } = await linkedOn("2026-09-15", 100000, {
+			openingBalance: toMinorUnits(100000),
+		});
 		await sync(
 			account.id,
 			bank.connectionId,
@@ -802,7 +838,9 @@ describe("a sync's earlier bank balances", () => {
 			{ kind: "opening_anchor", date: "2026-09-01", amount: 123456 },
 			{ kind: "current_anchor", date: "2026-09-20", amount: 90000 },
 		]);
-		expect((await history(account.id)).get("2026-09-01")).toBe(90000);
+		const days = await history(account.id);
+		expect(days.get("2026-09-02")).toBe(90000);
+		expect(days.get("2026-09-01")).toBe(123456);
 	});
 
 	it("keeps every balance of a chain of bank figures when unlinked", async () => {

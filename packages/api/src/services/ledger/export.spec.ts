@@ -418,7 +418,7 @@ describe("transactionPages", () => {
 });
 
 describe("the other tables", () => {
-	it("reads each account with today's balance, and each opening anchor with its day's", async () => {
+	it("reads each account with today's balance, and every valuation by account and day", async () => {
 		setToday("2026-09-21T10:00:00Z");
 		const manual = await openChecking({ name: "Manuel", openingBalance: toMinorUnits(10_000) });
 		await add(manual.id, { date: "2026-09-05", amount: toMinorUnits(-2_500) });
@@ -426,7 +426,7 @@ describe("the other tables", () => {
 		const { account: linked } = await linkedAccount(50_000);
 
 		const accounts = new Map((await exportedAccounts(deps())).map((row) => [row.id, row]));
-		const valuations = (await exportedValuations(deps())).filter(
+		const valuations = (await exportedValuations(temp.db)).filter(
 			(row) => row.accountId === manual.id || row.accountId === linked.id,
 		);
 
@@ -437,16 +437,16 @@ describe("the other tables", () => {
 		});
 		expect(accounts.get(linked.id)?.balance).toEqual({ amount: 50_000, currency: "EUR" });
 		const manualRows = [
-			[manual.id, "opening_anchor", { amount: 10_000, currency: "EUR" }],
-			[manual.id, "reconciliation", null],
+			[manual.id, "opening_anchor", 10_000],
+			[manual.id, "reconciliation", 9_000],
 		];
 		const linkedRows = [
-			[linked.id, "opening_anchor", { amount: 50_000, currency: "EUR" }],
-			[linked.id, "current_anchor", null],
+			[linked.id, "opening_anchor", 123_456],
+			[linked.id, "current_anchor", 50_000],
 		];
 
 		// By account id, then day.
-		expect(valuations.map((row) => [row.accountId, row.valuationKind, row.dayBalance])).toEqual(
+		expect(valuations.map((row) => [row.accountId, row.valuationKind, row.amount])).toEqual(
 			manual.id < linked.id ? [...manualRows, ...linkedRows] : [...linkedRows, ...manualRows],
 		);
 	});

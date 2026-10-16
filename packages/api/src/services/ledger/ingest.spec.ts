@@ -980,16 +980,17 @@ describe("ingest the statement balance", () => {
 		});
 	});
 
-	it("skips a balance dated on a linked account's opening date, whose anchor amount its balances ignore", async () => {
+	it("keeps a linked account's opening balance against a balance on its opening date, as a manual one's", async () => {
 		const { account } = await linkedChecking();
 
 		const { result } = await importStatement(account.id, closingOn(100000, "2026-09-01"));
 
 		expect(result.balance).toEqual({
-			status: "skipped",
+			status: "kept",
 			date: "2026-09-01",
 			balance: 100000,
-			reason: "OPENING_DATE",
+			recorded: 123456,
+			gap: -23456,
 		});
 		await expect(snapshotsOf(account.id)).resolves.toEqual([]);
 	});
@@ -1646,10 +1647,14 @@ describe("ingest from a bank connection", () => {
 		expect(synced.created).toHaveLength(2);
 		expect(synced.rejected).toEqual([]);
 		await expect(balanceOn(deps(), account.id, "2026-08-19")).resolves.toBeNull();
+		// Back from the opening amount, which ends its own day.
 		await expect(balanceOn(deps(), account.id, "2026-08-24")).resolves.toMatchObject({
-			amount: 101000,
+			amount: 124456,
 		});
 		await expect(balanceOn(deps(), account.id, "2026-09-01")).resolves.toMatchObject({
+			amount: 123456,
+		});
+		await expect(balanceOn(deps(), account.id, "2026-09-02")).resolves.toMatchObject({
 			amount: 100000,
 		});
 		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({

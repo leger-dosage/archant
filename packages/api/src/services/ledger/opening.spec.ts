@@ -179,14 +179,28 @@ describe("setOpeningBalance", () => {
 		).resolves.toEqual({ status: "rejected", reason: "DATE_IN_FUTURE" });
 	});
 
-	it("refuses a linked account", async () => {
+	it("moves a linked account's, its history ending the opening day there, today staying the bank's", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
+		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-2000) });
 		await link(account.id, bank.id, 100000);
 
 		await expect(
-			setOpeningBalance(deps(), account.id, { balance: toMinorUnits(1) }, user),
-		).resolves.toEqual({ status: "rejected", reason: "ACCOUNT_LINKED" });
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-08-20", balance: toMinorUnits(50000) },
+				user,
+			),
+		).resolves.toMatchObject({ status: "set", changed: true });
+
+		const days = await history(account.id);
+		expect([...days.keys()][0]).toBe("2026-08-20");
+		expect(days.get("2026-08-20")).toBe(50000);
+		// The day after keeps the bank's side: the gap is Sure's cash adjustment.
+		expect(days.get("2026-08-21")).toBe(102000);
+		expect(days.get("2026-09-10")).toBe(100000);
+		expect(days.get("2026-09-21")).toBe(100000);
 	});
 
 	it("names a later snapshot, which keeps today's balance", async () => {

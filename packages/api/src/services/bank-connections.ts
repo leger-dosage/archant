@@ -758,9 +758,8 @@ export async function linkBankAccounts(
 									type: link.type,
 									subtype: link.subtype,
 									currency: currencyOf(bankAccount),
-									// Sure's `OpeningBalanceManager.default_date`: two years back,
-									// at the bank's balance, which the backward computation then
-									// ignores.
+									// Sure's `create_and_sync`: the bank's balance, dated
+									// `OpeningBalanceManager.default_date`, two years back.
 									openingBalance:
 										balance === null
 											? toMinorUnits(0)

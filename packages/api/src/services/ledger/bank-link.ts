@@ -286,9 +286,9 @@ async function writeReconciliation(
  *
  * Going forward from the opening date's stored balance adds the movements
  * the backward pass subtracted, so the two agree up to the first
- * reconciliation. Past it they part: backward, a reconciliation fixes its
- * day and the days before it, the day after coming from the bank's side;
- * forward, the day after starts from the reconciliation. The day after one
+ * reconciliation or the opening anchor. Past it they part: backward, either
+ * fixes its day and the days before it, the day after coming from the bank's
+ * side; forward, the day after starts from it. The day after one
  * whose balance does not follow from it is fixed too. Going forward, the day
  * before the first starts from zero, so the first day is fixed when its
  * movements alone do not give its stored balance.
@@ -333,7 +333,7 @@ function unlinkReconciliations(input: {
  * manual one, computed forward, with every stored balance as it was (AD-8).
  * The bank's last figure becomes a reconciliation on its day, booked lines
  * only, since that is the balance the page showed; the opening anchor
- * takes the stored balance of the opening date; the `current_anchor` goes.
+ * already ends its own day; the `current_anchor` goes.
  * Balances start at the oldest entry, before the opening date when a line
  * precedes it: the range read starts there.
  * An account without a bank balance, already computed forward, only loses
@@ -388,14 +388,6 @@ export async function unlinkBankAccount(
 					sign: classificationOf(account.type) === "asset" ? 1 : -1,
 				}),
 				(row) => writeReconciliation(tx, account, row.date, row.balance, now),
-			);
-			await oneByOne(
-				rows.filter((row) => row.date === account.openingDate),
-				(row) =>
-					tx
-						.update(entries)
-						.set({ amount: row.balance, updatedAt: now })
-						.where(eq(entries.id, account.openingId)),
 			);
 			await writeCurrentAnchor(tx, account, null, now);
 			// From the first day, so no row the backward pass derived before the

@@ -56,8 +56,7 @@ export type SnapshotPatch = {
 export type RecordSnapshotResult =
 	/** `replaced`: a snapshot already held the date, and now holds this balance. */
 	| { status: "recorded"; id: string; replaced: boolean }
-	/** `OPENING_DATE`: a linked account's opening date, which a snapshot may not set. */
-	| { status: "rejected"; reason: SnapshotRejectionCode | "OPENING_DATE" };
+	| { status: "rejected"; reason: SnapshotRejectionCode };
 
 export type SnapshotUpdateResult =
 	| { status: "updated" }
@@ -133,13 +132,6 @@ export async function recordSnapshot(
 		async (tx): Promise<RecordSnapshotResult> => {
 			const account = await accountWithOpeningDate(tx, accountId);
 			const reason = snapshotRejection(account, input.date, deps.timeZone);
-
-			// A linked account's balances derive backward from the bank's and
-			// ignore the anchor's amount: setting it would look saved and change
-			// nothing, so its opening date stays refused.
-			if (reason === "OPENING_DATE" && account.bankAccountId !== null) {
-				return { status: "rejected", reason };
-			}
 
 			if (reason !== null && reason !== "OPENING_DATE") {
 				return { status: "rejected", reason };
@@ -306,6 +298,12 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 	// after: the gap is read against that day, since the day before is itself
 	// derived from the snapshot and would always agree with it.
 	const anchor = await backwardAnchor(db, accountId);
+	// The backward pass undoes nothing of the opening day (AD-8).
+	const opening = await db
+		.select({ date: entries.date })
+		.from(entries)
+		.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "opening_anchor")))
+		.get();
 	const start = await historyStartOf(db, accountId, null);
 	const nextDays = dates.map((date) => addDays(date, 1));
 	const balanceRows = await db
@@ -354,7 +352,9 @@ async function gapReader(db: ServiceDeps["db"], accountId: string, dates: readon
 			...(backward
 				? snapshotGapBackward({
 						next: toMinorUnits(known.balance),
-						nextMovements: toMinorUnits(movements.get(neighbour) ?? 0),
+						nextMovements: toMinorUnits(
+							neighbour === opening?.date ? 0 : (movements.get(neighbour) ?? 0),
+						),
 						recorded: balance,
 						classification,
 					})

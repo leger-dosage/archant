@@ -14,7 +14,7 @@ import { loopbackListener } from "./lib/port.ts";
 import { createAuth } from "./services/auth.ts";
 import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
-import { recomputeNonCashBalances } from "./services/ledger/balances.ts";
+import { recomputeLinkedBalances, recomputeNonCashBalances } from "./services/ledger/balances.ts";
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { hasUser } from "./services/setup.ts";
@@ -125,6 +125,12 @@ if (feeCostBases > 0) {
 const nonCashBalances = await recomputeNonCashBalances({ db, timeZone: env.APP_TIMEZONE });
 if (nonCashBalances > 0) {
 	logger.info({ accounts: nonCashBalances }, "property and vehicle balances recomputed");
+}
+// Once per instance, as the cost bases: a linked account's history stored
+// before Story 28.17 ignored its opening balance.
+const linkedBalances = await recomputeLinkedBalances({ db, timeZone: env.APP_TIMEZONE });
+if (linkedBalances > 0) {
+	logger.info({ accounts: linkedBalances }, "linked account balances recomputed");
 }
 // An unconfirmed preview keeps the uploaded file; a day is long enough to
 // come back to it, and short enough that bank statements do not pile up.
