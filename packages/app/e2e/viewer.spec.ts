@@ -1,4 +1,4 @@
-import type { Page, Request } from "@playwright/test";
+import type { APIRequestContext, Page, Request } from "@playwright/test";
 
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -16,8 +16,8 @@ import {
 import { ADMIN_STATE, WEB_URL } from "./settings.ts";
 
 // Story 20.3: a viewer reads every page and is shown no control that writes.
-// The administrator prepares the household beside the page, which signs in
-// as the viewer through an invitation.
+// The administrator prepares the household once, then every page signs in as
+// the viewer that its invitation created.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const FORBIDDEN = "Cette action n'est pas autorisée.";
@@ -55,14 +55,8 @@ async function expectNone(
 	);
 }
 
-test("a viewer reads every page with no control that writes, and the server refuses a write", async ({
-	page,
-	playwright,
-}) => {
-	const administrator = await playwright.request.newContext({
-		baseURL: WEB_URL,
-		storageState: ADMIN_STATE,
-	});
+/** The household the administrator prepares once for every test below. */
+async function seed(administrator: APIRequestContext) {
 	const api = apiHelpers(administrator);
 	const prefix = uniqueName("Lecture");
 	const name = uniqueName("Alix");
@@ -192,31 +186,97 @@ test("a viewer reads every page with no control that writes, and the server refu
 		details: { yearBuilt: "1975", locality: "Lyon" },
 	});
 	const { url } = await api.invite(`lecteur-${randomUUID().slice(0, 8)}@archant.test`);
-	await acceptInvitation(page.request, url, { name, password: "mot de passe du lecteur" });
 
-	// No page sends a read the server refuses a viewer, the bank setup included.
-	const refused: string[] = [];
-	page.on("response", (response) => {
-		if (response.status() === 403) {
-			refused.push(response.url());
-		}
+	return {
+		url,
+		prefix,
+		name,
+		account,
+		bakery,
+		category,
+		transfer,
+		savings,
+		food,
+		loan,
+		home,
+		pea,
+		goal,
+	};
+}
+
+type Household = Awaited<ReturnType<typeof seed>>;
+type Cookies = Awaited<ReturnType<APIRequestContext["storageState"]>>["cookies"];
+
+let administrator: APIRequestContext;
+let household: Household;
+let viewerCookies: Cookies = [];
+
+// One test per page, so that each page has Playwright's 30 seconds to itself
+// and a failure names it. As a single walk, the test ran out of time on slow
+// CI runners at whichever page it had reached (#219, #220, #225, #230, #231,
+// #232), while every page passed on a rerun.
+const reader = test.extend<{ viewer: Page }>({
+	viewer: async ({ page }, use) => {
+		// No page sends a read the server refuses a viewer, the bank setup included.
+		const refused: string[] = [];
+		page.on("response", (response) => {
+			if (response.status() === 403) {
+				refused.push(response.url());
+			}
+		});
+		await use(page);
+		await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
+		expect(refused).toEqual([]);
+	},
+});
+
+reader.describe("a viewer", () => {
+	reader.beforeAll(async ({ playwright }) => {
+		administrator = await playwright.request.newContext({
+			baseURL: WEB_URL,
+			storageState: ADMIN_STATE,
+		});
+		household = await seed(administrator);
+		// Signed in once through the invitation, then handed to every test's
+		// page: Better Auth allows three sign-ins per ten seconds.
+		const viewer = await playwright.request.newContext({ baseURL: WEB_URL });
+		await acceptInvitation(viewer, household.url, {
+			name: household.name,
+			password: "mot de passe du lecteur",
+		});
+		({ cookies: viewerCookies } = await viewer.storageState());
+		await viewer.dispose();
 	});
 
-	try {
-		await test.step("the dashboard and the accounts offer no new account", async () => {
-			await page.goto("/");
-			await expect(page.getByRole("heading", { level: 1, name: `Bonjour ${name}` })).toBeVisible();
-			await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
-			await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
+	reader.beforeEach(async ({ context }) => {
+		await context.addCookies(viewerCookies);
+	});
 
-			await page.goto("/accounts");
-			await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
-			await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
-			// No row carries the menu that writes, whichever account it is.
-			await expect(page.getByRole("button", { name: /^Actions du compte /u })).toHaveCount(0);
-		});
+	reader.afterAll(async () => {
+		await apiHelpers(administrator).deleteRules();
+		await administrator.dispose();
+	});
 
-		await test.step("an account shows its rows, snapshots, trades and imports, and nothing to change them", async () => {
+	reader("the dashboard and the accounts offer no new account", async ({ viewer: page }) => {
+		const { name, account } = household;
+
+		await page.goto("/");
+		await expect(page.getByRole("heading", { level: 1, name: `Bonjour ${name}` })).toBeVisible();
+		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
+		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
+
+		await page.goto("/accounts");
+		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
+		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
+		// No row carries the menu that writes, whichever account it is.
+		await expect(page.getByRole("button", { name: /^Actions du compte /u })).toHaveCount(0);
+	});
+
+	reader(
+		"an account shows its rows, snapshots and imports, and nothing to change them",
+		async ({ viewer: page }) => {
+			const { prefix, account } = household;
+
 			await page.goto(`/accounts/${account.id}`);
 			await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
 			await expect(page.getByText(`${prefix} boulangerie`)).toBeVisible();
@@ -237,6 +297,13 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await page.getByRole("tab", { name: "Imports" }).click();
 			await expect(page.getByRole("cell", { name: "releve-lecteur.ofx" })).toBeVisible();
 			await expect(page.getByRole("button", { name: /Annuler l'import/u })).toHaveCount(0);
+		},
+	);
+
+	reader(
+		"a loan shows its chart, terms and schedule, and nothing to edit them",
+		async ({ viewer: page }) => {
+			const { loan } = household;
 
 			await page.goto(`/accounts/${loan.id}`);
 			await expectNone(page, [{ role: "button", name: `Actions du compte ${loan.name}` }]);
@@ -257,13 +324,24 @@ test("a viewer reads every page with no control that writes, and the server refu
 					.getByRole("tabpanel", { name: "Échéancier" })
 					.getByRole("group", { name: "Paiement mensuel", exact: true }),
 			).toContainText(euros(53_969));
+		},
+	);
 
-			await page.goto(`/accounts/${home.id}?tab=overview`);
-			const homeOverview = page.getByRole("tabpanel", { name: "Aperçu" });
-			await expect(
-				homeOverview.getByRole("group", { name: "Année de construction" }),
-			).toContainText("1975");
-			await expectNone(homeOverview, [{ role: "button", name: "Modifier les détails du compte" }]);
+	reader("a property shows its details, and nothing to edit them", async ({ viewer: page }) => {
+		const { home } = household;
+
+		await page.goto(`/accounts/${home.id}?tab=overview`);
+		const homeOverview = page.getByRole("tabpanel", { name: "Aperçu" });
+		await expect(homeOverview.getByRole("group", { name: "Année de construction" })).toContainText(
+			"1975",
+		);
+		await expectNone(homeOverview, [{ role: "button", name: "Modifier les détails du compte" }]);
+	});
+
+	reader(
+		"an investment account shows its lines, trades and positions, and nothing to change them",
+		async ({ viewer: page }) => {
+			const { prefix, pea } = household;
 
 			await page.goto(`/accounts/${pea.id}`);
 			await page
@@ -298,9 +376,14 @@ test("a viewer reads every page with no control that writes, and the server refu
 			await expect(position.getByRole("region", { name: "Paramètres" })).toHaveCount(0);
 			await page.keyboard.press("Escape");
 			await expect(position).toBeHidden();
-		});
+		},
+	);
 
-		await test.step("operations: no selection, plain category pills, and a sheet to read", async () => {
+	reader(
+		"operations: no selection, plain category pills, and a sheet to read",
+		async ({ viewer: page }) => {
+			const { prefix, bakery, category, transfer, savings, food } = household;
+
 			await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 			const row = page.locator(`[data-transaction-id="${bakery}"]`);
 			await expect(row).toBeVisible();
@@ -403,36 +486,41 @@ test("a viewer reads every page with no control that writes, and the server refu
 			]);
 			await sheet.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(sheet).toBeHidden();
-		});
+		},
+	);
 
-		await test.step("budgets: no form, and its pages lead back to the month", async () => {
-			await page.goto(`/budgets/${MONTH}`);
-			await expect(
-				page.getByRole("heading", { level: 1, name: "Budget de mars 2022" }),
-			).toBeVisible();
-			await expect(page.getByRole("region", { name: "Résumé" })).toBeVisible();
-			await expectNone(page, [{ role: "link", name: "Modifier le budget des catégories" }]);
-			await expect(page.getByRole("link", { name: /Modifier le budget/u })).toHaveCount(0);
+	reader("budgets: no form, and its pages lead back to the month", async ({ viewer: page }) => {
+		await page.goto(`/budgets/${MONTH}`);
+		await expect(
+			page.getByRole("heading", { level: 1, name: "Budget de mars 2022" }),
+		).toBeVisible();
+		await expect(page.getByRole("region", { name: "Résumé" })).toBeVisible();
+		await expectNone(page, [{ role: "link", name: "Modifier le budget des catégories" }]);
+		await expect(page.getByRole("link", { name: /Modifier le budget/u })).toHaveCount(0);
 
-			await page.goto(`/budgets/${NEXT_MONTH}`);
-			await expect(page.getByRole("heading", { name: "Aucun budget pour ce mois" })).toBeVisible();
-			await expectNone(page, [
-				{ role: "button", name: "Copier mars 2022" },
-				{ role: "link", name: "Partir de zéro" },
-				{ role: "link", name: "Définir le budget" },
-			]);
+		await page.goto(`/budgets/${NEXT_MONTH}`);
+		await expect(page.getByRole("heading", { name: "Aucun budget pour ce mois" })).toBeVisible();
+		await expectNone(page, [
+			{ role: "button", name: "Copier mars 2022" },
+			{ role: "link", name: "Partir de zéro" },
+			{ role: "link", name: "Définir le budget" },
+		]);
 
-			await page.goto(`/budgets/${OVER_MONTH}`);
-			await expect(page.getByRole("heading", { name: "Budget sur-alloué" })).toBeVisible();
-			await expectNone(page, [{ role: "link", name: "Corriger les catégories" }]);
+		await page.goto(`/budgets/${OVER_MONTH}`);
+		await expect(page.getByRole("heading", { name: "Budget sur-alloué" })).toBeVisible();
+		await expectNone(page, [{ role: "link", name: "Corriger les catégories" }]);
 
-			await page.goto(`/budgets/${MONTH}/edit`);
-			await expect(page).toHaveURL(`${WEB_URL}/budgets/${MONTH}`);
-			await page.goto(`/budgets/${MONTH}/categories`);
-			await expect(page).toHaveURL(`${WEB_URL}/budgets/${MONTH}`);
-		});
+		await page.goto(`/budgets/${MONTH}/edit`);
+		await expect(page).toHaveURL(`${WEB_URL}/budgets/${MONTH}`);
+		await page.goto(`/budgets/${MONTH}/categories`);
+		await expect(page).toHaveURL(`${WEB_URL}/budgets/${MONTH}`);
+	});
 
-		await test.step("goals: cards and a page to read, nothing to create, edit, delete, pause or resume", async () => {
+	reader(
+		"goals: cards and a page to read, nothing to create, edit, delete, pause or resume",
+		async ({ viewer: page }) => {
+			const { savings, goal } = household;
+
 			await page.goto("/goals");
 			const goalCard = page
 				.getByRole("list", { name: "Objectifs" })
@@ -451,9 +539,14 @@ test("a viewer reads every page with no control that writes, and the server refu
 				{ role: "button", name: `Actions pour ${goal.name}` },
 				{ role: "button", name: "Reprendre l'objectif" },
 			]);
-		});
+		},
+	);
 
-		await test.step("every bill, a bill's drawer and « À venir »: read, with no action and no write", async () => {
+	reader(
+		"every bill, a bill's drawer and « À venir »: read, with no action and no write",
+		async ({ viewer: page }) => {
+			const { prefix } = household;
+
 			const writes: string[] = [];
 			const onRequest = (request: Request) => {
 				if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
@@ -496,109 +589,114 @@ test("a viewer reads every page with no control that writes, and the server refu
 
 			page.off("request", onRequest);
 			expect(writes).toEqual([]);
+		},
+	);
+
+	reader("recurring and rules: read, never changed", async ({ viewer: page }) => {
+		const { prefix } = household;
+
+		// Story 23.4: the bills page and an occurrence's sheet, without any action.
+		const candidatesRead: string[] = [];
+		page.on("request", (request) => {
+			if (/\/api\/recurring\/occurrences\/[^/]+\/candidates/u.test(request.url())) {
+				candidatesRead.push(request.url());
+			}
 		});
+		await page.goto("/bills");
+		await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+		await expect(page.getByRole("link", { name: "Toutes les factures" })).toBeVisible();
+		await expectNone(page, [
+			{ role: "button", name: "Ajouter une facture" },
+			{ role: "button", name: "Appliquer" },
+			{ role: "button", name: "Pas cette facture" },
+			{ role: "button", name: "Ajouter la facture" },
+			{ role: "button", name: "Ce n'est pas une facture" },
+		]);
+		const occurrenceRead = page.waitForResponse((response) =>
+			/\/api\/recurring\/occurrences\/[^/]+$/u.test(response.url()),
+		);
+		// The bill due in two days: the cleaner pauses « boulangerie », last
+		// paid in 2022, and on its due day the pause takes its only open
+		// occurrence away, as Sure's `regenerate_future!`.
+		await page
+			.locator('[data-slot="inset-group"]')
+			.getByRole("link")
+			.filter({ hasText: `${prefix} facture proche` })
+			.first()
+			.click();
+		const sheet = page.getByRole("dialog", { name: `${prefix} facture proche` });
+		await expect(sheet).toBeVisible();
+		expect((await occurrenceRead).status()).toBe(200);
+		await expect(sheet).toContainText("restant");
+		await expectNone(sheet, [
+			{ role: "button", name: "Marquer comme payée" },
+			{ role: "button", name: "Enregistrer le paiement" },
+			{ role: "button", name: "Reporter" },
+			{ role: "button", name: "Modifier le montant" },
+			{ role: "button", name: "Ignorer cette échéance" },
+			{ role: "button", name: "Rouvrir" },
+		]);
+		await expect(sheet.getByRole("textbox")).toHaveCount(0);
+		expect(candidatesRead).toEqual([]);
+		await page.keyboard.press("Escape");
+		await expect(sheet).toBeHidden();
 
-		await test.step("recurring and rules: read, never changed", async () => {
-			// Story 23.4: the bills page and an occurrence's sheet, without any action.
-			const candidatesRead: string[] = [];
-			page.on("request", (request) => {
-				if (/\/api\/recurring\/occurrences\/[^/]+\/candidates/u.test(request.url())) {
-					candidatesRead.push(request.url());
-				}
-			});
-			await page.goto("/bills");
-			await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
-			await expect(page.getByRole("link", { name: "Toutes les factures" })).toBeVisible();
-			await expectNone(page, [
-				{ role: "button", name: "Ajouter une facture" },
-				{ role: "button", name: "Appliquer" },
-				{ role: "button", name: "Pas cette facture" },
-				{ role: "button", name: "Ajouter la facture" },
-				{ role: "button", name: "Ce n'est pas une facture" },
-			]);
-			const occurrenceRead = page.waitForResponse((response) =>
-				/\/api\/recurring\/occurrences\/[^/]+$/u.test(response.url()),
-			);
-			// The bill due in two days: the cleaner pauses « boulangerie », last
-			// paid in 2022, and on its due day the pause takes its only open
-			// occurrence away, as Sure's `regenerate_future!`.
-			await page
-				.locator('[data-slot="inset-group"]')
-				.getByRole("link")
-				.filter({ hasText: `${prefix} facture proche` })
-				.first()
-				.click();
-			const sheet = page.getByRole("dialog", { name: `${prefix} facture proche` });
-			await expect(sheet).toBeVisible();
-			expect((await occurrenceRead).status()).toBe(200);
-			await expect(sheet).toContainText("restant");
-			await expectNone(sheet, [
-				{ role: "button", name: "Marquer comme payée" },
-				{ role: "button", name: "Enregistrer le paiement" },
-				{ role: "button", name: "Reporter" },
-				{ role: "button", name: "Modifier le montant" },
-				{ role: "button", name: "Ignorer cette échéance" },
-				{ role: "button", name: "Rouvrir" },
-			]);
-			await expect(sheet.getByRole("textbox")).toHaveCount(0);
-			expect(candidatesRead).toEqual([]);
-			await page.keyboard.press("Escape");
-			await expect(sheet).toBeHidden();
+		await page.goto("/rules");
+		const row = page
+			.getByRole("list", { name: "Règles" })
+			.getByRole("listitem")
+			.filter({ hasText: `${prefix} règle` });
+		await expect(row).toContainText("Désactivée");
+		await expect(page.getByRole("switch")).toHaveCount(0);
+		await expectNone(page, [
+			{ role: "button", name: "Appliquer toutes les règles" },
+			{ role: "button", name: "Ajouter une règle" },
+			{ role: "button", name: `Actions pour ${prefix} règle` },
+		]);
+	});
 
-			await page.goto("/rules");
-			const row = page
-				.getByRole("list", { name: "Règles" })
-				.getByRole("listitem")
-				.filter({ hasText: `${prefix} règle` });
-			await expect(row).toContainText("Désactivée");
-			await expect(page.getByRole("switch")).toHaveCount(0);
-			await expectNone(page, [
-				{ role: "button", name: "Appliquer toutes les règles" },
-				{ role: "button", name: "Ajouter une règle" },
-				{ role: "button", name: `Actions pour ${prefix} règle` },
-			]);
-		});
+	reader("settings show « Sécurité » alone", async ({ viewer: page }) => {
+		await page.goto("/settings");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+		// Their own password, not an administrator's.
+		await expect(page.getByText("Le mot de passe de votre compte.")).toBeVisible();
+		const sections = page.getByRole("navigation", { name: "Réglages" });
+		await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
+		await expectNone(
+			sections,
+			[
+				"Banques",
+				"Préférences",
+				"Placements",
+				"Catégories",
+				"Transactions récurrentes",
+				"Assistants IA",
+				"Données",
+				"Membres",
+			].map((section) => ({
+				role: "link",
+				name: section,
+			})),
+		);
 
-		await test.step("settings show « Sécurité » alone", async () => {
-			await page.goto("/settings");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-			// Their own password, not an administrator's.
-			await expect(page.getByText("Le mot de passe de votre compte.")).toBeVisible();
-			const sections = page.getByRole("navigation", { name: "Réglages" });
-			await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
-			await expectNone(
-				sections,
-				[
-					"Banques",
-					"Préférences",
-					"Placements",
-					"Catégories",
-					"Transactions récurrentes",
-					"Assistants IA",
-					"Données",
-					"Membres",
-				].map((section) => ({
-					role: "link",
-					name: section,
-				})),
-			);
+		await page.goto("/settings/categories");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+		await page.goto("/settings/banks");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+		await page.goto("/settings/preferences");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+		await page.goto("/settings/investments");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+		await page.goto("/settings/recurring");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+	});
 
-			await page.goto("/settings/categories");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-			await page.goto("/settings/banks");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-			await page.goto("/settings/preferences");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-			await page.goto("/settings/investments");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-			await page.goto("/settings/recurring");
-			await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-		});
+	reader("the server refuses a write the interface would never send", async ({ page }) => {
+		// `page`, not `viewer`: the 403s this test provokes are its point.
+		const { account, loan, pea } = household;
 
-		await expect(page.getByText(FORBIDDEN)).toHaveCount(0);
-		expect(refused).toEqual([]);
-
-		// A write the interface would never send still fails on the server.
+		await page.goto("/settings");
+		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 		const written = await page.evaluate(async () => {
 			const response = await fetch("/api/accounts", {
 				method: "POST",
@@ -652,8 +750,5 @@ test("a viewer reads every page with no control that writes, and the server refu
 		expect(z.object({ error: z.object({ code: z.string() }) }).parse(written.body).error.code).toBe(
 			"FORBIDDEN",
 		);
-	} finally {
-		await api.deleteRules();
-		await administrator.dispose();
-	}
+	});
 });
