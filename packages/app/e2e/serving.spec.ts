@@ -97,7 +97,7 @@ test("the dashboard draws its charts without the date picker, which comes with t
 
 	await page.getByRole("button", { name: "Ajouter un compte" }).first().click();
 
-	const dialog = page.getByRole("dialog", { name: "Ajouter un compte" });
+	const dialog = page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" });
 	await expect(dialog).toBeVisible();
 	await page.keyboard.press("Escape");
 	await expect(dialog).toBeHidden();

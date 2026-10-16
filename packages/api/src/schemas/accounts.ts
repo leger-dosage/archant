@@ -744,6 +744,9 @@ const accountCreationSchema = (dialog: boolean) =>
 			// account's only; any other type refuses them.
 			details: accountDetailsInputSchema.optional(),
 			...additionalDetailsShape,
+			// Sure's « Exclure de tous les rapports », last in the form's
+			// « Détails supplémentaires »; included unless asked.
+			excludedFromReports: z.boolean().optional(),
 		})
 		// Runs even when another field failed, so the form shows every error at
 		// once. Each check guards on the fields it reads being valid themselves.

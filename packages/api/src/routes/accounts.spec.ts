@@ -2620,6 +2620,29 @@ describe("an account's institution and notes", () => {
 	});
 });
 
+// Story 28.16: Sure's « Exclure de tous les rapports » switch, in the creation form too.
+describe("an account created excluded from reports", () => {
+	it("stores the switch, and reads it back excluded", async () => {
+		const excluded = await openAccount({ excludedFromReports: true });
+		const included = await openAccount();
+
+		expect(excluded).toMatchObject({ excludedFromReports: true });
+		expect(included).toMatchObject({ excludedFromReports: false });
+		const detail = await request("GET", `/api/accounts/${excluded.id}`);
+		expect(accountBody.parse(detail.body).data.excludedFromReports).toBe(true);
+	});
+
+	it("refuses a switch that is not a boolean", async () => {
+		const { status, body } = await postRaw({ ...valid, excludedFromReports: "yes" });
+
+		expect(status).toBe(400);
+		expect(body.error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "excludedFromReports", code: "invalid_type" }],
+		});
+	});
+});
+
 describe("a viewer on a loan or a position", () => {
 	let viewerCookie: string;
 	let auth: Auth;

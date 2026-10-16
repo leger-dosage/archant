@@ -37,6 +37,8 @@ export type NewAccountInput = {
 	institutionName?: string | null | undefined;
 	institutionDomain?: string | null | undefined;
 	notes?: string | null | undefined;
+	/** Sure's `exclude_from_reports` at creation; false when absent. */
+	excludedFromReports?: boolean | undefined;
 };
 
 /**
@@ -58,7 +60,7 @@ export async function createAccount(
 		currency: input.currency,
 		details: input.details ?? null,
 		active: true,
-		excludedFromReports: false,
+		excludedFromReports: input.excludedFromReports ?? false,
 		bankAccountId: null,
 		institutionName: input.institutionName ?? null,
 		institutionDomain: input.institutionDomain ?? null,

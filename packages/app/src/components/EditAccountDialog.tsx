@@ -21,11 +21,12 @@ import {
 import {
 	ADDITIONAL_DETAIL_NAMES,
 	AccountAdditionalDetails,
+	ExcludedFromReportsSwitch,
 } from "@/components/AccountAdditionalDetails";
+import { AccountSubtypeSelect } from "@/components/AccountSubtypeSelect";
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { CryptoDetailsFields } from "@/components/CryptoDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
-import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
 import { OtherAssetNotice } from "@/components/OtherAssetNotice";
 import { PropertyDetailsFields } from "@/components/PropertyDetailsFields";
@@ -40,17 +41,10 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useUpdateAccount } from "@/hooks/useAccounts";
-import { ACCOUNT_KINDS, CRYPTO_KINDS, kindOf } from "@/lib/account-kinds";
+import { ACCOUNT_KINDS } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import {
 	CRYPTO_FIELD_NAMES,
@@ -342,57 +336,14 @@ export function EditAccountDialog({
 					</div>
 
 					{kinds.length > 1 && (
-						<div className="flex flex-col gap-1.5">
-							<Label htmlFor="account-subtype">{t("accountActions.form.subtype")}</Label>
-							<Select
-								value={kindOf(account.type, subtype.field.value)}
-								onValueChange={(value) => {
-									const next = kinds.find((kind) => kind.id === value);
-
-									if (next !== undefined) {
-										subtype.field.onChange(next.subtype);
-									}
-								}}
-							>
-								<SelectTrigger
-									id="account-subtype"
-									className="w-full"
-									aria-invalid={errors.subtype !== undefined}
-									{...(errors.subtype === undefined
-										? {}
-										: { "aria-describedby": "account-subtype-error" })}
-								>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{account.type === "investment" ? (
-										<InvestmentKindGroups blankLabel={t("accountActions.form.noSubtype")} />
-									) : account.type === "crypto" ? (
-										// Sure's `cryptos/_form`: « Aucun », then each subtype's long label.
-										<>
-											<SelectItem value={kindOf("crypto", null)}>
-												{t("accountActions.form.noSubtype")}
-											</SelectItem>
-											{CRYPTO_KINDS.map((kind) => (
-												<SelectItem key={kind} value={kind}>
-													{t(`accounts.subtypeLongs.${kind}`)}
-												</SelectItem>
-											))}
-										</>
-									) : (
-										kinds.map((kind) => (
-											<SelectItem key={kind.id} value={kind.id}>
-												{/* Sure's `include_blank`: the empty choice reads « Aucun » here. */}
-												{kind.subtype === null
-													? t("accountActions.form.noSubtype")
-													: t(`accounts.subtypes.${kind.id}`)}
-											</SelectItem>
-										))
-									)}
-								</SelectContent>
-							</Select>
-							<FieldMessage id="account-subtype-error" error={errors.subtype} />
-						</div>
+						<AccountSubtypeSelect
+							id="account-subtype"
+							type={account.type}
+							value={subtype.field.value}
+							onChange={subtype.field.onChange}
+							error={errors.subtype}
+							label={t("accountActions.form.subtype")}
+						/>
 					)}
 
 					{isLoan && <LoanFields form={form} />}
@@ -414,24 +365,12 @@ export function EditAccountDialog({
 						bankName={account.bankConnection?.institutionName}
 					>
 						{/* Last in the disclosure, as in Sure's form. */}
-						<div className="flex items-start gap-3">
-							<Switch
-								id="account-excluded"
-								checked={excluded.field.value}
-								onCheckedChange={excluded.field.onChange}
-								onBlur={excluded.field.onBlur}
-								aria-describedby="account-excluded-hint"
-								className="mt-0.5"
-							/>
-							<div className="flex flex-col gap-1">
-								<Label htmlFor="account-excluded">
-									{t("accountActions.form.excludedFromReports")}
-								</Label>
-								<p id="account-excluded-hint" className="text-xs text-muted-foreground">
-									{t("accountActions.form.excludedFromReportsHint")}
-								</p>
-							</div>
-						</div>
+						<ExcludedFromReportsSwitch
+							id="account-excluded"
+							checked={excluded.field.value}
+							onCheckedChange={excluded.field.onChange}
+							onBlur={excluded.field.onBlur}
+						/>
 					</AccountAdditionalDetails>
 				</form>
 				<DialogFooter>
