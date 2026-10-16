@@ -6,6 +6,8 @@ import { alias } from "drizzle-orm/sqlite-core";
 
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
+import { bankAccounts } from "@archant/data/schema/bank-accounts";
+import { bankConnections } from "@archant/data/schema/bank-connections";
 import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
@@ -53,6 +55,9 @@ export const EXPORTED_COLUMNS = {
 		details: accounts.details,
 		active: accounts.active,
 		excludedFromReports: accounts.excludedFromReports,
+		institutionName: accounts.institutionName,
+		institutionDomain: accounts.institutionDomain,
+		notes: accounts.notes,
 		createdAt: accounts.createdAt,
 		updatedAt: accounts.updatedAt,
 	},
@@ -341,8 +346,9 @@ export const LEFT_OUT = {
 	assistant_calls: "The log of what assistants did, with their client ids: not money.",
 	auth_accounts: SECRETS,
 	bank_accounts:
-		"Provider ids and IBAN hashes: the archive holds the accounts, never the bank behind them.",
-	bank_connections: "Encrypted bank sessions and consent state, useless outside this instance.",
+		"Provider ids and IBAN hashes: the archive holds the accounts and, as Sure's `institution_name`, their bank's name, never the bank account behind them.",
+	bank_connections:
+		"Encrypted bank sessions and consent state, useless outside this instance; only the bank's name leaves, on its accounts' lines as Sure's `institution_name`.",
 	budget_categories: {
 		rolledOverAmount:
 			"What the last budget write carried in, which a recategorised transaction leaves stale: the archive computes the chain again.",
@@ -425,11 +431,17 @@ type Reader = Pick<ServiceDeps["db"], "select">;
 /** Rows per keyset page of the tables that grow with history. */
 const PAGE_ROWS = 2000;
 
-/** Every account, oldest first, with its balance today; `null` before its opening date. */
+/**
+ * Every account, oldest first, with its balance today, `null` before its
+ * opening date, and its linked bank connection's name, which Sure's
+ * `Account#institution_name` falls back to; null for a manual account.
+ */
 export async function exportedAccounts(deps: ServiceDeps) {
 	const rows = await deps.db
-		.select(EXPORTED_COLUMNS.accounts)
+		.select({ ...EXPORTED_COLUMNS.accounts, bankName: bankConnections.institutionName })
 		.from(accounts)
+		.leftJoin(bankAccounts, eq(bankAccounts.id, accounts.bankAccountId))
+		.leftJoin(bankConnections, eq(bankConnections.id, bankAccounts.bankConnectionId))
 		.orderBy(asc(accounts.createdAt), asc(accounts.id));
 	const date = today(deps.timeZone);
 

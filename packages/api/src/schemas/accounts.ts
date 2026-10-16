@@ -518,6 +518,31 @@ function parseVehicleDetails(input: VehicleDetailsInput): {
 	return { details, issues };
 }
 
+// A transaction's notes bound, kept apart: importing `NOTES_MAX_LENGTH` from
+// `transactions.ts` would close an import cycle. Sure's `text` column has none;
+// a bound keeps a request from storing a file.
+const ACCOUNT_NOTES_MAX_LENGTH = 2000;
+
+// Trimmed, a blank one saving null, a longer one refused rather than cut.
+const additionalDetail = (max: number) =>
+	z
+		.string()
+		.trim()
+		.max(max)
+		.nullable()
+		.transform((text) => (text === "" || text === null ? null : text));
+
+/**
+ * Sure's « Détails supplémentaires »: `institution_name`,
+ * `institution_domain` and `notes`, each optional. The domain is not checked
+ * for a format, as Sure's.
+ */
+const additionalDetailsShape = {
+	institutionName: additionalDetail(DETAIL_TEXT_MAX_LENGTH).optional(),
+	institutionDomain: additionalDetail(DETAIL_TEXT_MAX_LENGTH).optional(),
+	notes: additionalDetail(ACCOUNT_NOTES_MAX_LENGTH).optional(),
+};
+
 /**
  * Every type's details, in one object so a form can keep them all while the
  * type changes; a field of another type is refused (`parseAccountDetails`).
@@ -718,6 +743,7 @@ const accountCreationSchema = (dialog: boolean) =>
 			// A loan's, a credit card's, a property's, a vehicle's or a crypto
 			// account's only; any other type refuses them.
 			details: accountDetailsInputSchema.optional(),
+			...additionalDetailsShape,
 		})
 		// Runs even when another field failed, so the form shows every error at
 		// once. Each check guards on the fields it reads being valid themselves.
@@ -802,6 +828,7 @@ export const updateAccountSchema = z
 			])
 			.optional(),
 		treatBalanceAsAvailableCredit: z.boolean().optional(),
+		...additionalDetailsShape,
 	})
 	.refine((value) => Object.values(value).some((field) => field !== undefined), "empty_patch");
 
@@ -827,6 +854,7 @@ export function accountSettingsFormSchema(account: {
 			excludedFromReports: z.boolean(),
 			details: accountDetailsInputSchema.optional(),
 			treatBalanceAsAvailableCredit: z.boolean().optional(),
+			...additionalDetailsShape,
 		})
 		.superRefine((value, context) => {
 			if (value.details !== undefined) {

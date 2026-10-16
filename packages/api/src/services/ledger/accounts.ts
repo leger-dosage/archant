@@ -33,6 +33,10 @@ export type NewAccountInput = {
 	openingDate: IsoDate;
 	/** Its type's details; absent or null for a type without any. */
 	details?: AccountDetails | null | undefined;
+	/** Sure's « Détails supplémentaires », stored as given; absent or null for none. */
+	institutionName?: string | null | undefined;
+	institutionDomain?: string | null | undefined;
+	notes?: string | null | undefined;
 };
 
 /**
@@ -56,6 +60,9 @@ export async function createAccount(
 		active: true,
 		excludedFromReports: false,
 		bankAccountId: null,
+		institutionName: input.institutionName ?? null,
+		institutionDomain: input.institutionDomain ?? null,
+		notes: input.notes ?? null,
 		createdAt: now,
 		updatedAt: now,
 	};

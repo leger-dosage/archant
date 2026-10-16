@@ -18,6 +18,10 @@ import {
 	vehicleDetailsOf,
 } from "@archant/data/account-types";
 
+import {
+	ADDITIONAL_DETAIL_NAMES,
+	AccountAdditionalDetails,
+} from "@/components/AccountAdditionalDetails";
 import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { CryptoDetailsFields } from "@/components/CryptoDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
@@ -73,6 +77,7 @@ const FIELD_NAMES = [
 	"subtype",
 	"excludedFromReports",
 	"treatBalanceAsAvailableCredit",
+	...ADDITIONAL_DETAIL_NAMES,
 	...LOAN_FIELD_NAMES,
 	...CREDIT_CARD_FIELD_NAMES,
 	...PROPERTY_FIELD_NAMES,
@@ -191,7 +196,8 @@ type EditAccountDialogProps = {
 /**
  * What Sure's account edit form changes: the name, the subtype within its
  * type, a loan's, a card's, a property's, a vehicle's or a crypto account's details, a linked
- * card's toggle and the exclusion switch. Type, currency and the opening balance stay as the
+ * card's toggle, and « Détails supplémentaires »: the institution, the notes
+ * and the exclusion switch. Type, currency and the opening balance stay as the
  * account was created.
  */
 export function EditAccountDialog({
@@ -212,6 +218,10 @@ export function EditAccountDialog({
 		name: account.name,
 		subtype: account.subtype,
 		excludedFromReports: account.excludedFromReports,
+		// The stored values, never the bank's fallback, as Rails' `text_field`.
+		institutionName: account.additionalDetails.institutionName ?? "",
+		institutionDomain: account.additionalDetails.institutionDomain ?? "",
+		notes: account.additionalDetails.notes ?? "",
 		...(isLoan
 			? {
 					details: loanDetailsToInput(
@@ -397,24 +407,32 @@ export function EditAccountDialog({
 
 					{linkedCard && <AvailableCreditToggle form={form} />}
 
-					<div className="flex items-start gap-3">
-						<Switch
-							id="account-excluded"
-							checked={excluded.field.value}
-							onCheckedChange={excluded.field.onChange}
-							onBlur={excluded.field.onBlur}
-							aria-describedby="account-excluded-hint"
-							className="mt-0.5"
-						/>
-						<div className="flex flex-col gap-1">
-							<Label htmlFor="account-excluded">
-								{t("accountActions.form.excludedFromReports")}
-							</Label>
-							<p id="account-excluded-hint" className="text-xs text-muted-foreground">
-								{t("accountActions.form.excludedFromReportsHint")}
-							</p>
+					<AccountAdditionalDetails
+						idPrefix="account-"
+						register={(name) => form.register(name)}
+						errorOf={(name) => errors[name]}
+						bankName={account.bankConnection?.institutionName}
+					>
+						{/* Last in the disclosure, as in Sure's form. */}
+						<div className="flex items-start gap-3">
+							<Switch
+								id="account-excluded"
+								checked={excluded.field.value}
+								onCheckedChange={excluded.field.onChange}
+								onBlur={excluded.field.onBlur}
+								aria-describedby="account-excluded-hint"
+								className="mt-0.5"
+							/>
+							<div className="flex flex-col gap-1">
+								<Label htmlFor="account-excluded">
+									{t("accountActions.form.excludedFromReports")}
+								</Label>
+								<p id="account-excluded-hint" className="text-xs text-muted-foreground">
+									{t("accountActions.form.excludedFromReportsHint")}
+								</p>
+							</div>
 						</div>
-					</div>
+					</AccountAdditionalDetails>
 				</form>
 				<DialogFooter>
 					<Button type="button" variant="outline" onClick={() => close(false)}>

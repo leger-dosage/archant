@@ -2471,6 +2471,155 @@ describe("PATCH /api/accounts/:id on a property or a vehicle", () => {
 	});
 });
 
+async function detailOf(accountId: string) {
+	return z
+		.object({
+			data: z.object({
+				institutionName: z.string().nullable(),
+				additionalDetails: z.object({
+					institutionName: z.string().nullable(),
+					institutionDomain: z.string().nullable(),
+					notes: z.string().nullable(),
+				}),
+			}),
+		})
+		.parse((await request("GET", `/api/accounts/${accountId}`)).body).data;
+}
+
+async function listedInstitution(accountId: string) {
+	const list = z
+		.object({
+			data: z.object({
+				groups: z.array(
+					z.object({
+						accounts: z.array(z.object({ id: z.string(), institutionName: z.string().nullable() })),
+					}),
+				),
+			}),
+		})
+		.parse((await request("GET", "/api/accounts")).body);
+
+	return list.data.groups
+		.flatMap((group) => group.accounts)
+		.find((account) => account.id === accountId)?.institutionName;
+}
+
+describe("an account's institution and notes", () => {
+	const noDetails = { institutionName: null, institutionDomain: null, notes: null };
+
+	it("creates an account with the three trimmed, the list showing the institution", async () => {
+		const account = await openAccount({
+			institutionName: " BNP ",
+			institutionDomain: " bnp.fr ",
+			notes: "  IBAN FR76 dans le classeur  ",
+		});
+
+		expect(account.institutionName).toBe("BNP");
+		await expect(detailOf(account.id)).resolves.toEqual({
+			institutionName: "BNP",
+			additionalDetails: {
+				institutionName: "BNP",
+				institutionDomain: "bnp.fr",
+				notes: "IBAN FR76 dans le classeur",
+			},
+		});
+		await expect(listedInstitution(account.id)).resolves.toBe("BNP");
+	});
+
+	it("saves a blank one as null, and creates without any", async () => {
+		const blank = await openAccount({ institutionName: "  ", institutionDomain: "", notes: null });
+		const none = await openAccount();
+
+		await expect(detailOf(blank.id)).resolves.toEqual({
+			institutionName: null,
+			additionalDetails: noDetails,
+		});
+		await expect(detailOf(none.id)).resolves.toEqual({
+			institutionName: null,
+			additionalDetails: noDetails,
+		});
+	});
+
+	it("edits each, clears one with null or a blank, and leaves the others alone", async () => {
+		const account = await openAccount({ institutionName: "BNP", notes: "Ancien conseiller" });
+
+		const edited = await patchAccount(account.id, {
+			institutionDomain: " bnpparibas.fr ",
+			notes: "Nouveau conseiller",
+		});
+		const nulled = await patchAccount(account.id, { notes: null });
+		const blanked = await patchAccount(account.id, { institutionName: "   " });
+
+		expect(edited.body).toMatchObject({
+			data: {
+				additionalDetails: {
+					institutionName: "BNP",
+					institutionDomain: "bnpparibas.fr",
+					notes: "Nouveau conseiller",
+				},
+			},
+		});
+		expect(nulled.body).toMatchObject({
+			data: { additionalDetails: { institutionName: "BNP", notes: null } },
+		});
+		expect(blanked.body).toMatchObject({
+			data: {
+				institutionName: null,
+				additionalDetails: { ...noDetails, institutionDomain: "bnpparibas.fr" },
+			},
+		});
+	});
+
+	it("refuses a name or a domain past 255 characters and notes past 2000, never cut", async () => {
+		const account = await openAccount({ institutionName: "BNP" });
+		const tooLong = {
+			institutionName: "a".repeat(256),
+			institutionDomain: "b".repeat(256),
+			notes: "c".repeat(2001),
+		};
+		const fields = [
+			{ path: "institutionName", code: "too_big" },
+			{ path: "institutionDomain", code: "too_big" },
+			{ path: "notes", code: "too_big" },
+		];
+
+		const created = await postRaw({ ...valid, ...tooLong });
+		const patched = await patchAccount(account.id, tooLong);
+		const longest = await patchAccount(account.id, {
+			institutionName: "a".repeat(255),
+			notes: "c".repeat(2000),
+		});
+
+		expect(created.status).toBe(400);
+		expect(created.body.error).toMatchObject({ code: "VALIDATION_ERROR", fields });
+		expect(patched.status).toBe(400);
+		expect(errorBody.parse(patched.body).error.fields).toEqual(fields);
+		expect(longest.status).toBe(200);
+		await expect(detailOf(account.id)).resolves.toMatchObject({
+			institutionName: "a".repeat(255),
+			additionalDetails: { notes: "c".repeat(2000) },
+		});
+	});
+
+	it("shows a linked account's bank without a name typed, and its own name over the bank's", async () => {
+		const card = await linkedCard(false);
+
+		await expect(listedInstitution(card.id)).resolves.toBe("Banque Test");
+		await expect(detailOf(card.id)).resolves.toEqual({
+			institutionName: "Banque Test",
+			additionalDetails: noDetails,
+		});
+
+		await patchAccount(card.id, { institutionName: "Ma banque" });
+
+		await expect(listedInstitution(card.id)).resolves.toBe("Ma banque");
+		await expect(detailOf(card.id)).resolves.toMatchObject({
+			institutionName: "Ma banque",
+			additionalDetails: { institutionName: "Ma banque" },
+		});
+	});
+});
+
 describe("a viewer on a loan or a position", () => {
 	let viewerCookie: string;
 	let auth: Auth;
@@ -2499,6 +2648,26 @@ describe("a viewer on a loan or a position", () => {
 		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
 		const detail = await request("GET", `/api/accounts/${loan.id}`);
 		expect(detail.body).toMatchObject({ data: { details: { interestRate: 18200 } } });
+	});
+
+	it("reads an account's institution and notes, and is refused FORBIDDEN on an edit, nothing written", async () => {
+		const account = await openAccount({ institutionName: "BNP", notes: "Conseiller" });
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request(`/api/accounts/${account.id}`);
+		const edit = await viewer.request(`/api/accounts/${account.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ institutionName: "LCL", notes: null }),
+		});
+
+		expect(read.status).toBe(200);
+		expect(edit.status).toBe(403);
+		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
+		const detail = await request("GET", `/api/accounts/${account.id}`);
+		expect(detail.body).toMatchObject({
+			data: { additionalDetails: { institutionName: "BNP", notes: "Conseiller" } },
+		});
 	});
 
 	it("reads a card's details and toggle, and is refused FORBIDDEN on either, nothing written", async () => {

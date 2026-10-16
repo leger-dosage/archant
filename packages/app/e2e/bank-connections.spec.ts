@@ -811,8 +811,29 @@ test("a linked account's menu offers no deletion, only its connection's page", a
 	]);
 	await expect(page.getByRole("menu").getByRole("separator")).toHaveCount(1);
 	await page.keyboard.press("Escape");
+	// Sure's `Account#institution_name`: the bank's, none typed.
+	await expect(
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ has: page.locator(`a[href="/accounts/${accountId}"]`) }),
+	).toContainText(/•\s*,\s*Banque Démo/u);
 
 	await page.goto(`/accounts/${accountId}`);
+	// The bank's name is the institution's placeholder, the field itself empty.
+	await page
+		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
+		.click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = page.getByRole("dialog", { name: "Modifier le compte" });
+	await edit.getByText("Détails supplémentaires").click();
+	await expect(edit.getByLabel("Nom de l'institution")).toHaveAttribute(
+		"placeholder",
+		"Banque Démo",
+	);
+	await expect(edit.getByLabel("Nom de l'institution")).toHaveValue("");
+	await edit.getByRole("button", { name: "Annuler" }).click();
+	await expect(edit).toBeHidden();
 	await page
 		.getByRole("button", { name: `Actions du compte ${FAKE_ACCOUNTS.checking.name}` })
 		.click();

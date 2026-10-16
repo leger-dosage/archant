@@ -70,7 +70,7 @@ test("a new name and subtype show in the header, the accounts column, /accounts 
 	const name = uniqueName("Livret A");
 
 	const dialog = await openEdit(page, account);
-	await dialog.getByLabel("Nom").fill(` ${name} `);
+	await dialog.getByLabel("Nom", { exact: true }).fill(` ${name} `);
 	await dialog.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "Épargne" }).click();
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
@@ -152,10 +152,12 @@ test("a credit card offers no type to choose, and a blank name is refused", asyn
 
 	const dialog = await openEdit(page, card);
 	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
-	await dialog.getByLabel("Nom").fill("  ");
+	await dialog.getByLabel("Nom", { exact: true }).fill("  ");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
-	await expect(dialog.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
+	await expect(dialog.getByLabel("Nom", { exact: true })).toHaveAccessibleDescription(
+		"Ce champ est obligatoire.",
+	);
 	await expect(dialog).toBeVisible();
 	await page.reload();
 	await expect(page.getByRole("heading", { level: 1, name: card.name })).toBeVisible();
@@ -168,7 +170,7 @@ test("Esc or Annuler closes the edit dialog without saving, and it reopens as sa
 	const account = await api.openAccount({ name: uniqueName("Inchangé") });
 
 	const dialog = await openEdit(page, account);
-	await dialog.getByLabel("Nom").fill("Brouillon");
+	await dialog.getByLabel("Nom", { exact: true }).fill("Brouillon");
 	await page.keyboard.press("Escape");
 	await expect(dialog).toBeHidden();
 	await expect(
@@ -176,16 +178,21 @@ test("Esc or Annuler closes the edit dialog without saving, and it reopens as sa
 	).toBeFocused();
 
 	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Modifier" }).click();
-	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
-	await dialog.getByLabel("Nom").fill("  ");
+	await expect(dialog.getByLabel("Nom", { exact: true })).toHaveValue(account.name);
+	await dialog.getByLabel("Nom", { exact: true }).fill("  ");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(dialog.getByLabel("Nom")).toHaveAccessibleDescription("Ce champ est obligatoire.");
+	await expect(dialog.getByLabel("Nom", { exact: true })).toHaveAccessibleDescription(
+		"Ce champ est obligatoire.",
+	);
 	await dialog.getByRole("button", { name: "Annuler" }).click();
 	await expect(dialog).toBeHidden();
 
 	await (await openMenu(page, account.name)).getByRole("menuitem", { name: "Modifier" }).click();
-	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
-	await expect(dialog.getByLabel("Nom")).not.toHaveAttribute("aria-invalid", "true");
+	await expect(dialog.getByLabel("Nom", { exact: true })).toHaveValue(account.name);
+	await expect(dialog.getByLabel("Nom", { exact: true })).not.toHaveAttribute(
+		"aria-invalid",
+		"true",
+	);
 	await page.keyboard.press("Escape");
 	await page.reload();
 	await expect(page.getByRole("heading", { level: 1, name: account.name })).toBeVisible();
@@ -358,8 +365,11 @@ test("an excluded account stays listed, the eye-off icon after its name, out of 
 	const account = await api.openAccount({ name: uniqueName("Exclu"), openingBalance: "250,00" });
 	const before = await api.groupTotal("asset");
 
-	// The edit dialog keeps the switch, as Sure's edit form; the menu is the short way.
+	// The edit dialog keeps the switch in « Détails supplémentaires », as
+	// Sure's edit form; the menu is the short way.
 	const dialog = await openEdit(page, account);
+	await expect(dialog.getByRole("switch", { name: "Exclure des rapports" })).toBeHidden();
+	await dialog.getByText("Détails supplémentaires").click();
 	await dialog.getByRole("switch", { name: "Exclure des rapports" }).click();
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText(`Compte « ${account.name} » enregistré.`)).toBeVisible();
@@ -420,7 +430,7 @@ test("a row's menu holds Sure's items in Sure's order, excludes and deletes from
 
 	await menu.getByRole("menuitem", { name: "Modifier" }).click();
 	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
-	await expect(dialog.getByLabel("Nom")).toHaveValue(account.name);
+	await expect(dialog.getByLabel("Nom", { exact: true })).toHaveValue(account.name);
 	await dialog.getByRole("button", { name: "Annuler" }).click();
 	await expect(dialog).toBeHidden();
 

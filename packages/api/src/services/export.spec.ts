@@ -830,6 +830,58 @@ describe("exportArchive", () => {
 		]);
 	});
 
+	it("writes an account's institution and notes as Sure's `as_json`, a linked one's bank as its name", async () => {
+		await ownDatabase();
+		const db = database();
+		const typed = await openOwn({
+			name: "Compte BNP",
+			institutionName: "BNP",
+			institutionDomain: "bnp.fr",
+			notes: "IBAN dans le classeur",
+		});
+		const linked = await openOwn({ name: "Compte lié" });
+		const blank = await openOwn({ name: "Tirelire" });
+		const named = await openOwn({ name: "Compte lié nommé", institutionName: "Ma banque" });
+		await db.run(
+			sql`insert into bank_connections (id, connector, institution_name, country, status, created_at, updated_at) values ('connection-1', 'enable-banking', 'Banque Démo', 'FR', 'active', 0, 0)`,
+		);
+		await db.run(
+			sql`insert into bank_accounts (id, bank_connection_id, identification_hash, provider_uid, name, currency, created_at, updated_at) values ('bank-account-1', 'connection-1', 'hash-1', 'uid-1', 'Compte', 'EUR', 0, 0)`,
+		);
+		await db.run(
+			sql`insert into bank_accounts (id, bank_connection_id, identification_hash, provider_uid, name, currency, created_at, updated_at) values ('bank-account-2', 'connection-1', 'hash-2', 'uid-2', 'Compte 2', 'EUR', 0, 0)`,
+		);
+		await db.run(
+			sql`update accounts set bank_account_id = 'bank-account-1' where id = ${linked.id}`,
+		);
+		await db.run(
+			sql`update accounts set bank_account_id = 'bank-account-2' where id = ${named.id}`,
+		);
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(typed.id)).toMatchObject({
+			institution_name: "BNP",
+			institution_domain: "bnp.fr",
+			notes: "IBAN dans le classeur",
+		});
+		expect(accounts.get(linked.id)).toMatchObject({
+			institution_name: "Banque Démo",
+			institution_domain: null,
+			notes: null,
+		});
+		// The typed name wins over the bank's, as Sure's reader.
+		expect(accounts.get(named.id)).toMatchObject({ institution_name: "Ma banque" });
+		expect(accounts.get(blank.id)).toMatchObject({
+			institution_name: null,
+			institution_domain: null,
+			notes: null,
+		});
+		expect(archive.csv("accounts.csv")[0]).toHaveLength(7);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes a depository's subtype as stored, a blank one null, in all three places", async () => {
 		await ownDatabase();
 		const cd = await account({ name: "Compte à terme", type: "depository", subtype: "cd" });

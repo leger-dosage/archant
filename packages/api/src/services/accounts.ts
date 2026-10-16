@@ -67,6 +67,11 @@ export type AccountSummary = {
 	 * refuses on, so the row menu knows whether to offer deletion.
 	 */
 	linked: boolean;
+	/**
+	 * Sure's `Account#institution_name`: the typed name, else the linked bank
+	 * connection's; null when neither.
+	 */
+	institutionName: string | null;
 };
 
 export type AccountGroup = {
@@ -88,10 +93,21 @@ export type AccountGroup = {
 
 export type AccountList = { reportingCurrency: string; groups: AccountGroup[] };
 
+/** Each linked account's bank connection name, by bank account id, read once for a list. */
+async function bankNames(deps: ServiceDeps): Promise<Map<string, string>> {
+	const rows = await deps.db
+		.select({ id: bankAccounts.id, institutionName: bankConnections.institutionName })
+		.from(bankAccounts)
+		.innerJoin(bankConnections, eq(bankConnections.id, bankAccounts.bankConnectionId));
+
+	return new Map(rows.map((row) => [row.id, row.institutionName]));
+}
+
 async function summarise(
 	deps: ServiceDeps,
 	account: Account,
 	date: IsoDate,
+	bankName: string | null,
 ): Promise<AccountSummary> {
 	const balance = await balanceOn(deps, account.id, date);
 
@@ -105,6 +121,7 @@ async function summarise(
 		active: account.active,
 		excludedFromReports: account.excludedFromReports,
 		linked: account.bankAccountId !== null,
+		institutionName: account.institutionName ?? bankName,
 	};
 }
 
@@ -122,7 +139,17 @@ export async function listAccounts(
 	const date = today(deps.timeZone);
 	const reportingCurrency = getReportingCurrency();
 	const rows = await deps.db.select().from(accounts);
-	const summaries = await Promise.all(rows.map((row) => summarise(deps, row, date)));
+	const banks = await bankNames(deps);
+	const summaries = await Promise.all(
+		rows.map((row) =>
+			summarise(
+				deps,
+				row,
+				date,
+				row.bankAccountId === null ? null : (banks.get(row.bankAccountId) ?? null),
+			),
+		),
+	);
 
 	const groups = CLASSIFICATIONS.map((classification): AccountGroup => {
 		const members = sortAccounts(
@@ -253,7 +280,7 @@ export async function createAccount(
 
 	const account = await createLedgerAccount(deps, input, { origin: "user" });
 
-	return summarise(deps, account, today(deps.timeZone));
+	return summarise(deps, account, today(deps.timeZone), null);
 }
 
 export type AccountDetail = AccountSummary & {
@@ -279,6 +306,15 @@ export type AccountDetail = AccountSummary & {
 	 * for a manual account.
 	 */
 	treatBalanceAsAvailableCredit: boolean | null;
+	/**
+	 * Sure's « Détails supplémentaires » as stored, what the form edits:
+	 * `institutionName` is not the bank's fallback here.
+	 */
+	additionalDetails: {
+		institutionName: string | null;
+		institutionDomain: string | null;
+		notes: string | null;
+	};
 };
 
 /** One account as its page shows it. */
@@ -305,7 +341,7 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 					.get();
 
 	return {
-		...(await summarise(deps, account, today(deps.timeZone))),
+		...(await summarise(deps, account, today(deps.timeZone), bank?.institutionName ?? null)),
 		classification: classificationOf(account.type),
 		openingDate: opening.date,
 		openingBalance: { balance: opening.balance, notes: opening.notes },
@@ -313,6 +349,11 @@ export async function getAccount(deps: ServiceDeps, id: string): Promise<Account
 		bankConnection:
 			bank === undefined ? null : { id: bank.id, institutionName: bank.institutionName },
 		treatBalanceAsAvailableCredit: bank?.treatBalanceAsAvailableCredit ?? null,
+		additionalDetails: {
+			institutionName: account.institutionName,
+			institutionDomain: account.institutionDomain,
+			notes: account.notes,
+		},
 	};
 }
 
@@ -329,8 +370,8 @@ export async function currencyOf(deps: ServiceDeps, accountId: string): Promise<
 
 /**
  * Renames, retypes within its type, deactivates or excludes an account, sets
- * its type's details and a linked card's toggle, and returns it as
- * its page shows it. Updating `accounts` is not a money write, so it happens
+ * its type's details, its institution and notes, and a linked card's toggle,
+ * and returns it as its page shows it. Updating `accounts` is not a money write, so it happens
  * here rather than in the ledger. The toggle is written with the account, in
  * one transaction, and ignored on any other account, as Sure's; a change
  * starts its connection's sync once the request has answered, as Sure's
@@ -390,6 +431,11 @@ export async function updateAccount(
 				...(patch.excludedFromReports === undefined
 					? {}
 					: { excludedFromReports: patch.excludedFromReports }),
+				...(patch.institutionName === undefined ? {} : { institutionName: patch.institutionName }),
+				...(patch.institutionDomain === undefined
+					? {}
+					: { institutionDomain: patch.institutionDomain }),
+				...(patch.notes === undefined ? {} : { notes: patch.notes }),
 				updatedAt: now,
 			})
 			.where(eq(accounts.id, id));

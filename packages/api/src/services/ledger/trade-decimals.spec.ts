@@ -9,7 +9,6 @@ import { createDb } from "@archant/data/client";
 import { scaledQuantity, scaledTradePrice } from "@archant/data/decimals";
 import { runMigrations } from "@archant/data/migrate";
 import { toMinorUnits } from "@archant/data/money";
-import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import { entries } from "@archant/data/schema/entries";
 import { holdings } from "@archant/data/schema/holdings";
@@ -141,7 +140,13 @@ describe("migration 0080", () => {
 		await migrateBefore(url, "0080");
 		const before = await open("upgraded.db");
 		await before.insert(securities).values(await current.select().from(securities));
-		await before.insert(accounts).values(await current.select().from(accounts));
+		// The columns `accounts` had before 0080, named: a later migration's
+		// column does not exist there yet.
+		await before.run(sql`attach database ${join(directory, "current.db")} as current`);
+		await before.run(
+			sql`insert into accounts (id, name, type, subtype, currency, details, active, excluded_from_reports, bank_account_id, created_at, updated_at) select id, name, type, subtype, currency, details, active, excluded_from_reports, bank_account_id, created_at, updated_at from current.accounts`,
+		);
+		await before.run(sql`detach database current`);
 		await before.insert(entries).values(await current.select().from(entries));
 		await before.insert(balances).values(balanceRows);
 		await oneByOne(tradeRows, async (row) =>

@@ -418,7 +418,7 @@ test("a crypto exchange created through the dialog records a buy of 0,0001666666
 	await page.goto("/accounts");
 	await page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }).click();
 	const create = page.getByRole("dialog", { name: "Ajouter un compte" });
-	await create.getByLabel("Nom").fill(name);
+	await create.getByLabel("Nom", { exact: true }).fill(name);
 	await create.getByRole("combobox", { name: "Type" }).click();
 	await page.getByRole("option", { name: "Plateforme d'échange crypto" }).click();
 	await expect(create.getByRole("combobox", { name: "Traitement fiscal" })).toHaveText("Imposable");
