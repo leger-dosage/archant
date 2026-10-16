@@ -2942,7 +2942,7 @@ describe("PATCH /api/accounts/:id/opening-balance", () => {
 		await linkBankAccount(
 			{ db: temp.db, timeZone: "Europe/Paris" },
 			account.id,
-			{ bankAccountId, balance: { amount: toMinorUnits(200000), date: "2026-09-01" } },
+			{ bankAccountId, balance: toMinorUnits(200000) },
 			{ origin: "sync" },
 		);
 

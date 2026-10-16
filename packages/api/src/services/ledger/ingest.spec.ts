@@ -1500,21 +1500,24 @@ describe("ingest from a bank connection", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
-	it("dates the anchor on the balance's own day, never after today", async () => {
+	it("dates the anchor today, whatever day the balance describes", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
-		await link(account.id, bank.id, 100000, "2026-09-19");
+		await link(account.id, bank.id, 100000);
 
-		await sync(
+		// A closing balance of yesterday counts today's line a second time
+		// until the next day's sync, as Sure's `set_current_balance`.
+		const result = await sync(
 			account.id,
 			bank.connectionId,
 			[newBankLine({ date: "2026-09-21", amount: toMinorUnits(-500) })],
 			bankBalance("2026-09-20"),
 		);
 
+		expect(result.balance).toMatchObject({ status: "recorded", date: "2026-09-21" });
 		const days = await history(account.id);
-		expect(days.get("2026-09-20")).toBe(99500);
-		expect(days.get("2026-09-21")).toBe(99000);
+		expect(days.get("2026-09-21")).toBe(99500);
+		expect(days.get("2026-09-20")).toBe(100000);
 
 		const later = await sync(account.id, bank.connectionId, [], bankBalance("2026-10-02"));
 
@@ -1529,7 +1532,9 @@ describe("ingest from a bank connection", () => {
 	it("keeps the anchor when the bank gives no balance, or one in another currency", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
-		await link(account.id, bank.id, 100000, "2026-09-19");
+		setToday("2026-09-19T10:00:00Z");
+		await link(account.id, bank.id, 100000);
+		setToday("2026-09-21T10:00:00Z");
 
 		const none = await sync(account.id, bank.connectionId, [newBankLine()]);
 		const foreign = await sync(account.id, bank.connectionId, [], {

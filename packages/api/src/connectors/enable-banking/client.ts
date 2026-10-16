@@ -444,8 +444,8 @@ const fundedCount = (skipped: readonly RawBalance[]) =>
 
 /**
  * AD-18: the balance `selectBalance` picks among those in the account's
- * currency, signed and in minor units, with the day it describes; `null`
- * when the bank lists none.
+ * currency, signed and in minor units; `null` when the bank lists none. Its
+ * `reference_date` only chose it, as Sure's `select_current_balance`.
  */
 function chooseBalance(
 	balances: readonly RawBalance[],
@@ -468,7 +468,6 @@ function chooseBalance(
 	return {
 		amount: chosen.credit_debit_indicator === "DBIT" ? toMinorUnits(-Math.abs(parsed)) : parsed,
 		currency,
-		date: referenceDate(chosen),
 		otherCurrencies: fundedCount(skipped),
 	};
 }

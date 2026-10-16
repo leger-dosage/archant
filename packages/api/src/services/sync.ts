@@ -75,8 +75,9 @@ export function windowStart(
 }
 
 /**
- * The read and its balance, read apart, as the ledger takes them: a balance
- * that names no day is today's.
+ * The read and its balance, read apart, as the ledger takes them: the bank's
+ * balance is today's, whatever day it describes, as Sure's
+ * `set_current_balance` dates it (AD-18).
  */
 function toParsedStatement(
 	statement: BankStatement,
@@ -87,9 +88,7 @@ function toParsedStatement(
 		transactions: statement.transactions,
 		rejected: statement.rejected,
 		balance:
-			balance === null
-				? null
-				: { amount: balance.amount, currency: balance.currency, date: balance.date ?? day },
+			balance === null ? null : { amount: balance.amount, currency: balance.currency, date: day },
 	};
 }
 

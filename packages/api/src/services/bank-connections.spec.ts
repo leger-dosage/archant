@@ -995,7 +995,7 @@ describe("linkBankAccounts", () => {
 		});
 	});
 
-	it("dates the anchor on the day a closing balance describes", async () => {
+	it("dates the anchor today, whatever day a closing balance describes", async () => {
 		const connection = await connected();
 		const { checking } = await bankAccountsOf(connection.id);
 		mockProvider({
@@ -1005,7 +1005,7 @@ describe("linkBankAccounts", () => {
 						{
 							balance_amount: { amount: "1000.00", currency: "EUR" },
 							balance_type: "CLBD",
-							reference_date: "2026-09-23",
+							reference_date: "2026-09-20",
 						},
 					],
 				},
@@ -1021,7 +1021,7 @@ describe("linkBankAccounts", () => {
 		const accountId = list.find((row) => row.id === checking.id)?.account?.id ?? "";
 		await expect(valuations(accountId)).resolves.toContainEqual({
 			kind: "current_anchor",
-			date: "2026-09-23",
+			date: "2026-09-24",
 			amount: 100000,
 		});
 	});

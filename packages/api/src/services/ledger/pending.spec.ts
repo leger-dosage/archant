@@ -87,7 +87,8 @@ describe("pending transactions", () => {
 	it("leaves every pending entry out, before, on or after the bank balance's day", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
-		await link(account.id, bank.id, 100000, "2026-09-20");
+		setToday("2026-09-20T10:00:00Z");
+		await link(account.id, bank.id, 100000);
 		const [before, on, after] = [-transferAmount(), -transferAmount(), -transferAmount()];
 
 		await sync(
@@ -149,7 +150,8 @@ describe("pending transactions", () => {
 	it("never moves the days up to a bank figure when a pending line on that day books later", async () => {
 		const account = await openChecking();
 		const bank = await newBankAccount();
-		await link(account.id, bank.id, 100000, "2026-09-15");
+		setToday("2026-09-15T10:00:00Z");
+		await link(account.id, bank.id, 100000);
 		const amount = -transferAmount();
 		await sync(
 			account.id,
@@ -158,6 +160,7 @@ describe("pending transactions", () => {
 			{ amount: toMinorUnits(100000), currency: "EUR", date: "2026-09-15" },
 		);
 		const before = await history(account.id);
+		setToday("2026-09-20T10:00:00Z");
 
 		await sync(
 			account.id,

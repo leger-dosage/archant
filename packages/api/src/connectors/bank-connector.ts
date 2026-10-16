@@ -58,15 +58,14 @@ type BankSession = {
 
 /**
  * A bank's balance as it prints it: signed, never converted to a stored
- * balance (AD-5). `date` is the day it describes, `null` when the bank does
- * not say; the ledger dates it today then, and never later than today.
+ * balance (AD-5). No day: the ledger dates it today whatever day the bank
+ * says it describes, as Sure's `set_current_balance` (AD-18).
  * `otherCurrencies` counts the non-zero balances left out because they are
  * in another currency, a count the service may log, never an amount.
  */
 export type BankBalance = {
 	amount: MinorUnits;
 	currency: CurrencyCode;
-	date: IsoDate | null;
 	otherCurrencies: number;
 };
 

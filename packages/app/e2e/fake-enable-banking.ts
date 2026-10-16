@@ -33,8 +33,8 @@ export const BALANCELESS_BANK = "Banque Sans Solde";
 
 /**
  * The bank whose balance describes yesterday at 1 200,00 € for the link and
- * the sync it starts, then today at the usual 1 234,56 €: a later sync
- * brings a new bank figure while the first one stays.
+ * the sync it starts, then today at the usual 1 234,56 €. The ledger dates
+ * both today, as Sure's, whatever day the bank names.
  */
 export const DATED_BANK = "Banque Datée";
 

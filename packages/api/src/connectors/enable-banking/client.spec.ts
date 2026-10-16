@@ -563,11 +563,9 @@ describe("fetchBalance", () => {
 	it("reads the closing booked balance before the interim one, as minor units", async () => {
 		const requests = mockProvider();
 
-		// The closing balance names no day: the ledger dates it today.
 		await expect(connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR")).resolves.toEqual({
 			amount: 123456,
 			currency: "EUR",
-			date: null,
 			otherCurrencies: 0,
 		});
 		expect(requests).toEqual([
@@ -578,10 +576,11 @@ describe("fetchBalance", () => {
 		]);
 	});
 
-	it("takes the closing booked balance, with the day it describes, whatever the order", async () => {
+	it("takes the closing booked balance whatever the order", async () => {
+		// The day it describes stays out: the ledger dates the balance today.
 		await expect(
 			chosen([balance("ITBD", "1.00"), balance("CLBD", "2.00", { reference_date: "2026-09-23" })]),
-		).resolves.toMatchObject({ amount: 200, date: "2026-09-23" });
+		).resolves.toEqual({ amount: 200, currency: "EUR", otherCurrencies: 0 });
 		await expect(chosen([balance("CLBD", "2.00"), balance("ITBD", "1.00")])).resolves.toMatchObject(
 			{ amount: 200 },
 		);
@@ -633,7 +632,7 @@ describe("fetchBalance", () => {
 				balance("ITAV", "2.00", { reference_date: "2026-10-11" }),
 				balance("XPCD", "3.00", { reference_date: "2026-10-12" }),
 			]),
-		).resolves.toEqual({ amount: 300, currency: "EUR", date: "2026-10-12", otherCurrencies: 0 });
+		).resolves.toEqual({ amount: 300, currency: "EUR", otherCurrencies: 0 });
 		await expect(
 			chosen([
 				balance("previouslyClosedBooked", "1.00", { reference_date: "2026-10-10" }),
@@ -703,7 +702,7 @@ describe("fetchBalance", () => {
 				balance("CLBD", "50.00"),
 				balance("ITBD", "0.00", {}, "GBP"),
 			]),
-		).resolves.toEqual({ amount: 5000, currency: "EUR", date: null, otherCurrencies: 1 });
+		).resolves.toEqual({ amount: 5000, currency: "EUR", otherCurrencies: 1 });
 	});
 
 	it("keeps the first currency listed when the account's is not among them", async () => {
@@ -722,13 +721,13 @@ describe("fetchBalance", () => {
 		});
 	});
 
-	it("dates a balance whose day it cannot read as undated", async () => {
+	it("reads a balance whose day it cannot read", async () => {
 		await expect(
 			chosen([balance("ITBD", "1.00", { reference_date: "23/09/2026" })]),
-		).resolves.toMatchObject({ date: null });
+		).resolves.toMatchObject({ amount: 100 });
 		await expect(
 			chosen([balance("ITBD", "1.00", { reference_date: 20_260_923 })]),
-		).resolves.toMatchObject({ date: null });
+		).resolves.toMatchObject({ amount: 100 });
 	});
 
 	it("makes a debit balance negative, and leaves a credit one as it is", async () => {

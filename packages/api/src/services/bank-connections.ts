@@ -10,14 +10,13 @@ import type {
 } from "../schemas/bank-connections.ts";
 import type { BankCredentialDeps } from "./bank-credentials.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { AnchorBalance } from "./ledger/bank-link.ts";
 import type { AnyColumn } from "drizzle-orm";
 
 import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
-import type { CurrencyCode } from "@archant/data/money";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { DEFAULT_CURRENCY, isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -702,7 +701,7 @@ export async function linkBankAccounts(
 	}
 
 	// Every balance before any write: one failure leaves the connection as it was.
-	let balances: (AnchorBalance | null)[];
+	let balances: (MinorUnits | null)[];
 
 	try {
 		balances = await Promise.all(
@@ -717,7 +716,7 @@ export async function linkBankAccounts(
 				// No conversion (FR56 wants the bank's own figure): a balance in
 				// another currency is as good as none.
 				return balance !== null && balance.currency === bankAccount.currency
-					? { amount: balance.amount, date: balance.date }
+					? balance.amount
 					: null;
 			}),
 		);
@@ -763,7 +762,7 @@ export async function linkBankAccounts(
 									openingBalance:
 										balance === null
 											? toMinorUnits(0)
-											: toStoredBankBalance({ type: link.type }, balance.amount),
+											: toStoredBankBalance({ type: link.type }, balance),
 									openingDate,
 								},
 								{ origin: "sync" },

@@ -1103,9 +1103,13 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	// The sync the link starts, done: aged while it runs, the connection
 	// would end it synced « à l'instant » and refuse the one below.
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
-	// Yesterday's 1 200,00 €: no booked line since.
+	// The first figure, 1 200,00 €: no booked line since.
 	await toTransactions(page);
 	await expect(columnAccount(page, accountId)).toContainText(euros(120_000));
+	const yesterday = daysAgo(1);
+	// Story 28.18: the bank's balance is dated today, as Sure's; the anchor
+	// moves back a day as if that sync had run yesterday.
+	await anchorOn(accountId, yesterday);
 
 	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
 	await page.goto(`/settings/banks/${connectionId}`);
@@ -1115,7 +1119,6 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	await toTransactions(page);
 	await expect(columnAccount(page, accountId)).toContainText(euros(123_456));
 	await page.goto(`/accounts/${accountId}?tab=snapshots`);
-	const yesterday = daysAgo(1);
 	const rows = page.getByRole("row", { name: new RegExp(`^${formatTableDate(yesterday)} `, "u") });
 	await expect(rows).toHaveCount(1);
 	await expect(rows.getByRole("cell").nth(1)).toHaveText(euros(120_000));
@@ -1248,6 +1251,27 @@ async function age(
 						],
 			),
 		);
+	} finally {
+		db.$client.close();
+	}
+}
+
+/**
+ * Dates the account's bank balance `day`, as a sync that ran that day would
+ * have; the next sync recomputes the balances from it.
+ */
+async function anchorOn(accountId: string, day: string) {
+	const db = await createDb(`file:${DATABASE_FILE}`);
+
+	try {
+		const { rowsAffected } = await db.$client.execute({
+			sql: "update entries set date = ? where account_id = ? and valuation_kind = 'current_anchor'",
+			args: [day, accountId],
+		});
+
+		if (rowsAffected !== 1) {
+			throw new Error(`Expected one current anchor, updated ${rowsAffected}.`);
+		}
 	} finally {
 		db.$client.close();
 	}

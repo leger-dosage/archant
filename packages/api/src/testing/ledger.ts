@@ -637,16 +637,11 @@ export async function valuationsOf(accountId: string) {
 		.orderBy(entries.date);
 }
 
-export const link = (
-	accountId: string,
-	bankAccountId: string,
-	balance: number | null,
-	date: string | null = null,
-) =>
+export const link = (accountId: string, bankAccountId: string, balance: number | null) =>
 	linkBankAccount(
 		deps(),
 		accountId,
-		{ bankAccountId, balance: balance === null ? null : { amount: toMinorUnits(balance), date } },
+		{ bankAccountId, balance: balance === null ? null : toMinorUnits(balance) },
 		{ origin: "sync" },
 	);
 
