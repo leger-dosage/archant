@@ -1,0 +1,23 @@
+PRAGMA foreign_keys=OFF;--> statement-breakpoint
+CREATE TABLE `__new_accounts` (
+	`id` text PRIMARY KEY NOT NULL,
+	`name` text NOT NULL,
+	`type` text NOT NULL,
+	`subtype` text,
+	`currency` text NOT NULL,
+	`details` text,
+	`active` integer DEFAULT true NOT NULL,
+	`excluded_from_reports` integer DEFAULT false NOT NULL,
+	`bank_account_id` text,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL,
+	FOREIGN KEY (`bank_account_id`) REFERENCES `bank_accounts`(`id`) ON UPDATE no action ON DELETE set null,
+	CONSTRAINT "accounts_type_check" CHECK("__new_accounts"."type" in ('depository', 'credit_card', 'loan', 'investment', 'property', 'vehicle', 'other_asset', 'other_liability')),
+	CONSTRAINT "accounts_subtype_check" CHECK(("__new_accounts"."type" = 'depository' and ("__new_accounts"."subtype" is null or "__new_accounts"."subtype" in ('cash', 'checking', 'savings', 'cd', 'money_market'))) or ("__new_accounts"."type" = 'credit_card' and "__new_accounts"."subtype" is null) or ("__new_accounts"."type" = 'loan' and "__new_accounts"."subtype" is not null and "__new_accounts"."subtype" in ('mortgage', 'student', 'auto', 'home_equity', 'line_of_credit', 'business', 'other')) or ("__new_accounts"."type" = 'investment' and ("__new_accounts"."subtype" is null or "__new_accounts"."subtype" in ('assurance_vie', 'pea', 'pillar_3a', 'riester', 'pension', 'retirement', 'mutual_fund', 'gold', 'angel', 'trust', 'other', 'brokerage'))) or ("__new_accounts"."type" = 'property' and "__new_accounts"."subtype" is not null and "__new_accounts"."subtype" in ('single_family_home', 'multi_family_home', 'condominium', 'townhouse', 'investment_property', 'second_home', 'apartment', 'plot', 'commercial', 'agri_land')) or ("__new_accounts"."type" = 'vehicle' and "__new_accounts"."subtype" is null) or ("__new_accounts"."type" = 'other_asset' and "__new_accounts"."subtype" is null) or ("__new_accounts"."type" = 'other_liability' and "__new_accounts"."subtype" is null))
+);
+--> statement-breakpoint
+INSERT INTO `__new_accounts`("id", "name", "type", "subtype", "currency", "details", "active", "excluded_from_reports", "bank_account_id", "created_at", "updated_at") SELECT "id", "name", "type", "subtype", "currency", "details", "active", "excluded_from_reports", "bank_account_id", "created_at", "updated_at" FROM `accounts`;--> statement-breakpoint
+DROP TABLE `accounts`;--> statement-breakpoint
+ALTER TABLE `__new_accounts` RENAME TO `accounts`;--> statement-breakpoint
+PRAGMA foreign_keys=ON;--> statement-breakpoint
+CREATE UNIQUE INDEX `accounts_bank_account_unique` ON `accounts` (`bank_account_id`);

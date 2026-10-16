@@ -179,6 +179,13 @@ describe("transferKindOf", () => {
 		expect(transferKindOf("vehicle", "credit_card")).toBe("internal_move");
 	});
 
+	it("makes money landing on an other liability a payment, as on a card, and on an other asset an internal move", () => {
+		expect(transferKindOf("other_liability", "depository")).toBe("credit_card_payment");
+		expect(transferKindOf("other_liability", "investment")).toBe("credit_card_payment");
+		expect(transferKindOf("other_asset", "depository")).toBe("internal_move");
+		expect(transferKindOf("other_asset", "investment")).toBe("internal_move");
+	});
+
 	it("makes any other move an internal move", () => {
 		expect(transferKindOf("depository", "depository")).toBe("internal_move");
 	});

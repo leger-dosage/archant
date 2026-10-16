@@ -547,6 +547,13 @@
       "when": 1792070465417,
       "tag": "0077_property_subtypes",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "6",
+      "when": 1792093971318,
+      "tag": "0078_other_asset_and_liability",
+      "breakpoints": true
     }
   ]
 }

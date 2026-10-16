@@ -92,6 +92,11 @@ export function transferKindOf(
 		// Sure's `Transfer::Creator` falls through to `funds_movement` for both.
 		property: "internal_move",
 		vehicle: "internal_move",
+		// Sure's `Transfer.kind_for_account`: an other liability is a liability,
+		// so money landing on it pays it off as a card's; an other asset falls
+		// through to `funds_movement`.
+		other_asset: "internal_move",
+		other_liability: "credit_card_payment",
 	};
 
 	return kinds[inflowAccountType];

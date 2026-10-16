@@ -10,6 +10,8 @@ import {
 	HandCoinsIcon,
 	HouseIcon,
 	LandmarkIcon,
+	MinusIcon,
+	PlusIcon,
 	TargetIcon,
 } from "lucide-react";
 
@@ -52,6 +54,9 @@ export const ACCOUNT_TYPE_TINTS = {
 	vehicle: { color: "#e2609c", icon: CarIcon },
 	credit_card: { color: "#eb5757", icon: CreditCardIcon },
 	loan: { color: "#c95fd8", icon: HandCoinsIcon },
+	// Sure's `plus` and `minus` icons.
+	other_asset: { color: "#27a644", icon: PlusIcon },
+	other_liability: { color: "#737373", icon: MinusIcon },
 } as const satisfies Record<AccountType, { color: string; icon: LucideIcon }>;
 
 // Measured on the hover row, the palest light surface and the lightest dark

@@ -5,6 +5,8 @@ import { Link } from "@tanstack/react-router";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { AccountType } from "@archant/data/account-types";
+
 import { AccountBalance } from "@/components/AccountBalance";
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
@@ -23,7 +25,9 @@ const TYPE_COLOURS = {
 	vehicle: "var(--type-vehicle)",
 	credit_card: "var(--type-credit-card)",
 	loan: "var(--type-loan)",
-} as const;
+	other_asset: "var(--type-other-asset)",
+	other_liability: "var(--type-other-liability)",
+} as const satisfies Record<AccountType, string>;
 
 function Group({ group, currency }: { group: BalanceSheetGroup; currency: string }) {
 	const { t } = useTranslation();

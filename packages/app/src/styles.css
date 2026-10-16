@@ -59,6 +59,8 @@
 	--color-type-vehicle: var(--type-vehicle);
 	--color-type-credit-card: var(--type-credit-card);
 	--color-type-loan: var(--type-loan);
+	--color-type-other-asset: var(--type-other-asset);
+	--color-type-other-liability: var(--type-other-liability);
 	--color-transfer: var(--transfer);
 	--color-logo: var(--logo);
 	--color-inset: var(--inset);
@@ -132,6 +134,8 @@
 	--type-vehicle: #e2609c;
 	--type-credit-card: #eb5757;
 	--type-loan: #c95fd8;
+	--type-other-asset: #27a644;
+	--type-other-liability: #737373;
 	--transfer: #5e6ad2;
 	--logo: #282a30;
 	/* The first series is the accent, the chart line of DESIGN.md. */

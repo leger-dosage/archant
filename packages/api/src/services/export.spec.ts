@@ -1006,6 +1006,49 @@ describe("exportArchive", () => {
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
+	it("writes an other asset and an other liability as Sure's, without a subtype, their valuations named as Sure's", async () => {
+		await ownDatabase();
+		const jewellery = await account({
+			name: "Bijoux",
+			type: "other_asset",
+			subtype: null,
+			openingBalance: "5 000",
+		});
+		const relative = await account({
+			name: "Prêt de Marie",
+			type: "other_liability",
+			subtype: null,
+			openingBalance: "2 000",
+		});
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+		const openings = new Map(
+			archive
+				.of("Valuation")
+				.filter((row) => row["kind"] === "opening_anchor")
+				.map((row) => [row["account_id"], row["name"]]),
+		);
+
+		expect(accounts.get(jewellery)).toMatchObject({
+			accountable_type: "OtherAsset",
+			subtype: null,
+			balance: "5000.00",
+			accountable: { subtype: null },
+			archant: { type: "other_asset", subtype: null },
+		});
+		expect(accounts.get(relative)).toMatchObject({
+			accountable_type: "OtherLiability",
+			subtype: null,
+			balance: "2000.00",
+			accountable: { subtype: null },
+			archant: { type: "other_liability", subtype: null },
+		});
+		expect(openings.get(jewellery)).toBe("Opening account value");
+		expect(openings.get(relative)).toBe("Opening balance");
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
 	it("writes a loan's terms Sure saves without amortising them, and passes its preflight", async () => {
 		await ownDatabase();
 		const loan = await account({

@@ -89,6 +89,8 @@ const SURE_ACCOUNTABLE_TYPES = {
 	investment: "Investment",
 	property: "Property",
 	vehicle: "Vehicle",
+	other_asset: "OtherAsset",
+	other_liability: "OtherLiability",
 } as const satisfies Record<AccountType, string>;
 
 type SureAccountableType = (typeof SURE_ACCOUNTABLE_TYPES)[AccountType];
@@ -127,6 +129,12 @@ const VALUE_NAMES = {
 	reconciliation: "Manual value update",
 };
 
+const ACCOUNT_VALUE_NAMES = {
+	opening_anchor: "Opening account value",
+	current_anchor: "Current account value",
+	reconciliation: "Manual value update",
+};
+
 /** Sure's `Valuation::Name`, by accountable type and kind. */
 const VALUATION_NAMES: Record<SureAccountableType, Record<ValuationKind, string>> = {
 	Depository: BALANCE_NAMES,
@@ -136,13 +144,11 @@ const VALUATION_NAMES: Record<SureAccountableType, Record<ValuationKind, string>
 		current_anchor: "Current loan balance",
 		reconciliation: "Manual principal update",
 	},
-	Investment: {
-		opening_anchor: "Opening account value",
-		current_anchor: "Current account value",
-		reconciliation: "Manual value update",
-	},
+	Investment: ACCOUNT_VALUE_NAMES,
 	Property: VALUE_NAMES,
 	Vehicle: VALUE_NAMES,
+	OtherAsset: ACCOUNT_VALUE_NAMES,
+	OtherLiability: BALANCE_NAMES,
 };
 
 /** An amount as it is stored: a balance, a valuation or a budget envelope. */

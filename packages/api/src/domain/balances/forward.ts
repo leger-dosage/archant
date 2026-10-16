@@ -30,8 +30,8 @@ export type ForwardInput = {
 	valuations: readonly DailyBalance[];
 	movements: readonly Movement[];
 	/**
-	 * `transactionsMoveBalance` of the account's type: false on a property or
-	 * a vehicle, whose value only its valuations move (AD-8).
+	 * `transactionsMoveBalance` of the account's type: false on a non-cash
+	 * account but a loan, whose value only its valuations move (AD-8).
 	 */
 	transactionsMoveBalance: boolean;
 	/** The holdings of each day, an investment account's; none on any other. */

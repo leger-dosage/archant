@@ -225,6 +225,27 @@ describe("getNetWorth", () => {
 		expect(netWorth.netWorth).toBe(1_887_350 + 650_000);
 		expect(netWorth.points).toContainEqual({ date: "2026-09-10", balance: 1_887_350 + 612_400 });
 	});
+
+	it("adds an other asset and subtracts an other liability, which a transaction moves neither of", async () => {
+		const jewellery = await account({
+			name: "Bijoux",
+			type: "other_asset",
+			subtype: null,
+			openingBalance: toMinorUnits(500_000),
+		});
+		const relative = await account({
+			name: "Prêt de Marie",
+			type: "other_liability",
+			subtype: null,
+			openingBalance: toMinorUnits(200_000),
+		});
+		await spend(jewellery, "2026-09-10", 30_000);
+		await spend(relative, "2026-09-10", 50_000);
+
+		const netWorth = await getNetWorth(deps(), "1M");
+
+		expect(netWorth).toMatchObject({ assets: 500_000, liabilities: 200_000, netWorth: 300_000 });
+	});
 });
 
 describe("getCashFlow", () => {

@@ -215,6 +215,60 @@ test("« Bilan » splits each group by account type, and lists its active accoun
 	await expect(page).toHaveURL(/\/accounts$/u);
 });
 
+test("« Bilan » lists an other asset after the vehicles and an other liability after the loans, in Sure's colours", async ({
+	page,
+}) => {
+	await mockAccounts(page, [
+		{
+			classification: "asset",
+			total: 2_000_000,
+			excludedCount: 0,
+			accounts: [
+				summary({ name: "Bijoux", type: "other_asset", balance: 500_000 }),
+				summary({ name: "Voiture", type: "vehicle", balance: 1_500_000 }),
+			],
+		},
+		{
+			classification: "liability",
+			total: 400_000,
+			excludedCount: 0,
+			accounts: [
+				summary({ name: "Prêt de Marie", type: "other_liability", balance: 200_000 }),
+				summary({ name: "Prêt auto", type: "loan", subtype: "auto", balance: 200_000 }),
+			],
+		},
+	]);
+
+	await page.goto("/");
+
+	const assets = sheetGroup(page, "Actifs");
+	await expect(
+		assets.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
+	).toHaveText([`Véhicule ${shareText(0.75)}`, `Autres actifs ${shareText(0.25)}`]);
+	await expect(assets.locator('[data-type="other_asset"]')).toHaveCSS(
+		"background-color",
+		rgb("#27a644"),
+	);
+	await expect(
+		assets.getByRole("link", { name: /Bijoux/u }).getByText("Autre actif", { exact: true }),
+	).toBeVisible();
+	await expect(
+		assets.getByRole("link", { name: /Bijoux/u }).locator("svg.lucide-plus"),
+	).toBeVisible();
+
+	const liabilities = sheetGroup(page, "Passifs");
+	await expect(
+		liabilities.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
+	).toHaveText([`Prêt ${shareText(0.5)}`, `Autres passifs ${shareText(0.5)}`]);
+	await expect(liabilities.locator('[data-type="other_liability"]')).toHaveCSS(
+		"background-color",
+		rgb("#737373"),
+	);
+	await expect(
+		liabilities.getByRole("link", { name: /Prêt de Marie/u }).locator("svg.lucide-minus"),
+	).toBeVisible();
+});
+
 test("an overdrawn account alone draws no bar, and is still listed", async ({ page }) => {
 	await mockAccounts(page, [
 		{
@@ -418,7 +472,7 @@ test("« Revenus » and « Dépenses » count only the month's counted rows", as
 		amount: "-517,00",
 	});
 	await api.addTransaction(livret.id, { date: "2024-03-11", label: "VIR", amount: "517,00" });
-	// Linked as « Remboursement de carte » on creation, the inflow being on a card.
+	// Linked as « Paiement » on creation, the inflow being on a card.
 	await api.addTransaction(checking.id, {
 		date: "2024-03-14",
 		label: "PRLV CARTE",
@@ -751,7 +805,8 @@ test("a category line opens its rows of the month in « Opérations »", async (
 	await expect(page).toHaveURL(/[?&]from=2024-05-01(&|$)/u);
 	await expect(page).toHaveURL(/[?&]to=2024-05-31(&|$)/u);
 	await expect(page.getByText(label)).toBeVisible();
-	await expect(page.getByText(/^Autre /u)).toHaveCount(0);
+	// Within the page: the accounts column captions an other asset « Autre actif ».
+	await expect(page.getByRole("main").getByText(/^Autre /u)).toHaveCount(0);
 
 	// The dashboard's cash flow is cached under `transactions.all` too: the
 	// row's optimistic update must leave it alone.

@@ -21,6 +21,7 @@ import { CreditCardDetailsFields } from "@/components/CreditCardDetailsFields";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InvestmentKindGroups } from "@/components/InvestmentKindGroups";
 import { LoanDetailsFields } from "@/components/LoanDetailsFields";
+import { OtherAssetNotice } from "@/components/OtherAssetNotice";
 import { PropertyDetailsFields } from "@/components/PropertyDetailsFields";
 import { Button } from "@/components/ui/button";
 import {
@@ -231,7 +232,8 @@ export function EditAccountDialog({
 	const { errors, isSubmitting } = form.formState;
 	const subtype = useController({ control: form.control, name: "subtype" });
 	const excluded = useController({ control: form.control, name: "excludedFromReports" });
-	// A credit card and a vehicle have no subtype, so they have nothing to choose.
+	// A credit card, a vehicle, an other asset and an other liability have no
+	// subtype, so they have nothing to choose.
 	const kinds = ACCOUNT_KINDS.filter((kind) => kind.type === account.type);
 
 	// Closing without saving drops what was typed: the next opening shows the account as saved.
@@ -293,6 +295,8 @@ export function EditAccountDialog({
 					className="flex flex-col gap-4"
 					onSubmit={(event) => void submit(event)}
 				>
+					{account.type === "other_asset" && <OtherAssetNotice />}
+
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="account-name">{t("accountActions.form.name")}</Label>
 						<Input

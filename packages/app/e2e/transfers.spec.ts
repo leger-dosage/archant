@@ -271,7 +271,7 @@ test("two lines 20 days apart, paired by hand, make a confirmed transfer", async
 	await expect(rowButton(page, into)).not.toContainText("Correspondance automatique");
 });
 
-test("a payment into a credit card is linked on creation as « Remboursement de carte »", async ({
+test("a payment into a credit card is linked on creation as « Paiement », as Sure names a liability payment", async ({
 	page,
 	api,
 }) => {
@@ -290,14 +290,14 @@ test("a payment into a credit card is linked on creation as « Remboursement de 
 
 	await visitOperations(page, prefix);
 
-	await expect(rowItem(page, out).getByText("Remboursement de carte")).toBeVisible();
-	await expect(rowButton(page, out)).not.toContainText("Remboursement de carte ·");
+	await expect(rowItem(page, out).getByText("Paiement", { exact: true })).toBeVisible();
+	await expect(rowButton(page, out)).not.toContainText("Paiement ·");
 	await expect(rowButton(page, out)).toContainText(`Vers ${card.name}`);
 	// Neither side is counted by the dashboard, so neither has a category.
 	await expect(categoryButtons(page, out)).toHaveCount(0);
 	await expectNoCategoryField(page, out);
 	await expectInflow(page, into, `Depuis ${checking.name}`);
-	await expect(rowItem(page, into).getByText("Remboursement de carte")).toBeVisible();
+	await expect(rowItem(page, into).getByText("Paiement", { exact: true })).toBeVisible();
 	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await expectNoCategoryField(page, into);
 });

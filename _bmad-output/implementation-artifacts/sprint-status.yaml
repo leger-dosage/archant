@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-15-2026 21:22
+last_updated: 10-15-2026 22:35
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -272,7 +272,7 @@ development_status:
   28-7-delete-a-position-and-remap-its-security: done
   28-8-property-and-vehicle-details-and-overview: done
   28-9-property-and-vehicle-values-only-valuations-move: done
-  28-10-other-asset-and-other-liability-accounts: backlog
+  28-10-other-asset-and-other-liability-accounts: done
   28-11-crypto-accounts: backlog
   28-12-inactive-accounts-listed-and-a-menu-on-each-account-row: backlog
   28-13-a-default-account-for-new-transactions: backlog

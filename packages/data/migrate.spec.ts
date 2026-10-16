@@ -1056,6 +1056,34 @@ describe("property subtypes", () => {
 	});
 });
 
+describe("other asset and other liability accounts", () => {
+	it("keeps every account at 0078, then takes Sure's other asset and other liability without a subtype", async () => {
+		const before = await migratedBefore("0078");
+		await insertAccount(before, "a1", "property", "apartment");
+		await insertAccount(before, "a2", "depository", null);
+		await insertEntry(before, "e1", "valuation", "reconciliation");
+		await expect(insertAccount(before, "a3", "other_asset", null)).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+		await expect(
+			database.all(sql`select id, type, subtype from accounts order by id`),
+		).resolves.toEqual([
+			{ id: "a1", type: "property", subtype: "apartment" },
+			{ id: "a2", type: "depository", subtype: null },
+		]);
+		await expect(insertAccount(database, "b1", "other_asset", null)).resolves.toBeDefined();
+		await expect(insertAccount(database, "b2", "other_liability", null)).resolves.toBeDefined();
+		await expect(insertAccount(database, "b3", "other_asset", "savings")).rejects.toThrow();
+		await expect(insertAccount(database, "b4", "other_liability", "other")).rejects.toThrow();
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+});
+
 describe("loan accounts", () => {
 	it("keeps every account, entry and CSV mapping when 0018 rebuilds accounts", async () => {
 		const before = await migratedBefore("0018");

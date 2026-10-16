@@ -26,6 +26,8 @@ describe("account types", () => {
 		expect(classificationOf("vehicle")).toBe("asset");
 		expect(classificationOf("credit_card")).toBe("liability");
 		expect(classificationOf("loan")).toBe("liability");
+		expect(classificationOf("other_asset")).toBe("asset");
+		expect(classificationOf("other_liability")).toBe("liability");
 	});
 
 	it("gives each type Sure's balance type", () => {
@@ -36,13 +38,17 @@ describe("account types", () => {
 			["investment", "investment"],
 			["property", "non_cash"],
 			["vehicle", "non_cash"],
+			["other_asset", "non_cash"],
+			["other_liability", "non_cash"],
 		]);
 	});
 
-	it("lets transactions move every balance but a property's and a vehicle's, a loan's still moving", () => {
+	it("lets transactions move every balance but a property's, a vehicle's, an other asset's and an other liability's, a loan's still moving", () => {
 		expect(ACCOUNT_TYPE_IDS.filter((type) => !transactionsMoveBalance(type))).toEqual([
 			"property",
 			"vehicle",
+			"other_asset",
+			"other_liability",
 		]);
 	});
 
@@ -54,6 +60,8 @@ describe("account types", () => {
 			"investment",
 			"property",
 			"vehicle",
+			"other_asset",
+			"other_liability",
 		]);
 		expect(ACCOUNT_SUBTYPES).toEqual([
 			"cash",
@@ -127,6 +135,10 @@ describe("account types", () => {
 		expect(isSubtypeOf("vehicle", null)).toBe(true);
 		expect(isSubtypeOf("vehicle", "car")).toBe(false);
 		expect(isSubtypeOf("vehicle", "apartment")).toBe(false);
+		expect(isSubtypeOf("other_asset", null)).toBe(true);
+		expect(isSubtypeOf("other_asset", "savings")).toBe(false);
+		expect(isSubtypeOf("other_liability", null)).toBe(true);
+		expect(isSubtypeOf("other_liability", "other")).toBe(false);
 	});
 
 	it("recognises a subtype of any type, and nothing else", () => {

@@ -8,6 +8,8 @@ import {
 	HandCoinsIcon,
 	HouseIcon,
 	LandmarkIcon,
+	MinusIcon,
+	PlusIcon,
 	TargetIcon,
 } from "lucide-react";
 import { describe, expect, it } from "vitest";
@@ -33,6 +35,8 @@ describe.each(MODES)("in %s mode", (mode) => {
 		["vehicle", CarIcon, "#e2609c"],
 		["credit_card", CreditCardIcon, "#eb5757"],
 		["loan", HandCoinsIcon, "#c95fd8"],
+		["other_asset", PlusIcon, "#27a644"],
+		["other_liability", MinusIcon, "#737373"],
 	] as const)("an account of type %s draws its icon in its type colour", (type, icon, color) => {
 		const tint = resolveTint({ kind: "account", type }, mode);
 

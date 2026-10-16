@@ -1,6 +1,7 @@
 import type { AccountGroupData, AccountListData, AccountSummaryData } from "@/hooks/useAccounts";
 
 import type { AccountType } from "@archant/data/account-types";
+import { ACCOUNT_TYPE_IDS, CLASSIFICATIONS, classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
@@ -9,14 +10,9 @@ import { toMinorUnits } from "@archant/data/money";
  * order of `ACCOUNT_TYPES`: the weight bar, its legend and the accounts
  * column's groups.
  */
-export const TYPE_ORDER: readonly AccountType[] = [
-	"depository",
-	"investment",
-	"property",
-	"vehicle",
-	"credit_card",
-	"loan",
-];
+export const TYPE_ORDER: readonly AccountType[] = CLASSIFICATIONS.flatMap((classification) =>
+	ACCOUNT_TYPE_IDS.filter((type) => classificationOf(type) === classification),
+);
 
 /**
  * Whether an account counts in its class's total, as the API's does: active,

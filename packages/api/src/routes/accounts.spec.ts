@@ -60,6 +60,21 @@ async function postRaw(body: unknown) {
 	return { status: response.status, body: errorBody.parse(await response.json()) };
 }
 
+// Story 28.10's matrix: jewellery worth 5 000 € and 2 000 € owed to a relative.
+const jewellery = {
+	name: "Bijoux",
+	type: "other_asset",
+	subtype: null,
+	openingBalance: "5 000,00",
+} as const;
+
+const relativeLoan = {
+	name: "Prêt de Marie",
+	type: "other_liability",
+	subtype: null,
+	openingBalance: "2 000,00",
+} as const;
+
 // A loan whose terms are all unknown, as created without details.
 const noTerms = {
 	originalAmount: null,
@@ -1076,6 +1091,51 @@ describe("POST /api/accounts", () => {
 		await expect(accountCount()).resolves.toBe(before);
 	});
 
+	it("creates an other asset and an other liability without a subtype or details, each in its group", async () => {
+		const client = await ownClient();
+
+		const asset = await client.$post({
+			json: { ...valid, ...jewellery, openingDate: "2026-05-01" },
+		});
+		const liability = await client.$post({ json: { ...valid, ...relativeLoan } });
+
+		expect([asset.status, liability.status]).toEqual([201, 201]);
+		const { data } = await (await client.$get()).json();
+		expect(data.groups).toMatchObject([
+			{
+				classification: "asset",
+				total: 500000,
+				accounts: [{ name: "Bijoux", type: "other_asset", subtype: null, balance: 500000 }],
+			},
+			{
+				classification: "liability",
+				total: 200000,
+				accounts: [
+					{ name: "Prêt de Marie", type: "other_liability", subtype: null, balance: 200000 },
+				],
+			},
+		]);
+	});
+
+	it("refuses a subtype on an other asset, and details on an other liability as on a depository", async () => {
+		const before = await accountCount();
+
+		const subtype = await postRaw({ ...valid, ...jewellery, subtype: "savings" });
+		const details = await postRaw({ ...valid, ...relativeLoan, details: { make: "Peugeot" } });
+
+		expect(subtype.status).toBe(400);
+		expect(subtype.body.error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "subtype", code: "invalid_subtype" }],
+		});
+		expect(details.status).toBe(400);
+		expect(details.body.error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "details", code: "invalid_details" }],
+		});
+		await expect(accountCount()).resolves.toBe(before);
+	});
+
 	it("answers a body that is not JSON with VALIDATION_ERROR", async () => {
 		const { status, body } = await postRaw("{");
 
@@ -1812,6 +1872,24 @@ describe("PATCH /api/accounts/:id", () => {
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "subtype", code: "invalid_subtype" }],
 		});
+	});
+
+	it("refuses a subtype on an other asset or an other liability", async () => {
+		const asset = await openAccount(jewellery);
+		const liability = await openAccount(relativeLoan);
+
+		const responses = await Promise.all([
+			patchAccount(asset.id, { subtype: "savings" }),
+			patchAccount(liability.id, { subtype: "other" }),
+		]);
+
+		for (const { status, body } of responses) {
+			expect(status).toBe(400);
+			expect(errorBody.parse(body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "subtype", code: "invalid_subtype" }],
+			});
+		}
 	});
 
 	it("clears a PEA's subtype, as Sure's blank investment", async () => {

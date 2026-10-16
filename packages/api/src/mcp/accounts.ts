@@ -19,6 +19,8 @@ const SURE_TYPES = {
 	investment: "Investment",
 	property: "Property",
 	vehicle: "Vehicle",
+	other_asset: "OtherAsset",
+	other_liability: "OtherLiability",
 } as const satisfies Record<AccountType, string>;
 
 const account = z.object({
