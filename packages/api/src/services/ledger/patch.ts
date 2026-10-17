@@ -5,6 +5,7 @@ import type { SQLiteUpdateSetSource } from "drizzle-orm/sqlite-core";
 
 import { count, eq, inArray, sql } from "drizzle-orm";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
 import type { CategoryOrigin } from "@archant/data/schema/categories";
@@ -58,6 +59,8 @@ export type TransactionPatch = {
 	merchantId?: string | null | undefined;
 	/** The whole set, replacing the current one; `[]` removes every tag. */
 	tagIds?: readonly string[] | undefined;
+	/** Sure's `investment_activity_label`; `null` clears it. */
+	investmentActivityLabel?: ActivityLabel | null | undefined;
 };
 
 /** The patch key and the row column behind each lockable field. */
@@ -70,6 +73,7 @@ const PATCH_KEY_OF = {
 	category: "categoryId",
 	merchant: "merchantId",
 	tags: "tagIds",
+	investmentActivityLabel: "investmentActivityLabel",
 } as const satisfies Record<LockableField, keyof TransactionPatch>;
 
 export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
@@ -86,6 +90,7 @@ export const editableColumns = {
 	oneTime: transactions.oneTime,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
+	investmentActivityLabel: transactions.investmentActivityLabel,
 	lockedFields: transactions.lockedFields,
 };
 
@@ -189,6 +194,9 @@ export function detailOf(
 				}
 			: {}),
 		...(changed.includes("merchant") ? { merchantId: next.merchantId } : {}),
+		...(changed.includes("investmentActivityLabel")
+			? { investmentActivityLabel: next.investmentActivityLabel }
+			: {}),
 		...(origin === "user" && changed.length > 0
 			? { lockedFields: stampedLocks(changed, now) }
 			: {}),

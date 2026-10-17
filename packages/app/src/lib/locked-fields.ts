@@ -12,6 +12,7 @@ const FIELD_NAMES = {
 	category: "transactions.protection.fields.category",
 	merchant: "transactions.protection.fields.merchant",
 	tags: "transactions.protection.fields.tags",
+	investmentActivityLabel: "transactions.protection.fields.investmentActivityLabel",
 } as const satisfies Record<LockableField, string>;
 
 /** `LockedFields` as the API's JSON reads it, each absent key possibly `undefined`. */

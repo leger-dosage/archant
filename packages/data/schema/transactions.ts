@@ -1,6 +1,9 @@
+import type { ActivityLabel } from "../activity-labels.ts";
+
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
+import { ACTIVITY_LABELS } from "../activity-labels.ts";
 import { accounts } from "./accounts.ts";
 import { type CategoryOrigin, CATEGORY_ORIGINS, categories } from "./categories.ts";
 import { inList } from "./check.ts";
@@ -20,6 +23,7 @@ export const LOCKABLE_FIELDS = [
 	"category",
 	"merchant",
 	"tags",
+	"investmentActivityLabel",
 ] as const;
 
 export type LockableField = (typeof LOCKABLE_FIELDS)[number];
@@ -95,6 +99,9 @@ export const transactions = sqliteTable(
 		expectedTransferAccountId: text("expected_transfer_account_id").references(() => accounts.id, {
 			onDelete: "set null",
 		}),
+		// Sure's `investment_activity_label`, set from the sheet of an investment
+		// or crypto account's line; an internal movement leaves cash flow (AD-9).
+		investmentActivityLabel: text("investment_activity_label").$type<ActivityLabel>(),
 	},
 	(table) => [
 		// Every category delete and merge, and the list's filter, look rows up by it.
@@ -108,6 +115,10 @@ export const transactions = sqliteTable(
 		check(
 			"transactions_category_origin_set_check",
 			sql`(${table.categoryId} is null) = (${table.categoryOrigin} is null)`,
+		),
+		check(
+			"transactions_investment_activity_label_check",
+			sql`${table.investmentActivityLabel} in ${inList(ACTIVITY_LABELS)}`,
 		),
 	],
 );

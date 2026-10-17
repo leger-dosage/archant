@@ -16,6 +16,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { formatMoney } from "@archant/data/money";
 import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
 
+import { ActivityLabelField } from "@/components/ActivityLabelField";
 import { AmountField } from "@/components/AmountField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConvertBlock } from "@/components/ConvertTradeDialog";
@@ -557,6 +558,18 @@ export function TransactionForm({
 							/>
 						</div>
 					)}
+
+					{/* Between « Exclure » and the one-time switch, as Sure's settings. */}
+					{transaction !== null &&
+						admin &&
+						chosen !== null &&
+						(chosen.type === "investment" || chosen.type === "crypto") && (
+							<ActivityLabelField
+								accountId={chosen.id}
+								transactionId={transaction.id}
+								value={transaction.investmentActivityLabel}
+							/>
+						)}
 
 					{transaction !== null && !inSplit && (
 						<div className="flex items-start justify-between gap-4">

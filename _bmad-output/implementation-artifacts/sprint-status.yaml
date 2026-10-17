@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-17-2026 02:30
+last_updated: 10-17-2026 04:12
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -262,7 +262,7 @@ development_status:
   27-27-a-bill-paid-from-any-account: done
   epic-27-retrospective: optional
 
-  epic-28: in-progress
+  epic-28: done
   28-1-every-depository-subtype-a-french-household-uses: done
   28-2-credit-card-details-and-the-available-credit-toggle: done
   28-3-grey-the-recorded-loan-line-past-the-cursor: done
@@ -283,7 +283,7 @@ development_status:
   28-18-date-the-banks-balance-today: done
   28-19-confirm-a-balance-before-saving-it: done
   28-20-opening-balance-and-snapshot-refusals-as-sures: done
-  28-21-an-activity-label-on-investment-transactions-as-sure: backlog
+  28-21-an-activity-label-on-investment-transactions-as-sure: done
   epic-28-retrospective: optional
 
   epic-29: backlog

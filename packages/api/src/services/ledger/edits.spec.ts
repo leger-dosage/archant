@@ -31,6 +31,7 @@ import {
 	newMerchant,
 	newTag,
 	openChecking,
+	openPea,
 	setToday,
 	splitInTwo,
 	statementOf,
@@ -538,6 +539,94 @@ describe("updateTransaction", () => {
 		await expect(tagsOf(id)).resolves.toEqual([]);
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ label: "Boulangerie" });
 		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
+});
+
+describe("updateTransaction and the investment activity label", () => {
+	it("labels a dividend by hand, locking the label, without touching the entry or balances", async () => {
+		const pea = await openPea();
+		const id = await add(pea.id, { amount: toMinorUnits(1200), label: "Dividende" }, "sync");
+		const entry = await temp.db.select().from(entries).where(eq(entries.id, id)).get();
+		const recompute = vi.spyOn(forward, "forwardBalances");
+		setToday("2026-09-21T11:00:00Z");
+
+		await expect(
+			updateTransaction(deps(), id, { investmentActivityLabel: "Dividend" }, asUser),
+		).resolves.toEqual({ status: "updated" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			investmentActivityLabel: "Dividend",
+		});
+		await expect(lockTimes(id)).resolves.toEqual({
+			investmentActivityLabel: Date.parse("2026-09-21T11:00:00Z"),
+		});
+		await expect(temp.db.select().from(entries).where(eq(entries.id, id)).get()).resolves.toEqual(
+			entry,
+		);
+		expect(recompute).not.toHaveBeenCalled();
+	});
+
+	it("clears the label by hand, renewing its lock", async () => {
+		const pea = await openPea();
+		const id = await add(pea.id, {}, "sync");
+		setToday("2026-09-21T11:00:00Z");
+		await updateTransaction(deps(), id, { investmentActivityLabel: "Dividend" }, asUser);
+
+		setToday("2026-09-22T11:00:00Z");
+		await updateTransaction(deps(), id, { investmentActivityLabel: null }, asUser);
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			investmentActivityLabel: null,
+		});
+		await expect(lockTimes(id)).resolves.toEqual({
+			investmentActivityLabel: Date.parse("2026-09-22T11:00:00Z"),
+		});
+	});
+
+	it("never changes a locked label for another origin", async () => {
+		const pea = await openPea();
+		const id = await add(pea.id, {}, "sync");
+		await updateTransaction(deps(), id, { investmentActivityLabel: "Dividend" }, asUser);
+
+		await updateTransaction(
+			deps(),
+			id,
+			{ investmentActivityLabel: "Sweep In" },
+			{ origin: "rule" },
+		);
+		await updateTransaction(deps(), id, { investmentActivityLabel: null }, { origin: "sync" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			investmentActivityLabel: "Dividend",
+		});
+	});
+
+	it("lets another origin set an unlocked label without locking it", async () => {
+		const pea = await openPea();
+		const id = await add(pea.id, {}, "sync");
+
+		await updateTransaction(deps(), id, { investmentActivityLabel: "Fee" }, { origin: "rule" });
+
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			investmentActivityLabel: "Fee",
+		});
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
+
+	it("refuses a value outside Sure's list in the database itself", async () => {
+		const pea = await openPea();
+		const id = await add(pea.id, {}, "sync");
+
+		const checkFailed: unknown = expect.stringContaining(
+			"transactions_investment_activity_label_check",
+		);
+
+		await expect(
+			temp.db
+				.update(transactions)
+				.set({ investmentActivityLabel: sql`'Gift'` })
+				.where(eq(transactions.entryId, id)),
+		).rejects.toMatchObject({ cause: { message: checkFailed } });
 	});
 });
 

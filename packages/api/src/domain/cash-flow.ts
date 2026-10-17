@@ -1,3 +1,5 @@
+import type { ActivityLabel } from "@archant/data/activity-labels";
+import { INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
 import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -40,16 +42,24 @@ export function direction(tx: CashFlowTransaction): Direction {
 	return tx.amount > 0 ? "income" : "expense";
 }
 
-/** What `countsInCashFlow` reads: `direction`'s fields, the exclusion, pending and one-time flags. */
+/**
+ * What `countsInCashFlow` reads: `direction`'s fields, the exclusion, pending
+ * and one-time flags and the investment activity label.
+ */
 export type CountedTransaction = CashFlowTransaction & {
 	excluded: boolean;
 	pending: boolean;
 	oneTime: boolean;
+	investmentActivityLabel: ActivityLabel | null;
 };
+
+const internalMovements: ReadonlySet<ActivityLabel> = new Set(INTERNAL_MOVEMENT_LABELS);
 
 /**
  * Whether a transaction enters a cash-flow report (AD-9): not excluded, not
  * one-time, as Sure's `BUDGET_EXCLUDED_KINDS` leave its `one_time` kind out,
+ * not an internal movement of an investment account, as Sure's
+ * `investment_activity_label_sql` leaves its `INTERNAL_MOVEMENT_LABELS` out,
  * not pending, since its booked version counts once the bank settles it, and not
  * a transfer side unless it is the outflow of a loan payment or an investment
  * contribution, which Sure's `classification_sql` always counts as an
@@ -59,7 +69,13 @@ export type CountedTransaction = CashFlowTransaction & {
  * tied by a parity test. No trade ever counts, as Sure's `trades_subquery_sql`.
  */
 export function countsInCashFlow(tx: CountedTransaction): boolean {
-	return !tx.excluded && !tx.oneTime && !tx.pending && (tx.transfer === null || isSpentOutflow(tx));
+	return (
+		!tx.excluded &&
+		!tx.oneTime &&
+		!tx.pending &&
+		(tx.investmentActivityLabel === null || !internalMovements.has(tx.investmentActivityLabel)) &&
+		(tx.transfer === null || isSpentOutflow(tx))
+	);
 }
 
 /** The signed sum of counted transactions sharing a category and a sign. */

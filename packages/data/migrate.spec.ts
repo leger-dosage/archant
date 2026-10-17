@@ -1982,6 +1982,53 @@ describe("recurring transactions", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("keeps every transaction's values, and its taggings, when 0084 adds the activity label", async () => {
+		const before = await migratedBefore("0084");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertCategory(before, "c1", "Courses");
+		await insertMerchant(before, "m1", "Carrefour");
+		await before.run(
+			sql`insert into transactions (entry_id, label, notes, reference, excluded, one_time, possible_duplicate, pending, pending_missed_syncs, pending_missed_on, locked_fields, category_id, category_origin, merchant_id, expected_transfer_account_id) values ('e1', 'Carrefour', 'Courses', '123', 1, 1, 1, 1, 1, '2026-09-20', '{"label":1789984800000}', 'c1', 'user', 'm1', 'a2')`,
+		);
+		// The rebuild drops a table others reference: their rows must survive it.
+		await insertTag(before, "t1", "Pain");
+		await before.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, notes, reference, excluded, one_time as oneTime, possible_duplicate as possibleDuplicate, pending, pending_missed_syncs as missedSyncs, pending_missed_on as missedOn, locked_fields as locked, category_id as categoryId, category_origin as categoryOrigin, merchant_id as merchantId, expected_transfer_account_id as expected, investment_activity_label as activityLabel from transactions`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				label: "Carrefour",
+				notes: "Courses",
+				reference: "123",
+				excluded: 1,
+				oneTime: 1,
+				possibleDuplicate: 1,
+				pending: 1,
+				missedSyncs: 1,
+				missedOn: "2026-09-20",
+				locked: '{"label":1789984800000}',
+				categoryId: "c1",
+				categoryOrigin: "user",
+				merchantId: "m1",
+				expected: "a2",
+				activityLabel: null,
+			},
+		]);
+		await expect(database.all(sql`select transaction_id as id from taggings`)).resolves.toEqual([
+			{ id: "e1" },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("holds a known bill type and 1 to 600 payments, and leaves a series uncategorised when its category goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

@@ -195,6 +195,7 @@ export const EXPORTED_COLUMNS = {
 		categoryId: transactions.categoryId,
 		categoryOrigin: transactions.categoryOrigin,
 		merchantId: transactions.merchantId,
+		investmentActivityLabel: transactions.investmentActivityLabel,
 	},
 	taggings: {
 		transactionId: taggings.transactionId,

@@ -50,6 +50,9 @@ useSignedInApp();
 const listedOf = async (accountId: string) =>
 	listBody.parse((await request("GET", `/api/transactions?account=${accountId}`)).body).data.items;
 
+/** A PEA's dividend, labelled by the activity label tests. */
+const dividend = { date: "2026-09-10", label: "Dividende", amount: "12,00" };
+
 /** The locked fields, in the order they were first locked. */
 const locksOf = async (id: string) => {
 	const row = await temp.db.get<{ locked: string }>(
@@ -1587,7 +1590,7 @@ describe("POST /api/transactions/:id/unlock", () => {
 	});
 });
 
-describe("a viewer and a one-time transaction", () => {
+describe("a viewer and a one-time or labelled transaction", () => {
 	let viewerCookie: string;
 	let auth: Auth;
 	const silent = createLogger("silent");
@@ -1625,6 +1628,87 @@ describe("a viewer and a one-time transaction", () => {
 
 		expect(unlock.status).toBe(403);
 		expect(errorBody.parse(await unlock.json()).error.code).toBe("FORBIDDEN");
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
+	});
+
+	it("refuses a viewer's activity label FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+		const account = await openAccount(pea);
+		const created = await postTransaction(account.id, dividend);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const edit = await viewer.request(`/api/transactions/${data.id}`, {
+			method: "PATCH",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ investmentActivityLabel: "Dividend" }),
+		});
+
+		expect(edit.status).toBe(403);
+		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
+		// Read raw: `listItem` strips what it does not name.
+		const list = await request("GET", `/api/transactions?account=${account.id}`);
+		expect(list.body).toMatchObject({
+			data: { items: [{ id: data.id, investmentActivityLabel: null }] },
+		});
+	});
+});
+
+describe("PATCH /api/transactions/:id and the investment activity label", () => {
+	it("labels a PEA line, locks the label, returns it in every read and moves no balance", async () => {
+		const account = await openAccount(pea);
+		const created = await postTransaction(account.id, dividend);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const before = await balanceOf(account.id);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			investmentActivityLabel: "Dividend",
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { investmentActivityLabel: "Dividend", amount: 1200 } });
+		await expect(locksOf(data.id)).resolves.toEqual([
+			"date",
+			"amount",
+			"label",
+			"investmentActivityLabel",
+		]);
+		// Read raw: `listItem` strips what it does not name.
+		const list = await request("GET", `/api/transactions?account=${account.id}`);
+		expect(list.body).toMatchObject({
+			data: { items: [{ id: data.id, investmentActivityLabel: "Dividend" }] },
+		});
+		await expect(balanceOf(account.id)).resolves.toBe(before);
+	});
+
+	it("clears the label with null", async () => {
+		const account = await openAccount(pea);
+		const created = await postTransaction(account.id, dividend);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		await request("PATCH", `/api/transactions/${data.id}`, { investmentActivityLabel: "Dividend" });
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			investmentActivityLabel: null,
+		});
+
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { investmentActivityLabel: null } });
+		await expect(locksOf(data.id)).resolves.toContain("investmentActivityLabel");
+	});
+
+	it("refuses a value outside Sure's list on its field, nothing written", async () => {
+		const account = await openAccount(pea);
+		const created = await postTransaction(account.id, dividend);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		const { status, body } = await request("PATCH", `/api/transactions/${data.id}`, {
+			investmentActivityLabel: "Gift",
+		});
+
+		expect(status).toBe(400);
+		const { error } = errorBody.parse(body);
+		expect(error.code).toBe("VALIDATION_ERROR");
+		expect(error.fields?.map((field) => field.path)).toEqual(["investmentActivityLabel"]);
 		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 	});
 });

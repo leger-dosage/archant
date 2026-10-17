@@ -352,6 +352,8 @@ reader.describe("a viewer", () => {
 			const line = page.getByRole("dialog", { name: "Opération" });
 			await expect(line.getByLabel("Libellé")).toHaveValue(`${prefix} achat courtier`);
 			await expectNone(line, [{ role: "button", name: "Convertir en ordre" }]);
+			// Sure's « Type d'activité » select writes, so a viewer has none.
+			await expect(line.getByRole("combobox", { name: "Type d'activité" })).toHaveCount(0);
 			await line.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(line).toBeHidden();
 			await page.getByRole("tab", { name: "Ordres" }).click();

@@ -3,6 +3,7 @@ import type { NewAccountInput } from "./ledger/accounts.ts";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
@@ -364,6 +365,29 @@ describe("getCashFlow and one-time transactions", () => {
 		const cashFlow = await getCashFlow(deps(), "2026-09");
 
 		expect(cashFlow.expenses).toBe(-2_000);
+	});
+});
+
+describe("getCashFlow and an investment account's activity labels", () => {
+	// A brokerage account: a PEA is tax-advantaged, so none of its lines count.
+	it("leaves a sweep in, a sweep out, a transfer and an exchange out of the month, counts a dividend, and keeps them all in net worth", async () => {
+		const brokerage = await account({ name: "CTO", type: "investment", subtype: "brokerage" });
+		const labelled = async (amount: number, investmentActivityLabel: ActivityLabel) => {
+			const id = await spend(brokerage, "2026-09-10", amount);
+			await updateTransaction(deps(), id, { investmentActivityLabel }, { origin: "user" });
+		};
+		await labelled(50_000, "Sweep In");
+		await labelled(-50_000, "Sweep Out");
+		await labelled(-20_000, "Transfer");
+		await labelled(30_000, "Exchange");
+		await labelled(1_200, "Dividend");
+
+		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const netWorth = await getNetWorth(deps(), "1M");
+
+		expect(cashFlow.income).toBe(1_200);
+		expect(cashFlow.expenses).toBe(0);
+		expect(netWorth.netWorth).toBe(100_000 + 50_000 - 50_000 - 20_000 + 30_000 + 1_200);
 	});
 });
 

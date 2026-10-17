@@ -2,6 +2,8 @@ import type { CashFlowCategory, CashFlowRow, CashFlowTransaction } from "./cash-
 
 import { describe, expect, it } from "vitest";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
+import { ACTIVITY_LABELS, INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
 import { toMinorUnits } from "@archant/data/money";
 
 import { countsInCashFlow, direction, grossCashFlow, netCashFlow } from "./cash-flow.ts";
@@ -39,8 +41,13 @@ describe("direction", () => {
 	});
 });
 
-const counted = (value: CashFlowTransaction, excluded = false, pending = false, oneTime = false) =>
-	countsInCashFlow({ ...value, excluded, pending, oneTime });
+const counted = (
+	value: CashFlowTransaction,
+	excluded = false,
+	pending = false,
+	oneTime = false,
+	investmentActivityLabel: ActivityLabel | null = null,
+) => countsInCashFlow({ ...value, excluded, pending, oneTime, investmentActivityLabel });
 
 describe("countsInCashFlow", () => {
 	it("counts income and expenses and a loan payment's or contribution's outflow, not an excluded row nor another transfer side", () => {
@@ -63,6 +70,24 @@ describe("countsInCashFlow", () => {
 	it("never counts a one-time row, as Sure's `BUDGET_EXCLUDED_KINDS`", () => {
 		expect(counted(tx(-90000), false, false, true)).toBe(false);
 		expect(counted(tx(150000), false, false, true)).toBe(false);
+	});
+
+	it.each(INTERNAL_MOVEMENT_LABELS)(
+		"never counts a row labelled %s, as Sure's `INTERNAL_MOVEMENT_LABELS`",
+		(label) => {
+			expect(counted(tx(-50000), false, false, false, label)).toBe(false);
+			expect(counted(tx(50000), false, false, false, label)).toBe(false);
+		},
+	);
+
+	it("counts a row under any other label as it would without one", () => {
+		const internal: readonly ActivityLabel[] = INTERNAL_MOVEMENT_LABELS;
+
+		for (const label of ACTIVITY_LABELS.filter((value) => !internal.includes(value))) {
+			expect(counted(tx(1200), false, false, false, label)).toBe(true);
+			expect(counted(tx(-1200), false, false, false, label)).toBe(true);
+			expect(counted(tx(-1200), true, false, false, label)).toBe(false);
+		}
 	});
 });
 

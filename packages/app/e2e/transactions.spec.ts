@@ -131,6 +131,127 @@ test("a hand-typed line is protected from sync until the owner lets a sync updat
 	await expect(sheet.getByText("Protégée contre la synchronisation")).toHaveCount(0);
 });
 
+// Story 28.21: Sure's « Type d'activité » select, saved at once and locked.
+test("a PEA line is labelled « Dividende » from its sheet, keeps it, and lists its lock; a checking line offers no label", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "25 000,00",
+		openingDate: daysAgo(30),
+	});
+	const label = uniqueName("Dividende TotalEnergies");
+	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "12,00" });
+	const today = new Intl.DateTimeFormat("fr-FR", {
+		day: "numeric",
+		month: "long",
+		year: "numeric",
+		timeZone: TIME_ZONE,
+	}).format(new Date());
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const select = sheet.getByRole("combobox", { name: "Type d'activité" });
+
+	await page.goto(`/accounts/${account.id}`);
+	await row(page, label).click();
+	await expect(select).toHaveText("—");
+	await expect(select).toHaveAccessibleDescription(
+		"Type d'activité d'investissement (Achat, Vente, Dividende, etc.).",
+	);
+	await select.click();
+	await expect(page.getByRole("option")).toHaveText([
+		"—",
+		"Achat",
+		"Vente",
+		"Balayage entrant",
+		"Balayage sortant",
+		"Dividende",
+		"Réinvestissement",
+		"Intérêts",
+		"Frais",
+		"Transfert",
+		"Contribution",
+		"Retrait",
+		"Échange",
+		"Autre",
+	]);
+	const saved = page.waitForResponse(
+		(response) => response.request().method() === "PATCH" && response.status() === 200,
+	);
+	await page.getByRole("option", { name: "Dividende" }).click();
+	await saved;
+	await expect(select).toHaveText("Dividende");
+
+	// Saved apart from « Enregistrer »: closing asks nothing.
+	await page.keyboard.press("Escape");
+	await expect(sheet).toBeHidden();
+	await row(page, label).click();
+	await expect(select).toHaveText("Dividende");
+	const block = sheet.getByRole("group").filter({ hasText: "Protégée contre la synchronisation" });
+	await block.getByText("Protégée contre la synchronisation").click();
+	await expect(block.getByRole("listitem")).toHaveText([
+		`Date${today}`,
+		`Montant${today}`,
+		`Libellé${today}`,
+		`Type d'activité${today}`,
+	]);
+	await page.keyboard.press("Escape");
+
+	// Sure's `investment? || crypto?`: a crypto account's line offers it too.
+	const crypto = await api.openAccount({ kind: "exchange", openingDate: daysAgo(30) });
+	const purchase = uniqueName("Achat BTC");
+	await api.addTransaction(crypto.id, { date: daysAgo(2), label: purchase, amount: "-50,00" });
+	await page.goto(`/accounts/${crypto.id}`);
+	await row(page, purchase).click();
+	await expect(select).toHaveText("—");
+	await page.keyboard.press("Escape");
+	await expect(sheet).toBeHidden();
+
+	const checking = await api.openAccount({ openingDate: daysAgo(30) });
+	const groceries = uniqueName("Primeur");
+	await api.addTransaction(checking.id, { date: daysAgo(2), label: groceries, amount: "-8,40" });
+	await page.goto(`/accounts/${checking.id}`);
+	await row(page, groceries).click();
+	await expect(sheet.getByLabel("Libellé")).toHaveValue(groceries);
+	await expect(sheet.getByText("Type d'activité")).toHaveCount(0);
+});
+
+test("a refused activity label shows the error and puts the saved one back", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "25 000,00",
+		openingDate: daysAgo(30),
+	});
+	const label = uniqueName("Frais de garde");
+	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-3,00" });
+	await page.route("**/api/transactions/*", (route) =>
+		route.request().method() === "PATCH"
+			? route.fulfill({
+					status: 500,
+					json: { error: { code: "INTERNAL_ERROR", message: "Something went wrong." } },
+				})
+			: route.fallback(),
+	);
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const select = sheet.getByRole("combobox", { name: "Type d'activité" });
+
+	await page.goto(`/accounts/${account.id}`);
+	await row(page, label).click();
+	await select.click();
+	await page.getByRole("option", { name: "Frais" }).click();
+
+	await expect(
+		page.getByText("Une erreur inattendue s'est produite. Réessayez dans un instant."),
+	).toBeVisible();
+	await expect(select).toHaveText("—");
+	await expect(select).toBeEnabled();
+});
+
 test("the newest transaction is listed first", async ({ page, api }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(30) });
 

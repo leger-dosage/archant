@@ -702,6 +702,8 @@ function archantTransaction(transaction: ExportedTransactionRow["transaction"]) 
 		category_origin: transaction.categoryOrigin,
 		reference: transaction.reference,
 		possible_duplicate: transaction.possibleDuplicate,
+		// Sure's exporter writes no `investment_activity_label` on a `Transaction` line.
+		investment_activity_label: transaction.investmentActivityLabel,
 	};
 }
 

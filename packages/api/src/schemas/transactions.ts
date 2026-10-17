@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
@@ -41,6 +42,8 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 	merchantId: z.string().nullable().optional(),
 	// The whole set; the ledger checks that every id names a tag.
 	tagIds: z.array(z.string()).optional(),
+	// Sure's `investment_activity_label`; `null` clears it. Only this edit sets it.
+	investmentActivityLabel: z.enum(ACTIVITY_LABELS).nullable().optional(),
 });
 
 // A split's body as the route checks it before it knows the account: the
@@ -136,6 +139,7 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 				.transform((ids) => [...new Set(ids)])
 				.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
 				.optional(),
+			investmentActivityLabel: z.enum(ACTIVITY_LABELS).nullable().optional(),
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, notes, ...rest }) => {

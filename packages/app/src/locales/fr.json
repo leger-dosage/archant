@@ -490,9 +490,27 @@
 			"excluded": "Exclure des rapports",
 			"oneTime": "Transaction ponctuelle ({{type}})",
 			"oneTimeDescription": "Les transactions ponctuelles seront exclues de certains calculs budgétaires et rapports afin de vous aider à voir ce qui compte vraiment.",
+			"activityLabel": "Type d'activité",
+			"activityLabelDescription": "Type d'activité d'investissement (Achat, Vente, Dividende, etc.).",
+			"activityLabelNone": "—",
 			"category": "Catégorie",
 			"merchant": "Marchand",
 			"tags": "Étiquettes"
+		},
+		"activityLabels": {
+			"buy": "Achat",
+			"sell": "Vente",
+			"sweepIn": "Balayage entrant",
+			"sweepOut": "Balayage sortant",
+			"dividend": "Dividende",
+			"reinvestment": "Réinvestissement",
+			"interest": "Intérêts",
+			"fee": "Frais",
+			"transfer": "Transfert",
+			"contribution": "Contribution",
+			"withdrawal": "Retrait",
+			"exchange": "Échange",
+			"other": "Autre"
 		},
 		"delete": {
 			"action": "Supprimer",
@@ -596,7 +614,8 @@
 				"excluded": "Exclue des rapports",
 				"category": "Catégorie",
 				"merchant": "Marchand",
-				"tags": "Étiquettes"
+				"tags": "Étiquettes",
+				"investmentActivityLabel": "Type d'activité"
 			},
 			"unlock": "Autoriser la mise à jour par la synchronisation",
 			"confirmTitle": "Autoriser la synchronisation à mettre à jour cette entrée ?",
