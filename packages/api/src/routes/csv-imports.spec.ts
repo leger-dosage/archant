@@ -81,12 +81,45 @@ describe("POST /api/csv-imports/preview", () => {
 			{ type: "accounts", configuration: JSON.stringify({ separator: "|" }) },
 			"configuration.separator",
 		],
+		[
+			{ type: "merchants", edits: JSON.stringify([{ line: 2, key: "budget", value: "x" }]) },
+			"edits.0.key",
+		],
+		[
+			{ type: "merchants", edits: JSON.stringify([{ line: 0, key: "name", value: "x" }]) },
+			"edits.0.line",
+		],
+		[
+			{
+				type: "merchants",
+				edits: JSON.stringify([{ line: 2, key: "name", value: "x".repeat(10_001) }]),
+			},
+			"edits.0.value",
+		],
 	])("refuses %j as VALIDATION_ERROR on %s", async (fields, path) => {
 		const response = await post("/api/csv-imports/preview", fields, "name\nA");
 
 		expect(response.status).toBe(400);
 		expect(response.body).toMatchObject({
 			error: { code: "VALIDATION_ERROR", fields: [expect.objectContaining({ path })] },
+		});
+	});
+
+	it("reads « Nettoyer »'s edits as JSON text", async () => {
+		const response = await post(
+			"/api/csv-imports/preview",
+			{ type: "merchants", edits: JSON.stringify([{ line: 2, key: "name", value: "Corrigé" }]) },
+			"name\nTypo",
+		);
+
+		expect(response.status).toBe(200);
+		expect(response.body).toMatchObject({
+			data: {
+				clean: {
+					columns: ["name", "merchant_color", "merchant_website"],
+					rows: [{ line: 2, values: ["Corrigé", "", ""] }],
+				},
+			},
 		});
 	});
 

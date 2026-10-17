@@ -4,13 +4,14 @@ import type { DragEvent } from "react";
 
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { CircleAlertIcon, CircleCheckIcon, FileSpreadsheetIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
 	AmountTypeStrategy,
 	ColumnKey,
 	CsvImportConfigurationInput,
+	CsvImportEditsInput,
 	CsvImportMappingsInput,
 	CsvImportType,
 	CsvSeparator,
@@ -23,7 +24,6 @@ import {
 	COLUMN_KEYS,
 	COLUMN_KEY_LIST,
 	CSV_IMPORT_TYPES,
-	CSV_ISSUE_CODES,
 	CSV_SEPARATORS,
 	MAX_ROWS_TO_SKIP,
 	NUMBER_FORMATS,
@@ -34,6 +34,7 @@ import {
 import { supportsTrades } from "@archant/data/account-types";
 
 import { ChoiceField } from "@/components/ChoiceField";
+import { CsvCleanStep, useIssueText } from "@/components/CsvCleanStep";
 import { CsvMapStep } from "@/components/CsvMapStep";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,7 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCsvImportPreview, usePublishCsvImport } from "@/hooks/useCsvImport";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
+import { isCleaned } from "@/lib/csv-clean";
 import { errorMessage } from "@/lib/error-toast";
 import { cn } from "@/lib/utils";
 
@@ -73,13 +75,9 @@ export const Route = createFileRoute("/_authed/settings/imports_/$kind")({
 	component: CsvImportRoute,
 });
 
-type Step = "upload" | "configure" | "map" | "confirm";
+type Step = "upload" | "configure" | "clean" | "map" | "confirm";
 
 type Preview = CsvImportPreviewData;
-type Issue = Preview["errors"][number];
-
-/** A file broken on every line would otherwise list 10,000 of them. */
-const SHOWN_ERRORS = 50;
 
 /** No column chosen, « Laisser vide »: a value no header takes. */
 const NONE = "__none__";
@@ -227,10 +225,10 @@ function CsvImportRoute() {
 }
 
 /**
- * Sure's raw-data imports: « Téléverser », « Configurer », « Mapper » where
- * the type needs it, « Confirmer », then « Importation réussie ». The page
- * keeps the file and its choices and posts them at each step: nothing is
- * stored on the server in between.
+ * Sure's raw-data imports: « Téléverser », « Configurer », « Nettoyer »,
+ * « Mapper » where the type needs it, « Confirmer », then « Importation
+ * réussie ». The page keeps the file, its choices and its cell edits and
+ * posts them at each step: nothing is stored on the server in between.
  */
 function CsvImportPage() {
 	const { t } = useTranslation();
@@ -242,9 +240,15 @@ function CsvImportPage() {
 	const [file, setFile] = useState<File | null>(null);
 	const [configuration, setConfiguration] = useState<CsvImportConfigurationInput>({});
 	const [mappings, setMappings] = useState<CsvImportMappingsInput | undefined>(undefined);
+	// « Nettoyer »'s edits, Sure's saved rows: dropped when the rows are read anew.
+	const [edits, setEdits] = useState<CsvImportEditsInput>([]);
+	// Sure's `invalid_data`: « Confirmer » sent the user back to rows still invalid.
+	const [invalidNotice, setInvalidNotice] = useState(false);
 	const [preview, setPreview] = useState<Preview | null>(null);
 	const [done, setDone] = useState(false);
 	const read = useCsvImportPreview();
+	// Cells left one after another post one preview each: only the last one's answer counts.
+	const latest = useRef(0);
 	const publish = usePublishCsvImport();
 	const mapAccounts = useImportAccounts(type, "map");
 
@@ -255,10 +259,17 @@ function CsvImportPage() {
 		});
 	}, [t, type]);
 
-	const draft = (patch: Partial<CsvImportDraft> = {}): CsvImportDraft | null =>
-		file === null ? null : { type, file, configuration, mappings, ...patch };
+	const mapSteps = mapStepsOf(type, configuration.accountId);
 
-	/** Posts the draft to the preview, then moves to `next` with what it read. */
+	const draft = (patch: Partial<CsvImportDraft> = {}): CsvImportDraft | null =>
+		file === null ? null : { type, file, configuration, edits, mappings, ...patch };
+
+	/**
+	 * Posts the draft to the preview, then moves to `next` with what it read;
+	 * « Confirmer » with rows still invalid goes back to « Nettoyer », as
+	 * Sure's `Import::ConfirmsController`, and with a value left to map back
+	 * to « Mapper », as Sure's `finalize_mappings`.
+	 */
 	const advance = (next: Step, patch: Partial<CsvImportDraft> = {}) => {
 		const posted = draft(patch);
 
@@ -266,8 +277,15 @@ function CsvImportPage() {
 			return;
 		}
 
+		latest.current += 1;
+		const sent = latest.current;
+
 		read.mutate(posted, {
 			onSuccess: (data) => {
+				if (sent !== latest.current) {
+					return;
+				}
+
 				setPreview(data);
 				setConfiguration(configurationOf(data.configuration));
 				setMappings({
@@ -281,7 +299,15 @@ function CsvImportPage() {
 					tags: data.mappings.tags.map(({ key, value }) => ({ key, value })),
 				});
 				setMapIndex(0);
-				setStep(next);
+
+				if (next === "confirm" && !isCleaned(data)) {
+					setInvalidNotice(true);
+					setStep("clean");
+				} else if (next === "confirm" && data.errors.length > 0 && mapSteps.length > 0) {
+					setStep("map");
+				} else {
+					setStep(next);
+				}
 			},
 		});
 	};
@@ -303,29 +329,35 @@ function CsvImportPage() {
 		);
 	}
 
-	const mapSteps = mapStepsOf(type, configuration.accountId);
 	const mapKind = mapSteps[mapIndex] ?? mapSteps[0] ?? "accounts";
 	const steps: Step[] =
 		mapSteps.length > 0
-			? ["upload", "configure", "map", "confirm"]
-			: ["upload", "configure", "confirm"];
+			? ["upload", "configure", "clean", "map", "confirm"]
+			: ["upload", "configure", "clean", "confirm"];
 	const error = read.error === null ? null : errorMessage(read.error);
 	const stepTitles: Record<Step, string> = {
 		upload: t("csvImport.upload.title"),
 		configure: t("csvImport.configure.title"),
+		clean: t("csvImport.clean.title"),
 		map: t(`csvImport.map.titles.${mapKind}`),
 		confirm: t("csvImport.confirm.title"),
 	};
 	const stepDescriptions: Record<Step, string> = {
 		upload: t("csvImport.upload.description"),
 		configure: t("csvImport.configure.description"),
+		clean: t("csvImport.clean.description"),
 		map: t(`csvImport.map.descriptions.${mapKind}`),
 		confirm: t("csvImport.confirm.description"),
 	};
 
 	return (
 		<Page centred title={stepTitles[step]} description={stepDescriptions[step]}>
-			<div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+			<div
+				className={cn(
+					"mx-auto flex w-full flex-col gap-6",
+					step === "clean" ? "max-w-5xl" : "max-w-2xl",
+				)}
+			>
 				<Steps
 					steps={steps}
 					current={step}
@@ -333,6 +365,7 @@ function CsvImportPage() {
 						read.reset();
 						publish.reset();
 						setMapIndex(0);
+						setInvalidNotice(false);
 						setStep(target);
 					}}
 				/>
@@ -354,6 +387,7 @@ function CsvImportPage() {
 								accountId: configuration.accountId,
 							});
 							setMappings(undefined);
+							setEdits([]);
 						}}
 						onChoices={(choices) => {
 							read.reset();
@@ -392,8 +426,33 @@ function CsvImportPage() {
 						reading={read.isPending}
 						error={error}
 						onSubmit={() => {
-							// The values to map depend on the columns: chosen again after them.
-							advance(mapSteps.length > 0 ? "map" : "confirm", { mappings: undefined });
+							// The rows are made again from the columns, as Sure's
+							// `generate_rows_from_csv`: the edits go, and the values to map
+							// are chosen again.
+							setEdits([]);
+							advance("clean", { mappings: undefined, edits: [] });
+						}}
+					/>
+				)}
+				{step === "clean" && preview !== null && (
+					<CsvCleanStep
+						preview={preview}
+						reading={read.isPending}
+						error={error}
+						invalidNotice={invalidNotice}
+						onEdit={(line, key, value) => {
+							// Sure's `Import::RowsController#update`: the row saved, then read again.
+							const next = [
+								...edits.filter((edit) => edit.line !== line || edit.key !== key),
+								{ line, key, value },
+							];
+
+							setEdits(next);
+							advance("clean", { edits: next });
+						}}
+						onNext={() => {
+							setInvalidNotice(false);
+							advance(mapSteps.length > 0 ? "map" : "confirm");
 						}}
 					/>
 				)}
@@ -427,7 +486,7 @@ function CsvImportPage() {
 							if (posted !== null) {
 								publish.mutate(posted, {
 									onSuccess: () => setDone(true),
-									// The file was read again and refused: show the lines it refuses now.
+									// The file was read again and refused: back to the rows it refuses now.
 									onError: (failure) => {
 										if (errorCodeOf(failure) === "CSV_IMPORT_INVALID") {
 											advance("confirm");
@@ -1111,22 +1170,6 @@ function ConfigureStep({
 	);
 }
 
-const ISSUE_CODES = CSV_ISSUE_CODES;
-
-const FIELDS = [
-	"entity_type",
-	"name",
-	"amount",
-	"currency",
-	"date",
-	"qty",
-	"ticker",
-	"price",
-	"resource_type",
-	"conditions",
-	"actions",
-] as const;
-
 const RESOURCES = [
 	"transactions",
 	"accounts",
@@ -1137,38 +1180,9 @@ const RESOURCES = [
 	"trades",
 ] as const;
 
-/** One refusal in French; a value it names is never an amount. */
-function useIssueText() {
-	const { t } = useTranslation();
-
-	return (issue: Issue) => {
-		const code = ISSUE_CODES.find((known) => known === issue.code) ?? "unknown";
-		const param = (name: string) => issue.params[name] ?? "";
-		const field = FIELDS.find((known) => known === param("field"));
-		const key = param("key");
-
-		return t(`csvImport.issues.${code}`, {
-			line: param("line"),
-			field: field === undefined ? param("field") : t(`csvImport.fields.${field}`),
-			format: param("format"),
-			min: param("min"),
-			max: param("max"),
-			value: param("value"),
-			currency: param("currency"),
-			account: param("account"),
-			ticker: param("ticker"),
-			name: param("name"),
-			columns: param("columns"),
-			resource_type: param("resource_type"),
-			key: key === "" ? t("csvImport.map.unassigned") : key,
-		});
-	};
-}
-
 /**
- * Sure's « Confirmez vos données d'importation »: every refusal, the counts
- * under « Élément » and « Nombre », then « Publier l'importation », which
- * waits while a refusal stands.
+ * Sure's « Confirmez vos données d'importation », `imports/_ready`: the
+ * counts under « Élément » and « Nombre », then « Publier l'importation ».
  */
 function ConfirmStep({
 	preview,
@@ -1191,30 +1205,22 @@ function ConfirmStep({
 
 	return (
 		<div className="flex flex-col gap-4">
+			{/* Rows and mappings are settled before « Confirmer »; what still
+			    stands came between two requests, and publishing waits for it. */}
 			{preview.errors.length > 0 && (
 				<div
 					role="alert"
 					className="flex gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive"
 				>
 					<CircleAlertIcon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-					<div className="flex min-w-0 flex-col gap-1">
-						<p className="font-medium">{t("csvImport.confirm.errorsTitle")}</p>
-						<ul className="flex flex-col gap-1">
-							{preview.errors.slice(0, SHOWN_ERRORS).map((issue, index) => (
-								// Two refusals may read alike: their place in the list tells them apart.
-								<li key={index} className="break-words">
-									{issueText(issue)}
-								</li>
-							))}
-							{preview.errors.length > SHOWN_ERRORS && (
-								<li>
-									{t("csvImport.confirm.moreErrors", {
-										count: preview.errors.length - SHOWN_ERRORS,
-									})}
-								</li>
-							)}
-						</ul>
-					</div>
+					<ul className="flex min-w-0 flex-col gap-1">
+						{preview.errors.map((issue, index) => (
+							// Two refusals may read alike: their place in the list tells them apart.
+							<li key={index} className="break-words">
+								{issueText(issue)}
+							</li>
+						))}
+					</ul>
 				</div>
 			)}
 			<div className="overflow-hidden rounded-xl border bg-card">

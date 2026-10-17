@@ -2,12 +2,14 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { Logger } from "../lib/logger.ts";
 import type {
 	AmountTypeStrategy,
+	CleanKey,
 	ColumnKey,
 	CsvImportType,
 	CsvSeparator,
 	NumberFormat,
 	SignageConvention,
 	csvImportConfigurationSchema,
+	csvImportEditsSchema,
 	csvImportMappingsSchema,
 } from "../schemas/csv-imports.ts";
 import type { CsvRow, CsvTable, HeaderLookup } from "./csv-import-format.ts";
@@ -23,6 +25,7 @@ import { isCurrencyCode } from "@archant/data/money";
 
 import { CREATE_NEW_KEY, dateFormatsOf } from "../schemas/csv-imports.ts";
 import {
+	columnOf,
 	csvIssue,
 	csvValue,
 	dateValidity,
@@ -41,6 +44,7 @@ export type CsvImportDeps = ServiceDeps & { logger: Logger; db: Pick<Database, "
 
 export type Configuration = z.output<typeof csvImportConfigurationSchema>;
 export type Mappings = z.output<typeof csvImportMappingsSchema>;
+export type Edits = z.output<typeof csvImportEditsSchema>;
 
 /** The choices the preview read the file with: the page's, else Sure's defaults and the file's suggestions. */
 export type ResolvedConfiguration = {
@@ -103,7 +107,28 @@ export type Sheet = {
 	configuration: ResolvedConfiguration;
 	today: IsoDate;
 	currency: CurrencyCode;
+	/** « Nettoyer »'s edits, by `editKey`: what the row reads instead of the file. */
+	edits: ReadonlyMap<string, string>;
 };
+
+const editKey = (line: number, key: CleanKey) => `${line} ${key}`;
+
+/**
+ * The edits by cell, the last one of a cell winning, keeping only the keys
+ * the import shows: Sure's row has no other field to save.
+ */
+export function editsOf(edits: Edits | undefined, shown: readonly CleanKey[]): Map<string, string> {
+	return new Map(
+		(edits ?? [])
+			.filter((edit) => shown.includes(edit.key))
+			// Trimmed as `parseCsv` trims every cell of the file.
+			.map((edit) => [editKey(edit.line, edit.key), edit.value.trim()]),
+	);
+}
+
+/** What the user typed in a row's cell in « Nettoyer », if anything. */
+export const editOf = (sheet: Sheet, row: CsvRow, key: CleanKey) =>
+	sheet.edits.get(editKey(row.line, key));
 
 /**
  * What a kind of import reads from a sheet, and how it writes it; `committed`
@@ -145,9 +170,44 @@ export function valueMappings(
 	});
 }
 
-/** A key's cell of a row, as Sure's `csv_value` reads it through the chosen column. */
+/**
+ * A key's cell of a row, as Sure's `csv_value` reads it through the chosen
+ * column, or as the user edited it in « Nettoyer ».
+ */
 export const cellOf = (sheet: Sheet, row: CsvRow, key: ColumnKey) =>
+	editOf(sheet, row, key) ??
 	csvValue(sheet.lookup, row.cells, sheet.configuration.columns[key], ...ALIASES[key]);
+
+/**
+ * The headers Sure's `header_for` reads each key of a category or merchant
+ * file from, the first the file has winning.
+ */
+const HEADERS: Partial<Record<CleanKey, readonly string[]>> = {
+	name: ["name"],
+	category_color: ["color"],
+	category_parent: ["parent_category", "parent category"],
+	category_icon: ["lucide_icon", "lucide icon", "icon"],
+	merchant_color: ["color"],
+	merchant_website: ["website_url", "website url", "website"],
+};
+
+/**
+ * A category or merchant row's cell for `key`, trimmed, from the first
+ * header Sure's `header_for` finds, `""` without one, or as edited.
+ */
+export function headerCellOf(sheet: Sheet, row: CsvRow, key: CleanKey): string {
+	const edited = editOf(sheet, row, key);
+
+	if (edited !== undefined) {
+		return edited;
+	}
+
+	const column = (HEADERS[key] ?? [])
+		.map((header) => columnOf(sheet.lookup, header))
+		.find((found) => found !== undefined);
+
+	return column === undefined ? "" : (row.cells[column] ?? "").trim();
+}
 
 export const lineOf = (row: CsvRow) => String(row.line);
 

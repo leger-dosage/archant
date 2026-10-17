@@ -59,8 +59,31 @@ function conditionsAndActions(fragments: readonly string[], separator: string): 
 /** Sure's `parse_boolean`: `true`, `1`, `yes` and `y`, case aside, are true; anything else false. */
 const parseBoolean = (value: string) => ["true", "1", "yes", "y"].includes(value.toLowerCase());
 
-/** Sure's `normalize_rule_row`: a column by its header, else by its place. */
-function ruleRowOf(row: CsvRow, lookup: HeaderLookup, separator: string): RuleRow {
+/** The cells of a rule row « Nettoyer » shows, Sure's `RuleImport#column_keys`. */
+export const RULE_KEYS = [
+	"name",
+	"resource_type",
+	"active",
+	"effective_date",
+	"conditions",
+	"actions",
+] as const;
+
+type RuleKey = (typeof RULE_KEYS)[number];
+
+/** What the user typed in a rule row's cell in « Nettoyer », if anything. */
+export type RuleEdits = (row: CsvRow, key: RuleKey) => string | undefined;
+
+/**
+ * Sure's `normalize_rule_row` as text: a column by its header, else by its
+ * place, each cell as the user edited it when they did.
+ */
+export function ruleCellsOf(
+	row: CsvRow,
+	lookup: HeaderLookup,
+	separator: string,
+	edited: RuleEdits,
+): Record<RuleKey, string> {
 	const byHeader = (header: string) => {
 		const column = columnOf(lookup, header);
 		const value = column === undefined ? undefined : row.cells[column];
@@ -69,17 +92,37 @@ function ruleRowOf(row: CsvRow, lookup: HeaderLookup, separator: string): RuleRo
 	};
 	const [name = "", resourceType = "", active = "", effectiveDate = ""] = row.cells;
 	const [conditions, actions] = conditionsAndActions(row.cells.slice(4), separator);
+	const read: Record<RuleKey, string> = {
+		name: byHeader("name") ?? name,
+		resource_type: byHeader("resource_type") ?? resourceType,
+		active: byHeader("active") ?? active,
+		effective_date: byHeader("effective_date") ?? effectiveDate,
+		conditions,
+		actions,
+	};
+
+	const cell = (key: RuleKey) => (edited(row, key) ?? read[key]).trim();
 
 	return {
-		line: row.line,
-		name: (byHeader("name") ?? name).trim() || null,
-		resourceType: (byHeader("resource_type") ?? resourceType).trim(),
-		active: parseBoolean(byHeader("active") ?? active),
-		effectiveDate: (byHeader("effective_date") ?? effectiveDate).trim(),
-		conditions: conditions.trim(),
-		actions: actions.trim(),
+		name: cell("name"),
+		resource_type: cell("resource_type"),
+		active: cell("active"),
+		effective_date: cell("effective_date"),
+		conditions: cell("conditions"),
+		actions: cell("actions"),
 	};
 }
+
+/** One rule row read from its cells. */
+const ruleRowOf = (line: number, cells: Record<RuleKey, string>): RuleRow => ({
+	line,
+	name: cells.name || null,
+	resourceType: cells.resource_type,
+	active: parseBoolean(cells.active),
+	effectiveDate: cells.effective_date,
+	conditions: cells.conditions,
+	actions: cells.actions,
+});
 
 /** Sure's `normalize_json_values`: escaped quotes and `\u` escapes a CSV round trip left. */
 function normalizeJson(value: unknown, legacy: boolean): unknown {
@@ -220,7 +263,7 @@ export type RulesAnalysis = {
  */
 export async function analyseRules(
 	db: Pick<Transaction, "select">,
-	sheet: { rows: readonly CsvRow[]; lookup: HeaderLookup; separator: string },
+	sheet: { rows: readonly CsvRow[]; lookup: HeaderLookup; separator: string; edited: RuleEdits },
 ): Promise<RulesAnalysis> {
 	const errors: SureIssue[] = [];
 	const read: ReadRule[] = [];
@@ -229,7 +272,7 @@ export async function analyseRules(
 	const household = await accountsById(db);
 
 	for (const row of sheet.rows) {
-		const rule = ruleRowOf(row, sheet.lookup, sheet.separator);
+		const rule = ruleRowOf(row.line, ruleCellsOf(row, sheet.lookup, sheet.separator, sheet.edited));
 		const line = String(rule.line);
 		const missing = (["resource_type", "conditions", "actions"] as const).filter(
 			(field) =>
@@ -256,7 +299,15 @@ export async function analyseRules(
 		const actions = parseJsonSafely(rule.actions);
 
 		if (conditions === undefined || actions === undefined) {
-			errors.push(csvIssue("invalid_json", { line }));
+			// One refusal per cell that does not read, each on its own cell.
+			for (const [field, value] of [
+				["conditions", conditions],
+				["actions", actions],
+			] as const) {
+				if (value === undefined) {
+					errors.push(csvIssue("invalid_json", { line, field }));
+				}
+			}
 			continue;
 		}
 

@@ -1,11 +1,13 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { ColumnKey, CsvImportType, ToolImportType } from "../schemas/csv-imports.ts";
+import type { Clean } from "./csv-import-clean.ts";
 import type { CsvRow, CsvTable, HeaderLookup } from "./csv-import-format.ts";
 import type {
 	AccountTypeMapping,
 	Analysis,
 	Configuration,
 	CsvImportDeps,
+	Edits,
 	Mappings,
 	PreviewMappings,
 	ResolvedConfiguration,
@@ -57,9 +59,11 @@ import {
 	DEFAULT_DATE_FORMAT,
 	MAX_CSV_BYTES,
 	dateFormatsOf,
+	cleanColumnsOf,
 	isToolImport,
 	maxRowsOf,
 } from "../schemas/csv-imports.ts";
+import { cleanOf } from "./csv-import-clean.ts";
 import {
 	columnOf,
 	csvIssue,
@@ -76,6 +80,9 @@ import {
 	cellOf,
 	currencyOf,
 	dateOf,
+	editOf,
+	editsOf,
+	headerCellOf,
 	keysOf,
 	lineOf,
 	nothingToWrite,
@@ -100,6 +107,8 @@ export type CsvImportRequest = {
 	type: CsvImportType;
 	file: { name: string; bytes: Uint8Array };
 	configuration?: Configuration | undefined;
+	/** « Nettoyer »'s cell edits, read before the file's cells. */
+	edits?: Edits | undefined;
 	mappings?: Mappings | undefined;
 };
 
@@ -120,6 +129,8 @@ export type CsvImportPreview = {
 	 * … comme valeur d'identifiant » picks, Sure's `selectable_amount_type_values`.
 	 */
 	typeValues: string[];
+	/** « Nettoyer »: Sure's rows, their values through the edits, each refusal on its cell. */
+	clean: Clean;
 	/** Sure's `dry_run`, by `dry_run_resources` key. */
 	counts: Record<string, number>;
 	/** Every refusal, its line among its params; any one leaves nothing to publish. */
@@ -414,15 +425,6 @@ function missingColumns(lookup: HeaderLookup, required: readonly string[]): Sure
 	return missing.length === 0 ? null : csvIssue("missing_columns", { columns: missing.join(", ") });
 }
 
-/** The first of `headers` the file has, as Sure's `CategoryImport#header_for`. */
-function firstColumn(lookup: HeaderLookup, ...headers: string[]): number | undefined {
-	return headers.map((header) => columnOf(lookup, header)).find((column) => column !== undefined);
-}
-
-/** A cell of a column Sure's `header_for` found, `""` when the file has none. */
-const at = (row: CsvRow, column: number | undefined) =>
-	column === undefined ? "" : (row.cells[column] ?? "").trim();
-
 const categoryName = (name: string) => cut(name.trim().normalize("NFC"), CATEGORY_NAME_MAX_LENGTH);
 
 /**
@@ -442,10 +444,6 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 	}
 
 	const errors: SureIssue[] = [];
-	const nameColumn = firstColumn(sheet.lookup, "name");
-	const colorColumn = firstColumn(sheet.lookup, "color");
-	const parentColumn = firstColumn(sheet.lookup, "parent_category", "parent category");
-	const iconColumn = firstColumn(sheet.lookup, "lucide_icon", "lucide icon", "icon");
 	const stored = await db.select().from(categories);
 	const all = new Map<string, CategoryState>(
 		stored.map((row) => [row.id, { ...row, icon: row.icon, stored: true }]),
@@ -479,7 +477,7 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 	};
 
 	const rows = sheet.table.rows.flatMap((row) => {
-		const name = categoryName(at(row, nameColumn));
+		const name = categoryName(headerCellOf(sheet, row, "name"));
 
 		if (name === "") {
 			errors.push(csvIssue("required", { line: lineOf(row), field: "name" }));
@@ -488,9 +486,11 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 		}
 
 		const category = ensure(name);
-		const color = at(row, colorColumn).toLowerCase();
-		const icon = CATEGORY_ICONS.find((known) => known === at(row, iconColumn));
-		const parent = categoryName(at(row, parentColumn));
+		const color = headerCellOf(sheet, row, "category_color").toLowerCase();
+		const icon = CATEGORY_ICONS.find(
+			(known) => known === headerCellOf(sheet, row, "category_icon"),
+		);
+		const parent = categoryName(headerCellOf(sheet, row, "category_parent"));
 
 		if (CATEGORY_COLOR_PATTERN.test(color)) {
 			category.color = color;
@@ -597,17 +597,13 @@ async function analyseMerchants(db: Pick<Transaction, "select">, sheet: Sheet): 
 		return { counts, errors: [missing], write: nothingToWrite };
 	}
 
-	const column = firstColumn(sheet.lookup, "name");
 	const known = new Set(
 		(await db.select({ name: merchants.name }).from(merchants)).map((row) => foldName(row.name)),
 	);
 	const created: string[] = [];
 
 	for (const row of sheet.table.rows) {
-		const name = cut(
-			(column === undefined ? "" : (row.cells[column] ?? "")).trim().normalize("NFC"),
-			MERCHANT_NAME_MAX_LENGTH,
-		);
+		const name = cut(headerCellOf(sheet, row, "name").normalize("NFC"), MERCHANT_NAME_MAX_LENGTH);
 
 		if (name !== "" && !known.has(foldName(name))) {
 			known.add(foldName(name));
@@ -922,14 +918,22 @@ async function analyse(
 ): Promise<{ sheet: Sheet; analysis: Analysis }> {
 	const lookup = headerLookup(table.headers);
 	const day = today(timeZone);
+	const configuration = resolveConfiguration(
+		request.type,
+		request.configuration,
+		table,
+		lookup,
+		day,
+	);
 	const sheet: Sheet = {
 		type: request.type,
 		fileName: request.file.name,
 		table,
 		lookup,
-		configuration: resolveConfiguration(request.type, request.configuration, table, lookup, day),
+		configuration,
 		today: day,
 		currency: getReportingCurrency(),
+		edits: editsOf(request.edits, cleanColumnsOf(request.type, configuration.accountId)),
 	};
 
 	if (lookup.duplicates.length > 0) {
@@ -973,6 +977,7 @@ async function analysisOf(
 				rows: sheet.table.rows,
 				lookup: sheet.lookup,
 				separator: sheet.configuration.separator,
+				edited: (row, key) => editOf(sheet, row, key),
 			});
 		default:
 			return analyseTrades(db, sheet, request.mappings);
@@ -980,9 +985,10 @@ async function analysisOf(
 }
 
 /**
- * The preview « Configurer », « Mapper » and « Confirmer » read: the headers
- * and sample, the choices made or suggested, the values to map, Sure's
- * `dry_run` counts and every refusal. Writes nothing.
+ * The preview « Configurer », « Nettoyer », « Mapper » and « Confirmer »
+ * read: the headers and sample, the choices made or suggested, the rows
+ * through their edits, the values to map, Sure's `dry_run` counts and every
+ * refusal. Writes nothing.
  */
 export async function previewCsvImport(
 	deps: ServiceDeps,
@@ -1003,6 +1009,7 @@ export async function previewCsvImport(
 			categories: analysis.mappings?.categories ?? [],
 			tags: analysis.mappings?.tags ?? [],
 		},
+		clean: cleanOf(sheet, analysis.errors),
 		counts: analysis.counts,
 		errors: analysis.errors,
 	};

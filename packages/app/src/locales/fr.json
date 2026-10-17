@@ -1406,6 +1406,7 @@
 			"label": "Étapes de l'importation",
 			"upload": "Téléverser",
 			"configure": "Configurer",
+			"clean": "Nettoyer",
 			"map": "Mapper",
 			"confirm": "Confirmer"
 		},
@@ -1551,6 +1552,45 @@
 				"button": "Traiter les règles"
 			}
 		},
+		"clean": {
+			"title": "Nettoyez vos données",
+			"description": "Modifiez vos données dans le tableau ci-dessous. Les cellules rouges sont invalides.",
+			"cleaned": "Vos données ont été nettoyées",
+			"errorsNotice": "Vous avez des erreurs dans vos données. La raison s'affiche sous chaque cellule rouge.",
+			"invalidData": "Vous avez des données invalides, veuillez les modifier jusqu'à ce que toutes les erreurs soient résolues",
+			"view": "Lignes affichées",
+			"allRows": "Toutes les lignes",
+			"errorRows": "Lignes d'erreur",
+			"next": "Étape suivante",
+			"caption": "Lignes du fichier",
+			"pages": "Pages des lignes",
+			"cell": "{{column}}, ligne {{line}}",
+			"columns": {
+				"account": "Compte",
+				"date": "Date",
+				"amount": "Montant",
+				"name": "Nom",
+				"currency": "Devise",
+				"category": "Catégorie",
+				"tags": "Étiquettes",
+				"notes": "Notes",
+				"ticker": "Ticker",
+				"exchange_operating_mic": "Code de bourse",
+				"qty": "Quantité",
+				"price": "Prix",
+				"entity_type": "Type",
+				"category_color": "Couleur",
+				"category_parent": "Catégorie parente",
+				"category_icon": "Icône",
+				"merchant_color": "Couleur",
+				"merchant_website": "Site web",
+				"resource_type": "Type de ressource",
+				"active": "Active",
+				"effective_date": "Date d'effet",
+				"conditions": "Conditions",
+				"actions": "Actions"
+			}
+		},
 		"map": {
 			"titles": {
 				"accountTypes": "Attribuez vos types de comptes",
@@ -1588,9 +1628,6 @@
 		"confirm": {
 			"title": "Confirmez vos données d'importation",
 			"description": "Voici un résumé des nouveaux éléments qui seront ajoutés à votre compte une fois que vous aurez publié cette importation.",
-			"errorsTitle": "Ce fichier ne peut pas être importé",
-			"moreErrors_one": "… et {{count}} autre erreur",
-			"moreErrors_other": "… et {{count}} autres erreurs",
 			"item": "Élément",
 			"count": "Nombre",
 			"empty": "Aucun enregistrement importable n'a été trouvé dans ce fichier.",

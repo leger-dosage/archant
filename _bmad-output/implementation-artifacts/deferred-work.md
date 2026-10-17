@@ -396,3 +396,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-2-import-mint-ynab-and-actual-files.md`
   summary: Drive the Mint and Actual import forms from Playwright, as the YNAB one is (tags step for Mint, preset Actual form applying).
   evidence: Story 30.2's review (V5): `mapStepsOf`, `REQUIRED_COLUMNS` and `TOOL_FIELDS` for `mint` and `actual` in `packages/app/src/routes/_authed.settings.imports_.$kind.tsx` run in no test; their server side is covered by `packages/api/src/services/csv-import-tools.spec.ts`.
+
+## Deferred from: code review of spec-30-5-fix-rows-before-publishing-and-sures-confirm-step (2026-10-18)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-5-fix-rows-before-publishing-and-sures-confirm-step.md`
+  summary: No end-to-end test drives a publish refused with `CSV_IMPORT_INVALID` back to « Nettoyer » with its notice.
+  evidence: `lib/csv-clean.spec.ts` covers the gate `advance` reads; provoking the refusal needs the household changed between the preview and the publish.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-5-fix-rows-before-publishing-and-sures-confirm-step.md`
+  summary: No test checks that « Appliquer la configuration » drops the edits, nor that « Nettoyer » pages past ten rows.
+  evidence: Both are page state in `_authed.settings.imports_.$kind.tsx` and `CsvCleanStep.tsx`; the Playwright file holds three rows at most.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-5-fix-rows-before-publishing-and-sures-confirm-step.md`
+  summary: An account's own « Importer » dialog keeps AD-4's grouped preview where Sure would show its row table and summary.
+  evidence: The dialog reads OFX, which Sure does not import, and CSV by column position with debit and credit columns, which Sure's form lacks; QIF moves to Sure's steps in Story 30.6.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-5-fix-rows-before-publishing-and-sures-confirm-step.md`
+  summary: No test drives « Confirmer » back to « Mapper » on a mapping refusal, nor the guard that drops an out-of-order preview answer.
+  evidence: Both live in `advance` of `_authed.settings.imports_.$kind.tsx`; staging either needs a change between two requests or a delayed response in Playwright.
