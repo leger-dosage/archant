@@ -42,6 +42,29 @@ export const ERROR_STATUSES = {
 	/** A file no source can read, or larger than 5 MB, 1 MB from an assistant. Nothing is written. */
 	INVALID_IMPORT_FILE: 400,
 	/**
+	 * « Importer depuis Sure » given a file whose name ends neither in `.ndjson`
+	 * nor in `.json`, an empty one, or one whose first line is not a JSON
+	 * object with `type` and `data`, as Sure's `valid_ndjson_first_line?`.
+	 * Nothing is read further.
+	 */
+	NDJSON_INVALID: 400,
+	/**
+	 * A Sure archive larger than `SURE_IMPORT_MAX_NDJSON_SIZE_MB`, refused
+	 * before it is read; `params.maxSize` is the limit in megabytes.
+	 */
+	IMPORT_FILE_TOO_LARGE: 400,
+	/**
+	 * A Sure archive with more lines carrying a `type` than
+	 * `SURE_IMPORT_MAX_ROWS`, as Sure's `MaxRowCountExceededError`;
+	 * `params.max` is the limit. Nothing is written.
+	 */
+	IMPORT_TOO_MANY_ROWS: 400,
+	/**
+	 * A Sure archive whose preflight, run again by the import, found an
+	 * error, as Sure's `PreflightError`. Nothing is written.
+	 */
+	SURE_IMPORT_INVALID: 400,
+	/**
 	 * The account changed between an import's preview and its confirmation, or
 	 * gives other counts than an assistant's `expectedCounts`; `params` holds the
 	 * five counts now. Nothing is written.

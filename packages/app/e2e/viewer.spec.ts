@@ -673,6 +673,7 @@ reader.describe("a viewer", () => {
 				"Catégories",
 				"Transactions récurrentes",
 				"Assistants IA",
+				"Importations",
 				"Données",
 				"Membres",
 			].map((section) => ({

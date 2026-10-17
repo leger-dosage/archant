@@ -236,6 +236,30 @@ describe("validateEnv", () => {
 		},
 	);
 
+	it("reads Sure's import limits, 10 MB and 100,000 lines by default", () => {
+		const env = validateEnv(required);
+
+		expect(env.SURE_IMPORT_MAX_NDJSON_SIZE_MB).toBe(10);
+		expect(env.SURE_IMPORT_MAX_ROWS).toBe(100_000);
+		expect(
+			validateEnv({ ...required, SURE_IMPORT_MAX_NDJSON_SIZE_MB: "25", SURE_IMPORT_MAX_ROWS: "2" }),
+		).toMatchObject({ SURE_IMPORT_MAX_NDJSON_SIZE_MB: 25, SURE_IMPORT_MAX_ROWS: 2 });
+	});
+
+	// Sure's `positive_integer_env`: a value it cannot read is ignored.
+	it.each(["0", "-5", "abc", "1.5", "", "99999999999999999999"])(
+		"ignores an import limit of %j",
+		(value) => {
+			expect(
+				validateEnv({
+					...required,
+					SURE_IMPORT_MAX_NDJSON_SIZE_MB: value,
+					SURE_IMPORT_MAX_ROWS: value,
+				}),
+			).toMatchObject({ SURE_IMPORT_MAX_NDJSON_SIZE_MB: 10, SURE_IMPORT_MAX_ROWS: 100_000 });
+		},
+	);
+
 	it("names an application id made of spaces only", () => {
 		expect(() => validateEnv({ ...required, ENABLE_BANKING_APPLICATION_ID: "   " })).toThrow(
 			/ENABLE_BANKING_APPLICATION_ID/,

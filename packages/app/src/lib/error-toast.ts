@@ -19,15 +19,22 @@ export function showErrorToast(code: Exclude<ErrorCode, "fields">): void {
 
 /**
  * The translated message of any failure, with the values its translation
- * names: the redirect URL to register with Enable Banking.
+ * names: the redirect URL to register with Enable Banking, a file's limit.
  */
 export function errorMessage(error: unknown): string {
 	const code = errorCodeOf(error);
+	const params = error instanceof ApiError ? error.params : {};
 
 	if (code === "BANK_REDIRECT_NOT_ALLOWED") {
-		const url = error instanceof ApiError ? error.params["url"] : undefined;
+		return t("errors.BANK_REDIRECT_NOT_ALLOWED", { url: params["url"] ?? "" });
+	}
 
-		return t("errors.BANK_REDIRECT_NOT_ALLOWED", { url: url ?? "" });
+	if (code === "IMPORT_FILE_TOO_LARGE") {
+		return t("errors.IMPORT_FILE_TOO_LARGE", { maxSize: params["maxSize"] ?? "" });
+	}
+
+	if (code === "IMPORT_TOO_MANY_ROWS") {
+		return t("errors.IMPORT_TOO_MANY_ROWS", { max: params["max"] ?? "" });
 	}
 
 	return t(`errors.${code}`);

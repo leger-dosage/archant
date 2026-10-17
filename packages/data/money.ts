@@ -264,6 +264,42 @@ export function parseAmount(text: string, currency: string): MinorUnits | null {
 	return toMinorUnits(sign === undefined ? magnitude : -magnitude);
 }
 
+const DECIMAL_PATTERN = /^(-)?(\d+)(?:\.(\d+))?$/u;
+
+/**
+ * Reads a plain decimal as an export writes one, Rails' `BigDecimal` such as
+ * `"-12.5"` or `"0.125"`, into minor units of `currency`, rounding half away
+ * from zero beyond its decimals, as Postgres `numeric` and Ruby's
+ * `BigDecimal` round the decimals Sure stores. Read
+ * from the digits, never through a float, which would already have rounded
+ * `0.1 + 0.2`. `null` for anything else, an exponent, a `+` or grouped
+ * digits included, for a code outside ISO 4217, and past `MAX_MINOR_UNITS`.
+ */
+export function parseDecimalAmount(text: string, currency: string): MinorUnits | null {
+	if (!isCurrencyCode(currency)) {
+		return null;
+	}
+
+	const match = DECIMAL_PATTERN.exec(text.trim());
+
+	if (match === null) {
+		return null;
+	}
+
+	const [, sign, integerPart = "", fraction = ""] = match;
+	const decimals = minorUnitsOf(currency);
+	const kept = BigInt(`${integerPart}${fraction.slice(0, decimals).padEnd(decimals, "0")}`);
+	const dropped = fraction.slice(decimals);
+	// Half away from zero, read from the digits: the magnitude goes up from half on.
+	const magnitude = dropped >= "5" ? kept + 1n : kept;
+
+	if (magnitude > BigInt(MAX_MINOR_UNITS)) {
+		return null;
+	}
+
+	return toMinorUnits(Number(sign === undefined ? magnitude : -magnitude));
+}
+
 /** How many decimals an amount in this code carries: two outside ISO 4217. */
 function decimalsOf(currency: string): number {
 	return isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;

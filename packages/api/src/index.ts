@@ -173,6 +173,10 @@ const app = createApp({
 	setupToken,
 	version: env.APP_VERSION,
 	priceApiUrl: env.YAHOO_FINANCE_URL,
+	sureImport: {
+		maxBytes: env.SURE_IMPORT_MAX_NDJSON_SIZE_MB * 1024 * 1024,
+		maxRows: env.SURE_IMPORT_MAX_ROWS,
+	},
 	...bankDeps,
 });
 // Sure's daily sync at « Heure de synchronisation », for a host that stays

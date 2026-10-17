@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-17-2026 17:32
+last_updated: 10-17-2026 20:06
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -299,8 +299,8 @@ development_status:
   29-10-recompute-an-unlinked-accounts-history-forward: done
   epic-29-retrospective: optional
 
-  epic-30: backlog
-  30-1-import-a-sure-archive: backlog
+  epic-30: in-progress
+  30-1-import-a-sure-archive: done
   30-2-import-mint-ynab-and-actual-files: backlog
   30-3-import-accounts-categories-merchants-rules-and-trades-from-csv: backlog
   30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats: backlog

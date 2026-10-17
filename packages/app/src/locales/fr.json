@@ -1309,6 +1309,85 @@
 			"revertedNothing": "Import annulé."
 		}
 	},
+	"sureImport": {
+		"sources": {
+			"title": "Importations",
+			"description": "Importez depuis un outil financier ou téléversez des fichiers de données bruts.",
+			"heading": "Sources",
+			"sure": "Importer depuis Sure",
+			"sureDescription": "Fichier .ndjson d'export complet"
+		},
+		"upload": {
+			"title": "Importer depuis l'export",
+			"description": "Téléversez le fichier all.ndjson de votre export de données pour restaurer vos comptes, transactions, catégories et plus encore.",
+			"browse": "Parcourir",
+			"browseHint": "pour ajouter votre fichier all.ndjson ici",
+			"chosen": "Fichier choisi : {{name}}",
+			"hint": "Téléversez le fichier <strong>all.ndjson</strong> de l'archive ZIP d'export de vos données",
+			"submit": "Téléverser le NDJSON",
+			"reading": "Lecture du fichier…"
+		},
+		"confirm": {
+			"title": "Confirmer votre importation",
+			"description": "Vérifiez les données qui seront importées depuis votre fichier d'export.",
+			"summary": "Résumé de l'importation",
+			"empty": "Aucun enregistrement importable n'a été trouvé dans ce fichier. Il est peut-être vide, ou les lignes ne correspondent pas au format d'export attendu (chaque ligne doit être un objet JSON avec les clés « type » et « data », pour des types pris en charge par cet import).",
+			"errorsTitle": "Ce fichier ne peut pas être importé",
+			"moreErrors_one": "… et {{count}} autre erreur",
+			"moreErrors_other": "… et {{count}} autres erreurs",
+			"start": "Démarrer l'importation",
+			"starting": "Importation en cours…",
+			"cancel": "Annuler"
+		},
+		"resources": {
+			"accounts": "Comptes",
+			"balances": "Soldes",
+			"categories": "Catégories",
+			"tags": "Étiquettes",
+			"merchants": "Marchands",
+			"recurring_transactions": "Transactions récurrentes",
+			"transactions": "Opérations",
+			"transfers": "Transferts",
+			"rejected_transfers": "Transferts rejetés",
+			"trades": "Transactions boursières",
+			"holdings": "Positions",
+			"valuations": "Évaluations",
+			"budgets": "Budgets",
+			"budget_categories": "Catégories budgétaires",
+			"rules": "Règles"
+		},
+		"warnings": {
+			"missingMerchantTitle": "Certains marchands manquent dans cet export",
+			"missingMerchant_one": "{{count}} référence de ce fichier pointe vers un marchand qui n'y figure pas. Cela arrive avec un export pris avant que Sure n'y ajoute les marchands de ses fournisseurs. Vous pouvez tout de même importer : l'enregistrement concerné sera importé sans marchand.",
+			"missingMerchant_other": "{{count}} références de ce fichier pointent vers des marchands qui n'y figurent pas. Cela arrive avec un export pris avant que Sure n'y ajoute les marchands de ses fournisseurs. Vous pouvez tout de même importer : les enregistrements concernés seront importés sans marchand.",
+			"skippedRecurring_one": "{{count}} transaction récurrente n'a pas de nom et son marchand manque : elle sera ignorée. Les transactions récurrentes détectées sont reconstruites après l'importation.",
+			"skippedRecurring_other": "{{count}} transactions récurrentes n'ont pas de nom et leur marchand manque : elles seront ignorées. Les transactions récurrentes détectées sont reconstruites après l'importation.",
+			"reusedTitle": "Certaines catégories, étiquettes ou marchands existent déjà",
+			"reused_one": "{{count}} catégorie, étiquette ou marchand de ce fichier existe déjà dans votre compte (par exemple parmi les catégories par défaut). Il sera réutilisé tel quel plutôt que dupliqué.",
+			"reused_other": "{{count}} catégories, étiquettes ou marchands de ce fichier existent déjà dans votre compte (par exemple parmi les catégories par défaut). Ils seront réutilisés tels quels plutôt que dupliqués."
+		},
+		"issues": {
+			"invalid_json": "Ligne {{line}} : ce n'est pas du JSON valide.",
+			"invalid_ndjson_record": "Ligne {{line}} : chaque ligne doit être un objet JSON avec « type » et « data ».",
+			"unsupported_record_type": "Ligne {{line}} : le type d'enregistrement {{type}} n'est pas pris en charge.",
+			"duplicate_taxonomy_name": "{{type}} « {{name}} » apparaît plusieurs fois, lignes {{lines}}.",
+			"duplicate_source_id": "L'identifiant {{id}} ({{kind}}) apparaît plusieurs fois, lignes {{lines}}.",
+			"missing_required_fields": "Ligne {{line}} : il manque à {{type}} le ou les champs {{fields}}.",
+			"invalid_split_lines": "Ligne {{line}} : les lignes de ventilation doivent former une liste.",
+			"invalid_split_line": "Ligne {{line}} : la ligne de ventilation {{index}} doit être un objet JSON.",
+			"split_amount_mismatch": "Ligne {{line}} : les lignes de ventilation ne totalisent pas le montant de l'opération.",
+			"missing_reference": "Ligne {{line}} : {{type}} référence un {{field}} manquant ({{value}}).",
+			"duplicate_valuation": "Ligne {{line}} : le compte {{account}} a déjà une évaluation le {{date}}, ligne {{first}}.",
+			"invalid_import_record": "Ligne {{line}} : {{type}} a un {{field}} qu'Archant ne peut pas garder ({{value}}).",
+			"invalid_import_record_unnamed": "Ligne {{line}} : {{type}} a un {{field}} illisible.",
+			"unknown": "Ligne {{line}} : enregistrement refusé."
+		},
+		"success": {
+			"title": "Importation réussie",
+			"description": "Vos données importées ont été ajoutées avec succès à l'application et sont maintenant prêtes à être utilisées.",
+			"dashboard": "Retour au tableau de bord"
+		}
+	},
 	"categories": {
 		"title": "Catégories",
 		"description": "Les catégories classent vos opérations. Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
@@ -2282,6 +2361,7 @@
 			"tags": "Étiquettes",
 			"recurring": "Transactions récurrentes",
 			"assistants": "Assistants IA",
+			"imports": "Importations",
 			"data": "Données",
 			"members": "Membres",
 			"investments": "Placements",
@@ -2455,7 +2535,7 @@
 			"replacements": "Les règles qui ne font que remplacer un texte dans le libellé, que Sure ne sait pas lire"
 		},
 		"sign": "Dans l'archive, les montants suivent le signe de Sure : un achat est positif et un revenu négatif, à l'inverse d'Archant. Les soldes, les relevés et les budgets gardent leur signe.",
-		"notBackup": "L'archive contient vos montants et vos libellés en clair : gardez-la en lieu sûr. Ce n'est pas une sauvegarde : Archant ne la relit pas. Pour restaurer Archant, utilisez la copie de la base de données.",
+		"notBackup": "L'archive contient vos montants et vos libellés en clair : gardez-la en lieu sûr. Ce n'est pas une sauvegarde : Archant relit son all.ndjson dans « Importations », mais sans vos mots de passe ni vos connexions bancaires. Pour restaurer Archant, utilisez la copie de la base de données.",
 		"guide": "Voir le guide"
 	},
 	"consent": {
@@ -2687,6 +2767,10 @@
 		"INTERNAL_ERROR": "Une erreur inattendue s'est produite. Réessayez dans un instant.",
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
+		"NDJSON_INVALID": "Le fichier doit être un NDJSON valide avec au moins un enregistrement",
+		"IMPORT_FILE_TOO_LARGE": "Le fichier dépasse {{maxSize}} Mo.",
+		"IMPORT_TOO_MANY_ROWS": "Le fichier compte plus de {{max}} enregistrements.",
+		"SURE_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"RULE_PREVIEW_STALE": "Les opérations ont changé depuis l'aperçu ({{changed}} à modifier maintenant). Relancez l'aperçu avant d'appliquer.",
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",

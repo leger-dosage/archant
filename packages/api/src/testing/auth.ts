@@ -1,6 +1,7 @@
 import type { Logger } from "../lib/logger.ts";
 import type { Auth } from "../services/auth.ts";
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
+import type { SureImportLimits } from "../services/sure-import-preflight.ts";
 import type { TempDatabase } from "./temp-database.ts";
 import type { ClientMetadataResourceFetch } from "@better-auth/oauth-provider";
 
@@ -78,7 +79,11 @@ export function buildTestApp(
 	db: Database,
 	logger: Logger = createLogger("silent"),
 	auth?: Auth,
-	network: TestNetwork & { webDist?: string; version?: string | null } = {},
+	network: TestNetwork & {
+		webDist?: string;
+		version?: string | null;
+		sureImport?: SureImportLimits;
+	} = {},
 	bank: TestBank = {},
 ): TestApp {
 	const trustedProxies = network.trustedProxies ?? [];
@@ -98,6 +103,7 @@ export function buildTestApp(
 		setupToken: TEST_SETUP_TOKEN,
 		// A development build unless a spec names a release.
 		version: network.version ?? null,
+		sureImport: network.sureImport,
 		// `YAHOO_FINANCE_URL`'s default, which msw answers, as `testing/yahoo.ts`.
 		priceApiUrl: "https://query1.finance.yahoo.com",
 		...NO_BANK,

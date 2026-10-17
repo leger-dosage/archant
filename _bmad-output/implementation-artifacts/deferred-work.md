@@ -360,3 +360,24 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-29-10-recompute-an-unlinked-accounts-history-forward.md`
   summary: Unlinking an account and linking it again on the day of the bank's last figure leaves a `reconciliation` and a new `current_anchor` on that day, where Sure keeps one valuation per day.
   evidence: pre-existing, the unlink before Story 29.10 wrote the same reconciliation; `linkBankAccount` writes its anchor through `writeCurrentAnchor` without looking for a valuation on today, where Sure's `CurrentBalanceManager` would update the one there.
+
+## Deferred from: implementation of spec-30-1-import-a-sure-archive (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-1-import-a-sure-archive.md`
+  summary: A Sure archive's `RecurringOccurrence`, `RecurringAllocation`, `RecurringPriceChange` and `RecurringMatchRejection` lines are parsed and counted but not written: a skipped or snoozed occurrence, a payment attached by hand and a dismissed match are lost, and detection after the import rebuilds the schedule from the transactions.
+  evidence: AD-24 lets only `services/recurring/` write those tables; `services/sure-import.ts` writes series and their rules only.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-1-import-a-sure-archive.md`
+  summary: A security found by ticker and MIC in another currency than the account importing a trade on it fails the whole import with `SURE_IMPORT_INVALID`, after a preflight that showed no error.
+  evidence: the preflight reads no security; `securityResolver` in `services/ledger/sure-import.ts` throws on the mismatch, as a trade's form refuses it.
+
+
+## Deferred from: code review of spec-30-1-import-a-sure-archive (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-1-import-a-sure-archive.md`
+  summary: No interface test shows the `IMPORT_FILE_TOO_LARGE` and `IMPORT_TOO_MANY_ROWS` messages with their `maxSize` and `max` filled in.
+  evidence: `routes/sure-imports.spec.ts` checks both `params`; `errorMessage` in `lib/error-toast.ts` reads them, but no Vitest or Playwright test renders the text.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-1-import-a-sure-archive.md`
+  summary: No test proves that `index.ts` hands `SURE_IMPORT_MAX_NDJSON_SIZE_MB` and `SURE_IMPORT_MAX_ROWS` to the routes.
+  evidence: `env.spec.ts` reads the variables and the route spec injects `sureImport` itself; removing the key in `index.ts` breaks no test, as for the rest of its wiring.
