@@ -380,14 +380,16 @@ export function toTransaction(
 
 	const money = line.transaction_amount;
 	const magnitude = money === null ? null : parseAmount(money.amount, money.currency);
-	const direction = line.credit_debit_indicator;
 
-	// No direction, no sign: guessing one would book a payment as income.
-	if (money === null || magnitude === null || direction === null) {
+	if (money === null || magnitude === null) {
 		return "INVALID_AMOUNT";
 	}
 
-	const debit = direction === "DBIT";
+	// Sure's `amount_value`: only `CRDT`, compared exactly, is money in; a
+	// line without an indicator, or with one Sure does not know, is money out.
+	// A bank that signs its amounts but sends no indicator has its income read
+	// as spending too, as in Sure: keeping the line beats dropping it.
+	const debit = line.credit_debit_indicator !== "CRDT";
 	const notes = line.remittance_information.join("\n");
 
 	return {
