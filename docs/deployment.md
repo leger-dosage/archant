@@ -212,7 +212,7 @@ To move to Sure, unzip the archive and, in Sure, choose « Import from Sure » a
 
 ## Connecting a bank
 
-Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional, and set up from the interface: the server needs one variable, `ENCRYPTION_KEY`, and « Réglages » › « Banques » takes the Enable Banking application ID and its private key. Without `ENCRYPTION_KEY`, the bank routes answer `503`, except those listing the connections and their accounts and disconnecting one, so a bank connected before the key was lost or changed, or before the credentials stopped resolving, can still be removed and the credentials saved again; the page names it under « La connexion bancaire n'est pas configurée », and everything else, file import included, works. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
+Archant reads bank data through [Enable Banking](https://enablebanking.com), a licensed PSD2 aggregator. Connection is optional, and set up from the interface: the server needs one variable, `ENCRYPTION_KEY`, and « Réglages » › « Banques » takes the country of your banks, the Enable Banking application ID and its private key. Without `ENCRYPTION_KEY`, the bank routes answer `503`, except those listing the connections and their accounts, disconnecting one and removing the saved credentials, so a bank connected before the key was lost or changed, or before the credentials stopped resolving, can still be removed and the credentials saved again; the page names it under « La connexion bancaire n'est pas configurée », and everything else, file import included, works. A variable that is set but unreadable stops the server at startup, so a typo never passes for a feature left off.
 
 ### Sandbox or production
 
@@ -262,23 +262,26 @@ From a checkout, write the value in `.env` and restart `pnpm api start:dev`: its
 
 ### 3. Save the credentials in the interface
 
-Open « Réglages » › « Banques », at `/settings/banks`. Under « Application Enable Banking », enter the « Identifiant de l'application » and choose the `.pem` file the panel downloaded, or `private.pem` if you brought your own key; a file holding the key after its certificate works too. Press « Enregistrer ».
+Open « Réglages » › « Banques », at `/settings/banks`. Under « Application Enable Banking », pick the « Pays » whose banks you connect, enter the « Identifiant de l'application » and choose the `.pem` file the panel downloaded, or `private.pem` if you brought your own key; a file holding the key after its certificate works too. Press « Enregistrer ».
 
-Archant signs a request to Enable Banking with the pair before it keeps anything: a pair the provider refuses, or an application that does not list the redirect URL, saves nothing and says why. The application ID is stored as is, the key encrypted. They can be changed from the same page while no bank is connected; once one is, the form is locked, as in Sure, until every bank is disconnected.
+Archant signs a request to Enable Banking with the pair before it keeps anything: a pair the provider refuses, or an application that does not list the redirect URL, saves nothing and says why. The application ID and the country are stored as is, the key encrypted. They can be changed from the same page while no bank is connected; once one is, the application ID and the key are locked, as in Sure, until every bank is disconnected. The country stays editable: saved without a file, it changes alone, and the banks connected before keep their own. A new application ID needs its key file again.
+
+« Supprimer », beside « Enregistrer », removes the saved credentials after a confirmation: every connected bank is disconnected first, its session revoked and its accounts kept as manual ones with their transactions, then the country, the application ID and the key are deleted, and the page offers the empty form. A sync in progress refuses it; try again once it ends.
 
 #### Or pin them in the environment
 
-A self-hoster who keeps secrets in a vault can set `ENABLE_BANKING_APPLICATION_ID` and `ENABLE_BANKING_PRIVATE_KEY` instead. They win over anything saved in the interface, which then shows « Enable Banking est configuré par le serveur. » and no form. Set both or neither: one alone stops the server at startup, naming the other. The private key goes in base64, because a multi-line PEM does not survive every `.env` parser or hosting control panel. PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`) both work. Disconnect every bank before removing the variables, for the same reason: the page stays locked while a bank is connected, and its session belongs to the pinned application.
+A self-hoster who keeps secrets in a vault can set `ENABLE_BANKING_APPLICATION_ID` and `ENABLE_BANKING_PRIVATE_KEY` instead, with `ENABLE_BANKING_COUNTRY`, the two-letter code of the banks' country, `FR` when unset; a code outside Sure's 31 countries stops the server at startup. Pinned credentials for banks outside France set it; without it, the picker lists French banks. They win over anything saved in the interface, which then shows « Enable Banking est configuré par le serveur. », the country, and no form and no « Supprimer ». Set both or neither: one alone stops the server at startup, naming the other. The private key goes in base64, because a multi-line PEM does not survive every `.env` parser or hosting control panel. PKCS#1 (`BEGIN RSA PRIVATE KEY`) and PKCS#8 (`BEGIN PRIVATE KEY`) both work. Disconnect every bank before removing the variables, for the same reason: the page stays locked while a bank is connected, and its session belongs to the pinned application.
 
 ```bash
 export ENABLE_BANKING_APPLICATION_ID="<the application id from the panel>"
 export ENABLE_BANKING_PRIVATE_KEY="$(base64 < "$ENABLE_BANKING_APPLICATION_ID.pem" | tr -d '\n')"
+export ENABLE_BANKING_COUNTRY=FR
 ```
 
 ### 4. Connect a bank
 
 1. Open « Réglages » › « Banques », at `/settings/banks`.
-2. Pick the « Pays », press « Choisir une banque », then choose the bank in the dialog, where « Rechercher une banque » filters by name or BIC.
+2. Press « Choisir une banque », then choose the bank in the dialog, which lists the banks of the country saved with the credentials; « Rechercher une banque » filters by name or BIC.
 3. Give your consent on the bank's site, or on the sandbox bank's page. The browser comes back to « Connexion à votre banque », then to the connection's page.
 4. For each account under « Comptes de la banque », choose « Nouveau : … » to create an Archant account, an existing account under « Associer à » to let the bank take over its balance, or « Ignorer ».
 5. Under « Commencez à synchroniser les transactions à partir de », pick the date the first sync reads from: three months ago by default, two years ago at the earliest. Choose it now, because it is the only way to get more than three months of history from the bank: every later sync starts from the one before, and the date no longer changes an account that has synced. The field shows while an account is left to link.

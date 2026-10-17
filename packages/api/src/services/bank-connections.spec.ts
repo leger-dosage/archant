@@ -4,7 +4,7 @@ import type { NewAccountInput } from "./ledger/accounts.ts";
 
 import { eq, inArray, sql } from "drizzle-orm";
 import { http, HttpResponse } from "msw";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { toMinorUnits } from "@archant/data/money";
@@ -44,11 +44,13 @@ import {
 	listBankAccounts,
 	listConnections,
 	listInstitutions,
+	removeBankCredentials,
 	renewConnection,
 	startConnection,
 } from "./bank-connections.ts";
 import {
 	APPLICATION_ID_SETTING,
+	COUNTRY_SETTING,
 	PRIVATE_KEY_SETTING,
 	bankSetup,
 	saveBankCredentials,
@@ -98,6 +100,35 @@ function deps(): BankConnectionDeps {
 	};
 }
 
+/** As a server whose pinned pair lists `country`'s banks. */
+function depsIn(country: string): BankConnectionDeps {
+	return {
+		...deps(),
+		...bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENABLE_BANKING_COUNTRY: country })),
+	};
+}
+
+/** As a server without `ENABLE_BANKING_*`, on the credentials saved from the interface. */
+function interfaceDeps(): BankConnectionDeps {
+	return { ...deps(), bankCredentials: null };
+}
+
+/** The three rows « Réglages › Banques » saves. */
+async function storeCredentials(country = "BE") {
+	await temp.db.insert(settings).values([
+		{ key: APPLICATION_ID_SETTING, value: TEST_APPLICATION_ID, updatedAt: 1 },
+		{
+			key: PRIVATE_KEY_SETTING,
+			value: encrypt(
+				Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+				TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString(),
+			),
+			updatedAt: 1,
+		},
+		{ key: COUNTRY_SETTING, value: country, updatedAt: 1 },
+	]);
+}
+
 /** As a server started without `ENCRYPTION_KEY`. */
 function depsWithoutKey(): BankConnectionDeps {
 	return { ...deps(), ...bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENCRYPTION_KEY: "" })) };
@@ -141,9 +172,14 @@ describe("bankDepsFromEnv", () => {
 
 		expect(bank.bankCredentials?.applicationId).toBe(TEST_APPLICATION_ID);
 		expect(bank.bankCredentials?.privateKey.asymmetricKeyType).toBe("rsa");
+		expect(bank.bankCredentials?.country).toBe("FR");
 		expect(bank.encryptionKey).toHaveLength(32);
 		expect(bank.bankApiUrl).toBe(TEST_PROVIDER_URL);
 		expect(bank.redirectUrl).toBe("http://localhost:5173/settings/banks/callback");
+	});
+
+	it("carries ENABLE_BANKING_COUNTRY with the pair", () => {
+		expect(depsIn("BE").bankCredentials?.country).toBe("BE");
 	});
 
 	it("carries no pair and no key without the variables", () => {
@@ -159,9 +195,9 @@ describe("when unavailable", () => {
 		const unavailable = depsWithoutKey();
 		const refused = { code: "BANK_CONNECTOR_UNAVAILABLE", status: 503 };
 
-		await expect(listInstitutions(unavailable, "FR")).rejects.toMatchObject(refused);
+		await expect(listInstitutions(unavailable)).rejects.toMatchObject(refused);
 		await expect(
-			startConnection(unavailable, { country: "FR", institution: "Banque Test" }),
+			startConnection(unavailable, { institution: "Banque Test" }),
 		).rejects.toMatchObject(refused);
 		await expect(completeConnection(unavailable, { code: "c", state: "s" })).rejects.toMatchObject(
 			refused,
@@ -180,7 +216,7 @@ describe("listInstitutions", () => {
 	it("lists a country's banks by name, without their consent length", async () => {
 		mockProvider();
 
-		await expect(listInstitutions(deps(), "FR")).resolves.toEqual([
+		await expect(listInstitutions(deps())).resolves.toEqual([
 			{
 				name: "Banque Test",
 				country: "FR",
@@ -192,11 +228,33 @@ describe("listInstitutions", () => {
 		]);
 	});
 
+	it("lists the banks of the country set with the pinned pair", async () => {
+		const requests = mockProvider();
+
+		await listInstitutions(depsIn("BE"));
+
+		expect(requests.map(({ path, search }) => path + search)).toEqual(["/aspsps?country=BE"]);
+	});
+
+	it("lists the banks of the country saved with the credentials", async () => {
+		await storeCredentials("DE");
+
+		try {
+			const requests = mockProvider();
+
+			await listInstitutions(interfaceDeps());
+
+			expect(requests.map(({ path, search }) => path + search)).toEqual(["/aspsps?country=DE"]);
+		} finally {
+			await temp.db.delete(settings);
+		}
+	});
+
 	it("logs a provider failure with its status and code only", async () => {
 		mockProvider({ aspsps: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }) });
 		const service = deps();
 
-		await expect(listInstitutions(service, "FR")).rejects.toMatchObject({
+		await expect(listInstitutions(service)).rejects.toMatchObject({
 			code: "BANK_PROVIDER_ERROR",
 		});
 		expect(logLines.join("")).toContain('"providerCode":"UNAUTHORIZED"');
@@ -208,9 +266,9 @@ describe("startConnection", () => {
 	it("asks for 90 days of a 180-day bank and stores a pending row keyed by the state", async () => {
 		const requests = mockProvider();
 
-		await expect(
-			startConnection(deps(), { country: "FR", institution: "Banque Test" }),
-		).resolves.toEqual({ url: FIXTURE_AUTH_URL });
+		await expect(startConnection(deps(), { institution: "Banque Test" })).resolves.toEqual({
+			url: FIXTURE_AUTH_URL,
+		});
 
 		const auth = requests.find((request) => request.path === "/auth");
 		expect(auth?.body).toMatchObject({
@@ -232,10 +290,21 @@ describe("startConnection", () => {
 		]);
 	});
 
+	it("reads the bank again in the country saved with the credentials", async () => {
+		const requests = mockProvider();
+
+		await startConnection(depsIn("BE"), { institution: "Banque Test" });
+
+		expect(requests.map(({ path, search }) => path + search)).toEqual([
+			"/aspsps?country=BE",
+			"/auth",
+		]);
+	});
+
 	it("asks for 30 days of a 30-day bank", async () => {
 		const requests = mockProvider();
 
-		await startConnection(deps(), { country: "FR", institution: "Crédit Exemple" });
+		await startConnection(deps(), { institution: "Crédit Exemple" });
 
 		expect(requests.find((request) => request.path === "/auth")?.body).toMatchObject({
 			access: { valid_until: new Date(NOW + 30 * DAY - MINUTE).toISOString() },
@@ -245,12 +314,12 @@ describe("startConnection", () => {
 	it("refuses a bank the provider does not list, and writes nothing", async () => {
 		const requests = mockProvider();
 
-		await expect(
-			startConnection(deps(), { country: "FR", institution: "Banque Inconnue" }),
-		).rejects.toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "institution", code: "invalid_value" }],
-		});
+		await expect(startConnection(deps(), { institution: "Banque Inconnue" })).rejects.toMatchObject(
+			{
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "institution", code: "invalid_value" }],
+			},
+		);
 		expect(requests.map((request) => request.path)).toEqual(["/aspsps"]);
 		await expect(rows()).resolves.toEqual([]);
 	});
@@ -259,9 +328,7 @@ describe("startConnection", () => {
 		mockProvider({ auth: () => HttpResponse.json(fixtures.redirectNotAllowed, { status: 400 }) });
 		const service = deps();
 
-		await expect(
-			startConnection(service, { country: "FR", institution: "Banque Test" }),
-		).rejects.toMatchObject({
+		await expect(startConnection(service, { institution: "Banque Test" })).rejects.toMatchObject({
 			code: "BANK_REDIRECT_NOT_ALLOWED",
 			status: 502,
 			params: { url: "http://localhost:5173/settings/banks/callback" },
@@ -275,20 +342,20 @@ describe("startConnection", () => {
 	it("writes nothing when the bank list cannot be read", async () => {
 		mockProvider({ aspsps: () => new HttpResponse(null, { status: 503 }) });
 
-		await expect(
-			startConnection(deps(), { country: "FR", institution: "Banque Test" }),
-		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR" });
+		await expect(startConnection(deps(), { institution: "Banque Test" })).rejects.toMatchObject({
+			code: "BANK_PROVIDER_ERROR",
+		});
 		await expect(rows()).resolves.toEqual([]);
 	});
 
 	it("deletes pending attempts older than 30 minutes, and keeps recent ones", async () => {
 		mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		vi.setSystemTime(NOW + 20 * MINUTE);
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		vi.setSystemTime(NOW + 31 * MINUTE);
 
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 
 		const kept = await rows();
 		expect(kept.map((row) => row.createdAt).toSorted((left, right) => left - right)).toEqual([
@@ -300,7 +367,7 @@ describe("startConnection", () => {
 
 async function started() {
 	const requests = mockProvider();
-	await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+	await startConnection(deps(), { institution: "Banque Test" });
 
 	return sentState(requests);
 }
@@ -373,7 +440,7 @@ describe("completeConnection", () => {
 		server.use(
 			http.post(`${TEST_PROVIDER_URL}/sessions`, async () => {
 				vi.setSystemTime(NOW + 31 * MINUTE);
-				await startConnection(deps(), { country: "FR", institution: "Crédit Exemple" });
+				await startConnection(deps(), { institution: "Crédit Exemple" });
 
 				return HttpResponse.json(fixtures.session);
 			}),
@@ -423,10 +490,10 @@ describe("completeConnection", () => {
 describe("listConnections", () => {
 	it("lists active connections without any secret, pending ones left out", async () => {
 		const requests = mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		const state = sentState(requests);
 		await completeConnection(deps(), { code: "the-code", state });
-		await startConnection(deps(), { country: "FR", institution: "Crédit Exemple" });
+		await startConnection(deps(), { institution: "Crédit Exemple" });
 
 		const list = await listConnections(deps());
 
@@ -505,7 +572,7 @@ describe("listConnections", () => {
 /** A connection through the whole flow, with the session fixture's two accounts. */
 async function connected(sessions?: () => Response) {
 	const requests = mockProvider(sessions === undefined ? {} : { sessions });
-	await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+	await startConnection(deps(), { institution: "Banque Test" });
 
 	return completeConnection(deps(), { code: "the-code", state: sentState(requests) });
 }
@@ -886,7 +953,7 @@ describe("listBankAccounts", () => {
 
 	it("answers NOT_FOUND for an unknown or pending connection", async () => {
 		mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		const [pending] = await rows();
 
 		await expect(listBankAccounts(deps(), crypto.randomUUID())).rejects.toMatchObject({
@@ -1758,7 +1825,7 @@ describe("renewConnection", () => {
 
 	it("answers NOT_FOUND for a pending or unknown connection", async () => {
 		const requests = mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		const [pending] = await rows();
 
 		await expect(renewConnection(deps(), pending?.id ?? "")).rejects.toMatchObject({
@@ -1977,6 +2044,7 @@ describe("disconnectConnection", () => {
 			await expect(bankSetup(service)).resolves.toMatchObject({ locked: false });
 			await expect(
 				saveBankCredentials(service, {
+					country: "FR",
 					applicationId: TEST_APPLICATION_ID,
 					privateKey: TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString(),
 				}),
@@ -2065,7 +2133,7 @@ describe("disconnectConnection", () => {
 
 	it("answers NOT_FOUND for a pending or unknown connection", async () => {
 		mockProvider();
-		await startConnection(deps(), { country: "FR", institution: "Banque Test" });
+		await startConnection(deps(), { institution: "Banque Test" });
 		const [pending] = await rows();
 
 		await expect(disconnectConnection(deps(), pending?.id ?? "")).rejects.toMatchObject({
@@ -2075,5 +2143,150 @@ describe("disconnectConnection", () => {
 			code: "NOT_FOUND",
 		});
 		await expect(rows()).resolves.toHaveLength(1);
+	});
+});
+
+const storedKeys = async () =>
+	(await temp.db.select({ key: settings.key }).from(settings)).map((row) => row.key);
+
+describe("removeBankCredentials", () => {
+	beforeEach(async () => {
+		await temp.db.delete(settings);
+		await storeCredentials();
+	});
+
+	// The file's other tests read their credentials from the environment.
+	afterEach(async () => {
+		await temp.db.delete(settings);
+	});
+
+	it("disconnects every bank, keeping its accounts as manual ones, drops attempts, then the credentials", async () => {
+		const first = await linkedConnection();
+		const second = await connected();
+		await started();
+		await expect(rows()).resolves.toHaveLength(3);
+		const requests = mockProvider();
+
+		await expect(removeBankCredentials(interfaceDeps())).resolves.toMatchObject({
+			available: false,
+			source: null,
+			applicationId: null,
+			country: null,
+			locked: false,
+		});
+
+		expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+			`DELETE /sessions/${FIXTURE_SESSION_ID}`,
+			`DELETE /sessions/${FIXTURE_SESSION_ID}`,
+		]);
+		await expect(rows()).resolves.toEqual([]);
+		await expect(bankRows(second.id)).resolves.toEqual([]);
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId, active: accounts.active })
+				.from(accounts)
+				.where(inArray(accounts.id, first.accountIds)),
+		).resolves.toEqual([
+			{ bankAccountId: null, active: true },
+			{ bankAccountId: null, active: true },
+		]);
+		await expect(storedKeys()).resolves.toEqual([]);
+		expect(logLines.join("")).toContain("bank credentials removed");
+		expect(logLines.join("")).not.toContain(FIXTURE_SESSION_ID);
+	});
+
+	it("keeps the credentials when an attempt turns active after the banks were disconnected", async () => {
+		await started();
+		const service = interfaceDeps();
+		const { db } = service;
+		// The callback lands between the disconnections and the final deletion.
+		const racing: BankConnectionDeps = {
+			...service,
+			db: {
+				select: db.select.bind(db),
+				selectDistinct: db.selectDistinct.bind(db),
+				insert: db.insert.bind(db),
+				delete: db.delete.bind(db),
+				update: db.update.bind(db),
+				transaction: async <T>(
+					work: Parameters<typeof db.transaction<T>>[0],
+					config?: Parameters<typeof db.transaction<T>>[1],
+				) => {
+					await db
+						.update(bankConnections)
+						.set({ status: "active" })
+						.where(eq(bankConnections.status, "pending"));
+
+					return db.transaction(work, config);
+				},
+			},
+		};
+
+		await expect(removeBankCredentials(racing)).rejects.toMatchObject({
+			code: "BANK_CREDENTIALS_LOCKED",
+		});
+		await expect(rows()).resolves.toEqual([expect.objectContaining({ status: "active" })]);
+		await expect(storedKeys()).resolves.toHaveLength(3);
+	});
+
+	it("answers SYNC_IN_PROGRESS while a sync holds a bank, removing nothing", async () => {
+		const connection = await connected();
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartedAt: NOW - MINUTE })
+			.where(eq(bankConnections.id, connection.id));
+		const requests = mockProvider();
+
+		await expect(removeBankCredentials(interfaceDeps())).rejects.toMatchObject({
+			code: "SYNC_IN_PROGRESS",
+			status: 409,
+		});
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toHaveLength(1);
+		await expect(storedKeys()).resolves.toHaveLength(3);
+	});
+
+	it("removes the credentials over a lease older than ten minutes", async () => {
+		const { connection } = await linkedConnection();
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartedAt: NOW - 11 * MINUTE })
+			.where(eq(bankConnections.id, connection.id));
+		mockProvider();
+
+		await expect(removeBankCredentials(interfaceDeps())).resolves.toMatchObject({
+			source: null,
+		});
+		await expect(rows()).resolves.toEqual([]);
+		await expect(storedKeys()).resolves.toEqual([]);
+	});
+
+	it("refuses credentials the environment pins, removing nothing", async () => {
+		await connected();
+		const requests = mockProvider();
+
+		await expect(removeBankCredentials(deps())).rejects.toMatchObject({
+			code: "BANK_CREDENTIALS_FROM_ENVIRONMENT",
+			status: 409,
+		});
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toHaveLength(1);
+		await expect(storedKeys()).resolves.toHaveLength(3);
+	});
+
+	it("removes credentials that no longer decrypt, revoking nothing", async () => {
+		await connected();
+		await temp.db
+			.update(settings)
+			.set({ value: encrypt(Buffer.alloc(32, 0xcd), "a private key") })
+			.where(eq(settings.key, PRIVATE_KEY_SETTING));
+		const requests = mockProvider();
+
+		await expect(removeBankCredentials(interfaceDeps())).resolves.toMatchObject({
+			source: null,
+		});
+		expect(requests).toEqual([]);
+		await expect(rows()).resolves.toEqual([]);
+		await expect(storedKeys()).resolves.toEqual([]);
 	});
 });

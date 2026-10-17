@@ -39,31 +39,64 @@ export function useBankSetup() {
 	});
 }
 
+export type SaveBankCredentialsInput = InferRequestType<typeof bank.credentials.$put>["json"];
+
 /**
- * Saves the Enable Banking application ID and the `.pem` file's text, once
- * the server has checked them with the provider. Its answer is the new setup.
+ * Saves the country with the Enable Banking application ID and the `.pem`
+ * file's text, once the server has checked them with the provider, or the
+ * country alone over saved credentials. Its answer is the new setup.
  */
 export function useSaveBankCredentials() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async (input: { applicationId: string; privateKey: string }) =>
-			(await unwrap(bank.credentials.$put({ json: input }))).data,
+		mutationFn: async (json: SaveBankCredentialsInput) =>
+			(await unwrap(bank.credentials.$put({ json }))).data,
 		onSuccess: async (setup) => {
 			queryClient.setQueryData(queryKeys.bankConnections.setup, setup);
-			await queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup }),
+				// Another application may list other banks.
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.allInstitutions }),
+			]);
 		},
 	});
 }
 
-/** A country's banks. Asked only once the setup says the provider is reachable. */
+/**
+ * Sure's « Supprimer »: disconnects every bank, its accounts kept as manual
+ * ones, then deletes the saved credentials. Its answer is the new setup,
+ * which offers the empty form; every account loses its link.
+ */
+export function useRemoveBankCredentials() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(bank.credentials.$delete())).data,
+		onSuccess: async (setup) => {
+			queryClient.setQueryData(queryKeys.bankConnections.setup, setup);
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.setup }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.allInstitutions }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			]);
+		},
+	});
+}
+
+/**
+ * The banks of the country saved with the credentials, which the server
+ * reads itself; keyed by it, so a new country asks the provider again.
+ * Asked only once the setup says the provider is reachable.
+ */
 export function useInstitutions(country: BankCountry, enabled: boolean) {
 	return useQuery({
 		queryKey: queryKeys.bankConnections.institutions(country),
-		queryFn: async () => (await unwrap(bank.institutions.$get({ query: { country } }))).data,
+		queryFn: async () => (await unwrap(bank.institutions.$get())).data,
 		enabled,
-		// A bank list moves a few times a year; switching countries back and
-		// forth should not ask the provider again.
+		// A bank list moves a few times a year.
 		staleTime: 60 * 60 * 1000,
 	});
 }
@@ -118,7 +151,7 @@ export function useBankConnections(enabled: boolean) {
 /** Starts an authorisation; the caller sends the browser to the returned URL. */
 export function useStartBankConnection() {
 	return useMutation({
-		mutationFn: async (input: { country: BankCountry; institution: string }) =>
+		mutationFn: async (input: { institution: string }) =>
 			(await unwrap(bank.$post({ json: input }))).data,
 	});
 }

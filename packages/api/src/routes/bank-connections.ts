@@ -7,7 +7,6 @@ import { validated } from "../lib/validated.ts";
 import {
 	completeConnectionSchema,
 	connectionParamSchema,
-	institutionsQuerySchema,
 	linkBankAccountsSchema,
 	saveBankCredentialsSchema,
 	startConnectionSchema,
@@ -19,6 +18,7 @@ import {
 	listBankAccounts,
 	listConnections,
 	listInstitutions,
+	removeBankCredentials,
 	renewConnection,
 	startConnection,
 } from "../services/bank-connections.ts";
@@ -42,6 +42,9 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 			.put("/credentials", validated("json", saveBankCredentialsSchema), async (c) =>
 				c.json({ data: await saveBankCredentials(deps, c.req.valid("json")) }, 200),
 			)
+			// Before the guard as well, so credentials that no longer resolve can
+			// still be removed, and before `/:id`, which would take it for an id.
+			.delete("/credentials", async (c) => c.json({ data: await removeBankCredentials(deps) }, 200))
 			// Before the guard too: a lost key must never keep a bank connected,
 			// which would lock the credentials for good (Sure's `return unless provider`).
 			.get("/", async (c) => c.json({ data: await listConnections(deps) }, 200))
@@ -59,9 +62,7 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 					await next();
 				}),
 			)
-			.get("/institutions", validated("query", institutionsQuerySchema), async (c) =>
-				c.json({ data: await listInstitutions(deps, c.req.valid("query").country) }, 200),
-			)
+			.get("/institutions", async (c) => c.json({ data: await listInstitutions(deps) }, 200))
 			.post("/", validated("json", startConnectionSchema), async (c) =>
 				c.json({ data: await startConnection(deps, c.req.valid("json")) }, 200),
 			)

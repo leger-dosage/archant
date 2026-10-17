@@ -10,13 +10,14 @@ import {
 	configuredBank,
 	errorBody,
 	expense,
+	linkedConnection,
 	logLines,
 	own,
 	ownDatabase,
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { buildTestApp, withSession } from "../testing/auth.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 import {
 	TEST_APPLICATION_ID,
 	TEST_ENCRYPTION_KEY_BASE64,
@@ -34,11 +35,13 @@ import {
 
 useSignedInApp();
 
+const fieldsOf = async (response: Response) => errorBody.parse(await response.json()).error;
+
 async function connectedApp() {
 	const requests = mockProvider();
 	const app = await bankApp();
 	const client = testClient(app).api["bank-connections"];
-	await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+	await client.$post({ json: { institution: "Banque Test" } });
 	const { state } = z
 		.object({ state: z.string() })
 		.parse(requests.find((sent) => sent.path === "/auth")?.body);
@@ -60,13 +63,14 @@ describe("/api/bank-connections", () => {
 				available: true,
 				source: "environment",
 				applicationId: TEST_APPLICATION_ID,
+				country: "FR",
 				redirectUrl: "http://localhost:5173/settings/banks/callback",
 				locked: false,
 				missing: [],
 			},
 		});
 
-		const institutions = await client.institutions.$get({ query: { country: "FR" } });
+		const institutions = await client.institutions.$get();
 		expect(institutions.status).toBe(200);
 		const offered = (await institutions.json()).data;
 		expect(offered.map((institution) => institution.name)).toEqual([
@@ -82,7 +86,7 @@ describe("/api/bank-connections", () => {
 		});
 
 		const started = await client.$post({
-			json: { country: "FR", institution: "Banque Test" },
+			json: { institution: "Banque Test" },
 		});
 		expect(started.status).toBe(200);
 		expect(await started.json()).toEqual({ data: { url: FIXTURE_AUTH_URL } });
@@ -110,7 +114,7 @@ describe("/api/bank-connections", () => {
 	it("answers a replayed callback with BANK_AUTHORIZATION_INVALID", async () => {
 		const requests = mockProvider();
 		const client = testClient(await bankApp()).api["bank-connections"];
-		await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+		await client.$post({ json: { institution: "Banque Test" } });
 		const { state } = z
 			.object({ state: z.string() })
 			.parse(requests.find((sent) => sent.path === "/auth")?.body);
@@ -130,7 +134,7 @@ describe("/api/bank-connections", () => {
 		const client = testClient(await bankApp()).api["bank-connections"];
 
 		const response = await client.$post({
-			json: { country: "FR", institution: "Banque Test" },
+			json: { institution: "Banque Test" },
 		});
 
 		expect(response.status).toBe(502);
@@ -143,17 +147,11 @@ describe("/api/bank-connections", () => {
 		});
 	});
 
-	it("refuses a country Sure does not offer, an empty bank name and an empty code", async () => {
+	it("refuses an empty bank name and an empty code", async () => {
 		const app = await bankApp();
 
-		const country = await app.request("/api/bank-connections/institutions?country=US");
-		expect(country.status).toBe(400);
-		expect(errorBody.parse(await country.json()).error.fields).toEqual([
-			{ path: "country", code: "invalid_value" },
-		]);
-
 		const blank = await testClient(app).api["bank-connections"].$post({
-			json: { country: "FR", institution: "  " },
+			json: { institution: "  " },
 		});
 		expect(blank.status).toBe(400);
 		expect(errorBody.parse(await blank.json()).error.fields).toEqual([
@@ -181,10 +179,10 @@ describe("/api/bank-connections", () => {
 
 		const before = await client.setup.$get();
 		expect((await before.json()).data).toMatchObject({ available: false, source: null });
-		expect((await client.institutions.$get({ query: { country: "FR" } })).status).toBe(503);
+		expect((await client.institutions.$get()).status).toBe(503);
 
 		const saved = await client.credentials.$put({
-			json: { applicationId: ` ${TEST_APPLICATION_ID} `, privateKey: pem },
+			json: { country: "BE", applicationId: ` ${TEST_APPLICATION_ID} `, privateKey: pem },
 		});
 		expect(saved.status).toBe(200);
 		const body = await saved.text();
@@ -193,6 +191,7 @@ describe("/api/bank-connections", () => {
 				available: true,
 				source: "interface",
 				applicationId: TEST_APPLICATION_ID,
+				country: "BE",
 				redirectUrl: "http://localhost:5173/settings/banks/callback",
 				locked: false,
 				missing: [],
@@ -201,18 +200,26 @@ describe("/api/bank-connections", () => {
 		expect(body).not.toContain("PRIVATE KEY");
 		expect(requests.map((sent) => sent.path)).toEqual(["/application"]);
 
-		const institutions = await client.institutions.$get({ query: { country: "FR" } });
+		const institutions = await client.institutions.$get();
 		expect(institutions.status).toBe(200);
+		const started = await client.$post({ json: { institution: "Banque Test" } });
+		expect(started.status).toBe(200);
+		expect(requests.filter((sent) => sent.path === "/aspsps").map((sent) => sent.search)).toEqual([
+			"?country=BE",
+			"?country=BE",
+		]);
 
 		const stored = await own?.db.all<{ key: string; value: string }>(
 			sql`select key, value from settings where key like 'enable_banking_%' order by key`,
 		);
 		expect(stored?.map((row) => row.key)).toEqual([
 			"enable_banking_application_id",
+			"enable_banking_country",
 			"enable_banking_private_key",
 		]);
 		expect(stored?.[0]?.value).toBe(TEST_APPLICATION_ID);
-		expect(stored?.[1]?.value).toMatch(/^v1:/u);
+		expect(stored?.[1]?.value).toBe("BE");
+		expect(stored?.[2]?.value).toMatch(/^v1:/u);
 		expect(logLines.join("")).not.toContain("PRIVATE KEY");
 	});
 
@@ -220,7 +227,7 @@ describe("/api/bank-connections", () => {
 		const pem = TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString();
 		const put = (app: Awaited<ReturnType<typeof bankApp>>, privateKey = pem) =>
 			testClient(app).api["bank-connections"].credentials.$put({
-				json: { applicationId: TEST_APPLICATION_ID, privateKey },
+				json: { country: "FR", applicationId: TEST_APPLICATION_ID, privateKey },
 			});
 		const interfaceBank = {
 			bankCredentials: null,
@@ -250,7 +257,7 @@ describe("/api/bank-connections", () => {
 
 		const blank = await testClient(await bankApp(interfaceBank)).api[
 			"bank-connections"
-		].credentials.$put({ json: { applicationId: " ", privateKey: pem } });
+		].credentials.$put({ json: { country: "FR", applicationId: " ", privateKey: pem } });
 		expect(errorBody.parse(await blank.json()).error.fields).toEqual([
 			{ path: "applicationId", code: "too_small" },
 		]);
@@ -267,6 +274,219 @@ describe("/api/bank-connections", () => {
 		).resolves.toEqual([]);
 	});
 
+	it("saves the country alone over saved credentials, a bank connected, and names what a partial pair lacks", async () => {
+		const interfaceBank = {
+			bankCredentials: null,
+			encryptionKey: Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+			bankApiUrl: TEST_PROVIDER_URL,
+		};
+		const requests = mockProvider();
+		const client = testClient(await bankApp(interfaceBank)).api["bank-connections"];
+		const pem = TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString();
+
+		const nothingSaved = await client.credentials.$put({ json: { country: "DE" } });
+		expect(nothingSaved.status).toBe(400);
+		expect(await fieldsOf(nothingSaved)).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [
+				{ path: "applicationId", code: "too_small" },
+				{ path: "privateKey", code: "too_small" },
+			],
+		});
+
+		const idAlone = await client.credentials.$put({
+			json: { country: "FR", applicationId: TEST_APPLICATION_ID },
+		});
+		expect((await fieldsOf(idAlone)).fields).toEqual([{ path: "privateKey", code: "too_small" }]);
+
+		const keyAlone = await client.credentials.$put({ json: { country: "FR", privateKey: pem } });
+		expect(keyAlone.status).toBe(400);
+		expect((await fieldsOf(keyAlone)).fields).toEqual([
+			{ path: "applicationId", code: "too_small" },
+		]);
+
+		const unknown = await client.credentials.$put({
+			// @ts-expect-error -- a country Sure does not offer, as a hand-made request sends it.
+			json: { country: "US", applicationId: TEST_APPLICATION_ID, privateKey: pem },
+		});
+		expect((await fieldsOf(unknown)).fields).toEqual([{ path: "country", code: "invalid_value" }]);
+		await expect(
+			own?.db.all(sql`select key from settings where key like 'enable_banking_%'`),
+		).resolves.toEqual([]);
+
+		await client.credentials.$put({
+			json: { country: "FR", applicationId: TEST_APPLICATION_ID, privateKey: pem },
+		});
+		await client.$post({ json: { institution: "Banque Test" } });
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		const connection = (await (await client.callback.$post({ json: { code: "c", state } })).json())
+			.data;
+		await attemptedToday(connection.id);
+
+		const newPair = await client.credentials.$put({
+			json: { country: "DE", applicationId: TEST_APPLICATION_ID, privateKey: pem },
+		});
+		expect(newPair.status).toBe(409);
+		expect((await fieldsOf(newPair)).code).toBe("BANK_CREDENTIALS_LOCKED");
+
+		const countryAlone = await client.credentials.$put({ json: { country: "DE" } });
+		expect(countryAlone.status).toBe(200);
+		expect((await countryAlone.json()).data).toMatchObject({
+			applicationId: TEST_APPLICATION_ID,
+			country: "DE",
+			locked: true,
+		});
+		const list = (await (await client.$get()).json()).data;
+		expect(list).toEqual([expect.objectContaining({ id: connection.id, country: "FR" })]);
+		requests.length = 0;
+		await client.institutions.$get();
+		expect(requests.map((sent) => sent.path + sent.search)).toEqual(["/aspsps?country=DE"]);
+	});
+
+	it("removes the credentials: every bank disconnected, its accounts manual, attempts dropped", async () => {
+		const interfaceBank = {
+			bankCredentials: null,
+			encryptionKey: Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+			bankApiUrl: TEST_PROVIDER_URL,
+		};
+		const app = await bankApp(interfaceBank);
+		const client = testClient(app).api["bank-connections"];
+		mockProvider();
+		await client.credentials.$put({
+			json: {
+				country: "BE",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString(),
+			},
+		});
+		const { accountId } = await linkedConnection(app);
+		const requests = mockProvider();
+		await client.$post({ json: { institution: "Banque Test" } });
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		const second = (await (await client.callback.$post({ json: { code: "c", state } })).json())
+			.data;
+		await attemptedToday(second.id);
+		await client.$post({ json: { institution: "Banque Test" } });
+		await expect(
+			own?.db.all(sql`select status from bank_connections order by status`),
+		).resolves.toEqual([{ status: "active" }, { status: "active" }, { status: "pending" }]);
+		requests.length = 0;
+
+		const removed = await client.credentials.$delete();
+
+		expect(removed.status).toBe(200);
+		expect((await removed.json()).data).toMatchObject({
+			available: false,
+			source: null,
+			applicationId: null,
+			country: null,
+			locked: false,
+		});
+		expect(requests.map(({ method, path }) => `${method} ${path}`)).toEqual([
+			`DELETE /sessions/${FIXTURE_SESSION_ID}`,
+			`DELETE /sessions/${FIXTURE_SESSION_ID}`,
+		]);
+		await expect(own?.db.all(sql`select id from bank_connections`)).resolves.toEqual([]);
+		await expect(
+			own?.db.all(sql`select key from settings where key like 'enable_banking_%'`),
+		).resolves.toEqual([]);
+		const account = await testClient(app).api.accounts[":id"].$get({ param: { id: accountId } });
+		expect((await account.json()).data).toMatchObject({ balance: 123456, bankConnection: null });
+	});
+
+	it("refuses a viewer's removal, and removes credentials without ENCRYPTION_KEY", async () => {
+		const silent = createLogger("silent");
+		const interfaceBank = {
+			bankCredentials: null,
+			encryptionKey: null,
+			bankApiUrl: TEST_PROVIDER_URL,
+		};
+		await bankApp(interfaceBank);
+		const database = own;
+
+		if (database === undefined) {
+			throw new Error("bankApp opens the test's own database.");
+		}
+
+		await database.db.run(
+			sql`insert into settings (key, value, updated_at) values ('enable_banking_application_id', 'app', 1), ('enable_banking_private_key', 'v1:key', 1), ('enable_banking_country', 'FR', 1)`,
+		);
+		const stored = () =>
+			database.db.all(sql`select key from settings where key like 'enable_banking_%'`);
+		const auth = createTestAuth(database.db, silent);
+		const viewerCookie = await addViewer(
+			buildTestApp(database.db, silent, auth, {}, interfaceBank),
+			auth,
+		);
+		const viewer = withSession(
+			buildTestApp(database.db, silent, auth, {}, interfaceBank),
+			viewerCookie,
+		);
+
+		const refused = await viewer.request("/api/bank-connections/credentials", {
+			method: "DELETE",
+		});
+		expect(refused.status).toBe(403);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+		await expect(stored()).resolves.toHaveLength(3);
+
+		const admin = withSession(
+			buildTestApp(database.db, silent, auth, {}, interfaceBank),
+			template.cookie,
+		);
+		const removed = await testClient(admin).api["bank-connections"].credentials.$delete();
+		expect(removed.status).toBe(200);
+		expect((await removed.json()).data).toMatchObject({
+			source: null,
+			missing: ["ENCRYPTION_KEY"],
+		});
+		await expect(stored()).resolves.toEqual([]);
+	});
+
+	it("keeps the credentials while a sync runs, and those the server pins", async () => {
+		const pinned = await connectedApp();
+		const fromEnvironment = await pinned.client.credentials.$delete();
+		expect(fromEnvironment.status).toBe(409);
+		expect(errorBody.parse(await fromEnvironment.json()).error.code).toBe(
+			"BANK_CREDENTIALS_FROM_ENVIRONMENT",
+		);
+		await expect(own?.db.all(sql`select id from bank_connections`)).resolves.toHaveLength(1);
+
+		const app = await bankApp({
+			bankCredentials: null,
+			encryptionKey: Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"),
+			bankApiUrl: TEST_PROVIDER_URL,
+		});
+		const client = testClient(app).api["bank-connections"];
+		mockProvider();
+		await client.credentials.$put({
+			json: {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: TEST_PRIVATE_KEY.export({ type: "pkcs8", format: "pem" }).toString(),
+			},
+		});
+		const { connection } = await linkedConnection(app);
+		await own?.db.run(
+			sql`update bank_connections set sync_started_at = ${Date.now()} where id = ${connection.id}`,
+		);
+		const requests = mockProvider();
+
+		const refused = await client.credentials.$delete();
+
+		expect(refused.status).toBe(409);
+		expect(errorBody.parse(await refused.json()).error.code).toBe("SYNC_IN_PROGRESS");
+		expect(requests).toEqual([]);
+		await expect(own?.db.all(sql`select id from bank_connections`)).resolves.toHaveLength(1);
+		await expect(
+			own?.db.all(sql`select key from settings where key like 'enable_banking_%'`),
+		).resolves.toHaveLength(3);
+	});
+
 	it("names the missing variables, lists and disconnects, and answers 503 elsewhere, while accounts still answer", async () => {
 		const app = await bankApp({
 			...configuredBank(),
@@ -280,6 +500,7 @@ describe("/api/bank-connections", () => {
 				available: false,
 				source: "environment",
 				applicationId: TEST_APPLICATION_ID,
+				country: "FR",
 				redirectUrl: "http://localhost:5173/settings/banks/callback",
 				locked: false,
 				missing: ["ENCRYPTION_KEY"],
@@ -299,12 +520,12 @@ describe("/api/bank-connections", () => {
 		const refused = await Promise.all([
 			app.request("/api/bank-connections/c1/sync", { method: "POST" }),
 			app.request("/api/bank-connections/c1/renew", { method: "POST" }),
-			// Refused before its query is read: no field error for an unknown country.
-			app.request("/api/bank-connections/institutions?country=US"),
+			app.request("/api/bank-connections/institutions"),
+			// Refused before its body is read: no field error for an empty name.
 			app.request("/api/bank-connections", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ country: "FR", institution: "Banque Test" }),
+				body: JSON.stringify({ institution: "" }),
 			}),
 			app.request("/api/bank-connections/callback", {
 				method: "POST",

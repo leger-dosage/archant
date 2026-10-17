@@ -1,6 +1,7 @@
-import type { Page } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
 import { createDb } from "@archant/data/client";
 
@@ -79,6 +80,7 @@ type Setup = {
 	available: boolean;
 	source: "environment" | "interface" | null;
 	applicationId: string | null;
+	country: string | null;
 	redirectUrl: string;
 	locked: boolean;
 	missing: string[];
@@ -89,6 +91,7 @@ const setupData = (fields: Partial<Setup>): { data: Setup } => ({
 		available: true,
 		source: "interface",
 		applicationId: BANK_APPLICATION_ID,
+		country: "FR",
 		redirectUrl: REDIRECT_URL,
 		locked: false,
 		missing: [],
@@ -105,7 +108,7 @@ async function visitUnconfigured(page: Page) {
 		SETUP,
 		(route) =>
 			route.fulfill({
-				json: setupData({ available: false, source: null, applicationId: null }),
+				json: setupData({ available: false, source: null, applicationId: null, country: null }),
 			}),
 		{ times: 1 },
 	);
@@ -119,7 +122,40 @@ const keyFile = (page: Page) => page.getByLabel("Clé privée (fichier .pem)");
 
 const saveCredentials = (page: Page) => page.getByRole("button", { name: "Enregistrer" });
 
-test("a fresh install lists Sure's steps, with the redirect address to copy, and no country", async ({
+const credentials = (page: Page) =>
+	page.getByRole("region", { name: "Application Enable Banking" });
+
+const countryField = (page: Page) => page.getByRole("combobox", { name: "Pays" });
+
+/** Story 29.1: Sure's « Pays », first in the credentials form. */
+async function chooseCountry(page: Page, name: string) {
+	await countryField(page).click();
+	await page.getByRole("option", { name, exact: true }).click();
+	await expect(countryField(page)).toHaveText(name);
+}
+
+/** Saves the form and returns the request it sent, once the server accepted it. */
+async function saveAccepted(page: Page): Promise<unknown> {
+	const [response] = await Promise.all([
+		page.waitForResponse(
+			(answer) =>
+				answer.url().endsWith("/api/bank-connections/credentials") &&
+				answer.request().method() === "PUT",
+		),
+		saveCredentials(page).click(),
+	]);
+
+	expect(response.status()).toBe(200);
+
+	return response.request().postDataJSON();
+}
+
+const top = async (locator: Locator) => (await locator.boundingBox())?.y ?? 0;
+
+const removeCredentials = (page: Page) =>
+	credentials(page).getByRole("button", { name: "Supprimer" });
+
+test("a fresh install lists Sure's steps, with the redirect address to copy, then asks the country first", async ({
 	page,
 	context,
 }) => {
@@ -135,7 +171,18 @@ test("a fresh install lists Sure's steps, with the redirect address to copy, and
 	await expect(steps.nth(1)).toContainText(REDIRECT_URL);
 	await expect(applicationIdField(page)).toBeVisible();
 	await expect(keyFile(page)).toHaveAttribute("type", "file");
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	await expect(countryField(page)).toHaveText("Sélectionner le pays...");
+	const fields = credentials(page).locator("button[role=combobox], input");
+	await expect(fields.first()).toHaveAccessibleName("Pays");
+	await countryField(page).click();
+	const options = page.getByRole("option");
+	await expect(options).toHaveCount(31);
+	await expect(options.first()).toHaveText("Allemagne (DE)");
+	await expect(options.last()).toHaveText("Tchéquie (CZ)");
+	await expect(page.getByRole("option", { name: "France (FR)" })).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(removeCredentials(page)).toBeHidden();
+	await expect(chooseBank(page)).toBeHidden();
 	// Nothing locks the form, so no connection is listed above it.
 	await expect(page.getByText("Banques connectées", { exact: true })).toBeHidden();
 
@@ -153,6 +200,12 @@ test("a key the provider refuses, or a file that holds none, saves nothing", asy
 	});
 	await visitUnconfigured(page);
 
+	await saveCredentials(page).click();
+	await expect(countryField(page)).toHaveAttribute("aria-invalid", "true");
+	await expect(applicationIdField(page)).toHaveAttribute("aria-invalid", "true");
+	expect(saves).toEqual([]);
+
+	await chooseCountry(page, "France (FR)");
 	await applicationIdField(page).fill(BANK_APPLICATION_ID);
 	await keyFile(page).setInputFiles({
 		name: "autre.pem",
@@ -181,23 +234,40 @@ test("a key the provider refuses, or a file that holds none, saves nothing", asy
 	).toBeVisible();
 	await expect(keyFile(page)).toHaveAttribute("aria-invalid", "true");
 	expect(saves).toEqual([400, 400]);
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	await expect(chooseBank(page)).toBeHidden();
 });
 
-test("the right key is saved encrypted, and the page moves on to the country", async ({ page }) => {
+test("the right key is saved encrypted with its country, whose banks the picker lists, then the country alone changes", async ({
+	page,
+}) => {
+	const lists: string[] = [];
+	page.on("request", (request) => {
+		if (request.url().includes("/api/bank-connections/institutions")) {
+			lists.push(new URL(request.url()).search);
+		}
+	});
 	await visitUnconfigured(page);
 
+	await chooseCountry(page, "Belgique (BE)");
 	await applicationIdField(page).fill(BANK_APPLICATION_ID);
 	await keyFile(page).setInputFiles(BANK_KEY_FILE);
 	await saveCredentials(page).click();
 
 	await expect(toast(page, "Identifiants Enable Banking enregistrés.")).toBeVisible();
-	await expect(page.getByRole("combobox", { name: "Pays" })).toHaveText("France");
+	// No country on the page any more: the picker opens on the saved one.
+	await expect(
+		page.getByRole("region", { name: "Connecter une banque" }).getByRole("combobox"),
+	).toHaveCount(0);
 	await openPicker(page);
-	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeVisible();
+	await expect(picker(page)).toContainText("Pays : Belgique.");
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque BE" })).toBeVisible();
+	await expect(banks(page).getByRole("button")).toHaveCount(1);
 	await page.keyboard.press("Escape");
+	expect(lists).toEqual([""]);
 	// Saved from the interface, it stays editable below the banks.
 	await expect(applicationIdField(page)).toHaveValue(BANK_APPLICATION_ID);
+	await expect(countryField(page)).toHaveText("Belgique (BE)");
+	await expect(removeCredentials(page)).toBeVisible();
 
 	const db = await createDb(`file:${DATABASE_FILE}`);
 
@@ -208,12 +278,34 @@ test("the right key is saved encrypted, and the page moves on to the country", a
 
 		expect(stored.rows.map((row) => row["key"])).toEqual([
 			"enable_banking_application_id",
+			"enable_banking_country",
 			"enable_banking_private_key",
 		]);
-		expect(stored.rows[1]?.["value"]).toMatch(/^v1:[^:]+:[^:]+:[^:]+$/u);
+		expect(stored.rows[1]?.["value"]).toBe("BE");
+		expect(stored.rows[2]?.["value"]).toMatch(/^v1:[^:]+:[^:]+:[^:]+$/u);
 	} finally {
 		db.$client.close();
 	}
+
+	// A new application needs its own key; the saved one stays otherwise.
+	await applicationIdField(page).fill("une-autre-application");
+	await saveCredentials(page).click();
+	await expect(keyFile(page)).toHaveAttribute("aria-invalid", "true");
+	await applicationIdField(page).fill(BANK_APPLICATION_ID);
+
+	await chooseCountry(page, "France (FR)");
+	// Without a file, only the country leaves the browser.
+	await expect(saveAccepted(page)).resolves.toEqual({ country: "FR" });
+	// A new file under the same ID rotates the key.
+	await keyFile(page).setInputFiles(BANK_KEY_FILE);
+	await expect(saveAccepted(page)).resolves.toEqual({
+		country: "FR",
+		applicationId: BANK_APPLICATION_ID,
+		privateKey: await readFile(BANK_KEY_FILE, "utf8"),
+	});
+	await openPicker(page);
+	await expect(picker(page)).toContainText("Pays : France.");
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque Démo" })).toBeVisible();
 });
 
 test("an application without the redirect address names it in the form, saving nothing", async ({
@@ -229,28 +321,34 @@ test("an application without the redirect address names it in the form, saving n
 	);
 	await visitUnconfigured(page);
 
+	await chooseCountry(page, "France (FR)");
 	await applicationIdField(page).fill(BANK_APPLICATION_ID);
 	await keyFile(page).setInputFiles(BANK_KEY_FILE);
 	await saveCredentials(page).click();
 
 	await expect(page.getByRole("alert")).toContainText(REDIRECT_URL);
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	await expect(chooseBank(page)).toBeHidden();
 });
 
 test("credentials the server sets are shown, never offered for editing", async ({ page }) => {
 	await page.route(SETUP, (route) =>
-		route.fulfill({ json: setupData({ source: "environment", applicationId: "app-du-serveur" }) }),
+		route.fulfill({
+			json: setupData({ source: "environment", applicationId: "app-du-serveur", country: "DE" }),
+		}),
 	);
 
 	await visit(page);
 
 	await expect(page.getByText("Enable Banking est configuré par le serveur.")).toBeVisible();
 	await expect(page.getByText("Application : app-du-serveur")).toBeVisible();
+	await expect(page.getByText("Pays : Allemagne (DE)")).toBeVisible();
 	await expect(page.getByText(REDIRECT_URL, { exact: true })).toBeVisible();
 	await expect(page.getByRole("button", { name: "Copier l'adresse de retour" })).toBeVisible();
 	await expect(applicationIdField(page)).toBeHidden();
 	await expect(keyFile(page)).toBeHidden();
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeVisible();
+	await expect(countryField(page)).toBeHidden();
+	await expect(page.getByRole("button", { name: "Supprimer" })).toBeHidden();
+	await expect(chooseBank(page)).toBeVisible();
 });
 
 test("Banques connectées comes first, and no bank is listed or asked for before the picker opens", async ({
@@ -283,7 +381,6 @@ test("the picker lists France's banks with name and BIC, focuses the search, scr
 	page,
 }) => {
 	await visit(page);
-	await expect(page.getByRole("combobox", { name: "Pays" })).toHaveText("France");
 	await openPicker(page);
 
 	const dialog = picker(page);
@@ -356,18 +453,6 @@ test("Escape, « Annuler » and the close button close the picker with nothing s
 	expect(starts).toEqual([]);
 });
 
-test("another country lists its own banks", async ({ page }) => {
-	await visit(page);
-
-	await page.getByRole("combobox", { name: "Pays" }).click();
-	await page.getByRole("option", { name: "Belgique" }).click();
-	await openPicker(page);
-
-	await expect(picker(page)).toContainText("Pays : Belgique.");
-	await expect(banks(page).getByRole("button", { name: "Connecter Banque BE" })).toBeVisible();
-	await expect(banks(page).getByRole("button")).toHaveCount(1);
-});
-
 test("a provider that cannot list banks says so inside the picker, with « Réessayer »", async ({
 	page,
 }) => {
@@ -394,9 +479,7 @@ test("a provider that cannot list banks says so inside the picker, with « Rées
 test("the keyboard alone opens the picker, searches and starts the consent", async ({ page }) => {
 	await visit(page);
 
-	await page.getByRole("combobox", { name: "Pays" }).focus();
-	await page.keyboard.press("Tab");
-	await expect(chooseBank(page)).toBeFocused();
+	await chooseBank(page).focus();
 	await page.keyboard.press("Enter");
 	await expect(picker(page)).toBeVisible();
 	await expect(picker(page).getByLabel("Rechercher une banque")).toBeFocused();
@@ -572,17 +655,41 @@ test("choosing a bank and approving lands on its accounts, and Banques lists it 
 	}
 });
 
-test("a connected bank locks the credentials, with Sure's warning", async ({ page }) => {
+test("a connected bank locks the application and its key, with Sure's warning, but not the country", async ({
+	page,
+}) => {
 	await connect(page);
 	await visit(page);
 
-	await expect(page.getByText("Configuration verrouillée")).toBeVisible();
+	const warning = page.getByText("Configuration verrouillée");
+	await expect(warning).toBeVisible();
 	await expect(
 		page.getByText("Déconnectez toutes les banques avant de modifier ces identifiants."),
 	).toBeVisible();
+	// Sure's order: the country, the warning, then what it locks.
+	expect(await top(countryField(page))).toBeLessThan(await top(warning));
+	expect(await top(warning)).toBeLessThan(await top(applicationIdField(page)));
 	await expect(applicationIdField(page)).toBeDisabled();
 	await expect(keyFile(page)).toBeDisabled();
-	await expect(saveCredentials(page)).toBeDisabled();
+	await expect(countryField(page)).toBeEnabled();
+	await expect(saveCredentials(page)).toBeEnabled();
+	await expect(removeCredentials(page)).toBeEnabled();
+
+	await chooseCountry(page, "Belgique (BE)");
+	await expect(saveAccepted(page)).resolves.toEqual({ country: "BE" });
+	await expect(toast(page, "Identifiants Enable Banking enregistrés.")).toBeVisible();
+	// The bank connected in France stays there.
+	await expect(
+		page.getByRole("list", { name: "Banques connectées" }).getByRole("listitem").first(),
+	).toContainText("France");
+	await openPicker(page);
+	await expect(picker(page)).toContainText("Pays : Belgique.");
+	await expect(banks(page).getByRole("button", { name: "Connecter Banque BE" })).toBeVisible();
+	await page.keyboard.press("Escape");
+
+	await chooseCountry(page, "France (FR)");
+	await expect(saveAccepted(page)).resolves.toEqual({ country: "FR" });
+	await expect(countryField(page)).toHaveText("France (FR)");
 });
 
 test("a pending start ignores Escape, and a refusal names the redirect URL and leaves the picker open", async ({
@@ -634,6 +741,7 @@ test("a server without ENCRYPTION_KEY names it and links to the guide", async ({
 				available: false,
 				source: null,
 				applicationId: null,
+				country: null,
 				missing: ["ENCRYPTION_KEY"],
 			}),
 		}),
@@ -1496,6 +1604,7 @@ test("a bank stays listed and can be disconnected while Enable Banking is unavai
 				available: false,
 				source: null,
 				applicationId: null,
+				country: null,
 				locked: true,
 				missing: ["ENCRYPTION_KEY"],
 			}),
@@ -1533,7 +1642,13 @@ test("a bank connected under credentials that no longer decrypt is listed above 
 	const connectionId = await connect(page);
 	await page.route(SETUP, (route) =>
 		route.fulfill({
-			json: setupData({ available: false, source: null, applicationId: null, locked: true }),
+			json: setupData({
+				available: false,
+				source: null,
+				applicationId: null,
+				country: null,
+				locked: true,
+			}),
 		}),
 	);
 
@@ -1546,7 +1661,9 @@ test("a bank connected under credentials that no longer decrypt is listed above 
 	).toBeVisible();
 	await expect(page.getByText("Configuration verrouillée")).toBeVisible();
 	await expect(applicationIdField(page)).toBeDisabled();
-	await expect(page.getByRole("combobox", { name: "Pays" })).toBeHidden();
+	// Credentials that no longer read have no country either.
+	await expect(countryField(page)).toHaveText("Sélectionner le pays...");
+	await expect(removeCredentials(page)).toBeHidden();
 });
 
 // Story 13.8: the first request of the day syncs every bank after answering.
@@ -1630,5 +1747,75 @@ test("a page left open since yesterday starts the sync when it comes back into v
 		await request.delete(`/api/bank-connections/${connectionId}`, {
 			headers: { origin: WEB_URL },
 		});
+	}
+});
+
+// Story 29.1: Sure's « Supprimer ». Last, since it disconnects every bank
+// the file connected; the run's credentials are saved again afterwards for
+// the files that follow.
+test("removing the credentials disconnects every bank, keeps its accounts as manual ones, and empties the form", async ({
+	page,
+	request,
+}) => {
+	const { connectionId, checkingId } = await connectAndLink(page);
+
+	try {
+		// The first visit of the day may still sync a bank the file connected.
+		await expect
+			.poll(
+				async () => {
+					const body: unknown = await (await request.get("/api/bank-connections")).json();
+
+					return JSON.stringify(body).includes('"syncing":true');
+				},
+				{ timeout: 15_000 },
+			)
+			.toBe(false);
+		await visit(page);
+		await removeCredentials(page).click();
+
+		const dialog = page.getByRole("alertdialog", {
+			name: "Voulez-vous vraiment supprimer cette connexion ?",
+		});
+		await expect(dialog).toContainText(
+			"Chaque banque connectée est déconnectée. Ses comptes deviennent des comptes manuels",
+		);
+		await expect(dialog.getByRole("button", { name: "Annuler" })).toBeFocused();
+		await dialog.getByRole("button", { name: "Supprimer" }).click();
+
+		await expect(toast(page, "Identifiants Enable Banking supprimés.")).toBeVisible();
+		await expect(countryField(page)).toHaveText("Sélectionner le pays...");
+		await expect(applicationIdField(page)).toHaveValue("");
+		await expect(applicationIdField(page)).toBeEnabled();
+		await expect(removeCredentials(page)).toBeHidden();
+		await expect(chooseBank(page)).toBeHidden();
+		await expect(page.locator(`[href="/settings/banks/${connectionId}"]`)).toHaveCount(0);
+
+		await page.goto(`/accounts/${checkingId}`);
+		await expect(page.getByRole("main")).toContainText("1 234,56 €");
+		await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
+
+		const db = await createDb(`file:${DATABASE_FILE}`);
+
+		try {
+			const left = await db.$client.execute(
+				"select (select count(*) from bank_connections) as connections, (select count(*) from settings where key like 'enable_banking_%') as credentials, (select bank_account_id from accounts where id = ?) as link",
+				[checkingId],
+			);
+
+			expect(left.rows[0]).toMatchObject({ connections: 0, credentials: 0, link: null });
+		} finally {
+			db.$client.close();
+		}
+	} finally {
+		const restored = await request.put("/api/bank-connections/credentials", {
+			headers: { origin: WEB_URL },
+			data: {
+				country: "FR",
+				applicationId: BANK_APPLICATION_ID,
+				privateKey: await readFile(BANK_KEY_FILE, "utf8"),
+			},
+		});
+		expect(restored.status()).toBe(200);
 	}
 });

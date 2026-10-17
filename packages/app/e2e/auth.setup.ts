@@ -82,6 +82,7 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	// test runs on the credentials saved here, as a household saves them.
 	const saved = await page.request.put("/api/bank-connections/credentials", {
 		data: {
+			country: "FR",
 			applicationId: BANK_APPLICATION_ID,
 			privateKey: await readFile(BANK_KEY_FILE, "utf8"),
 		},

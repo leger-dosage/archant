@@ -8,7 +8,7 @@ import type {
 	LinkBankAccountsInput,
 	StartConnectionInput,
 } from "../schemas/bank-connections.ts";
-import type { BankCredentialDeps } from "./bank-credentials.ts";
+import type { BankCredentialDeps, BankSetup } from "./bank-credentials.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { AnyColumn } from "drizzle-orm";
 
@@ -30,7 +30,12 @@ import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
 import { connectionAlert } from "../domain/bank-connection-alert.ts";
 import { addDays, addMonths, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
-import { resolveBankConnector } from "./bank-credentials.ts";
+import {
+	assertRemovable,
+	bankSetup,
+	deleteStoredCredentials,
+	resolveBankConnector,
+} from "./bank-credentials.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { linkBankAccount, unlinkBankAccount } from "./ledger/bank-link.ts";
@@ -85,6 +90,7 @@ type BankEnv = Pick<
 	Env,
 	| "ENABLE_BANKING_APPLICATION_ID"
 	| "ENABLE_BANKING_PRIVATE_KEY"
+	| "ENABLE_BANKING_COUNTRY"
 	| "ENCRYPTION_KEY"
 	| "ENABLE_BANKING_API_URL"
 	| "BETTER_AUTH_URL"
@@ -102,7 +108,7 @@ export function bankDepsFromEnv(
 		bankCredentials:
 			applicationId === undefined || privateKey === undefined
 				? null
-				: { applicationId, privateKey },
+				: { applicationId, privateKey, country: env.ENABLE_BANKING_COUNTRY },
 		encryptionKey: env.ENCRYPTION_KEY ?? null,
 		bankApiUrl: env.ENABLE_BANKING_API_URL,
 		redirectUrl: new URL(REDIRECT_PATH, env.BETTER_AUTH_URL).toString(),
@@ -167,11 +173,9 @@ function toRecord(row: typeof bankConnections.$inferSelect, now: number): BankCo
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
-export async function listInstitutions(
-	deps: BankConnectionDeps,
-	country: string,
-): Promise<InstitutionRecord[]> {
-	const { connector } = await resolveBankConnector(deps);
+/** Sure's `select_bank`: the banks of the country saved with the credentials. */
+export async function listInstitutions(deps: BankConnectionDeps): Promise<InstitutionRecord[]> {
+	const { connector, country } = await resolveBankConnector(deps);
 
 	try {
 		const institutions = await connector.listInstitutions(country);
@@ -204,15 +208,16 @@ async function findInstitution(
 }
 
 /**
- * Sure's `authorize`: reads the bank again from the provider, so only a
- * listed name goes through, stores a pending row keyed by a fresh `state`,
- * and returns the bank's consent URL. A failure removes the row.
+ * Sure's `authorize`: reads the bank again from the provider, in the country
+ * saved with the credentials, so only a listed name goes through, stores a
+ * pending row keyed by a fresh `state`, and returns the bank's consent URL.
+ * A failure removes the row.
  */
 export async function startConnection(
 	deps: BankConnectionDeps,
 	input: StartConnectionInput,
 ): Promise<{ url: string }> {
-	const { connector } = await resolveBankConnector(deps);
+	const { connector, country } = await resolveBankConnector(deps);
 	const now = Date.now();
 
 	// Abandoned attempts: the user closed the bank's page, or never came back.
@@ -227,13 +232,7 @@ export async function startConnection(
 			),
 		);
 
-	const institution = await findInstitution(
-		deps,
-		connector,
-		null,
-		input.country,
-		input.institution,
-	);
+	const institution = await findInstitution(deps, connector, null, country, input.institution);
 
 	if (institution === undefined) {
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
@@ -957,4 +956,45 @@ export async function disconnectConnection(
 			.where(and(eq(bankConnections.id, connection.id), eq(bankConnections.syncStartedAt, now)));
 		throw error;
 	}
+}
+
+/**
+ * Sure's « Supprimer » on the Enable Banking panel, for Archant's one set of
+ * credentials: every active connection is disconnected as `destroy` does
+ * (session revoked, accounts kept as manual ones), attempts in flight are
+ * dropped, then the stored credentials are deleted. Banks are disconnected
+ * before the rows go, so each session is revoked with them. A running sync
+ * refuses it before anything is disconnected; the environment's
+ * credentials refuse it outright.
+ */
+export async function removeBankCredentials(deps: BankConnectionDeps): Promise<BankSetup> {
+	assertRemovable(deps);
+
+	const now = Date.now();
+	const active = await deps.db
+		.select({ id: bankConnections.id, syncStartedAt: bankConnections.syncStartedAt })
+		.from(bankConnections)
+		.where(eq(bankConnections.status, "active"))
+		.orderBy(asc(bankConnections.createdAt));
+
+	if (active.some((row) => row.syncStartedAt !== null && row.syncStartedAt >= now - LEASE_MS)) {
+		throw new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.");
+	}
+
+	// In sequence: each takes its connection's lease and the write lock.
+	await active.reduce<Promise<unknown>>(
+		(previous, row) => previous.then(() => disconnectConnection(deps, row.id)),
+		Promise.resolve(),
+	);
+	await deps.db.transaction(
+		async (tx) => {
+			await tx.delete(bankConnections).where(eq(bankConnections.status, "pending"));
+			await deleteStoredCredentials({ db: tx });
+		},
+		{ behavior: "immediate" },
+	);
+
+	deps.logger.info({ connections: active.length }, "bank credentials removed");
+
+	return bankSetup(deps);
 }

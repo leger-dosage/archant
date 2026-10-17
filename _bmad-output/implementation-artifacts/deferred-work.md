@@ -316,3 +316,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-21-an-activity-label-on-investment-transactions.md`
   summary: The monthly statistics (medians and means) leave a row labelled `Transfer`, `Sweep In`, `Sweep Out` or `Exchange` out, where Sure's `IncomeStatement::FamilyStats` and `CategoryStats` keep it, since only `Totals` and `DailyExpenseTotals` call `investment_activity_label_sql`.
   evidence: `statisticsOf` and `getIncomeStatement`'s statistics read `cashFlowByMonth` and `cashFlowByDay`, built on `countedInCashFlow`, which the budget's rollover and the month's totals share; following Sure means keying those rows by the label so the statistics keep what the totals drop.
+
+## Deferred from: code review of spec-29-1-choose-the-banks-country-with-the-credentials-and-remove-them (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-1-choose-the-banks-country-with-the-credentials-and-remove-them.md`
+  summary: A bank callback that has claimed its pending row and is awaiting the provider's session when that row is deleted, by removing the credentials or by the 30-minute cleanup, leaves the new session unstored and unrevoked at Enable Banking.
+  evidence: `completeConnection` throws once its update finds no row, after `completeAuthorization` returned a session; the session lapses only at its consent end. Revoking it before throwing would close the gap.

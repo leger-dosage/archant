@@ -122,15 +122,18 @@ export const queryKeys = {
 		paymentCandidates: (id: string) => ["recurring", "occurrence", id, "candidates"] as const,
 	},
 	/**
-	 * Bank connections. `setup` changes when credentials are saved, and when a
-	 * connection completes or goes, since an active one locks them; a new
-	 * connection also invalidates `list`. `institutions` never changes while
-	 * the page is open. Linking rewrites `accounts(id)` from its own answer; a
-	 * disconnection drops it.
+	 * Bank connections. `setup` changes when credentials are saved or removed,
+	 * and when a connection completes or goes, since an active one locks them;
+	 * a new connection, and removing the credentials, also invalidate `list`.
+	 * `institutions` is keyed by the country saved with the credentials, which
+	 * the server reads, so a new country is a new list. Linking rewrites
+	 * `accounts(id)` from its own answer; a disconnection drops it.
 	 */
 	bankConnections: {
 		setup: ["bank-connections", "setup"] as const,
 		list: ["bank-connections", "list"] as const,
+		/** Every country's list, gone stale once the credentials are saved or removed. */
+		allInstitutions: ["bank-connections", "institutions"] as const,
 		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
 		accounts: (connectionId: string) => ["bank-connections", "accounts", connectionId] as const,
 	},

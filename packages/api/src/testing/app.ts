@@ -628,7 +628,7 @@ export async function syncApp(bank: Parameters<typeof buildTestApp>[4] = configu
 export async function linkedConnection(app: ReturnType<typeof buildTestApp>) {
 	const requests = mockProvider();
 	const client = testClient(withSession(app, template.cookie)).api["bank-connections"];
-	await client.$post({ json: { country: "FR", institution: "Banque Test" } });
+	await client.$post({ json: { institution: "Banque Test" } });
 	const { state } = z
 		.object({ state: z.string() })
 		.parse(requests.find((sent) => sent.path === "/auth")?.body);
