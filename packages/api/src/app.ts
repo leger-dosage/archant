@@ -36,6 +36,7 @@ import { attachmentsRoutes } from "./routes/attachments.ts";
 import { bankConnectionsRoutes } from "./routes/bank-connections.ts";
 import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
+import { csvImportsRoutes } from "./routes/csv-imports.ts";
 import { exportRoutes } from "./routes/export.ts";
 import { goalsRoutes } from "./routes/goals.ts";
 import { healthRoutes } from "./routes/health.ts";
@@ -273,6 +274,7 @@ function createApi(deps: AppDeps) {
 		.route("/trades", tradesRoutes(deps))
 		.route("/imports", importsRoutes(deps))
 		.route("/sure-imports", sureImportsRoutes(deps))
+		.route("/csv-imports", csvImportsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
 		.route("/merchants", merchantsRoutes(deps))
 		.route("/tags", tagsRoutes(deps))
@@ -406,6 +408,8 @@ export function createApp(deps: AppDeps) {
 			except(
 				[
 					"/api/accounts/:id/imports",
+					"/api/csv-imports",
+					"/api/csv-imports/preview",
 					"/api/sure-imports",
 					"/api/sure-imports/preflight",
 					"/api/transactions/:id/attachments",

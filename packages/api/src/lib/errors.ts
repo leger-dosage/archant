@@ -49,14 +49,22 @@ export const ERROR_STATUSES = {
 	 */
 	NDJSON_INVALID: 400,
 	/**
-	 * A Sure archive larger than `SURE_IMPORT_MAX_NDJSON_SIZE_MB`, refused
-	 * before it is read; `params.maxSize` is the limit in megabytes.
+	 * A raw-data CSV file that does not read, with the chosen separator, into
+	 * headers and at least one data row, as Sure's `csv_valid?`. Nothing is
+	 * read further.
+	 */
+	CSV_INVALID: 400,
+	/**
+	 * A Sure archive larger than `SURE_IMPORT_MAX_NDJSON_SIZE_MB`, or a CSV
+	 * file larger than Sure's `MAX_CSV_SIZE`, 10 MB, refused before it is
+	 * read; `params.maxSize` is the limit in megabytes.
 	 */
 	IMPORT_FILE_TOO_LARGE: 400,
 	/**
 	 * A Sure archive with more lines carrying a `type` than
-	 * `SURE_IMPORT_MAX_ROWS`, as Sure's `MaxRowCountExceededError`;
-	 * `params.max` is the limit. Nothing is written.
+	 * `SURE_IMPORT_MAX_ROWS`, or a CSV file with more data rows than Sure's
+	 * `max_row_count`, as Sure's `MaxRowCountExceededError`; `params.max` is
+	 * the limit. Nothing is written.
 	 */
 	IMPORT_TOO_MANY_ROWS: 400,
 	/**
@@ -64,6 +72,11 @@ export const ERROR_STATUSES = {
 	 * error, as Sure's `PreflightError`. Nothing is written.
 	 */
 	SURE_IMPORT_INVALID: 400,
+	/**
+	 * A CSV import posted while its preview, run again, finds an error or a
+	 * value left to map, as Sure's `publishable?` refuses it. Nothing is written.
+	 */
+	CSV_IMPORT_INVALID: 400,
 	/**
 	 * The account changed between an import's preview and its confirmation, or
 	 * gives other counts than an assistant's `expectedCounts`; `params` holds the
