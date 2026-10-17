@@ -940,11 +940,11 @@ async function revokingConnector(deps: BankConnectionDeps, connectionId: string)
 
 /**
  * Sure's `destroy` on a connection: revokes its session at the provider,
- * turns every account it feeds into a manual one with its history unchanged
- * (AD-8), then deletes the connection, its bank accounts with it. Synced
- * lines keep their keys, their connection cleared, so connecting the same
- * bank again recognises every one of them. Takes the sync lease: a running
- * sync answers `SYNC_IN_PROGRESS`.
+ * turns every account it feeds into a manual one, computed forward from
+ * its valuations (AD-8), then deletes the connection, its bank accounts
+ * with it. Synced lines keep their keys, their connection cleared, so
+ * connecting the same bank again recognises every one of them. Takes the
+ * sync lease: a running sync answers `SYNC_IN_PROGRESS`.
  * Needs no connector, so a lost key never keeps a bank connected.
  */
 export async function disconnectConnection(
@@ -1002,10 +1002,10 @@ export async function disconnectConnection(
 
 /**
  * Sure's `unlink` on one account: it turns manual with every line and
- * balance it holds (AD-8), while its bank account stays with the connection,
- * which keeps syncing the others and offers it for linking again. Takes the
- * connection's sync lease, so no run writes the bank's figures back onto the
- * account while it turns manual.
+ * valuation it holds, computed forward (AD-8), while its bank account stays
+ * with the connection, which keeps syncing the others and offers it for
+ * linking again. Takes the connection's sync lease, so no run writes the
+ * bank's figures back onto the account while it turns manual.
  */
 export async function unlinkAccount(
 	deps: BankConnectionDeps,

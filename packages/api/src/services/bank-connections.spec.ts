@@ -1987,6 +1987,19 @@ async function balancesOf(accountId: string) {
 	);
 }
 
+/** `kept` with the bank's anchor turned `reconciliation`, as an unlink keeps it. */
+function retired(kept: readonly { kind: string; date: string; amount: number }[]) {
+	return kept.map((row) =>
+		row.kind === "current_anchor" ? { ...row, kind: "reconciliation" } : row,
+	);
+}
+
+async function dayOf(accountId: string, date: string) {
+	const days = await balancesOf(accountId);
+
+	return days.find((row) => row.date === date)?.balance;
+}
+
 async function keysOf(accountId: string) {
 	return temp.db.all<{ key: string; connectionId: string | null }>(
 		sql`select key, connection_id as connectionId from entry_keys where account_id = ${accountId} order by key`,
@@ -2034,9 +2047,16 @@ async function synced() {
 }
 
 describe("disconnectConnection", () => {
-	it("revokes the session, keeps the accounts as manual ones with their history, and deletes the connection", async () => {
+	it("revokes the session, keeps the accounts as manual ones computed forward, and deletes the connection", async () => {
 		const { connection, accountIds, checkingAccount } = await synced();
-		const history = await Promise.all(accountIds.map(balancesOf));
+		const kept = await Promise.all(accountIds.map(valuations));
+		const other = accountIds.find((id) => id !== checkingAccount);
+		if (other === undefined) {
+			throw new Error("The fixture links two accounts.");
+		}
+		const otherHistory = await balancesOf(other);
+		// Backward from the bank's balance, the day before the line differs.
+		await expect(dayOf(checkingAccount, "2026-09-19")).resolves.not.toBe(123456);
 		const keys = await keysOf(checkingAccount);
 		const pending = await temp.db.all(
 			sql`select e.id from entries e join transactions t on t.entry_id = e.id where e.account_id = ${checkingAccount} and t.pending = 1`,
@@ -2063,7 +2083,18 @@ describe("disconnectConnection", () => {
 			{ bankAccountId: null, active: true },
 			{ bankAccountId: null, active: true },
 		]);
-		await expect(Promise.all(accountIds.map(balancesOf))).resolves.toEqual(history);
+		// Every valuation stays, the bank's anchor as a reconciliation, and the
+		// accounts are computed forward from them, as Sure's `Account::Syncer`
+		// once not `linked?`.
+		await expect(Promise.all(accountIds.map(valuations))).resolves.toEqual(kept.map(retired));
+		expect(kept[accountIds.indexOf(checkingAccount)]).toContainEqual({
+			kind: "current_anchor",
+			date: "2026-09-24",
+			amount: 123456,
+		});
+		await expect(balancesOf(other)).resolves.toEqual(otherHistory);
+		await expect(dayOf(checkingAccount, "2026-09-19")).resolves.toBe(123456);
+		await expect(dayOf(checkingAccount, "2026-09-24")).resolves.toBe(123456);
 		expect(keys.length).toBeGreaterThan(0);
 		await expect(keysOf(checkingAccount)).resolves.toEqual(
 			keys.map(({ key }) => ({ key, connectionId: null })),
@@ -2326,7 +2357,9 @@ describe("unlinkAccount", () => {
 			.set({ lastSyncedAt: NOW - DAY, lastError: "BANK_PROVIDER_ERROR" })
 			.where(eq(bankConnections.id, connection.id));
 		const before = await rows();
-		const history = await balancesOf(checkingAccount);
+		const kept = await valuations(checkingAccount);
+		const otherHistory = await balancesOf(other);
+		await expect(dayOf(checkingAccount, "2026-09-19")).resolves.not.toBe(123456);
 		const entries = await entriesOf(checkingAccount);
 		const keys = await keysOf(checkingAccount);
 		const requests = mockProvider();
@@ -2339,8 +2372,13 @@ describe("unlinkAccount", () => {
 		await expect(linkOf(checkingAccount)).resolves.toBeNull();
 		expect(otherBankAccountId).not.toBeNull();
 		await expect(linkOf(other)).resolves.toBe(otherBankAccountId);
-		await expect(balancesOf(checkingAccount)).resolves.toEqual(history);
-		// Its lines stay; the bank's current anchor goes, as a disconnection's does.
+		// Its lines and valuations stay, the bank's anchor as a reconciliation,
+		// and it is computed forward from them; the other account, still linked,
+		// keeps its balances.
+		await expect(valuations(checkingAccount)).resolves.toEqual(retired(kept));
+		await expect(dayOf(checkingAccount, "2026-09-19")).resolves.toBe(123456);
+		await expect(dayOf(checkingAccount, "2026-09-24")).resolves.toBe(123456);
+		await expect(balancesOf(other)).resolves.toEqual(otherHistory);
 		expect(transactionsAmong(entries)).toHaveLength(2);
 		await expect(entriesOf(checkingAccount).then(transactionsAmong)).resolves.toEqual(
 			transactionsAmong(entries),

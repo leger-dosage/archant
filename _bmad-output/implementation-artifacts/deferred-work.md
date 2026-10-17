@@ -354,3 +354,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address.md`
   summary: A stored `auto_sync_time` that no longer reads falls back to 02:22 in `bankSyncSettings`, a path no test covers.
   evidence: only the validated `PUT` writes the row, so it takes a hand-edited database; a raw value reaching `clockOf` would stop the timer silently.
+
+## Deferred from: code review of spec-29-10-recompute-an-unlinked-accounts-history-forward (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-10-recompute-an-unlinked-accounts-history-forward.md`
+  summary: Unlinking an account and linking it again on the day of the bank's last figure leaves a `reconciliation` and a new `current_anchor` on that day, where Sure keeps one valuation per day.
+  evidence: pre-existing, the unlink before Story 29.10 wrote the same reconciliation; `linkBankAccount` writes its anchor through `writeCurrentAnchor` without looking for a valuation on today, where Sure's `CurrentBalanceManager` would update the one there.
