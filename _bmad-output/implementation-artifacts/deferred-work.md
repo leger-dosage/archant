@@ -328,3 +328,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-29-4-clean-bank-labels-and-create-merchants-from-counterparties.md`
   summary: A bank line already present, or paired with an entry another source wrote, takes neither the bank's label nor its merchant, where Sure's `import_transaction` re-enriches name, notes and merchant on every read and on the duplicate it claims.
   evidence: `groupLines` in `services/ledger/ingest.ts` writes nothing on a `present` line and only keys on a `matched` one; Sure's `enrich_attribute` calls run for both unless the field is locked. Bank lines synced before Story 29.4 therefore keep no merchant, and a recurring series keyed by their label stops at the upgrade while a new one forms under the merchant.
+
+## Deferred from: code review of spec-29-8-unlink-one-bank-account (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-8-unlink-one-bank-account.md`
+  summary: The account page's « … » menu still offers « Déconnecter <banque> pour supprimer ce compte » on a linked account, an item Sure's `accounts/show/_menu` does not have, now that « Délier du fournisseur » on the accounts list lets one account be deleted alone.
+  evidence: `packages/app/src/components/AccountMenu.tsx` links to the connection page; Sure's show menu offers deletion only when `!account.linked?` and nothing else.
+
+## Deferred from: code review of spec-29-8-unlink-one-bank-account (2026-10-17, second pass)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-8-unlink-one-bank-account.md`
+  summary: A connection with no active linked account, after its last account is unlinked, deactivated or skipped, never stamps `last_synced_at` again, so the « synchronisation arrêtée » banner shows 48 hours later although nothing is left to read.
+  evidence: `runSync` in `services/sync.ts` returns before the stamp when `linked` is empty, to spare the next link the hour between two syncs; `connectionAlert` then answers `sync_stale`. Story 29.9 removes that hour, after which an empty run can stamp the connection as Sure's item sync does.

@@ -2352,6 +2352,45 @@ async function linkedCard(toggle: boolean) {
 	return { id: card.id, bankAccountId };
 }
 
+describe("DELETE /api/accounts/:id/unlink", () => {
+	it("turns a linked account manual, its bank account kept with its connection", async () => {
+		const card = await linkedCard(false);
+
+		const response = await request("DELETE", `/api/accounts/${card.id}/unlink`);
+
+		expect(response).toEqual({ status: 200, body: { data: { id: card.id } } });
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(eq(accounts.id, card.id))
+				.get(),
+		).resolves.toEqual({ bankAccountId: null });
+		await expect(
+			temp.db
+				.select({ id: bankAccounts.id })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.id, card.bankAccountId))
+				.get(),
+		).resolves.toEqual({ id: card.bankAccountId });
+		await expect(request("GET", `/api/accounts/${card.id}`)).resolves.toMatchObject({
+			body: { data: { bankConnection: null } },
+		});
+	});
+
+	it("refuses a manual account with ACCOUNT_NOT_LINKED, and an unknown one with NOT_FOUND", async () => {
+		const manual = await openAccount();
+
+		const refused = await request("DELETE", `/api/accounts/${manual.id}/unlink`);
+		const unknown = await request("DELETE", `/api/accounts/${crypto.randomUUID()}/unlink`);
+
+		expect(refused.status).toBe(409);
+		expect(errorBody.parse(refused.body).error.code).toBe("ACCOUNT_NOT_LINKED");
+		expect(unknown.status).toBe(404);
+		expect(errorBody.parse(unknown.body).error.code).toBe("NOT_FOUND");
+	});
+});
+
 describe("PATCH /api/accounts/:id on a credit card", () => {
 	it("replaces a card's details whole, a blank one cleared", async () => {
 		const card = await openAccount({
@@ -2789,6 +2828,23 @@ describe("a viewer on a loan or a position", () => {
 		expect(detail.body).toMatchObject({
 			data: { additionalDetails: { institutionName: "BNP", notes: "Conseiller" } },
 		});
+	});
+
+	it("is refused FORBIDDEN on an unlink, the account still linked", async () => {
+		const card = await linkedCard(false);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const unlink = await viewer.request(`/api/accounts/${card.id}/unlink`, { method: "DELETE" });
+
+		expect(unlink.status).toBe(403);
+		expect(errorBody.parse(await unlink.json()).error.code).toBe("FORBIDDEN");
+		await expect(
+			temp.db
+				.select({ bankAccountId: accounts.bankAccountId })
+				.from(accounts)
+				.where(eq(accounts.id, card.id))
+				.get(),
+		).resolves.toEqual({ bankAccountId: card.bankAccountId });
 	});
 
 	it("reads a card's details and toggle, and is refused FORBIDDEN on either, nothing written", async () => {

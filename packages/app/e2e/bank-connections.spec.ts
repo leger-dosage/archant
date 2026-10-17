@@ -916,7 +916,9 @@ test("a linked card's toggle saves and reads back, beside the credit its bank's 
 	).toBeChecked();
 });
 
-test("a linked account's menu offers no deletion, only its connection's page", async ({ page }) => {
+test("a linked account's menu offers unlinking but no deletion, and its page leads to its connection", async ({
+	page,
+}) => {
 	const connectionId = await connect(page);
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
 	await validate(page).click();
@@ -933,6 +935,7 @@ test("a linked account's menu offers no deletion, only its connection's page", a
 		.click();
 	await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
 		"Modifier",
+		"Délier du fournisseur",
 		"Désactiver le compte",
 		"Exclure de tous les rapports",
 	]);
@@ -1620,6 +1623,113 @@ test("a session the bank revoked ends the consent at the first visit of the day,
 			banners(page).getByRole("button", { name: "Reconnecter", exact: true }),
 		).toBeVisible();
 		await expectRowBadge(page, connectionId, "consentExpired", "Consentement expiré");
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, {
+			headers: { origin: WEB_URL },
+		});
+	}
+});
+
+// Story 29.8: Sure's « Délier du fournisseur », one account at a time.
+test("unlinking one account keeps it manual with its balance, offers its bank account again, and the bank keeps syncing", async ({
+	page,
+	request,
+}) => {
+	const { connectionId, checkingId, cardId } = await connectAndLink(page);
+	const row = (accountId: string) =>
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ has: page.locator(`a[href="/accounts/${accountId}"]`) });
+	const openMenu = (accountId: string, name: string) =>
+		row(accountId)
+			.getByRole("button", { name: `Actions du compte ${name}` })
+			.click();
+
+	try {
+		// The connection's page holds its bank accounts in cache, the checking one linked.
+		await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toHaveCount(0);
+		await page
+			.getByRole("navigation", { name: "Navigation principale" })
+			.getByRole("link", { name: "Comptes", exact: true })
+			.click();
+		await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
+		await openMenu(checkingId, FAKE_ACCOUNTS.checking.name);
+		await page.getByRole("menu").getByRole("menuitem", { name: "Délier du fournisseur" }).click();
+
+		const dialog = page.getByRole("dialog", { name: "Délier le compte du fournisseur ?" });
+		await expect(dialog).toContainText(
+			`Vous êtes sur le point de délier ${FAKE_ACCOUNTS.checking.name} d'Enable Banking. Cela le convertira en compte manuel.`,
+		);
+		await expect(dialog).toContainText("Ce que cela signifie");
+		await expect(dialog.getByRole("listitem")).toHaveText([
+			"Le compte ne se synchronisera plus automatiquement avec votre fournisseur",
+			"Vous devrez ajouter des transactions et mettre à jour les soldes manuellement",
+			"Toutes les transactions et soldes existants seront conservés",
+			"Après la déliaison, vous pourrez supprimer le compte si nécessaire",
+		]);
+		await expect(dialog.getByRole("button", { name: "Annuler" })).toHaveCount(0);
+
+		// A sync running meanwhile refuses it once: the dialog stays for another try.
+		await page.route(
+			`**/api/accounts/${checkingId}/unlink`,
+			(route) =>
+				route.fulfill({
+					status: 409,
+					json: {
+						error: {
+							code: "SYNC_IN_PROGRESS",
+							message: "This bank connection is already syncing.",
+						},
+					},
+				}),
+			{ times: 1 },
+		);
+		await dialog.getByRole("button", { name: "Confirmer et délier" }).click();
+		await expect(toast(page, "Synchronisation déjà en cours.")).toBeVisible();
+		await expect(dialog).toBeVisible();
+
+		await dialog.getByRole("button", { name: "Confirmer et délier" }).click();
+		await expect(
+			toast(page, "Compte délié avec succès. C'est maintenant un compte manuel."),
+		).toBeVisible();
+		await expect(dialog).toBeHidden();
+		await expect(row(checkingId)).toContainText("1 234,56 €");
+
+		// Manual now: no unlink, and Sure's deletion is offered.
+		await openMenu(checkingId, FAKE_ACCOUNTS.checking.name);
+		const manual = page.getByRole("menu");
+		await expect(manual.getByRole("menuitem", { name: "Supprimer le compte" })).toBeVisible();
+		await expect(manual.getByRole("menuitem", { name: "Délier du fournisseur" })).toHaveCount(0);
+		await page.keyboard.press("Escape");
+		await openMenu(cardId, FAKE_ACCOUNTS.card.name);
+		await expect(
+			page.getByRole("menu").getByRole("menuitem", { name: "Délier du fournisseur" }),
+		).toBeVisible();
+		await page.keyboard.press("Escape");
+
+		// Back without a reload: the cached bank accounts were refreshed by the unlink.
+		await page.goBack();
+		await expect(page).toHaveURL(new RegExp(`/settings/banks/${connectionId}$`, "u"));
+		await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toBeVisible();
+		await expect(linkedAccountId(page, FAKE_ACCOUNTS.card.name)).resolves.toBe(cardId);
+
+		// Past the hour between two syncs, the connection syncs its card alone.
+		await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60 * 1000 });
+		await page.getByRole("button", { name: "Synchroniser" }).click();
+		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
+		await expect(toast(page, "Synchronisation terminée avec une erreur.")).toHaveCount(0);
+
+		// The sync left the checking account manual, at its balance, with its lines.
+		await page.goto("/accounts");
+		await expect(row(checkingId)).toContainText("1 234,56 €");
+		await openMenu(checkingId, FAKE_ACCOUNTS.checking.name);
+		await expect(
+			page.getByRole("menu").getByRole("menuitem", { name: "Supprimer le compte" }),
+		).toBeVisible();
+		await page.keyboard.press("Escape");
+		await page.goto(`/accounts/${checkingId}`);
+		await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
 	} finally {
 		await request.delete(`/api/bank-connections/${connectionId}`, {
 			headers: { origin: WEB_URL },

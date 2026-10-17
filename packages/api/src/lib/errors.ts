@@ -160,10 +160,12 @@ export const ERROR_STATUSES = {
 	 */
 	PRICE_FROM_PROVIDER: 409,
 	/**
-	 * A delete of an account a bank still feeds: the next sync would offer its
-	 * bank account for linking again, so the bank is disconnected first, as Sure.
+	 * A delete of an account a bank still feeds, Sure's `cannot_delete_linked`:
+	 * the account is unlinked first, or its bank disconnected.
 	 */
 	ACCOUNT_LINKED: 409,
+	/** An unlink of an account no bank account feeds, Sure's `not_linked`. Nothing is written. */
+	ACCOUNT_NOT_LINKED: 409,
 	/**
 	 * A default account for new transactions that is not an active, unlinked
 	 * depository or credit card, as Sure's `eligible_for_transaction_default?`.

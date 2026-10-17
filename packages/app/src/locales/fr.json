@@ -273,6 +273,7 @@
 			"includeInReports": "Inclure dans les rapports",
 			"setDefault": "Définir par défaut",
 			"removeDefault": "Retirer par défaut",
+			"unlink": "Délier du fournisseur",
 			"delete": "Supprimer le compte"
 		},
 		"form": {
@@ -406,6 +407,19 @@
 		"deactivated": "Compte « {{name}} » désactivé.",
 		"reactivated": "Compte « {{name}} » réactivé.",
 		"disconnectToDelete": "Déconnecter {{institutionName}} pour supprimer ce compte",
+		"unlink": {
+			"title": "Délier le compte du fournisseur ?",
+			"description": "Vous êtes sur le point de délier <name/> d'<provider>Enable Banking</provider>. Cela le convertira en compte manuel.",
+			"warningTitle": "Ce que cela signifie",
+			"warnings": {
+				"noSync": "Le compte ne se synchronisera plus automatiquement avec votre fournisseur",
+				"manualUpdates": "Vous devrez ajouter des transactions et mettre à jour les soldes manuellement",
+				"transactionsKept": "Toutes les transactions et soldes existants seront conservés",
+				"canDelete": "Après la déliaison, vous pourrez supprimer le compte si nécessaire"
+			},
+			"confirm": "Confirmer et délier",
+			"unlinked": "Compte délié avec succès. C'est maintenant un compte manuel."
+		},
 		"form": {
 			"title": "Modifier le compte",
 			"description": "La devise ne change pas après la création du compte. Le solde d'ouverture se modifie dans l'onglet « Soldes ».",
@@ -2699,7 +2713,8 @@
 		"SYNC_IN_PROGRESS": "Synchronisation déjà en cours.",
 		"SYNC_TOO_RECENT": "Cette banque a été synchronisée il y a moins d'une heure. Réessayez plus tard.",
 		"CONSENT_EXPIRED": "Le consentement de cette banque a expiré. Renouvelez-le pour reprendre la synchronisation.",
-		"ACCOUNT_LINKED": "Ce compte est relié à une banque. Déconnectez la banque avant de le supprimer.",
+		"ACCOUNT_LINKED": "Impossible de supprimer un compte lié. Veuillez d'abord le délier.",
+		"ACCOUNT_NOT_LINKED": "Le compte n'est pas lié à un fournisseur.",
 		"DEFAULT_ACCOUNT_NOT_ELIGIBLE": "Seuls les comptes de liquidités et de carte de crédit peuvent être définis par défaut.",
 		"PRICE_FROM_PROVIDER": "Les cours de ce titre viennent de son fournisseur : il ne se saisit pas à la main.",
 		"PRICES_DISABLED": "La récupération des cours est désactivée. Activez-la pour mettre à jour les cours.",

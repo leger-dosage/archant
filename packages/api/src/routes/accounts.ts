@@ -28,6 +28,7 @@ import {
 	updateAccount,
 } from "../services/accounts.ts";
 import { getBalanceHistory } from "../services/balances.ts";
+import { unlinkAccount } from "../services/bank-connections.ts";
 import {
 	deletePosition,
 	listPositions,
@@ -70,6 +71,9 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		)
 		.delete("/:id", async (c) =>
 			c.json({ data: await deleteAccount(deps, c.req.param("id")) }, 200),
+		)
+		.delete("/:id/unlink", async (c) =>
+			c.json({ data: await unlinkAccount(deps, c.req.param("id")) }, 200),
 		)
 		.put("/:id/default", async (c) =>
 			c.json({ data: await setDefaultAccount(deps, signedInUser(c).id, c.req.param("id")) }, 200),
