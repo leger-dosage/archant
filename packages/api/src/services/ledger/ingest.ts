@@ -12,7 +12,7 @@ import type { ServiceDeps } from "../deps.ts";
 import type { KeyTarget } from "./entry-keys.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, eq, lte, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, ne, notExists } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -23,6 +23,7 @@ import { entries } from "@archant/data/schema/entries";
 import { ASSISTANT_KEY_SOURCE } from "@archant/data/schema/entry-keys";
 import type { ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { merchants } from "@archant/data/schema/merchants";
 import { taggings } from "@archant/data/schema/taggings";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
@@ -44,7 +45,14 @@ import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
 import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
-import { ROWS_PER_INSERT, inSequence, invalidField, lockedBy, oneByOne } from "./shared.ts";
+import {
+	KEYS_PER_LOOKUP,
+	ROWS_PER_INSERT,
+	inSequence,
+	invalidField,
+	lockedBy,
+	oneByOne,
+} from "./shared.ts";
 import { snapshotOn } from "./snapshots.ts";
 import { matchTransfers } from "./transfers.ts";
 
@@ -207,6 +215,71 @@ export type IngestResult = {
 
 function filledFields(line: NormalizedTransaction): LockableField[] {
 	return line.notes === null ? ["date", "amount", "label"] : ["date", "amount", "label", "notes"];
+}
+
+/**
+ * A merchant name as `findOrCreateMerchants` compares it: composed, as the
+ * merchant schema stores a name, then folded with the locale-aware case
+ * `assertNameFree` uses.
+ */
+const foldedName = (name: string) => name.normalize("NFC").toLocaleLowerCase("fr");
+
+/**
+ * The merchant id of each line naming one, as Sure's
+ * `find_or_create_merchant`: the merchant of that name, case aside, else one
+ * created under it. Archant holds one household, so a bank's merchant is one
+ * of its merchants, and one the user named first is the one found. Returns
+ * the ids it created beside them.
+ */
+async function findOrCreateMerchants(
+	tx: Transaction,
+	lines: readonly NormalizedTransaction[],
+	now: number,
+): Promise<{ ids: Map<NormalizedTransaction, string>; created: string[] }> {
+	const named = lines.flatMap((line) =>
+		line.merchant === null || line.merchant === undefined
+			? []
+			: [{ line, name: line.merchant.normalize("NFC") }],
+	);
+	const ids = new Map<NormalizedTransaction, string>();
+
+	if (named.length === 0) {
+		return { ids, created: [] };
+	}
+
+	const byFold = new Map<string, string>();
+	const stored = await tx
+		.select({ id: merchants.id, name: merchants.name })
+		.from(merchants)
+		.orderBy(asc(merchants.createdAt), asc(merchants.id));
+
+	// Two stored names folding alike: the older one is the merchant found.
+	for (const { id, name } of stored) {
+		const folded = foldedName(name);
+
+		if (!byFold.has(folded)) {
+			byFold.set(folded, id);
+		}
+	}
+
+	const created: (typeof merchants.$inferInsert)[] = [];
+
+	for (const { line, name } of named) {
+		const folded = foldedName(name);
+		let id = byFold.get(folded);
+
+		if (id === undefined) {
+			id = crypto.randomUUID();
+			byFold.set(folded, id);
+			created.push({ id, name, createdAt: now, updatedAt: now });
+		}
+
+		ids.set(line, id);
+	}
+
+	await inSequence(created, ROWS_PER_INSERT, (chunk) => tx.insert(merchants).values(chunk));
+
+	return { ids, created: created.map(({ id }) => id) };
 }
 
 /** The previewed import a keyed ingest belongs to; anything else is unknown. */
@@ -845,6 +918,12 @@ export async function ingest(
 			// entry in place, keeping its id and everything the user set.
 			const now = Date.now();
 			const absorbedFrom: IsoDate[] = [];
+			// Only for lines written or absorbed: a line already present changes nothing.
+			const { ids: merchantIds, created: createdMerchants } = await findOrCreateMerchants(
+				tx,
+				[...written, ...grouped.absorbed].map(({ line }) => line),
+				now,
+			);
 
 			if (keyTarget !== null) {
 				await oneByOne(grouped.absorbed, async ({ ref, entryId, line, keys }) => {
@@ -854,13 +933,25 @@ export async function ingest(
 					const taken = grouped.grouped.has(ref) ? { ...keys, fingerprint: null } : keys;
 
 					absorbedFrom.push(
-						await absorb(tx, entryId, { line, keys: taken }, keyTarget, options.origin, now),
+						await absorb(
+							tx,
+							entryId,
+							{ line, keys: taken, merchantId: merchantIds.get(line) ?? null },
+							keyTarget,
+							options.origin,
+							now,
+						),
 					);
 				});
 			}
 
-			// 4. Insert the new entries, attach keys to matched ones.
-			const rows = written.map((item) => ({ ...item, id: crypto.randomUUID() }));
+			// 4. Insert the new entries, attach keys to matched ones. An
+			// assistant's merchant, locked, wins over the one the line names.
+			const rows = written.map((item) => ({
+				...item,
+				id: crypto.randomUUID(),
+				merchantId: classification.merchantId ?? merchantIds.get(item.line) ?? null,
+			}));
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(entries).values(
@@ -889,7 +980,7 @@ export async function ingest(
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(transactions).values(
-					chunk.map(({ id, line, duplicate }) => ({
+					chunk.map(({ id, line, duplicate, merchantId }) => ({
 						entryId: id,
 						label: line.label,
 						notes: line.notes,
@@ -900,7 +991,7 @@ export async function ingest(
 						categoryId: classification.categoryId,
 						categoryOrigin:
 							classification.categoryId === null ? null : categoryOriginOf(options.origin),
-						merchantId: classification.merchantId,
+						merchantId,
 					})),
 				),
 			);
@@ -986,12 +1077,13 @@ export async function ingest(
 
 			// 5. Rules, on the rows this ingest created, possible duplicates
 			// included. Loaded once per call, inside this transaction. A new row
-			// carries no transfer yet, nor a merchant, category or tag but an
-			// assistant's, locked.
+			// carries no transfer yet, nor a category or tag but an assistant's,
+			// locked; its merchant is the assistant's or the bank's, which a rule
+			// may still change.
 			if (rows.length > 0) {
 				const { plan } = planActions(
 					await loadEnabledRules(tx),
-					rows.map(({ id, line }) => ({
+					rows.map(({ id, line, merchantId }) => ({
 						id,
 						accountId,
 						date: line.date,
@@ -999,7 +1091,7 @@ export async function ingest(
 						currency: line.currency,
 						label: line.label,
 						notes: line.notes,
-						merchantId: classification.merchantId,
+						merchantId,
 						categoryId: classification.categoryId,
 						tagIds: [...classification.tagIds],
 						excluded: false,
@@ -1013,6 +1105,26 @@ export async function ingest(
 
 				await applyRulePlan(tx, plan, { origin: "rule" });
 			}
+
+			// A merchant this ingest created that no line kept, a rule having
+			// replaced it or an absorbed entry keeping its own, would sit in
+			// « Réglages › Marchands » with no transaction, where Sure lists a
+			// provider's merchant only once a transaction holds it.
+			await inSequence(createdMerchants, KEYS_PER_LOOKUP, (chunk) =>
+				tx
+					.delete(merchants)
+					.where(
+						and(
+							inArray(merchants.id, chunk),
+							notExists(
+								tx
+									.select({ id: transactions.entryId })
+									.from(transactions)
+									.where(eq(transactions.merchantId, merchants.id)),
+							),
+						),
+					),
+			);
 
 			// 6. Transfer matching, once every new row exists, over every unmatched
 			// line of the household as Sure's family sync (AD-11).

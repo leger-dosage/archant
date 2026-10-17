@@ -25,6 +25,18 @@ export type NormalizedTransaction = {
 	 * lists booked lines.
 	 */
 	pending: boolean;
+	/**
+	 * The merchant the line names, found or created by name when the line is
+	 * written (AD-18); `null` or absent when it names none. Only a bank
+	 * connector sets it.
+	 */
+	merchant?: string | null | undefined;
+	/**
+	 * What the fingerprint hashes instead of `label` (AD-7): a bank line's
+	 * label as read before Sure's clean-ups, so a label that changes with the
+	 * household's merchants keeps the line's key. Only a bank connector sets it.
+	 */
+	keyLabel?: string | undefined;
 };
 
 /**

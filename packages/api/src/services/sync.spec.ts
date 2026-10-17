@@ -11,6 +11,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { merchants } from "@archant/data/schema/merchants";
 
 import * as registry from "../connectors/registry.ts";
 import { addDays } from "../domain/dates.ts";
@@ -58,6 +59,7 @@ vi.mock("../connectors/registry.ts", async (importOriginal) => {
 });
 
 const NOW = Date.parse("2026-09-24T10:00:00Z");
+const anyId: unknown = expect.any(String);
 const MINUTE = 60_000;
 const DAY = 86_400_000;
 
@@ -391,6 +393,16 @@ describe("windowStart", () => {
 	});
 });
 
+/** A booked debit of 4,50 on 20 September, `fields` on top. */
+const bankLine = (reference: string, fields: Record<string, unknown>) => ({
+	entry_reference: reference,
+	transaction_amount: { amount: "4.50", currency: "EUR" },
+	credit_debit_indicator: "DBIT",
+	status: "BOOK",
+	booking_date: "2026-09-20",
+	...fields,
+});
+
 describe("syncConnection", () => {
 	it("brings the bank's lines in once, and sets today's balance to the bank's booked one", async () => {
 		const requests = mockProvider();
@@ -420,6 +432,86 @@ describe("syncConnection", () => {
 			),
 		).resolves.toEqual([{ source: "enable-banking", connectionId, importId: null }]);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: null });
+	});
+
+	it("names lines from the household's merchants, and creates each counterparty's, as Sure", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const netflix = randomUUID();
+		await temp.db
+			.insert(merchants)
+			.values({ id: netflix, name: "Netflix", createdAt: 0, updatedAt: 0 });
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(
+			temp.db.all(
+				sql`select t.label, m.name as merchant, t.merchant_id as merchantId, t.locked_fields as locks from entries e join transactions t on t.entry_id = e.id left join merchants m on m.id = t.merchant_id where e.account_id = ${accountId} order by e.date, t.label`,
+			),
+		).resolves.toEqual([
+			{
+				label: "Employeur Test",
+				merchant: "Employeur Test",
+				merchantId: anyId,
+				locks: "{}",
+			},
+			{ label: "Prélèvement", merchant: null, merchantId: null, locks: "{}" },
+			{
+				label: "Carrefour Market",
+				merchant: "Carrefour Market",
+				merchantId: anyId,
+				locks: "{}",
+			},
+			{ label: "Netflix", merchant: "Netflix", merchantId: netflix, locks: "{}" },
+			{ label: "Virement entrant", merchant: null, merchantId: null, locks: "{}" },
+			{
+				label: "Boulangerie Test",
+				merchant: "Boulangerie Test",
+				merchantId: anyId,
+				locks: "{}",
+			},
+		]);
+	});
+
+	it("names a later account's line from a merchant an earlier account's sync created", async () => {
+		const shop = `Glacier ${randomUUID()}`;
+		mockProvider({
+			transactions: (url) =>
+				HttpResponse.json({
+					transactions: [
+						url.pathname.includes(FIXTURE_CHECKING_UID)
+							? bankLine("glace-1", { creditor: { name: shop }, remittance_information: ["CB"] })
+							: bankLine("glace-2", {
+									remittance_information: [`CB ${shop.toUpperCase()} 19/09`],
+								}),
+					],
+					continuation_key: null,
+				}),
+		});
+		const connectionId = await newConnection();
+		const checking = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const card = await linkedAccount(connectionId, FIXTURE_CARD_UID);
+		// The card is read second.
+		await temp.db
+			.update(bankAccounts)
+			.set({ createdAt: NOW + 1 })
+			.where(eq(bankAccounts.id, card.bankAccountId));
+
+		await syncConnection(deps(), connectionId);
+
+		const rows = async (accountId: string) =>
+			temp.db.all(
+				sql`select t.label, t.merchant_id as merchantId from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId}`,
+			);
+		const [created] = await temp.db
+			.select({ id: merchants.id })
+			.from(merchants)
+			.where(eq(merchants.name, shop));
+		await expect(rows(checking.accountId)).resolves.toEqual([
+			{ label: shop, merchantId: created?.id },
+		]);
+		await expect(rows(card.accountId)).resolves.toEqual([{ label: shop, merchantId: created?.id }]);
 	});
 
 	it("dates the bank's balance today, whatever day it describes, as Sure", async () => {

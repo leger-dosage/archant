@@ -929,20 +929,56 @@ const line = (extra: Record<string, unknown> = {}) => ({
 
 describe("toTransaction", () => {
 	it("maps a booked debit, keyed on the entry reference, never on the transaction id", () => {
-		expect(toTransaction(line({ transaction_id: "tx-1" }), SINCE)).toEqual({
+		expect(toTransaction(line({ transaction_id: "tx-1" }), SINCE, [])).toEqual({
 			externalId: "ref-1",
 			date: "2026-09-20",
 			amount: -1000,
 			currency: "EUR",
 			label: "Boulangerie",
+			keyLabel: "Boulangerie",
 			reference: null,
 			notes: "CB BOULANGERIE\n20/09",
 			pending: false,
+			merchant: "Boulangerie",
 		});
 	});
 
+	it("names a card placeholder's line and merchant from its cleaned remittance", () => {
+		const mapped = toTransaction(
+			line({
+				creditor: { name: "CARD-1234" },
+				remittance_information: ["Apple Pay: SUMUP *CAFE DU COIN"],
+			}),
+			SINCE,
+			[],
+		);
+
+		expect(mapped).toMatchObject({
+			label: "CAFE DU COIN",
+			merchant: "CAFE DU COIN",
+			// Sure's notes keep the wallet; the key keeps the label read before.
+			notes: "Apple Pay: SUMUP *CAFE DU COIN",
+			keyLabel: "CARD-1234",
+		});
+	});
+
+	it("names a line from a known merchant, and creates none from an unknown remittance", () => {
+		const bare = { creditor: null, bank_transaction_code: null };
+
+		expect(
+			toTransaction(line({ ...bare, remittance_information: ["BILLA DANKT 0007114"] }), SINCE, [
+				"Billa",
+			]),
+		).toMatchObject({ label: "Billa", merchant: "Billa", keyLabel: "BILLA DANKT 0007114" });
+		expect(
+			toTransaction(line({ ...bare, remittance_information: ["SUMUP *GLACIER"] }), SINCE, [
+				"Billa",
+			]),
+		).toMatchObject({ label: "GLACIER", merchant: null, keyLabel: "SUMUP *GLACIER" });
+	});
+
 	it("keeps a pending line as pending", () => {
-		expect(toTransaction(line({ status: "PDNG" }), SINCE)).toMatchObject({
+		expect(toTransaction(line({ status: "PDNG" }), SINCE, [])).toMatchObject({
 			externalId: "ref-1",
 			amount: -1000,
 			pending: true,
@@ -950,7 +986,7 @@ describe("toTransaction", () => {
 	});
 
 	it("keeps a credit positive and names its debtor", () => {
-		expect(toTransaction(line({ credit_debit_indicator: "CRDT" }), SINCE)).toMatchObject({
+		expect(toTransaction(line({ credit_debit_indicator: "CRDT" }), SINCE, [])).toMatchObject({
 			amount: 1000,
 			label: "M. Jean Exemple",
 		});
@@ -958,7 +994,7 @@ describe("toTransaction", () => {
 
 	it("reads a negative amount by its direction alone", () => {
 		expect(
-			toTransaction(line({ transaction_amount: { amount: "-10.00", currency: "EUR" } }), SINCE),
+			toTransaction(line({ transaction_amount: { amount: "-10.00", currency: "EUR" } }), SINCE, []),
 		).toMatchObject({ amount: -1000 });
 		expect(
 			toTransaction(
@@ -967,6 +1003,7 @@ describe("toTransaction", () => {
 					transaction_amount: { amount: "-10.00", currency: "EUR" },
 				}),
 				SINCE,
+				[],
 			),
 		).toMatchObject({ amount: 1000 });
 	});
@@ -974,14 +1011,15 @@ describe("toTransaction", () => {
 	it("names a line from the bank's code, then the first remittance line, then its direction", () => {
 		const bare = { creditor: null, debtor: { name: "  " } };
 
-		expect(toTransaction(line(bare), SINCE)).toMatchObject({ label: "Paiement carte" });
+		expect(toTransaction(line(bare), SINCE, [])).toMatchObject({ label: "Paiement carte" });
 		expect(
-			toTransaction(line({ ...bare, bank_transaction_code: { description: 3 } }), SINCE),
+			toTransaction(line({ ...bare, bank_transaction_code: { description: 3 } }), SINCE, []),
 		).toMatchObject({ label: "CB BOULANGERIE" });
 		expect(
 			toTransaction(
 				line({ ...bare, bank_transaction_code: null, remittance_information: [7, " "] }),
 				SINCE,
+				[],
 			),
 		).toMatchObject({ label: "Virement sortant", notes: null });
 		expect(
@@ -993,6 +1031,7 @@ describe("toTransaction", () => {
 					remittance_information: "text",
 				}),
 				SINCE,
+				[],
 			),
 		).toMatchObject({ label: "Virement entrant", notes: null });
 	});
@@ -1001,53 +1040,57 @@ describe("toTransaction", () => {
 		const mapped = toTransaction(
 			line({ creditor: { name: "é".repeat(300) }, remittance_information: ["x".repeat(3000)] }),
 			SINCE,
+			[],
 		);
 
 		expect(mapped).toMatchObject({ label: "é".repeat(200), notes: "x".repeat(2000) });
 	});
 
 	it("keeps no key without an entry reference", () => {
-		expect(toTransaction(line({ entry_reference: undefined }), SINCE)).toMatchObject({
+		expect(toTransaction(line({ entry_reference: undefined }), SINCE, [])).toMatchObject({
 			externalId: null,
 		});
-		expect(toTransaction(line({ entry_reference: " " }), SINCE)).toMatchObject({
+		expect(toTransaction(line({ entry_reference: " " }), SINCE, [])).toMatchObject({
 			externalId: null,
 		});
 	});
 
 	it("dates a line by booking, then value, then transaction date", () => {
 		expect(
-			toTransaction(line({ booking_date: null, value_date: "2026-09-19" }), SINCE),
+			toTransaction(line({ booking_date: null, value_date: "2026-09-19" }), SINCE, []),
 		).toMatchObject({ date: "2026-09-19" });
 		expect(
 			toTransaction(
 				line({ booking_date: undefined, transaction_date: "2026-09-18T23:30:00+02:00" }),
 				SINCE,
+				[],
 			),
 		).toMatchObject({ date: "2026-09-18" });
 	});
 
 	it("drops every line neither booked nor pending, and those before the window", () => {
 		for (const status of ["INFO", "CNCL", "HOLD", "OTHR", null]) {
-			expect(toTransaction(line({ status }), SINCE)).toBeNull();
+			expect(toTransaction(line({ status }), SINCE, [])).toBeNull();
 		}
 
-		expect(toTransaction(line({ booking_date: "2026-06-25" }), SINCE)).toBeNull();
-		expect(toTransaction(line({ booking_date: SINCE }), SINCE)).not.toBeNull();
+		expect(toTransaction(line({ booking_date: "2026-06-25" }), SINCE, [])).toBeNull();
+		expect(toTransaction(line({ booking_date: SINCE }), SINCE, [])).not.toBeNull();
 	});
 
 	it("refuses a line without a readable date, amount or direction", () => {
-		expect(toTransaction(line({ booking_date: null }), SINCE)).toBe("INVALID_DATE");
-		expect(toTransaction(line({ booking_date: "2026-02-30" }), SINCE)).toBe("INVALID_DATE");
-		expect(toTransaction(line({ transaction_amount: null }), SINCE)).toBe("INVALID_AMOUNT");
+		expect(toTransaction(line({ booking_date: null }), SINCE, [])).toBe("INVALID_DATE");
+		expect(toTransaction(line({ booking_date: "2026-02-30" }), SINCE, [])).toBe("INVALID_DATE");
+		expect(toTransaction(line({ transaction_amount: null }), SINCE, [])).toBe("INVALID_AMOUNT");
 		expect(
-			toTransaction(line({ transaction_amount: { amount: "douze", currency: "EUR" } }), SINCE),
+			toTransaction(line({ transaction_amount: { amount: "douze", currency: "EUR" } }), SINCE, []),
 		).toBe("INVALID_AMOUNT");
 		expect(
-			toTransaction(line({ transaction_amount: { amount: "1.00", currency: "XXX" } }), SINCE),
+			toTransaction(line({ transaction_amount: { amount: "1.00", currency: "XXX" } }), SINCE, []),
 		).toBe("INVALID_AMOUNT");
-		expect(toTransaction(line({ credit_debit_indicator: "OTHR" }), SINCE)).toBe("INVALID_AMOUNT");
-		expect(toTransaction("not a line", SINCE)).toBe("INVALID_AMOUNT");
+		expect(toTransaction(line({ credit_debit_indicator: "OTHR" }), SINCE, [])).toBe(
+			"INVALID_AMOUNT",
+		);
+		expect(toTransaction("not a line", SINCE, [])).toBe("INVALID_AMOUNT");
 	});
 });
 
@@ -1061,10 +1104,29 @@ const pages = (...items: Record<string, unknown>[]) =>
 	});
 
 describe("fetchStatement", () => {
+	it("names lines from the merchant names it is given", async () => {
+		pages({
+			transactions: [
+				line({
+					creditor: null,
+					bank_transaction_code: null,
+					remittance_information: ["POS 45,13 AT D6 31.07. 10:27", "BILLA DANKT 0007114"],
+				}),
+			],
+			continuation_key: null,
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, ["Billa"]);
+
+		expect(statement.transactions).toEqual([
+			expect.objectContaining({ label: "Billa", merchant: "Billa" }),
+		]);
+	});
+
 	it("reads every page from the window start, and never the balance", async () => {
 		const requests = mockProvider();
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(
 			statement.transactions.map(({ label, amount, date, externalId, pending }) => ({
@@ -1130,7 +1192,7 @@ describe("fetchStatement", () => {
 			},
 		);
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions).toHaveLength(2);
 		expect(statement.rejected).toEqual([
@@ -1145,7 +1207,7 @@ describe("fetchStatement", () => {
 			{ transactions: [line({ transaction_id: "tx-2" })], continuation_key: "1" },
 		);
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions).toHaveLength(2);
 		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(2);
@@ -1160,7 +1222,7 @@ describe("fetchStatement", () => {
 				}),
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions).toHaveLength(MAX_PAGES);
 		expect(requests.filter(({ path }) => path.endsWith("/transactions"))).toHaveLength(MAX_PAGES);
@@ -1169,14 +1231,14 @@ describe("fetchStatement", () => {
 	it("takes a page with an odd key as the last one, and refuses one without lines", async () => {
 		pages({ transactions: [line()], continuation_key: 7 });
 		await expect(
-			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY),
+			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []),
 		).resolves.toMatchObject({
 			transactions: [expect.objectContaining({ externalId: "ref-1" })],
 		});
 
 		pages({ continuation_key: null });
 		await expect(
-			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY),
+			connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []),
 		).rejects.toMatchObject({
 			code: "BANK_PROVIDER_ERROR",
 		});
@@ -1187,7 +1249,7 @@ describe("fetchStatement", () => {
 			transactions: () => HttpResponse.json(fixtures.unauthorized, { status: 401 }),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
 		expect(requests).toHaveLength(1);
@@ -1203,7 +1265,7 @@ describe("fetchStatement", () => {
 						: transactionsPage(url),
 			});
 
-			const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+			const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 			expect(statement.transactions.map(({ externalId }) => externalId)).toEqual([
 				"20260920-0001",
@@ -1225,7 +1287,7 @@ describe("fetchStatement", () => {
 					: transactionsPage(url),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 500, providerCode: "ASPSP_ERROR" });
 		expect(requests).toHaveLength(2);
@@ -1236,7 +1298,7 @@ describe("fetchStatement", () => {
 			transactions: () => HttpResponse.json({ error: "WRONG_REQUEST_PARAMETERS" }, { status: 400 }),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 400, providerCode: "WRONG_REQUEST_PARAMETERS" });
 	});
@@ -1251,7 +1313,7 @@ describe("fetchStatement", () => {
 			})
 			.mockRejectedValueOnce(new Error("key unreadable"));
 
-		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY)).rejects.toThrow(
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, [])).rejects.toThrow(
 			"key unreadable",
 		);
 	});
@@ -1260,7 +1322,7 @@ describe("fetchStatement", () => {
 		const requests = mockProvider();
 		vi.mocked(signJwt).mockRejectedValueOnce(new Error("key unreadable"));
 
-		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY)).rejects.toThrow(
+		await expect(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, [])).rejects.toThrow(
 			"key unreadable",
 		);
 		expect(requests).toEqual([]);
@@ -1322,7 +1384,7 @@ describe("a refused period", () => {
 	it("asks again for 89 days, and reads from the start the bank accepted", async () => {
 		const requests = acceptingFrom("2026-06-27");
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 		expect(statement.from).toBe("2026-06-27");
@@ -1333,7 +1395,7 @@ describe("a refused period", () => {
 	it("goes down to 60 then 30 days, keeping the lines from the start asked for", async () => {
 		const requests = acceptingFrom("2026-08-25");
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27", "2026-07-26", "2026-08-25"]);
 		expect(statement.from).toBe("2026-08-25");
@@ -1343,7 +1405,7 @@ describe("a refused period", () => {
 	it("retries from the bank's suggested start when it is later", async () => {
 		const requests = acceptingFrom("2026-07-10", { date_from: "2026-07-10" });
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10"]);
 		expect(statement.from).toBe("2026-07-10");
@@ -1352,7 +1414,7 @@ describe("a refused period", () => {
 	it("takes 89 days when the suggested start is not later", async () => {
 		const requests = acceptingFrom("2026-06-27", { date_from: "2026-06-01" });
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 		expect(statement.from).toBe("2026-06-27");
@@ -1361,7 +1423,7 @@ describe("a refused period", () => {
 	it("takes the first window later than a suggested start refused too", async () => {
 		const requests = acceptingFrom("2026-07-26", { date_from: "2026-07-10" });
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10", "2026-07-26"]);
 		expect(statement.from).toBe("2026-07-26");
@@ -1370,7 +1432,7 @@ describe("a refused period", () => {
 	it("ignores a suggested start that does not read as a date", async () => {
 		const requests = acceptingFrom("2026-06-27", { date_from: "soon" });
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 		expect(statement.from).toBe("2026-06-27");
@@ -1379,7 +1441,7 @@ describe("a refused period", () => {
 	it("reads a suggested start in ISO 8601's basic form, as `Date.iso8601`", async () => {
 		const requests = acceptingFrom("2026-07-10", { date_from: "20260710" });
 
-		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10"]);
 	});
@@ -1395,7 +1457,7 @@ describe("a refused period", () => {
 			},
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27", "2026-07-26", "2026-08-25"]);
 		expect(statement.from).toBe("2026-08-25");
@@ -1408,7 +1470,9 @@ describe("a refused period", () => {
 				transactions: () => HttpResponse.json({ error: "WRONG_TRANSACTIONS_PERIOD" }, { status }),
 			});
 
-			const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+			const error = await rejection(
+				connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []),
+			);
 
 			expect(error.failure).toEqual({ status, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
 			expect(requests).toHaveLength(1);
@@ -1423,7 +1487,7 @@ describe("a refused period", () => {
 					: HttpResponse.json({ transactions: [line()], continuation_key: null }),
 		});
 
-		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 	});
@@ -1439,7 +1503,7 @@ describe("a refused period", () => {
 					: HttpResponse.json({ transactions: [line()], continuation_key: null }),
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 		expect(statement.from).toBe("2026-06-27");
@@ -1451,7 +1515,7 @@ describe("a refused period", () => {
 				HttpResponse.json({ code: "PERIOD_INVALID", detail: "dateFrom=..." }, { status: 400 }),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 400, providerCode: "PERIOD_INVALID" });
 	});
@@ -1461,7 +1525,7 @@ describe("a refused period", () => {
 			transactions: () => HttpResponse.json({ error: "PERIOD_INVALID" }, { status: 400 }),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 400, providerCode: "PERIOD_INVALID" });
 		expect(requests).toHaveLength(1);
@@ -1490,7 +1554,7 @@ describe("a refused period", () => {
 			},
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(requests.map(({ search }) => search)).toEqual([
 			"?date_from=2026-06-26",
@@ -1515,7 +1579,7 @@ describe("a refused period", () => {
 					: refused(undefined, 400),
 		});
 
-		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []));
 
 		expect(error.failure).toEqual({ status: 400, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
 		expect(dateFroms(requests)).toEqual([
@@ -1531,7 +1595,7 @@ describe("a refused period", () => {
 		const requests = acceptingFrom(null, { date_from: "2026-06-26" });
 
 		const error = await rejection(
-			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-06-01", TODAY),
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-06-01", TODAY, []),
 		);
 
 		expect(error.code).toBe("BANK_PROVIDER_ERROR");
@@ -1549,7 +1613,7 @@ describe("a refused period", () => {
 		const requests = acceptingFrom(null);
 
 		await expect(
-			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-09-17", TODAY),
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-09-17", TODAY, []),
 		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR" });
 		expect(dateFroms(requests)).toEqual(["2026-09-17"]);
 	});
@@ -1558,7 +1622,7 @@ describe("a refused period", () => {
 		const requests = acceptingFrom(null);
 
 		await expect(
-			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-07-26", TODAY),
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-07-26", TODAY, []),
 		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR" });
 		expect(dateFroms(requests)).toEqual(["2026-07-26", "2026-08-25"]);
 	});
@@ -1575,7 +1639,7 @@ describe("a line listed twice", () => {
 			continuation_key: null,
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual(["ref-1", "ref-3"]);
 	});
@@ -1590,7 +1654,7 @@ describe("a line listed twice", () => {
 			continuation_key: null,
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions).toEqual([
 			expect.objectContaining({ externalId: "booked", pending: false }),
@@ -1689,7 +1753,7 @@ describe("withoutSettledPending", () => {
 			continuation_key: null,
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
 
 		expect(statement.transactions).toEqual([
 			expect.objectContaining({ externalId: "r1", pending: false, label: "SUPERMARCHE" }),

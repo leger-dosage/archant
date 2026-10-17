@@ -57,6 +57,18 @@ describe("lineKeys", () => {
 		expect(keys.map((key) => key.external)).toEqual([null, null, null]);
 	});
 
+	it("hashes a bank line's key label instead of its label, twins counted by it", () => {
+		const keys = lineKeys([
+			{ ...line("2026-09-12", -1000, "Billa"), keyLabel: "BILLA DANKT 0007114" },
+			{ ...line("2026-09-12", -1000, "Glacier"), keyLabel: "BILLA DANKT 0007114" },
+		]);
+
+		expect(keys.map((key) => key.fingerprint)).toEqual([
+			`fp:${sha256("2026-09-12|-1000|billa dankt 0007114|0")}`,
+			`fp:${sha256("2026-09-12|-1000|billa dankt 0007114|1")}`,
+		]);
+	});
+
 	it("hands back each line with its keys", () => {
 		const lines = [line("2026-09-12", -1)];
 

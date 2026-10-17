@@ -322,3 +322,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-29-1-choose-the-banks-country-with-the-credentials-and-remove-them.md`
   summary: A bank callback that has claimed its pending row and is awaiting the provider's session when that row is deleted, by removing the credentials or by the 30-minute cleanup, leaves the new session unstored and unrevoked at Enable Banking.
   evidence: `completeConnection` throws once its update finds no row, after `completeAuthorization` returned a session; the session lapses only at its consent end. Revoking it before throwing would close the gap.
+
+## Deferred from: code review of spec-29-4-clean-bank-labels-and-create-merchants-from-counterparties (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-4-clean-bank-labels-and-create-merchants-from-counterparties.md`
+  summary: A bank line already present, or paired with an entry another source wrote, takes neither the bank's label nor its merchant, where Sure's `import_transaction` re-enriches name, notes and merchant on every read and on the duplicate it claims.
+  evidence: `groupLines` in `services/ledger/ingest.ts` writes nothing on a `present` line and only keys on a `matched` one; Sure's `enrich_attribute` calls run for both unless the field is locked. Bank lines synced before Story 29.4 therefore keep no merchant, and a recurring series keyed by their label stops at the upgrade while a new one forms under the merchant.

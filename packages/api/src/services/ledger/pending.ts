@@ -89,20 +89,23 @@ export async function heldFingerprints(
  * and notes, except the fields a user locked (`changeOf`), and its status;
  * its missed syncs start over, their count and their last day both, and the
  * line's keys join the ones it has. The old keys stay, so the bank sending
- * the old pending line again finds a booked entry and changes nothing. The
- * id, the category, the merchant, the tags, the transfer and the exclusion
- * stay as they are, and rules do not run again. Returns the earlier of the
+ * the old pending line again finds a booked entry and changes nothing. It
+ * takes the line's merchant only when it has none and `merchant` is not
+ * locked: rules do not run again here, where Sure's re-run after each sync
+ * would put a rule's merchant back. The id, the category, the tags, the
+ * transfer and the exclusion stay as they are. Returns the earlier of the
  * old and new dates, where balances move.
  */
 export async function absorb(
 	tx: Transaction,
 	survivorId: string,
-	line: { line: NormalizedTransaction; keys: WrittenKeys },
+	line: { line: NormalizedTransaction; keys: WrittenKeys; merchantId: string | null },
 	keyTarget: KeyTarget,
 	origin: Origin,
 	now: number,
 ): Promise<IsoDate> {
 	const current = await transactionRow(tx, survivorId);
+	const merchantId = current.merchantId === null ? line.merchantId : null;
 	const change = changeOf(
 		current,
 		{
@@ -110,6 +113,7 @@ export async function absorb(
 			amount: line.line.amount,
 			label: line.line.label,
 			notes: line.line.notes,
+			...(merchantId === null ? {} : { merchantId }),
 		},
 		origin,
 	);

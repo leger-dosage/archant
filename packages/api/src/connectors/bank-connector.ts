@@ -131,9 +131,16 @@ export type BankConnector = {
 	 * shorter window ending `today`. A 400 or 422 after the first page that
 	 * is no refused period ends the read with the pages read and says so in
 	 * `cutShort`; any other failure throws. A line it cannot read goes to `rejected`; a cancelled or
-	 * informational one is left out.
+	 * informational one is left out. `knownMerchants`, the household's
+	 * merchant names, name a line and its merchant where the bank's text
+	 * holds one.
 	 */
-	fetchStatement: (uid: string, since: IsoDate, today: IsoDate) => Promise<BankStatement>;
+	fetchStatement: (
+		uid: string,
+		since: IsoDate,
+		today: IsoDate,
+		knownMerchants: readonly string[],
+	) => Promise<BankStatement>;
 };
 
 /** What a log line may say about a provider failure: numbers and a code, never a payload. */

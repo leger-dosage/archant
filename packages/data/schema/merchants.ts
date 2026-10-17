@@ -2,9 +2,10 @@ import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 /**
- * One shop the bank spells many ways. Names come from the user only for now;
- * a merchant created from bank data will need a source column, as Sure's
- * `ProviderMerchant` has.
+ * One shop the bank spells many ways. The user names some; a bank sync
+ * creates the others from a line's counterparty, found again by name. No
+ * source column: Sure's `ProviderMerchant` is shared between families, and
+ * Archant holds one household, so a bank's merchant is one of its merchants.
  */
 export const merchants = sqliteTable(
 	"merchants",

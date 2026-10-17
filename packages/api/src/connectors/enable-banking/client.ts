@@ -17,9 +17,10 @@ import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { addDays } from "../../domain/dates.ts";
 import { providerIsoDate } from "../../domain/provider-date.ts";
-import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
+import { NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { BankProviderError } from "../bank-connector.ts";
 import { signJwt } from "./jwt.ts";
+import { capped, keyLabelOf, labelOf, merchantNameOf } from "./labels.ts";
 import {
 	applicationResponseSchema,
 	aspspsResponseSchema,
@@ -341,34 +342,16 @@ export function withoutSettledPending(raw: readonly unknown[]): Set<number> {
 	return kept;
 }
 
-/** By code points, so an emoji at the limit is never cut in half. */
-const capped = (value: string, length: number) => Array.from(value).slice(0, length).join("");
-
-/**
- * Sure's `EnableBankingEntry::Processor#name`: the other side of the line,
- * the bank's code description, the first remittance line, else the
- * direction.
- */
-function labelOf(line: z.output<typeof transactionSchema>, debit: boolean): string {
-	const counterparty = debit ? line.creditor : line.debtor;
-
-	return capped(
-		counterparty?.name ??
-			line.bank_transaction_code?.description ??
-			line.remittance_information[0] ??
-			(debit ? "Virement sortant" : "Virement entrant"),
-		LABEL_MAX_LENGTH,
-	);
-}
-
 /**
  * One line as the ledger takes it (AD-18); `null` when it is neither booked
  * nor pending, or dated before `since` because the bank ignored `date_from`;
- * otherwise the reason the line is refused.
+ * otherwise the reason the line is refused. `knownMerchants` are the
+ * household's merchant names, which Sure's label and merchant prefer.
  */
 export function toTransaction(
 	raw: unknown,
 	since: IsoDate,
+	knownMerchants: readonly string[],
 ): NormalizedTransaction | RejectionCode | null {
 	const parsed = transactionSchema.safeParse(raw);
 
@@ -413,10 +396,13 @@ export function toTransaction(
 		date,
 		amount: toMinorUnits(debit ? -Math.abs(magnitude) : Math.abs(magnitude)),
 		currency: money.currency,
-		label: labelOf(line, debit),
+		label: labelOf(line, debit, knownMerchants),
+		keyLabel: keyLabelOf(line, debit),
 		reference: null,
+		// Every remittance line, the wallet included, as Sure's `notes`.
 		notes: notes === "" ? null : capped(notes, NOTES_MAX_LENGTH),
 		pending: line.status === "PDNG",
+		merchant: merchantNameOf(line, debit, knownMerchants),
 	};
 }
 
@@ -861,7 +847,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 
 		fetchBalance,
 
-		async fetchStatement(uid, since, today): Promise<BankStatement> {
+		async fetchStatement(uid, since, today, knownMerchants): Promise<BankStatement> {
 			const { lines, from, cutShort } = await fetchLines(uid, since, today);
 			const unique = withoutRepeats(lines);
 			const unsettled = withoutSettledPending(lines);
@@ -871,7 +857,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				const kept = unique.has(position) && unsettled.has(position);
 				// From the start asked for, as Sure's `filter_transactions_by_date`:
 				// a later page retried from a later start keeps the earlier pages' lines.
-				const mapped = kept ? toTransaction(raw, since) : null;
+				const mapped = kept ? toTransaction(raw, since, knownMerchants) : null;
 
 				if (typeof mapped === "string") {
 					statement.rejected.push({ ref: String(position), reason: mapped });
