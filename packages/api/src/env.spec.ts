@@ -37,6 +37,7 @@ describe("validateEnv", () => {
 		expect(env.ENABLE_BANKING_APPLICATION_ID).toBeUndefined();
 		expect(env.ENABLE_BANKING_PRIVATE_KEY).toBeUndefined();
 		expect(env.ENABLE_BANKING_COUNTRY).toBe("FR");
+		expect(env.ENABLE_BANKING_CONSENT_DAYS).toBe(180);
 		expect(env.ENCRYPTION_KEY).toBeUndefined();
 		expect(env.ENABLE_BANKING_API_URL).toBe("https://api.enablebanking.com");
 		expect(env.YAHOO_FINANCE_URL).toBe("https://query1.finance.yahoo.com");
@@ -211,6 +212,29 @@ describe("validateEnv", () => {
 			/ENABLE_BANKING_COUNTRY/,
 		);
 	});
+
+	it("reads a consent length in whole days", () => {
+		expect(
+			validateEnv({ ...required, ENABLE_BANKING_CONSENT_DAYS: "90" }).ENABLE_BANKING_CONSENT_DAYS,
+		).toBe(90);
+	});
+
+	// Sure's initializer: a bad value falls back to 180 rather than stopping
+	// the server.
+	it.each(["1", "36500"])("reads a consent length of %s days at the bounds", (days) => {
+		expect(
+			validateEnv({ ...required, ENABLE_BANKING_CONSENT_DAYS: days }).ENABLE_BANKING_CONSENT_DAYS,
+		).toBe(Number(days));
+	});
+
+	it.each(["0", "-5", "abc", " 90", "1.5", "", "36501", "100000000", "99999999999999999999"])(
+		"ignores a consent length of %j",
+		(days) => {
+			expect(
+				validateEnv({ ...required, ENABLE_BANKING_CONSENT_DAYS: days }).ENABLE_BANKING_CONSENT_DAYS,
+			).toBe(180);
+		},
+	);
 
 	it("names an application id made of spaces only", () => {
 		expect(() => validateEnv({ ...required, ENABLE_BANKING_APPLICATION_ID: "   " })).toThrow(

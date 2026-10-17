@@ -46,6 +46,7 @@ export const bankDeps = (): BankConnectionDeps => ({
 	bankCredentials: null,
 	encryptionKey: null,
 	bankApiUrl: "https://api.enablebanking.com",
+	bankConsentDays: 180,
 	redirectUrl: "http://localhost:5173/settings/banks/callback",
 });
 

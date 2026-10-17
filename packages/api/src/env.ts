@@ -37,6 +37,14 @@ function isHttpsOrLoopback(url: string): boolean {
 /** AES-256 wants exactly this many bytes of key. */
 const ENCRYPTION_KEY_BYTES = 32;
 
+/** Sure's default for `ENABLE_BANKING_CONSENT_DAYS`. */
+const DEFAULT_CONSENT_DAYS = 180;
+
+// A century, far beyond any bank's consent. Without a bound, a value of a
+// hundred million days dated the consent past what `Date` can write, and every
+// bank connection failed.
+const MAX_CONSENT_DAYS = 36_500;
+
 /**
  * The RSA private key a PEM holds, PKCS#1 (`BEGIN RSA PRIVATE KEY`) or
  * PKCS#8 (`BEGIN PRIVATE KEY`) alike, and a key bundled after its
@@ -141,6 +149,19 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 			// opened on; a pinned install outside France sets it. A country Sure
 			// does not offer fails startup rather than an empty list.
 			ENABLE_BANKING_COUNTRY: z.enum(BANK_COUNTRIES).default(DEFAULT_BANK_COUNTRY),
+			// The longest bank consent asked for, in days: Sure's
+			// `ENABLE_BANKING_CONSENT_DAYS`, 180 by default, as Enable Banking's own
+			// default since October 2025. A bank allowing less is asked for less.
+			// A value that is not a positive whole number is ignored, never a
+			// startup failure, as Sure's initializer does.
+			ENABLE_BANKING_CONSENT_DAYS: z
+				.string()
+				.optional()
+				.transform((value) => {
+					const days = value !== undefined && /^\d+$/u.test(value) ? Number(value) : 0;
+
+					return days > 0 && days <= MAX_CONSENT_DAYS ? days : DEFAULT_CONSENT_DAYS;
+				}),
 			// Encrypts bank session ids and the private key saved from the
 			// interface at rest. Losing it means setting Enable Banking up again
 			// and reconnecting every bank; changing it without a migration has

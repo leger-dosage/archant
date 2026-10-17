@@ -83,6 +83,16 @@ const DATED_FIRST_BALANCE = "1200.00";
  */
 export const REVOKED_BANK = "Banque Révoquée";
 
+/**
+ * The bank that advertises no consent maximum and refuses any consent longer
+ * than 90 days with Sure's 422, as Trade Republic did (we-promise/sure#2857):
+ * the API's 180-day ask is refused, and 90 days less a minute passes.
+ */
+export const SHORT_CONSENT_BANK = "Banque Consentement Court";
+
+/** The longest consent `SHORT_CONSENT_BANK` grants, in seconds. */
+const SHORT_CONSENT_SECONDS = 90 * 86_400;
+
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = [
 	"Banque Démo",
@@ -95,6 +105,7 @@ export const FAKE_BANKS = [
 	SLOW_BANK,
 	HISTORY_BANK,
 	REVOKED_BANK,
+	SHORT_CONSENT_BANK,
 ] as const;
 
 /**
@@ -239,7 +250,7 @@ function transactionsPage(
 	};
 }
 
-/** 180 days, above the 90-day cap, so the API must ask for 90. */
+/** 180 days, the API's default cap, so the API asks for all of it. */
 const MAXIMUM_CONSENT_SECONDS = 180 * 86_400;
 
 type Pending = { state: string; redirectUrl: string; validUntil: string; bank: string };
@@ -377,7 +388,7 @@ export async function startFakeEnableBanking(options: {
 						country,
 						logo: index === 0 ? `${origin}/logo.svg` : null,
 						bic: index === 0 ? "DEMOFRPP" : undefined,
-						maximum_consent_validity: MAXIMUM_CONSENT_SECONDS,
+						maximum_consent_validity: name === SHORT_CONSENT_BANK ? null : MAXIMUM_CONSENT_SECONDS,
 						psu_types: ["personal"],
 					})),
 				});
@@ -389,17 +400,31 @@ export async function startFakeEnableBanking(options: {
 				const access = body["access"];
 				const aspsp = body["aspsp"];
 				const authorizationId = randomUUID();
+				const validUntil =
+					typeof access === "object" && access !== null && "valid_until" in access
+						? String(access.valid_until)
+						: "";
+				const bank =
+					typeof aspsp === "object" && aspsp !== null && "name" in aspsp ? String(aspsp.name) : "";
+
+				if (
+					bank === SHORT_CONSENT_BANK &&
+					Date.parse(validUntil) - Date.now() > SHORT_CONSENT_SECONDS * 1000
+				) {
+					json(response, 422, {
+						code: 422,
+						message: `ASPSP does not support consent validity more than ${SHORT_CONSENT_SECONDS} seconds in the future`,
+						error: "WRONG_REQUEST_PARAMETERS",
+						detail: null,
+					});
+					return;
+				}
+
 				pending.set(authorizationId, {
 					state: String(body["state"]),
 					redirectUrl: String(body["redirect_url"]),
-					validUntil:
-						typeof access === "object" && access !== null && "valid_until" in access
-							? String(access.valid_until)
-							: "",
-					bank:
-						typeof aspsp === "object" && aspsp !== null && "name" in aspsp
-							? String(aspsp.name)
-							: "",
+					validUntil,
+					bank,
 				});
 
 				json(response, 200, {

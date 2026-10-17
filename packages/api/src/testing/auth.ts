@@ -59,7 +59,7 @@ export function createTestAuth(
 export type TestNetwork = { peer?: string; trustedProxies?: string[]; origin?: string };
 
 export type TestBank = Partial<
-	Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl">
+	Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl" | "bankConsentDays">
 > & { syncSecret?: string };
 
 /**
@@ -71,6 +71,7 @@ const NO_BANK = {
 	bankCredentials: null,
 	encryptionKey: null,
 	bankApiUrl: "https://api.enablebanking.com",
+	bankConsentDays: 180,
 } as const;
 
 export function buildTestApp(

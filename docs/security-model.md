@@ -29,15 +29,15 @@ With a local SQLite file, the default, the server calls at most two hosts, each 
 
 Enable Banking is at `ENABLE_BANKING_API_URL`, `https://api.enablebanking.com` by default, and called only once a bank connector is configured. Each request carries a JSON Web Token signed with the application's private key. The calls, all in `packages/api/src/connectors/enable-banking/client.ts`, are:
 
-| Request                            | When                                                   | What it sends                                                                                                |
-| ---------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `GET /application`                 | Credentials are saved                                  | Nothing but the token: it checks the pair and reads the registered redirect URLs                             |
-| `GET /aspsps?country=`             | The bank list opens                                    | The country saved with the credentials                                                                       |
-| `POST /auth`                       | A bank is connected or renewed                         | The bank's name and country, a random `state`, the callback URL, the consent's end date, `personal` and `fr` |
-| `POST /sessions`                   | The browser comes back from the bank                   | The one-time code the bank returned                                                                          |
-| `GET /accounts/{uid}/balances`     | A sync                                                 | The account's Enable Banking id                                                                              |
-| `GET /accounts/{uid}/transactions` | A sync                                                 | The account's Enable Banking id, the first date to read, and the page's continuation key                     |
-| `DELETE /sessions/{id}`            | A bank is disconnected, or the credentials are removed | The session id                                                                                               |
+| Request                            | When                                                                                           | What it sends                                                                                                |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `GET /application`                 | Credentials are saved                                                                          | Nothing but the token: it checks the pair and reads the registered redirect URLs                             |
+| `GET /aspsps?country=`             | The bank list opens                                                                            | The country saved with the credentials                                                                       |
+| `POST /auth`                       | A bank is connected or renewed, again with a shorter consent while the bank refuses its length | The bank's name and country, a random `state`, the callback URL, the consent's end date, `personal` and `fr` |
+| `POST /sessions`                   | The browser comes back from the bank                                                           | The one-time code the bank returned                                                                          |
+| `GET /accounts/{uid}/balances`     | A sync                                                                                         | The account's Enable Banking id                                                                              |
+| `GET /accounts/{uid}/transactions` | A sync                                                                                         | The account's Enable Banking id, the first date to read, and the page's continuation key                     |
+| `DELETE /sessions/{id}`            | A bank is disconnected, or the credentials are removed                                         | The session id                                                                                               |
 
 When an assistant identifies itself with a Client ID Metadata Document, its `client_id` is an HTTPS address, and the server fetches that document, and again once its copy is an hour old, with `@better-auth/cimd`'s Node transport: the name is resolved once, every non-public address is refused, and no redirect is followed. The request carries nothing of yours. An assistant that registers itself instead sends its name and redirect address, and nothing is fetched.
 

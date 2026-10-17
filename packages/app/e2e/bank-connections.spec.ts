@@ -18,6 +18,7 @@ import {
 	NO_CURRENCY_BANK,
 	OLD_LINE,
 	REVOKED_BANK,
+	SHORT_CONSENT_BANK,
 	SLOW_BANK,
 	SLOW_LINE,
 	UNREADABLE_BANK,
@@ -397,7 +398,7 @@ test("the picker lists France's banks with name and BIC, focuses the search, scr
 		"BIC : DEMOFRPP",
 	);
 
-	// Ten banks overflow the bounded list, which scrolls inside a dialog
+	// Eleven banks overflow the bounded list, which scrolls inside a dialog
 	// that stays on screen.
 	const overflows = await banks(page).evaluate(
 		(list) => list.scrollHeight > list.clientHeight && getComputedStyle(list).overflowY === "auto",
@@ -625,8 +626,8 @@ test("choosing a bank and approving lands on its accounts, and Banques lists it 
 
 	await visit(page);
 
-	// The bank allows 180 days; Archant asks for 90 at most.
-	const consentEnd = longDate.format(new Date(Date.now() + 90 * 86_400_000));
+	// The bank allows 180 days, as much as Archant asks for by default.
+	const consentEnd = longDate.format(new Date(Date.now() + 180 * 86_400_000 - 60_000));
 	const connections = page.getByRole("list", { name: "Banques connectées" });
 	const row = connections.getByRole("listitem").filter({ hasText: "Banque Démo" }).last();
 	await expect(row).toContainText("France");
@@ -653,6 +654,23 @@ test("choosing a bank and approving lands on its accounts, and Banques lists it 
 	} finally {
 		db.$client.close();
 	}
+});
+
+// Sure's Trade Republic case (we-promise/sure#2857): the bank refuses 180
+// days with a consent-validity 422, and the API asks again for 90.
+test("a bank refusing the consent's length connects with a shorter one", async ({ page }) => {
+	await connect(page, SHORT_CONSENT_BANK);
+
+	await visit(page);
+
+	const consentEnd = longDate.format(new Date(Date.now() + 90 * 86_400_000 - 60_000));
+	const row = page
+		.getByRole("list", { name: "Banques connectées" })
+		.getByRole("listitem")
+		.filter({ hasText: SHORT_CONSENT_BANK })
+		.last();
+	await expect(row).toContainText(`Consentement valable jusqu'au ${consentEnd}`);
+	await expect(row.locator('[data-slot="status-badge"]')).toHaveCount(0);
 });
 
 test("a connected bank locks the application and its key, with Sure's warning, but not the country", async ({

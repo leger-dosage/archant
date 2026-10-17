@@ -175,7 +175,15 @@ describe("bankDepsFromEnv", () => {
 		expect(bank.bankCredentials?.country).toBe("FR");
 		expect(bank.encryptionKey).toHaveLength(32);
 		expect(bank.bankApiUrl).toBe(TEST_PROVIDER_URL);
+		expect(bank.bankConsentDays).toBe(180);
 		expect(bank.redirectUrl).toBe("http://localhost:5173/settings/banks/callback");
+	});
+
+	it("carries ENABLE_BANKING_CONSENT_DAYS", () => {
+		expect(
+			bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENABLE_BANKING_CONSENT_DAYS: "90" }))
+				.bankConsentDays,
+		).toBe(90);
 	});
 
 	it("carries ENABLE_BANKING_COUNTRY with the pair", () => {
@@ -263,7 +271,7 @@ describe("listInstitutions", () => {
 });
 
 describe("startConnection", () => {
-	it("asks for 90 days of a 180-day bank and stores a pending row keyed by the state", async () => {
+	it("asks for 180 days of a 180-day bank and stores a pending row keyed by the state", async () => {
 		const requests = mockProvider();
 
 		await expect(startConnection(deps(), { institution: "Banque Test" })).resolves.toEqual({
@@ -272,7 +280,7 @@ describe("startConnection", () => {
 
 		const auth = requests.find((request) => request.path === "/auth");
 		expect(auth?.body).toMatchObject({
-			access: { valid_until: new Date(NOW + 90 * DAY - MINUTE).toISOString() },
+			access: { valid_until: new Date(NOW + 180 * DAY - MINUTE).toISOString() },
 			aspsp: { name: "Banque Test", country: "FR" },
 			redirect_url: "http://localhost:5173/settings/banks/callback",
 		});
@@ -299,6 +307,22 @@ describe("startConnection", () => {
 			"/aspsps?country=BE",
 			"/auth",
 		]);
+	});
+
+	it("asks for no more than ENABLE_BANKING_CONSENT_DAYS", async () => {
+		const requests = mockProvider();
+
+		await startConnection(
+			{
+				...deps(),
+				...bankDepsFromEnv(validateEnv({ ...FULL_ENV, ENABLE_BANKING_CONSENT_DAYS: "90" })),
+			},
+			{ institution: "Banque Test" },
+		);
+
+		expect(requests.find((request) => request.path === "/auth")?.body).toMatchObject({
+			access: { valid_until: new Date(NOW + 90 * DAY - MINUTE).toISOString() },
+		});
 	});
 
 	it("asks for 30 days of a 30-day bank", async () => {

@@ -1,0 +1,6 @@
+{
+	"code": 422,
+	"message": "ASPSP does not support consent validity more than 7776000 seconds in the future",
+	"error": "WRONG_REQUEST_PARAMETERS",
+	"detail": null
+}

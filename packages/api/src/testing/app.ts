@@ -1,6 +1,6 @@
 import type { CreateAccountInput } from "../schemas/accounts.ts";
 import type { CreateCategoryInput } from "../schemas/categories.ts";
-import type { SignedInTemplate } from "./auth.ts";
+import type { SignedInTemplate, TestBank } from "./auth.ts";
 import type { TempDatabase } from "./temp-database.ts";
 
 import { sql } from "drizzle-orm";
@@ -578,7 +578,7 @@ export async function ownCategory(name: string, overrides: Partial<CreateCategor
 
 // PKCS#1, as an older control panel export, so the whole path signs with it.
 export function configuredBank() {
-	const { bankCredentials, encryptionKey, bankApiUrl } = bankDepsFromEnv(
+	const { bankCredentials, encryptionKey, bankApiUrl, bankConsentDays } = bankDepsFromEnv(
 		validateEnv({
 			DATABASE_URL: "file:x.db",
 			BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
@@ -589,10 +589,10 @@ export function configuredBank() {
 		}),
 	);
 
-	return { bankCredentials, encryptionKey, bankApiUrl };
+	return { bankCredentials, encryptionKey, bankApiUrl, bankConsentDays };
 }
 
-export async function bankApp(bank = configuredBank()) {
+export async function bankApp(bank: TestBank = configuredBank()) {
 	own = await freshDatabase();
 	logLines = [];
 	const logger = createLogger("info", { write: (text: string) => logLines.push(text) });

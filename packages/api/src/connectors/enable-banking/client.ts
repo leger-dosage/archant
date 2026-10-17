@@ -38,28 +38,52 @@ export type EnableBankingConfig = {
 	privateKey: KeyObject;
 	/** `ENABLE_BANKING_API_URL`. */
 	apiUrl: string;
+	/** `ENABLE_BANKING_CONSENT_DAYS`: the longest consent asked for, in days. */
+	consentDays: number;
 };
 
-/** 90 days at most, even from a bank that allows 180; Sure asks for 180 by default. */
-const MAX_CONSENT_SECONDS = 90 * 86_400;
+const DAY_SECONDS = 86_400;
 
-// Sure's `Provider::EnableBanking`: a consent asked for to the second of the
-// bank's maximum is refused by some banks once the request has travelled.
+/**
+ * Sure's `CONSENT_FALLBACK_DAYS`: the shorter consents asked for, in days,
+ * when a bank refuses the length it advertised, as Trade Republic does
+ * (we-promise/sure#2857).
+ */
+const CONSENT_FALLBACK_DAYS = [180, 90, 45, 30] as const;
+
+// Sure's `CONSENT_SAFETY_MARGIN_SECONDS`: a consent asked for to the second
+// of the bank's maximum is refused by some banks once the request has
+// travelled.
 const CONSENT_MARGIN_SECONDS = 60;
 
 // A bank's listing can be slow; a request stuck longer is not coming back.
 const TIMEOUT_MS = 30_000;
 
 /**
- * When the consent asked for ends: the bank's own maximum, capped at 90 days,
- * a minute short of it.
+ * Sure's `consent_safety_margin`: a minute off, never the whole of a consent
+ * shorter than that.
  */
-export function consentValidUntil(now: number, maximumConsentValidity: number | null): Date {
-	const seconds =
-		Math.min(maximumConsentValidity ?? MAX_CONSENT_SECONDS, MAX_CONSENT_SECONDS) -
-		CONSENT_MARGIN_SECONDS;
+const shaved = (seconds: number) => seconds - Math.min(CONSENT_MARGIN_SECONDS, seconds - 1);
 
-	return new Date(now + seconds * 1000);
+/**
+ * Sure's `consent_seconds_ladder`: the consent lengths to ask for, in
+ * seconds and in order. First the bank's own maximum capped at
+ * `consentDays`, then each fallback strictly shorter than it, each a minute
+ * short, so the ladder always ends.
+ */
+export function consentLadder(
+	maximumConsentValidity: number | null,
+	consentDays: number,
+): [number, ...number[]] {
+	const cap = consentDays * DAY_SECONDS;
+	const primary = Math.min(maximumConsentValidity ?? cap, cap);
+	// Strictly shorter than `primary` and distinct, so the ladder repeats no
+	// length, which Sure's `uniq` ensures.
+	const fallbacks = CONSENT_FALLBACK_DAYS.map((days) => days * DAY_SECONDS)
+		.filter((seconds) => seconds < primary)
+		.map(shaved);
+
+	return [shaved(primary), ...fallbacks];
 }
 
 const failed = (status: number | null, providerCode: string | null = null) =>
@@ -67,6 +91,17 @@ const failed = (status: number | null, providerCode: string | null = null) =>
 		status,
 		providerCode,
 	});
+
+/**
+ * Sure's `wrong_consent_validity?`: the bank refused the consent's length,
+ * so a shorter one may pass. Only the class tells it apart; the provider's
+ * message that said so is not kept.
+ */
+class ConsentLengthRefused extends BankProviderError {}
+
+/** Sure's `wrong_consent_validity?`: a 422 `WRONG_REQUEST_PARAMETERS` naming the consent validity. */
+const refusesConsentLength = (status: number, error: z.output<typeof errorResponseSchema>) =>
+	status === 422 && error.error === "WRONG_REQUEST_PARAMETERS" && error.consentValidity;
 
 /** Sure's `normalize_balance_type`: `closing_booked` and `closingBooked` are one type. */
 function normalizedType(type: string): string {
@@ -517,6 +552,13 @@ async function call<Schema extends z.ZodType>(
 	if (!response.ok) {
 		const error = errorResponseSchema.safeParse(payload);
 
+		if (error.success && refusesConsentLength(response.status, error.data)) {
+			throw new ConsentLengthRefused("BANK_PROVIDER_ERROR", "The bank provider request failed.", {
+				status: response.status,
+				providerCode: error.data.error,
+			});
+		}
+
 		throw failed(response.status, error.success ? error.data.error : null);
 	}
 
@@ -652,39 +694,57 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			}));
 		},
 
+		/**
+		 * Sure's `start_authorization`: each length of `consentLadder` in turn,
+		 * dated from the clock at that attempt, while the bank refuses the
+		 * consent's length; the last refusal throws, any other failure at once.
+		 */
 		async startAuthorization({ institution, state, redirectUrl }) {
-			const body = {
-				access: {
-					valid_until: consentValidUntil(
-						Date.now(),
-						institution.maximumConsentValidity,
-					).toISOString(),
-				},
-				aspsp: { name: institution.name, country: institution.country },
-				state,
-				redirect_url: redirectUrl,
-				psu_type: "personal",
-				language: "fr",
+			const attempt = async (
+				seconds: number,
+				shorter: readonly number[],
+			): Promise<{ url: string }> => {
+				const body = {
+					access: { valid_until: new Date(Date.now() + seconds * 1000).toISOString() },
+					aspsp: { name: institution.name, country: institution.country },
+					state,
+					redirect_url: redirectUrl,
+					psu_type: "personal",
+					language: "fr",
+				};
+
+				try {
+					return await call(config, { method: "POST", path: "/auth", body }, authResponseSchema);
+				} catch (error) {
+					const [next, ...rest] = shorter;
+
+					if (error instanceof ConsentLengthRefused && next !== undefined) {
+						return attempt(next, rest);
+					}
+
+					// Sure names the URL to register rather than a bare failure.
+					if (
+						error instanceof BankProviderError &&
+						error.failure.providerCode === "REDIRECT_URI_NOT_ALLOWED"
+					) {
+						throw new BankProviderError(
+							"BANK_REDIRECT_NOT_ALLOWED",
+							"Register the redirect URL in the Enable Banking control panel.",
+							error.failure,
+							{ url: redirectUrl },
+						);
+					}
+
+					throw error;
+				}
 			};
 
-			try {
-				return await call(config, { method: "POST", path: "/auth", body }, authResponseSchema);
-			} catch (error) {
-				// Sure names the URL to register rather than a bare failure.
-				if (
-					error instanceof BankProviderError &&
-					error.failure.providerCode === "REDIRECT_URI_NOT_ALLOWED"
-				) {
-					throw new BankProviderError(
-						"BANK_REDIRECT_NOT_ALLOWED",
-						"Register the redirect URL in the Enable Banking control panel.",
-						error.failure,
-						{ url: redirectUrl },
-					);
-				}
+			const [longest, ...shorter] = consentLadder(
+				institution.maximumConsentValidity,
+				config.consentDays,
+			);
 
-				throw error;
-			}
+			return attempt(longest, shorter);
 		},
 
 		async completeAuthorization(code) {

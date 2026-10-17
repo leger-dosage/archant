@@ -70,7 +70,7 @@ A bank connection shows « Consentement expiré », and the banner says:
 
 > Le consentement de Ma Banque a expiré. La synchronisation est arrêtée.
 
-A bank grants access for 90 days at most, and Archant asks for no more, so nothing syncs once it ends. A sync attempted anyway answers `CONSENT_EXPIRED`. Renew it: « Reconnecter » in the banner, or « Renouveler le consentement » on the connection's page in « Réglages » › « Banques ». The bank asks for your consent again; nothing is deleted, and the next sync picks up where the last one stopped. The banner warns 14 days before the end, so it can be renewed without a gap.
+A consent lasts what Archant asks for, 180 days by default or `ENABLE_BANKING_CONSENT_DAYS`, or less when the bank allows less. Once it ends, nothing syncs. A sync attempted anyway answers `CONSENT_EXPIRED`. Renew it: « Reconnecter » in the banner, or « Renouveler le consentement » on the connection's page in « Réglages » › « Banques ». The bank asks for your consent again; nothing is deleted, and the next sync picks up where the last one stopped. The banner warns 14 days before the end, so it can be renewed without a gap.
 
 ## Labels show backslashes or a card prefix
 
