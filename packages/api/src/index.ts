@@ -18,6 +18,7 @@ import { recomputeLinkedBalances, recomputeNonCashBalances } from "./services/le
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { hasUser } from "./services/setup.ts";
+import { startSyncSchedule } from "./services/sync-schedule.ts";
 
 const env = validateEnv(process.env);
 const logger = createLogger(env.LOG_LEVEL);
@@ -157,6 +158,7 @@ const auth = createAuth({
 // Its start writes to the database (`mcp()` seeds `/api/mcp` as a resource);
 // a failure there stops the server here rather than at the first sign-in.
 await auth.$context;
+const bankDeps = bankDepsFromEnv(env);
 const app = createApp({
 	db,
 	timeZone: env.APP_TIMEZONE,
@@ -171,8 +173,11 @@ const app = createApp({
 	setupToken,
 	version: env.APP_VERSION,
 	priceApiUrl: env.YAHOO_FINANCE_URL,
-	...bankDepsFromEnv(env),
+	...bankDeps,
 });
+// Sure's daily sync at « Heure de synchronisation », for a host that stays
+// on; the first visit of the day still syncs one that slept through it.
+startSyncSchedule({ db, timeZone: env.APP_TIMEZONE, logger, ...bankDeps });
 
 // Vite proxies `/api` here in development; see packages/app/vite.config.ts.
 // With `WEB_DIST` set, as in the container, this port also serves the

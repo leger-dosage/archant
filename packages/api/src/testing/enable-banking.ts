@@ -58,6 +58,8 @@ export type ProviderRequest = {
 	path: string;
 	search: string;
 	authorization: string | null;
+	/** The `Psu-Ip-Address` header, `null` when none was sent. */
+	psuIpAddress: string | null;
 	body: unknown;
 };
 
@@ -97,6 +99,7 @@ export function mockProvider(
 				path: url.pathname,
 				search: url.search,
 				authorization: request.headers.get("authorization"),
+				psuIpAddress: request.headers.get("psu-ip-address"),
 				body: request.method === "POST" ? await request.json() : undefined,
 			});
 

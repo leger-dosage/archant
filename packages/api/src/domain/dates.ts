@@ -66,6 +66,23 @@ export function startOfDay(timeZone: string, now: number): number {
 	return today(timeZone, new Date(start)) === day ? start : guess;
 }
 
+/**
+ * Epoch milliseconds of `hours`:`minutes` on `day` in `timeZone`, read under
+ * the offsets in force the day before and the day after, as `startOfDay`
+ * reads them. A time the clocks skip, 02:22 on the spring change, is the
+ * instant the clock then shows the same distance past the change, 03:22; a
+ * time they repeat, 02:22 on the autumn change, is its first occurrence.
+ */
+export function instantAt(timeZone: string, day: IsoDate, hours: number, minutes: number): number {
+	const wallClock = Date.parse(`${day}T00:00:00Z`) + (hours * 60 + minutes) * 60_000;
+	const before = wallClock - offsetAt(timeZone, wallClock - DAY_MS);
+	const after = wallClock - offsetAt(timeZone, wallClock + DAY_MS);
+	const shows = (instant: number) => instant + offsetAt(timeZone, instant) === wallClock;
+	const [first] = [before, after].filter(shows).toSorted((left, right) => left - right);
+
+	return first ?? before;
+}
+
 export function addDays(date: IsoDate, days: number): IsoDate {
 	return new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY_MS).toISOString().slice(0, 10);
 }

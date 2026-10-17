@@ -34,8 +34,18 @@ export const saveBankCredentialsSchema = z
 
 export type SaveBankCredentialsInput = z.infer<typeof saveBankCredentialsSchema>;
 
-/** « Paramètres de synchronisation », Sure's `syncs_include_pending` switch. */
-export const bankSyncSettingsSchema = z.object({ includePending: z.boolean() });
+/** Sure's `Setting::AUTO_SYNC_TIME_FORMAT`: `H:MM` or `HH:MM`, 00:00 to 23:59. */
+export const AUTO_SYNC_TIME_FORMAT = /^([01]?\d|2[0-3]):([0-5]\d)$/u;
+
+/**
+ * « Paramètres de synchronisation »: Sure's `syncs_include_pending`,
+ * `auto_sync_enabled` and `auto_sync_time`, all three replaced at once.
+ */
+export const bankSyncSettingsSchema = z.object({
+	includePending: z.boolean(),
+	autoSyncEnabled: z.boolean(),
+	autoSyncTime: z.string().regex(AUTO_SYNC_TIME_FORMAT),
+});
 
 /**
  * The bank the user picked, in the saved country, as Sure's `authorize`

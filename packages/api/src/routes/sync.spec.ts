@@ -46,8 +46,8 @@ describe("bank sync routes", () => {
 		expect(select).not.toHaveBeenCalled();
 	});
 
-	it("syncs every connection for the cron, then skips one synced within the hour", async () => {
-		const { app } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
+	it("syncs every connection for the cron, again minutes later, skipping only a held lease", async () => {
+		const { app, db } = await syncApp({ ...configuredBank(), syncSecret: SECRET });
 		const { connection, accountId } = await linkedConnection(app);
 
 		const first = await cron(app, `Bearer ${SECRET}`);
@@ -65,9 +65,18 @@ describe("bank sync routes", () => {
 		});
 
 		// The scheme is case-insensitive (RFC 7235).
+		vi.setSystemTime(Date.now() + 5 * 60 * 1000);
 		const second = await cron(app, `bearer ${SECRET}`);
 		expect(second.status).toBe(200);
 		expect(await second.json()).toEqual({
+			data: { connections: [{ id: connection.id, result: "synced" }] },
+		});
+
+		await db.run(
+			sql`update bank_connections set sync_started_at = ${Date.now()} where id = ${connection.id}`,
+		);
+		const held = await cron(app, `Bearer ${SECRET}`);
+		expect(await held.json()).toEqual({
 			data: { connections: [{ id: connection.id, result: "skipped" }] },
 		});
 	});
@@ -85,8 +94,8 @@ describe("bank sync routes", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("BANK_CONNECTOR_UNAVAILABLE");
 	});
 
-	it("syncs a connection from its button, then refuses a second run within the hour", async () => {
-		const { app } = await syncApp();
+	it("syncs a connection from its button minutes after a sync, refusing only a running one", async () => {
+		const { app, db } = await syncApp();
 		const { client, connection } = await linkedConnection(app);
 
 		const first = await client[":id"].sync.$post({ param: { id: connection.id } });
@@ -100,10 +109,21 @@ describe("bank sync routes", () => {
 			expect.objectContaining({ id: connection.id, lastSyncedAt: Date.now(), lastError: null }),
 		]);
 
+		vi.setSystemTime(Date.now() + 5 * 60 * 1000);
 		const second = await client[":id"].sync.$post({ param: { id: connection.id } });
 
-		expect(second.status).toBe(409);
-		expect(errorBody.parse(await second.json()).error.code).toBe("SYNC_TOO_RECENT");
+		expect(second.status).toBe(200);
+		expect(await second.json()).toEqual({
+			data: { lastSyncedAt: Date.now(), lastError: null },
+		});
+
+		await db.run(
+			sql`update bank_connections set sync_started_at = ${Date.now()} where id = ${connection.id}`,
+		);
+		const third = await client[":id"].sync.$post({ param: { id: connection.id } });
+
+		expect(third.status).toBe(409);
+		expect(errorBody.parse(await third.json()).error.code).toBe("SYNC_IN_PROGRESS");
 	});
 
 	it("lists again a synced transaction deleted since the last sync, as Sure does", async () => {
@@ -116,8 +136,6 @@ describe("bank sync routes", () => {
 		const netflix = (await labels()).find((item) => item.label.includes("NETFLIX"));
 
 		const deleted = await api.transactions[":id"].$delete({ param: { id: netflix?.id ?? "" } });
-		// Past the hour a sync from the button waits.
-		vi.setSystemTime(Date.now() + 2 * 60 * 60 * 1000);
 		const synced = await client[":id"].sync.$post({ param: { id: connection.id } });
 
 		expect(deleted.status).toBe(200);

@@ -1,4 +1,9 @@
-import type { BankBalance, BankConnector, BankStatement } from "../connectors/bank-connector.ts";
+import type {
+	BankBalance,
+	BankConnector,
+	BankStatement,
+	PsuContext,
+} from "../connectors/bank-connector.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { ParsedStatement } from "../domain/statement.ts";
 import type { ErrorCode } from "../lib/errors.ts";
@@ -27,9 +32,6 @@ import { includesPending } from "./bank-settings.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
 
-/** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
-const MIN_INTERVAL_MS = 60 * 60 * 1000;
-
 /**
  * The first window of an account never synced, when its connection names no
  * start date: Sure's `3.months.ago`, the default its setup page offers too.
@@ -40,10 +42,10 @@ const FIRST_WINDOW_MONTHS = 3;
 const OVERLAP_DAYS = 7;
 
 /**
- * Who asked: the connection's button refuses what the cron and the first
- * visit of the day quietly skip.
+ * Who asked: the connection's button refuses what the cron, the schedule and
+ * the first visit of the day quietly skip.
  */
-type SyncTrigger = "button" | "cron" | "auto" | "settings";
+type SyncTrigger = "button" | "cron" | "schedule" | "auto" | "settings";
 
 export type SyncResult = "synced" | "failed" | "skipped" | "consent_expired";
 
@@ -90,24 +92,14 @@ function toParsedStatement(
 
 /**
  * Takes the lease in one statement, so two runs cannot both hold it: free,
- * or older than ten minutes, and the connection not synced within the hour
- * unless a consent was renewed since its last sync (AD-18), so the renewal
- * can be checked at once. Taking the lease spends that exception, and counts
- * as the day's attempt. `anyInterval` skips the hour, never the lease: a
- * setting that changes how balances read syncs at once, as Sure's `sync_later`.
+ * or older than ten minutes. Only a running sync makes another wait, as
+ * Sure's `syncing?` (AD-18): no time between two syncs is enforced. Taking
+ * it counts as the day's attempt.
  */
-async function takeLease(
-	deps: BankConnectionDeps,
-	connectionId: string,
-	now: number,
-	anyInterval = false,
-) {
+async function takeLease(deps: BankConnectionDeps, connectionId: string, now: number) {
 	const [taken] = await deps.db
 		.update(bankConnections)
-		// The renewal's exception is spent by the run it lets through, whatever
-		// that run's outcome: a sync that keeps failing must not skip the hour
-		// on every press.
-		.set({ syncStartedAt: now, syncAttemptedAt: now, authorizedAt: null })
+		.set({ syncStartedAt: now, syncAttemptedAt: now })
 		.where(
 			and(
 				eq(bankConnections.id, connectionId),
@@ -115,25 +107,11 @@ async function takeLease(
 					isNull(bankConnections.syncStartedAt),
 					lt(bankConnections.syncStartedAt, now - LEASE_MS),
 				),
-				anyInterval
-					? undefined
-					: or(
-							isNull(bankConnections.lastSyncedAt),
-							lt(bankConnections.lastSyncedAt, now - MIN_INTERVAL_MS),
-							lt(bankConnections.lastSyncedAt, bankConnections.authorizedAt),
-						),
 			),
 		)
 		.returning({ id: bankConnections.id });
 
 	return taken !== undefined;
-}
-
-/** Why the lease was refused: a run holds it, or the last one is too recent. */
-function refusal(syncStartedAt: number | null, now: number): AppError {
-	return syncStartedAt !== null && syncStartedAt >= now - LEASE_MS
-		? new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.")
-		: new AppError("SYNC_TOO_RECENT", "This bank connection synced less than an hour ago.");
 }
 
 /**
@@ -157,10 +135,20 @@ async function runSync(
 ): Promise<{ failed: number; created: number; synced: number }> {
 	const day = today(deps.timeZone, new Date(startedAt));
 	const connection = await deps.db
-		.select({ syncStartDate: bankConnections.syncStartDate })
+		.select({
+			syncStartDate: bankConnections.syncStartDate,
+			requiredPsuHeaders: bankConnections.requiredPsuHeaders,
+			psuIpAddress: bankConnections.psuIpAddress,
+		})
 		.from(bankConnections)
 		.where(eq(bankConnections.id, connectionId))
 		.get();
+	// Sure's `build_psu_headers` inputs, read once per run; the connector
+	// decides whether they can be sent.
+	const psu: PsuContext = {
+		requiredHeaders: connection?.requiredPsuHeaders ?? [],
+		ipAddress: connection?.psuIpAddress ?? null,
+	};
 	const linked = await deps.db
 		.select({
 			bankAccountId: bankAccounts.id,
@@ -192,7 +180,11 @@ async function runSync(
 		currency: string,
 	): Promise<BankBalance | null> => {
 		try {
-			const balance = await connector.fetchBalance(uid, isCurrencyCode(currency) ? currency : null);
+			const balance = await connector.fetchBalance(
+				uid,
+				isCurrencyCode(currency) ? currency : null,
+				psu,
+			);
 
 			logOtherCurrencies(deps, { connectionId, accountId }, balance);
 
@@ -241,6 +233,7 @@ async function runSync(
 				day,
 				knownMerchants,
 				includePending,
+				psu,
 			);
 			const { cutShort } = statement;
 
@@ -308,12 +301,8 @@ async function runSync(
 
 	const [firstError] = errors;
 
-	// Nothing linked yet, nothing synced: stamped, the connection would refuse
-	// the sync that follows its first link for an hour.
-	if (linked.length === 0) {
-		return { failed: 0, created: 0, synced: 0 };
-	}
-
+	// Nothing linked is a clean run, as Sure's item sync completes with no
+	// account to read: stamped, so no stopped-sync banner shows on it.
 	await deps.db
 		.update(bankConnections)
 		.set(
@@ -339,7 +328,7 @@ async function runSync(
 	return { failed: errors.length, created, synced: linked.length - errors.length };
 }
 
-type Connection = { id: string; consentExpiresAt: number | null; syncStartedAt: number | null };
+type Connection = { id: string; consentExpiresAt: number | null };
 
 /** The connector and the key its connection's session id is decrypted with. */
 type Bank = { connector: BankConnector; encryptionKey: Uint8Array };
@@ -475,10 +464,9 @@ const consentExpired = () =>
 
 /**
  * One connection's sync, lease taken and released here. The button refuses a
- * held lease with `SYNC_IN_PROGRESS` and a sync within the hour with
- * `SYNC_TOO_RECENT`; the cron skips both. An ended consent reads nothing and
- * writes nothing, and a session the provider refuses ends it: the button
- * answers `CONSENT_EXPIRED`, the cron reports it.
+ * held lease with `SYNC_IN_PROGRESS`; the cron and the schedule skip it. An
+ * ended consent reads nothing and writes nothing, and a session the provider
+ * refuses ends it: the button answers `CONSENT_EXPIRED`, the cron reports it.
  */
 async function syncOne(
 	deps: BankConnectionDeps,
@@ -504,12 +492,7 @@ async function syncOne(
 	}
 
 	if (!(await takeLease(deps, connection.id, startedAt))) {
-		const current = await deps.db
-			.select({ syncStartedAt: bankConnections.syncStartedAt })
-			.from(bankConnections)
-			.where(eq(bankConnections.id, connection.id))
-			.get();
-		const error = refusal(current?.syncStartedAt ?? connection.syncStartedAt, startedAt);
+		const error = new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.");
 
 		deps.logger.info(
 			{ connectionId: connection.id, trigger, code: error.code },
@@ -535,7 +518,6 @@ async function syncOne(
 const connectionColumns = {
 	id: bankConnections.id,
 	consentExpiresAt: bankConnections.consentExpiresAt,
-	syncStartedAt: bankConnections.syncStartedAt,
 };
 
 /**
@@ -570,11 +552,13 @@ export async function syncConnection(
 }
 
 /**
- * The scheduled sync: every active connection in turn, oldest first. A
- * connection that fails never stops the next one.
+ * The scheduled sync, from `POST /api/sync` or the daily schedule: every
+ * active connection in turn, oldest first. A connection that fails never
+ * stops the next one.
  */
 export async function syncAll(
 	deps: BankConnectionDeps,
+	trigger: "cron" | "schedule" = "cron",
 ): Promise<{ id: string; result: SyncResult }[]> {
 	// Once for the whole run: every connection syncs under the same credentials.
 	const bank = await resolveBankConnector(deps);
@@ -592,7 +576,7 @@ export async function syncAll(
 		try {
 			results.push({
 				id: connection.id,
-				result: await syncOne(deps, bank, connection, "cron"),
+				result: await syncOne(deps, bank, connection, trigger),
 			});
 		} catch (error) {
 			deps.logger.error({ connectionId: connection.id, code: codeOf(error) }, "bank sync failed");
@@ -618,9 +602,8 @@ const NOTHING_TO_SYNC: DailySync = { leased: [], run: async () => {} };
  * app's zone, syncs each active connection with an unexpired consent and no
  * attempt since that day's midnight. Only the selection and the leases are
  * awaited, local writes; the bank is read by `run`, which the caller starts
- * once it has answered. A lease refused, held or within the hour, is skipped
- * without a word, as the cron skips it: a request comes on every page, and
- * the next one after the hour takes it. Nothing is selected while the bank
+ * once it has answered. A lease held by a running sync is skipped without a
+ * word, as the cron skips it. Nothing is selected while the bank
  * connector is unconfigured.
  */
 export async function startDailySync(deps: BankConnectionDeps): Promise<DailySync> {
@@ -671,9 +654,8 @@ export async function startDailySync(deps: BankConnectionDeps): Promise<DailySyn
 }
 
 /**
- * Takes the lease of each connection it can, quietly skipping one held or,
- * but for a setting's sync, synced within the hour, and returns the run that
- * syncs those it took.
+ * Takes the lease of each connection it can, quietly skipping one held, and
+ * returns the run that syncs those it took.
  */
 async function leaseAll(
 	deps: BankConnectionDeps,
@@ -687,7 +669,7 @@ async function leaseAll(
 	const leased = await ids.reduce<Promise<string[]>>(async (previous, id) => {
 		const taken = await previous;
 
-		return (await takeLease(deps, id, now, trigger === "settings")) ? [...taken, id] : taken;
+		return (await takeLease(deps, id, now)) ? [...taken, id] : taken;
 	}, Promise.resolve([]));
 
 	return {
@@ -709,8 +691,7 @@ async function leaseAll(
 /**
  * Sure's `sync_later` after a setting that changes how a connection's
  * balances read: its lease taken now, the bank read by `run`, which the
- * caller starts once it has answered, within the hour of the last sync too,
- * as Sure's has no such wait. Skipped without a word, as the daily sync skips
+ * caller starts once it has answered. Skipped without a word, as the daily sync skips
  * it, when the connection is not active, its consent has ended, its lease is
  * held, or no connector is set up.
  */

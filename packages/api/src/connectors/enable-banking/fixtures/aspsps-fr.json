@@ -24,7 +24,8 @@
 			"country": "FR",
 			"logo": "not a url",
 			"bic": "",
-			"psu_types": ["personal"]
+			"psu_types": ["personal"],
+			"required_psu_headers": "psu-ip-address"
 		}
 	]
 }

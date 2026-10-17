@@ -70,3 +70,25 @@ export function clientKey(forwarded: string | null, trustedProxies: readonly str
 		}) ?? SHARED_CLIENT_KEY
 	);
 }
+
+/**
+ * The client address sent to a bank as `Psu-Ip-Address`, Sure's
+ * `request.remote_ip`: read from the `x-forwarded-for` that `forwardedFor`
+ * rebuilds, past the trusted proxies, as `clientKey` reads it for the
+ * sign-in limit, but an IPv6 address kept whole rather than cut to its /64.
+ * `null` when no address can be believed, so the caller keeps the one it
+ * stored, never the loopback Better Auth's `getIP` falls back to in test
+ * and development.
+ */
+export function psuAddress(
+	forwarded: string | null,
+	trustedProxies: readonly string[],
+): string | null {
+	const options = {
+		advanced: { ipAddress: { trustedProxies: [...trustedProxies], ipv6Subnet: 128 as const } },
+	};
+	const address = getIP(new Headers({ "x-forwarded-for": forwarded ?? "" }), options);
+
+	// `null` in production; a real loopback client only exists in development.
+	return address === getIP(new Headers(), options) ? null : address;
+}

@@ -39,7 +39,12 @@ export function useBankSetup() {
 	});
 }
 
-/** Sure's « Paramètres de synchronisation »: whether syncs read pending lines. */
+export type BankSyncSettingsData = InferResponseType<typeof bank.settings.$get, 200>["data"];
+
+/**
+ * Sure's « Paramètres de synchronisation »: whether syncs read pending
+ * lines, and whether and when the server syncs every bank each day.
+ */
 export function useBankSyncSettings() {
 	return useQuery({
 		queryKey: queryKeys.bankConnections.settings,
@@ -47,13 +52,16 @@ export function useBankSyncSettings() {
 	});
 }
 
-/** Turns « Inclure les transactions en attente » on or off; the answer is the new state. */
+/**
+ * Saves the three settings at once, the saved values with the one changed,
+ * as the server replaces all three; the answer is the new state.
+ */
 export function useSaveBankSyncSettings() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async (includePending: boolean) =>
-			(await unwrap(bank.settings.$put({ json: { includePending } }))).data,
+		mutationFn: async (json: BankSyncSettingsData) =>
+			(await unwrap(bank.settings.$put({ json }))).data,
 		onSuccess: (settings) => {
 			queryClient.setQueryData(queryKeys.bankConnections.settings, settings);
 		},

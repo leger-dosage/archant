@@ -12,7 +12,7 @@ import type { BankCredentialDeps, BankSetup } from "./bank-credentials.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { AnyColumn } from "drizzle-orm";
 
-import { and, asc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
 import type { AccountSubtype, AccountType, BankAccountTarget } from "@archant/data/account-types";
@@ -215,12 +215,14 @@ async function findInstitution(
 /**
  * Sure's `authorize`: reads the bank again from the provider, in the country
  * saved with the credentials, so only a listed name goes through, stores a
- * pending row keyed by a fresh `state`, and returns the bank's consent URL.
+ * pending row keyed by a fresh `state`, with the PSU headers the bank
+ * requires and the browser's `address`, and returns the bank's consent URL.
  * A failure removes the row.
  */
 export async function startConnection(
 	deps: BankConnectionDeps,
 	input: StartConnectionInput,
+	address: string | null = null,
 ): Promise<{ url: string }> {
 	const { connector, country } = await resolveBankConnector(deps);
 	const now = Date.now();
@@ -256,6 +258,9 @@ export async function startConnection(
 		status: "pending",
 		authorizationState: state,
 		authorizationStartedAt: now,
+		// Sure's `start_authorization` stores them before calling the provider.
+		requiredPsuHeaders: institution.requiredPsuHeaders,
+		psuIpAddress: address,
 		createdAt: now,
 		updatedAt: now,
 	});
@@ -281,8 +286,10 @@ export async function startConnection(
  * Sure's `reauthorize`: a new consent on the same connection, so its bank
  * accounts and the accounts they feed stay as they are. Reads the bank again
  * from the provider and stores a fresh `state` on the active row, which keeps
- * syncing on its old session until the callback succeeds. A failure clears
- * the state and leaves the connection as it was.
+ * syncing on its old session until the callback succeeds, and the PSU
+ * headers the bank requires now, as Sure's `start_authorization`; no
+ * address, as Sure's `reauthorize` stores none. A failure clears the state
+ * and leaves the connection as it was.
  */
 export async function renewConnection(
 	deps: BankConnectionDeps,
@@ -314,7 +321,12 @@ export async function renewConnection(
 
 	await deps.db
 		.update(bankConnections)
-		.set({ authorizationState: state, authorizationStartedAt: now, updatedAt: now })
+		.set({
+			authorizationState: state,
+			authorizationStartedAt: now,
+			requiredPsuHeaders: institution.requiredPsuHeaders,
+			updatedAt: now,
+		})
 		.where(eq(bankConnections.id, connection.id));
 
 	try {
@@ -342,8 +354,10 @@ export async function renewConnection(
 
 /**
  * Sure's `callback`: claims the row by its `state`, once and within 30
- * minutes of the redirect, trades the code for a session and stores it
- * encrypted. The row is pending for a new connection, active for a renewal,
+ * minutes of the redirect, storing the browser's `address` with the claim,
+ * as Sure's refreshes `last_psu_ip` before asking for the session, then
+ * trades the code for a session and stores it encrypted. No believable
+ * address keeps the stored one. The row is pending for a new connection, active for a renewal,
  * whose bank accounts are refreshed on their `identification_hash`: each
  * keeps its id and the account it feeds, a new one appears unlinked, and one
  * the bank no longer lists, or sends unreadable, stays as it was, its link
@@ -354,6 +368,7 @@ export async function renewConnection(
 export async function completeConnection(
 	deps: BankConnectionDeps,
 	input: CompleteConnectionInput,
+	address: string | null = null,
 ): Promise<BankConnectionRecord> {
 	const { connector, encryptionKey } = await resolveBankConnector(deps);
 	const now = Date.now();
@@ -361,7 +376,11 @@ export async function completeConnection(
 	// One statement, so two posts of the same state cannot both claim it.
 	const [claimed] = await deps.db
 		.update(bankConnections)
-		.set({ authorizationState: null, updatedAt: now })
+		.set({
+			authorizationState: null,
+			...(address === null ? {} : { psuIpAddress: address }),
+			updatedAt: now,
+		})
 		.where(
 			and(
 				eq(bankConnections.authorizationState, input.state),
@@ -396,7 +415,6 @@ export async function completeConnection(
 				status: "active",
 				sessionId: encrypt(encryptionKey, session.sessionId),
 				consentExpiresAt: session.consentExpiresAt,
-				authorizedAt: updatedAt,
 				updatedAt,
 			})
 			.where(eq(bankConnections.id, claimed.id))
@@ -508,6 +526,41 @@ export async function completeConnection(
 	return toRecord(row, Date.now());
 }
 
+/**
+ * Sure's `DataCleanerJob#clean_stale_enable_banking_psu_ips`: forgets the
+ * browser's address of every connection whose consent has ended, and of
+ * every pending attempt older than the 30 minutes its `state` lives, since
+ * no callback can claim it any more. Answers how many were cleared; the
+ * address itself is never logged.
+ */
+export async function clearEndedPsuAddresses(
+	deps: Pick<BankConnectionDeps, "db">,
+	now: number,
+): Promise<number> {
+	const cleared = await deps.db
+		.update(bankConnections)
+		.set({ psuIpAddress: null })
+		.where(
+			and(
+				isNotNull(bankConnections.psuIpAddress),
+				or(
+					and(
+						eq(bankConnections.status, "active"),
+						isNotNull(bankConnections.consentExpiresAt),
+						lte(bankConnections.consentExpiresAt, now),
+					),
+					and(
+						eq(bankConnections.status, "pending"),
+						lt(bankConnections.updatedAt, now - AUTHORIZATION_TTL_MS),
+					),
+				),
+			),
+		)
+		.returning({ id: bankConnections.id });
+
+	return cleared.length;
+}
+
 /** Every open connection, oldest first. */
 export async function listConnections(deps: BankConnectionDeps): Promise<BankConnectionRecord[]> {
 	const rows = await deps.db
@@ -553,6 +606,8 @@ async function activeConnection(deps: BankConnectionDeps, connectionId: string) 
 			institutionName: bankConnections.institutionName,
 			sessionId: bankConnections.sessionId,
 			syncStartDate: bankConnections.syncStartDate,
+			requiredPsuHeaders: bankConnections.requiredPsuHeaders,
+			psuIpAddress: bankConnections.psuIpAddress,
 		})
 		.from(bankConnections)
 		.where(and(eq(bankConnections.id, connectionId), eq(bankConnections.status, "active")))
@@ -710,9 +765,11 @@ export async function linkBankAccounts(
 	try {
 		balances = await Promise.all(
 			planned.map(async ({ bankAccount }) => {
+				// Sure's `build_psu_headers`, as on a sync's balance read.
 				const balance = await connector.fetchBalance(
 					bankAccount.providerUid,
 					currencyOf(bankAccount),
+					{ requiredHeaders: connection.requiredPsuHeaders, ipAddress: connection.psuIpAddress },
 				);
 
 				logOtherCurrencies(deps, { connectionId, bankAccountId: bankAccount.id }, balance);
@@ -886,8 +943,8 @@ async function revokingConnector(deps: BankConnectionDeps, connectionId: string)
  * turns every account it feeds into a manual one with its history unchanged
  * (AD-8), then deletes the connection, its bank accounts with it. Synced
  * lines keep their keys, their connection cleared, so connecting the same
- * bank again recognises every one of them. Takes the sync lease, ignoring
- * the hour between two syncs: a running sync answers `SYNC_IN_PROGRESS`.
+ * bank again recognises every one of them. Takes the sync lease: a running
+ * sync answers `SYNC_IN_PROGRESS`.
  * Needs no connector, so a lost key never keeps a bank connected.
  */
 export async function disconnectConnection(
@@ -994,8 +1051,8 @@ async function feedingConnection(deps: BankConnectionDeps, accountId: string): P
 }
 
 /**
- * Takes the connection's sync lease for a write other than a run, ignoring
- * the hour between two syncs: a running sync answers `SYNC_IN_PROGRESS`.
+ * Takes the connection's sync lease for a write other than a run: a running
+ * sync answers `SYNC_IN_PROGRESS`.
  * Returns the time it holds it by, which `releaseWriteLease` needs.
  */
 async function takeWriteLease(deps: BankConnectionDeps, connectionId: string): Promise<number> {

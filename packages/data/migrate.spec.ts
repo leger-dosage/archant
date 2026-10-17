@@ -2628,7 +2628,8 @@ describe("consent renewal", () => {
 		await insertBankAccount(before, "b1", "c1", "hash-1");
 		before.$client.close();
 
-		const database = await migrated();
+		// 0088 drops `authorized_at` again.
+		const database = await migratedBefore("0088");
 
 		await expect(
 			database.all(
@@ -2677,6 +2678,28 @@ describe("consent renewal", () => {
 				sql`select id, credit_limit as creditLimit, treat_balance_as_available_credit as toggle from bank_accounts`,
 			),
 		).resolves.toEqual([{ id: "b1", creditLimit: null, toggle: 0 }]);
+	});
+
+	it("keeps every connection with no PSU header and no address when 0088 drops the renewal's hour", async () => {
+		const before = await migratedBefore("0088");
+		await insertConnection(before, "c1", { status: "active", state: null });
+		await before.run(sql`update bank_connections set authorized_at = 5 where id = 'c1'`);
+		await insertBankAccount(before, "b1", "c1", "hash-1");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, status, required_psu_headers as headers, psu_ip_address as address from bank_connections`,
+			),
+		).resolves.toEqual([{ id: "c1", status: "active", headers: "[]", address: null }]);
+		await expect(
+			database.all(
+				sql`select name from pragma_table_info('bank_connections') where name = 'authorized_at'`,
+			),
+		).resolves.toEqual([]);
+		await expect(database.all(sql`select id from bank_accounts`)).resolves.toEqual([{ id: "b1" }]);
 	});
 
 	it("still refuses a status other than pending or active", async () => {

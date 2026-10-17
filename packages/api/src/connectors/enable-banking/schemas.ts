@@ -19,6 +19,9 @@ const aspspSchema = z.object({
 	bic: z.string().min(1).nullish().catch(null),
 	// Seconds.
 	maximum_consent_validity: z.number().int().positive().nullish().catch(null),
+	// Header names only. Unreadable, the bank asks for none Archant can tell,
+	// so none is sent, as Sure's `blank?` list.
+	required_psu_headers: z.array(z.string().trim().min(1).max(100)).max(20).catch([]),
 });
 
 export const aspspsResponseSchema = z.object({ aspsps: z.array(aspspSchema) });

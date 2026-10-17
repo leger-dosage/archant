@@ -1,6 +1,6 @@
 import type { CreateAccountInput } from "../schemas/accounts.ts";
 import type { CreateCategoryInput } from "../schemas/categories.ts";
-import type { SignedInTemplate, TestBank } from "./auth.ts";
+import type { SignedInTemplate, TestBank, TestNetwork } from "./auth.ts";
 import type { TempDatabase } from "./temp-database.ts";
 
 import { sql } from "drizzle-orm";
@@ -593,12 +593,12 @@ export function configuredBank() {
 	return { bankCredentials, encryptionKey, bankApiUrl, bankConsentDays };
 }
 
-export async function bankApp(bank: TestBank = configuredBank()) {
+export async function bankApp(bank: TestBank = configuredBank(), network: TestNetwork = {}) {
 	own = await freshDatabase();
 	logLines = [];
 	const logger = createLogger("info", { write: (text: string) => logLines.push(text) });
 
-	return withSession(buildTestApp(own.db, logger, undefined, {}, bank), template.cookie);
+	return withSession(buildTestApp(own.db, logger, undefined, network, bank), template.cookie);
 }
 
 /**

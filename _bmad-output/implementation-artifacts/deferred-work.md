@@ -37,6 +37,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-3-sync-transactions-and-balances.md`
   summary: No test covers the « Synchronisation terminée » toast or the silent `SYNC_TOO_RECENT` after linking.
   evidence: `e2e/bank-connections.spec.ts` clicks « Synchroniser » only in refused states (`SYNC_TOO_RECENT` after a first sync, `CONSENT_EXPIRED`); the API paths behind both are covered.
+  resolved: Story 29.9. `SYNC_TOO_RECENT` is gone; the linking test presses « Synchroniser » minutes after the first sync and reads « Synchronisation terminée. ».
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-4-pending-transactions.md`
   summary: A `PDNG` line with no `booking_date` and a future `value_date` would be dated in the future, so today's balance would leave it out.
   evidence: unverified. A real bank's pending payload settles it; the fixtures carry `transaction_date` only, and AD-18 fixes the date order.
@@ -340,3 +341,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-29-8-unlink-one-bank-account.md`
   summary: A connection with no active linked account, after its last account is unlinked, deactivated or skipped, never stamps `last_synced_at` again, so the « synchronisation arrêtée » banner shows 48 hours later although nothing is left to read.
   evidence: `runSync` in `services/sync.ts` returns before the stamp when `linked` is empty, to spare the next link the hour between two syncs; `connectionAlert` then answers `sync_stale`. Story 29.9 removes that hour, after which an empty run can stamp the connection as Sure's item sync does.
+  resolved: Story 29.9. With the hour gone, a run with no linked active account stamps `last_synced_at` and clears `last_error`.
+
+## Deferred from: code review of spec-29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address.md`
+  summary: No test proves that `index.ts` starts the timer with `APP_TIMEZONE` and the bank dependencies.
+  evidence: `sync-schedule.spec.ts` calls `startSyncSchedule` itself; removing the line in `index.ts` breaks no test.
+
+## Deferred from: code review of spec-29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address (2026-10-17, second pass)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address.md`
+  summary: A stored `auto_sync_time` that no longer reads falls back to 02:22 in `bankSyncSettings`, a path no test covers.
+  evidence: only the validated `PUT` writes the row, so it takes a hand-edited database; a raw value reaching `clockOf` would stop the timer silently.

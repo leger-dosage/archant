@@ -15,7 +15,22 @@ export type Institution = {
 	bic: string | null;
 	/** The longest consent the bank grants, in seconds; `null` when it says nothing. */
 	maximumConsentValidity: number | null;
+	/**
+	 * The PSU headers the bank requires on data calls, as the provider lists
+	 * them, such as `psu-ip-address`; empty when it names none.
+	 */
+	requiredPsuHeaders: string[];
 };
+
+/**
+ * What a data call may tell the bank about the user, Sure's
+ * `build_psu_headers` inputs: the headers the bank requires and the
+ * browser's address stored at the latest start or callback.
+ */
+export type PsuContext = { requiredHeaders: readonly string[]; ipAddress: string | null };
+
+/** No PSU header at all: the context of a bank that requires none. */
+export const NO_PSU: PsuContext = { requiredHeaders: [], ipAddress: null };
 
 type AuthorizationRequest = {
 	institution: Institution;
@@ -120,9 +135,14 @@ export type BankConnector = {
 	 * balances in `currency`, else in the first currency listed, the first
 	 * of its booked then available types, a fresher available one beating a
 	 * period's boundary, else the first balance; `null` when the bank lists
-	 * none.
+	 * none. `psu` carries the PSU headers the bank requires, when they can all
+	 * be sent.
 	 */
-	fetchBalance: (uid: string, currency: CurrencyCode | null) => Promise<BankBalance | null>;
+	fetchBalance: (
+		uid: string,
+		currency: CurrencyCode | null,
+		psu?: PsuContext,
+	) => Promise<BankBalance | null>;
 	/**
 	 * The account's booked and pending lines dated `since` or later, every
 	 * page, a line the bank lists twice kept once. A page whose period the
@@ -134,7 +154,8 @@ export type BankConnector = {
 	 * merchant names, name a line and its merchant where the bank's text
 	 * holds one. With `includePending` false, Sure's `syncs_include_pending`
 	 * turned off, only booked lines are asked for, and a pending one the bank
-	 * returns all the same is left out.
+	 * returns all the same is left out. `psu` as for `fetchBalance`, on every
+	 * page.
 	 */
 	fetchStatement: (
 		uid: string,
@@ -142,6 +163,7 @@ export type BankConnector = {
 		today: IsoDate,
 		knownMerchants: readonly string[],
 		includePending: boolean,
+		psu?: PsuContext,
 	) => Promise<BankStatement>;
 };
 

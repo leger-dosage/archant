@@ -7,6 +7,7 @@ import type {
 	BankStatement,
 	Institution,
 	ProviderFailure,
+	PsuContext,
 } from "../bank-connector.ts";
 import type { balanceSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
@@ -18,7 +19,7 @@ import { parseAmount, toMinorUnits } from "@archant/data/money";
 import { addDays } from "../../domain/dates.ts";
 import { providerIsoDate } from "../../domain/provider-date.ts";
 import { NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
-import { BankProviderError } from "../bank-connector.ts";
+import { BankProviderError, NO_PSU } from "../bank-connector.ts";
 import { signJwt } from "./jwt.ts";
 import { capped, keyLabelOf, labelOf, merchantNameOf } from "./labels.ts";
 import {
@@ -552,14 +553,43 @@ function withoutTrailingSlashes(url: string): string {
 	return url.slice(0, end);
 }
 
-type Call = { method: "GET" | "POST" | "DELETE"; path: string; body?: unknown };
+/**
+ * Sure's `build_psu_headers`: Enable Banking takes either every PSU header
+ * a bank requires or none, and only the address can be sent from the
+ * server. So `Psu-Ip-Address` goes only to a bank whose required headers,
+ * lower-cased, are all `psu-ip-address`, and only with an address stored;
+ * any other bank gets none, rather than an incomplete set it would refuse.
+ */
+export function psuHeaders({ requiredHeaders, ipAddress }: PsuContext): Record<string, string> {
+	const required = requiredHeaders.map((header) => header.toLowerCase());
+
+	if (
+		required.length === 0 ||
+		!required.every((header) => header === "psu-ip-address") ||
+		ipAddress === null ||
+		ipAddress === ""
+	) {
+		return {};
+	}
+
+	return { "Psu-Ip-Address": ipAddress };
+}
+
+type Call = {
+	method: "GET" | "POST" | "DELETE";
+	path: string;
+	body?: unknown;
+	/** Sent as they are; only data calls carry any, the PSU ones. */
+	headers?: Record<string, string>;
+};
 
 async function call<Schema extends z.ZodType>(
 	config: EnableBankingConfig,
-	{ method, path, body }: Call,
+	{ method, path, body, headers: extra = {} }: Call,
 	schema: Schema,
 ): Promise<z.output<Schema>> {
 	const headers: Record<string, string> = {
+		...extra,
 		authorization: `Bearer ${await signJwt(config.applicationId, config.privateKey)}`,
 		accept: "application/json",
 	};
@@ -614,10 +644,15 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 	async function fetchBalance(
 		uid: string,
 		currency: CurrencyCode | null,
+		psu: PsuContext = NO_PSU,
 	): Promise<BankBalance | null> {
 		const { balances } = await call(
 			config,
-			{ method: "GET", path: `/accounts/${encodeURIComponent(uid)}/balances` },
+			{
+				method: "GET",
+				path: `/accounts/${encodeURIComponent(uid)}/balances`,
+				headers: psuHeaders(psu),
+			},
 			balancesResponseSchema,
 		);
 
@@ -638,6 +673,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 		continuationKey: string | null,
 		today: IsoDate,
 		includePending: boolean,
+		psu: PsuContext,
 		attempt = 0,
 	): Promise<{ page: z.output<typeof transactionsPageSchema>; from: IsoDate }> {
 		const query = new URLSearchParams({ date_from: from });
@@ -656,6 +692,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				{
 					method: "GET",
 					path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
+					headers: psuHeaders(psu),
 				},
 				transactionsPageSchema,
 			);
@@ -671,7 +708,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				throw error;
 			}
 
-			return fetchPage(uid, next, continuationKey, today, includePending, attempt + 1);
+			return fetchPage(uid, next, continuationKey, today, includePending, psu, attempt + 1);
 		}
 	}
 
@@ -689,6 +726,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 		since: IsoDate,
 		today: IsoDate,
 		includePending: boolean,
+		psu: PsuContext,
 	): Promise<{ lines: unknown[]; from: IsoDate; cutShort: ProviderFailure | null }> {
 		const seen = new Set<string>();
 		const lines: unknown[] = [];
@@ -700,7 +738,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			let answer: Awaited<ReturnType<typeof fetchPage>>;
 
 			try {
-				answer = await fetchPage(uid, since, continuationKey, today, includePending);
+				answer = await fetchPage(uid, since, continuationKey, today, includePending, psu);
 			} catch (error) {
 				if (
 					page === 0 ||
@@ -756,6 +794,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				logo: aspsp.logo ?? null,
 				bic: aspsp.bic ?? null,
 				maximumConsentValidity: aspsp.maximum_consent_validity ?? null,
+				requiredPsuHeaders: aspsp.required_psu_headers,
 			}));
 		},
 
@@ -871,8 +910,9 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			today,
 			knownMerchants,
 			includePending,
+			psu = NO_PSU,
 		): Promise<BankStatement> {
-			const { lines, from, cutShort } = await fetchLines(uid, since, today, includePending);
+			const { lines, from, cutShort } = await fetchLines(uid, since, today, includePending, psu);
 			const unique = withoutRepeats(lines);
 			const unsettled = withoutSettledPending(lines);
 			const statement: BankStatement = { transactions: [], rejected: [], from, cutShort };

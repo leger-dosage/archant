@@ -82,9 +82,13 @@ docker compose logs archant | grep 'Setup is open'
 
 Take the token from the last line, open `https://<machine>.<tailnet>.ts.net` from a device on the tailnet, and create the administrator at `/setup`. Then turn two-factor sign-in on in « Réglages » › « Sécurité ».
 
-## 7. Schedule the daily sync, if the machine stays on
+## 7. Choose when the banks sync
 
-This step is optional: the first page you open each day syncs the banks, as [Scheduled synchronisation](deployment.md#scheduled-synchronisation) explains, so a machine that sleeps at night misses nothing. A cron only helps a machine that stays on, by syncing before you open Archant.
+Archant syncs the banks itself every day at « Heure de synchronisation (HH:MM) », 02:22 by default, in « Réglages » › « Banques » › « Paramètres de synchronisation », as [Scheduled synchronisation](deployment.md#scheduled-synchronisation) explains. The server's own timer runs it, so set a time the machine is awake, or turn « Activer la synchronisation automatique » off. A machine asleep at that time misses nothing: the first page you open that day syncs the banks.
+
+A cron is optional, and rarely needed once the time is set: it only adds a sync at another time, and each one counts against the four unattended reads a day a bank allows.
+
+A bank that requires the browser's address receives, as `Psu-Ip-Address`, the address Archant sees: on a tailnet, the device's Tailscale address, as [the security model](security-model.md#what-leaves-the-server) explains.
 
 The same section describes `POST /api/sync`. Call it from the host's cron on `http://127.0.0.1:8787`, not the `ts.net` address: the sync keeps running when Tailscale is down or logged out, and the secret never leaves the machine. `/api/sync` takes no session and no origin check, so plain loopback HTTP works.
 

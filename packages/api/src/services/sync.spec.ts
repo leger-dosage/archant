@@ -109,7 +109,11 @@ beforeEach(async () => {
 	// tests' ones are set aside rather than removed.
 	await temp.db.update(accounts).set({ bankAccountId: null, active: false });
 	await temp.db.delete(bankConnections);
-	await saveBankSyncSettings(deps(), { includePending: true });
+	await saveBankSyncSettings(deps(), {
+		includePending: true,
+		autoSyncEnabled: true,
+		autoSyncTime: "02:22",
+	});
 });
 
 async function newConnection(fields: Partial<typeof bankConnections.$inferInsert> = {}) {
@@ -729,7 +733,11 @@ describe("syncConnection", () => {
 		const requests = mockProvider();
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await saveBankSyncSettings(deps(), { includePending: false });
+		await saveBankSyncSettings(deps(), {
+			includePending: false,
+			autoSyncEnabled: true,
+			autoSyncTime: "02:22",
+		});
 
 		await syncConnection(deps(), connectionId);
 
@@ -749,7 +757,11 @@ describe("syncConnection", () => {
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 		await syncConnection(deps(), connectionId);
-		await saveBankSyncSettings(deps(), { includePending: false });
+		await saveBankSyncSettings(deps(), {
+			includePending: false,
+			autoSyncEnabled: true,
+			autoSyncTime: "02:22",
+		});
 		vi.setSystemTime(NOW + DAY);
 		withoutPending();
 
@@ -856,16 +868,57 @@ describe("syncConnection", () => {
 		await expect(transactionCount(accountId)).resolves.toBe(6);
 	});
 
-	it("refuses a connection synced less than an hour ago", async () => {
+	it("syncs a connection synced five minutes ago, as Sure waits only for a running sync", async () => {
 		const requests = mockProvider();
-		const connectionId = await newConnection({ lastSyncedAt: NOW - 30 * MINUTE });
+		const connectionId = await newConnection({ lastSyncedAt: NOW - 5 * MINUTE });
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+		expect(requests.some(({ path }) => path.startsWith("/accounts/"))).toBe(true);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+
+		vi.setSystemTime(NOW + MINUTE);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
+			lastSyncedAt: NOW + MINUTE,
+		});
+	});
+
+	it("sends the stored address on balances and transactions to an IP-only bank, and never logs it", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({
+			requiredPsuHeaders: ["psu-ip-address"],
+			psuIpAddress: "203.0.113.7",
+		});
 		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 
-		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
-			code: "SYNC_TOO_RECENT",
-		});
-		expect(requests).toEqual([]);
-		await expect(connectionRow(connectionId)).resolves.toMatchObject({ syncStartedAt: null });
+		await syncConnection(deps(), connectionId);
+
+		const data = requests.filter(({ path }) => path.startsWith("/accounts/"));
+		expect(data.length).toBeGreaterThan(1);
+		expect(data.every(({ psuIpAddress }) => psuIpAddress === "203.0.113.7")).toBe(true);
+		expect(
+			requests.filter(({ path }) => path.startsWith("/sessions/")).map((sent) => sent.psuIpAddress),
+		).toEqual([null]);
+		expect(logLines.join("\n")).not.toContain("203.0.113.7");
+	});
+
+	it.each([
+		["requires another header too", ["psu-ip-address", "psu-user-agent"], "203.0.113.7"],
+		["requires none", [], "203.0.113.7"],
+		["has no address stored", ["psu-ip-address"], null],
+	])("sends no PSU header to a bank that %s", async (_name, requiredPsuHeaders, psuIpAddress) => {
+		const requests = mockProvider();
+		const connectionId = await newConnection({ requiredPsuHeaders, psuIpAddress });
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		expect(requests.length).toBeGreaterThan(1);
+		expect(requests.every((sent) => sent.psuIpAddress === null)).toBe(true);
 	});
 
 	it("answers CONSENT_EXPIRED once the consent has ended, reading and writing nothing", async () => {
@@ -884,47 +937,6 @@ describe("syncConnection", () => {
 		expect(requests).toEqual([]);
 		await expect(connectionRow(connectionId)).resolves.toEqual(before);
 		await expect(transactionCount(accountId)).resolves.toBe(0);
-	});
-
-	it("syncs within the hour once after a renewal, then keeps the hour again", async () => {
-		mockProvider();
-		const connectionId = await newConnection({
-			lastSyncedAt: NOW - 10 * MINUTE,
-			authorizedAt: NOW - 2 * MINUTE,
-		});
-		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
-			lastSyncedAt: NOW,
-			lastError: null,
-		});
-
-		vi.setSystemTime(NOW + MINUTE);
-
-		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
-			code: "SYNC_TOO_RECENT",
-		});
-	});
-
-	it("spends the renewal's exception on a failed sync, then keeps the hour again", async () => {
-		failingOn(FIXTURE_CHECKING_UID);
-		const connectionId = await newConnection({
-			lastSyncedAt: NOW - 10 * MINUTE,
-			authorizedAt: NOW - 2 * MINUTE,
-		});
-		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
-			lastSyncedAt: NOW - 10 * MINUTE,
-			lastError: "BANK_PROVIDER_ERROR",
-		});
-		await expect(connectionRow(connectionId)).resolves.toMatchObject({ authorizedAt: null });
-
-		vi.setSystemTime(NOW + MINUTE);
-
-		await expect(syncConnection(deps(), connectionId)).rejects.toMatchObject({
-			code: "SYNC_TOO_RECENT",
-		});
 	});
 
 	it("after a renewal that leaves out the card, still reads it under its last uid, its failure the run's error", async () => {
@@ -1004,8 +1016,9 @@ describe("syncConnection", () => {
 			updatedAt: NOW,
 		});
 
+		// Nothing left to read is a clean run, as Sure's item sync completes.
 		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
-			lastSyncedAt: null,
+			lastSyncedAt: NOW,
 			lastError: null,
 		});
 		// The session alone, read before any account.
@@ -1048,20 +1061,25 @@ describe("syncConnection", () => {
 		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
 	});
 
-	it("leaves a connection with nothing linked unsynced, so its first link syncs at once", async () => {
+	it("stamps a connection with nothing linked and clears its error, and its first link still syncs at once", async () => {
 		const requests = mockProvider();
-		const connectionId = await newConnection();
+		const connectionId = await newConnection({
+			lastSyncedAt: NOW - 5 * DAY,
+			lastError: "BANK_PROVIDER_ERROR",
+		});
 
 		await expect(syncAll(deps())).resolves.toEqual([{ id: connectionId, result: "synced" }]);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({
-			lastSyncedAt: null,
+			lastSyncedAt: NOW,
 			lastError: null,
 		});
+		expect(requests.filter(({ path }) => path.startsWith("/accounts/"))).toEqual([]);
 
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		vi.setSystemTime(NOW + MINUTE);
 
 		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
-			lastSyncedAt: NOW,
+			lastSyncedAt: NOW + MINUTE,
 			lastError: null,
 		});
 		await expect(transactionCount(accountId)).resolves.toBe(6);
@@ -1584,7 +1602,7 @@ describe("syncAll", () => {
 			{ id: synced, result: "synced" },
 			{ id: failed, result: "failed" },
 			{ id: leased, result: "skipped" },
-			{ id: recent, result: "skipped" },
+			{ id: recent, result: "synced" },
 			{ id: expired, result: "consent_expired" },
 		]);
 		await expect(connectionRow(expired)).resolves.toMatchObject({
@@ -2042,7 +2060,7 @@ describe("startDailySync", () => {
 		});
 	});
 
-	it("skips a connection the cron synced late last night, then takes it past the hour", async () => {
+	it("takes a connection the cron synced late last night at the first visit after midnight", async () => {
 		mockProvider();
 		// 23:30 in Paris, the day before the visit.
 		const lateCron = Date.parse("2026-09-24T21:30:00Z");
@@ -2050,28 +2068,17 @@ describe("startDailySync", () => {
 			lastSyncedAt: lateCron,
 			syncAttemptedAt: lateCron,
 		});
-		// 00:10 in Paris.
-		vi.setSystemTime(Date.parse("2026-09-24T22:10:00Z"));
-		const syncDeps = deps();
+		// 00:10 in Paris: no hour between two syncs any more, only the day counts.
+		const visit = Date.parse("2026-09-24T22:10:00Z");
+		vi.setSystemTime(visit);
 
-		const early = await startDailySync(syncDeps);
+		const daily = await startDailySync(deps());
+		await daily.run();
 
-		expect(early.leased).toEqual([]);
+		expect(daily.leased).toEqual([connectionId]);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({
-			syncStartedAt: null,
-			syncAttemptedAt: lateCron,
-		});
-		// Silent, like the cron: every page would otherwise log it.
-		expect(logLines).toEqual([]);
-
-		// 00:31 in Paris.
-		vi.setSystemTime(Date.parse("2026-09-24T22:31:00Z"));
-		const later = await startDailySync(syncDeps);
-		await later.run();
-
-		expect(later.leased).toEqual([connectionId]);
-		await expect(connectionRow(connectionId)).resolves.toMatchObject({
-			lastSyncedAt: Date.parse("2026-09-24T22:31:00Z"),
+			lastSyncedAt: visit,
+			syncAttemptedAt: visit,
 		});
 	});
 

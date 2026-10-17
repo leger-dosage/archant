@@ -30,6 +30,7 @@ import {
 	MAX_PAGES,
 	consentLadder,
 	nextStart,
+	psuHeaders,
 	toBankAccount,
 	toTransaction,
 	withoutRepeats,
@@ -65,6 +66,7 @@ const institution = {
 	logo: null,
 	bic: null,
 	maximumConsentValidity: 180 * 86_400,
+	requiredPsuHeaders: [],
 };
 
 const request = {
@@ -202,6 +204,7 @@ describe("listInstitutions", () => {
 				logo: "https://enablebanking.com/brands/FR/Banque%20Test/",
 				bic: "BTSTFRPP",
 				maximumConsentValidity: 180 * 86_400,
+				requiredPsuHeaders: ["psu-ip-address"],
 			},
 			{
 				name: "Crédit Exemple",
@@ -209,15 +212,17 @@ describe("listInstitutions", () => {
 				logo: null,
 				bic: null,
 				maximumConsentValidity: 30 * 86_400,
+				requiredPsuHeaders: [],
 			},
-			// An unreadable logo and an empty BIC become null rather than
-			// dropping the bank.
+			// An unreadable logo, an empty BIC and an unreadable header list
+			// become null or empty rather than dropping the bank.
 			{
 				name: "Caisse Sans Limite",
 				country: "FR",
 				logo: null,
 				bic: null,
 				maximumConsentValidity: null,
+				requiredPsuHeaders: [],
 			},
 		]);
 		expect(requests).toEqual([
@@ -703,6 +708,88 @@ async function chosen(items: Record<string, unknown>[], currency: "EUR" | "USD" 
 
 	return connector.fetchBalance(FIXTURE_CARD_UID, currency);
 }
+
+describe("psuHeaders", () => {
+	it.each([
+		[
+			"an IP-only bank with an address",
+			["psu-ip-address"],
+			"203.0.113.7",
+			{ "Psu-Ip-Address": "203.0.113.7" },
+		],
+		[
+			"header names in any case",
+			["Psu-Ip-Address", "PSU-IP-ADDRESS"],
+			"2001:db8::1",
+			{ "Psu-Ip-Address": "2001:db8::1" },
+		],
+		["a bank that requires none", [], "203.0.113.7", {}],
+		[
+			"a bank that requires another header too",
+			["psu-ip-address", "psu-user-agent"],
+			"203.0.113.7",
+			{},
+		],
+		["a bank that requires another header alone", ["psu-user-agent"], "203.0.113.7", {}],
+		["no address stored", ["psu-ip-address"], null, {}],
+		["an empty address", ["psu-ip-address"], "", {}],
+	] as const)("%s", (_name, requiredHeaders, ipAddress, expected) => {
+		expect(psuHeaders({ requiredHeaders, ipAddress })).toEqual(expected);
+	});
+});
+
+describe("PSU headers on data calls", () => {
+	const ipOnly = { requiredHeaders: ["psu-ip-address"], ipAddress: "203.0.113.7" };
+
+	it("sends the address on balances and every transactions page for an IP-only bank", async () => {
+		const requests = mockProvider();
+
+		await connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR", ipOnly);
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, [], true, ipOnly);
+
+		expect(requests.map(({ path, psuIpAddress }) => ({ path, psuIpAddress }))).toEqual([
+			{ path: `/accounts/${FIXTURE_CHECKING_UID}/balances`, psuIpAddress: "203.0.113.7" },
+			{ path: `/accounts/${FIXTURE_CHECKING_UID}/transactions`, psuIpAddress: "203.0.113.7" },
+			{ path: `/accounts/${FIXTURE_CHECKING_UID}/transactions`, psuIpAddress: "203.0.113.7" },
+		]);
+	});
+
+	it("sends none to a bank that requires other headers, or without an address", async () => {
+		const requests = mockProvider();
+		const more = {
+			requiredHeaders: ["psu-ip-address", "psu-user-agent"],
+			ipAddress: "203.0.113.7",
+		};
+
+		await connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR", more);
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, [], true, more);
+		await connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR", { ...ipOnly, ipAddress: null });
+		await connector.fetchBalance(FIXTURE_CHECKING_UID, "EUR");
+
+		expect(requests.map(({ psuIpAddress }) => psuIpAddress)).toEqual([
+			null,
+			null,
+			null,
+			null,
+			null,
+		]);
+	});
+
+	it("never sends it on the listing, the authorisation or the session calls", async () => {
+		const requests = mockProvider();
+
+		await connector.listInstitutions("FR");
+		await connector.startAuthorization({
+			...request,
+			institution: { ...institution, requiredPsuHeaders: ["psu-ip-address"] },
+		});
+		await connector.completeAuthorization("the-code");
+		await connector.readSession(FIXTURE_SESSION_ID);
+
+		expect(requests).toHaveLength(4);
+		expect(requests.every(({ psuIpAddress }) => psuIpAddress === null)).toBe(true);
+	});
+});
 
 /** Sure's `BALANCE_TYPE_PRIORITY`, ISO codes only: booked, then expected, then available. */
 const SURE_ORDER = ["CLBD", "ITBD", "OPBD", "PRCD", "XPCD", "CLAV", "ITAV"];
