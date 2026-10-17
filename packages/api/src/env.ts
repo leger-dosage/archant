@@ -45,6 +45,25 @@ const DEFAULT_CONSENT_DAYS = 180;
 // bank connection failed.
 const MAX_CONSENT_DAYS = 36_500;
 
+/** Sure's `SureImport::DEFAULT_MAX_NDJSON_SIZE_MB` and `DEFAULT_MAX_ROW_COUNT`. */
+export const DEFAULT_SURE_IMPORT_MAX_SIZE_MB = 10;
+export const DEFAULT_SURE_IMPORT_MAX_ROWS = 100_000;
+
+/**
+ * Sure's `positive_integer_env`: a whole number above zero, else `fallback`,
+ * so a typo never stops the server, as Sure's reader ignores it.
+ */
+function positiveInteger(fallback: number) {
+	return z
+		.string()
+		.optional()
+		.transform((value) => {
+			const number = value !== undefined && /^\d+$/u.test(value.trim()) ? Number(value) : 0;
+
+			return Number.isSafeInteger(number) && number > 0 ? number : fallback;
+		});
+}
+
 /**
  * The RSA private key a PEM holds, PKCS#1 (`BEGIN RSA PRIVATE KEY`) or
  * PKCS#8 (`BEGIN PRIVATE KEY`) alike, and a key bundled after its
@@ -162,6 +181,11 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return days > 0 && days <= MAX_CONSENT_DAYS ? days : DEFAULT_CONSENT_DAYS;
 				}),
+			// The largest `all.ndjson` « Importer depuis Sure » reads, in megabytes,
+			// and the most lines carrying a `type` it takes: Sure's variables and
+			// defaults. A bigger file is refused before it is read.
+			SURE_IMPORT_MAX_NDJSON_SIZE_MB: positiveInteger(DEFAULT_SURE_IMPORT_MAX_SIZE_MB),
+			SURE_IMPORT_MAX_ROWS: positiveInteger(DEFAULT_SURE_IMPORT_MAX_ROWS),
 			// Encrypts bank session ids and the private key saved from the
 			// interface at rest. Losing it means setting Enable Banking up again
 			// and reconnecting every bank; changing it without a migration has

@@ -6,6 +6,7 @@ import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
 import type { PriceDeps } from "./services/securities.ts";
 import type { Reservation, SignInCeilingOptions } from "./services/sign-in-failures.ts";
+import type { SureImportLimits } from "./services/sure-import-preflight.ts";
 import type { Context, MiddlewareHandler, Next } from "hono";
 
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -56,6 +57,7 @@ import { rulesRoutes } from "./routes/rules.ts";
 import { securitiesRoutes } from "./routes/securities.ts";
 import { setupRoutes } from "./routes/setup.ts";
 import { snapshotsRoutes } from "./routes/snapshots.ts";
+import { sureImportsRoutes } from "./routes/sure-imports.ts";
 import { syncRoutes } from "./routes/sync.ts";
 import { tagsRoutes } from "./routes/tags.ts";
 import { tradesRoutes } from "./routes/trades.ts";
@@ -108,13 +110,18 @@ export type AppDeps = ServiceDeps &
 		setupToken: string | null;
 		/** `APP_VERSION`: the release the image was built from, `null` for a development build. */
 		version: string | null;
+		/**
+		 * `SURE_IMPORT_MAX_NDJSON_SIZE_MB` and `SURE_IMPORT_MAX_ROWS`; Sure's
+		 * defaults when absent.
+		 */
+		sureImport?: SureImportLimits | undefined;
 	};
 
 /**
  * Far above any JSON body the interface sends, such as a rule with many
  * conditions, and small enough that no caller, signed in or not, makes the
- * server hold much. The two uploads, a statement and an attachment, have
- * their own, larger limits, checked once the session is, and so has
+ * server hold much. The uploads, a statement, a Sure archive and an
+ * attachment, have their own, larger limits, checked once the session is, and so has
  * `/api/mcp`, where a statement arrives inside an assistant's tool call,
  * checked once its token is.
  */
@@ -265,6 +272,7 @@ function createApi(deps: AppDeps) {
 		.route("/snapshots", snapshotsRoutes(deps))
 		.route("/trades", tradesRoutes(deps))
 		.route("/imports", importsRoutes(deps))
+		.route("/sure-imports", sureImportsRoutes(deps))
 		.route("/categories", categoriesRoutes(deps))
 		.route("/merchants", merchantsRoutes(deps))
 		.route("/tags", tagsRoutes(deps))
@@ -396,7 +404,13 @@ export function createApp(deps: AppDeps) {
 		.use(
 			"/api/*",
 			except(
-				["/api/accounts/:id/imports", "/api/transactions/:id/attachments", "/api/mcp"],
+				[
+					"/api/accounts/:id/imports",
+					"/api/sure-imports",
+					"/api/sure-imports/preflight",
+					"/api/transactions/:id/attachments",
+					"/api/mcp",
+				],
 				bodyLimit({ maxSize: MAX_BODY_BYTES, onError: tooLarge }),
 			),
 		)

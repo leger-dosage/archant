@@ -8,6 +8,7 @@ import {
 	MAX_MINOR_UNITS,
 	minorUnitsOf,
 	parseAmount,
+	parseDecimalAmount,
 	toDecimalString,
 	toMinorUnits,
 } from "./money.ts";
@@ -71,6 +72,46 @@ describe("parseAmount", () => {
 		["42", "XYZ"],
 	])("rejects %j in %s", (text, currency) => {
 		expect(parseAmount(text, currency)).toBeNull();
+	});
+});
+
+describe("parseDecimalAmount", () => {
+	it.each([
+		["12.5", "EUR", 1250],
+		["-12.50", "EUR", -1250],
+		["0", "EUR", 0],
+		["1234", "JPY", 1234],
+		["1.234", "KWD", 1234],
+		// Half away from zero beyond the currency's decimals, read from the digits.
+		["0.125", "EUR", 13],
+		["0.135", "EUR", 14],
+		["0.1250000001", "EUR", 13],
+		["-0.125", "EUR", -13],
+		["0.12499999999999999999", "EUR", 12],
+		["2.5", "JPY", 3],
+		["-2.5", "JPY", -3],
+		["3.4", "JPY", 3],
+		["100000000000", "EUR", MAX_MINOR_UNITS],
+	])("reads %j in %s as %i minor units", (text, currency, expected) => {
+		expect(parseDecimalAmount(text, currency)).toBe(expected);
+	});
+
+	it("never returns negative zero", () => {
+		expect(Object.is(parseDecimalAmount("-0.001", "EUR"), 0)).toBe(true);
+	});
+
+	it.each([
+		["", "EUR"],
+		["abc", "EUR"],
+		["1e3", "EUR"],
+		["+1", "EUR"],
+		["1 234.56", "EUR"],
+		["1,5", "EUR"],
+		[".5", "EUR"],
+		["100000000000.01", "EUR"],
+		["12", "XYZ"],
+	])("refuses %j in %s", (text, currency) => {
+		expect(parseDecimalAmount(text, currency)).toBeNull();
 	});
 });
 

@@ -5,6 +5,7 @@ import {
 	BotIcon,
 	ChartLineIcon,
 	DatabaseIcon,
+	DownloadIcon,
 	RepeatIcon,
 	ShapesIcon,
 	ShieldCheckIcon,
@@ -28,6 +29,8 @@ export const SETTINGS_SECTIONS = [
 	{ to: "/settings/tags", label: "settings.sections.tags", icon: TagsIcon },
 	{ to: "/settings/recurring", label: "settings.sections.recurring", icon: RepeatIcon },
 	{ to: "/settings/assistants", label: "settings.sections.assistants", icon: BotIcon },
+	// Sure's « Importations », with its icon, beside the export.
+	{ to: "/settings/imports", label: "settings.sections.imports", icon: DownloadIcon },
 	{ to: "/settings/data", label: "settings.sections.data", icon: DatabaseIcon },
 	{ to: "/settings/members", label: "settings.sections.members", icon: UsersIcon },
 	{ to: "/settings/security", label: "settings.sections.security", icon: ShieldCheckIcon },
