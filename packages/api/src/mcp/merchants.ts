@@ -22,7 +22,9 @@ const merchant = z.object({
 	name: z.string(),
 	source: z
 		.literal("family")
-		.describe("Always family: every merchant here is the household's own, none a provider's."),
+		.describe(
+			"Always family: Archant holds one household, so a merchant a bank sync created is the household's own too.",
+		),
 });
 
 export const getMerchants = defineTool({

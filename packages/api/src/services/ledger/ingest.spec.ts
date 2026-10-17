@@ -6,6 +6,7 @@ import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { imports } from "@archant/data/schema/imports";
+import { merchants } from "@archant/data/schema/merchants";
 import { rules } from "@archant/data/schema/rules";
 import { transactions } from "@archant/data/schema/transactions";
 
@@ -14,6 +15,8 @@ import { addDays } from "../../domain/dates.ts";
 import {
 	add,
 	addStandard,
+	asUser,
+	bookedLine,
 	cafe,
 	categoryOf,
 	categoryOriginOf,
@@ -43,6 +46,7 @@ import {
 	newTag,
 	openChecking,
 	openHousehold,
+	pendingLine,
 	preview,
 	previewRow,
 	rejectedRows,
@@ -1268,6 +1272,70 @@ describe("rules at ingestion", () => {
 		await expect(tagsOf(other)).resolves.toEqual([]);
 	});
 
+	it("runs on a bank line with the merchant the sync found, which a rule may change", async () => {
+		const { account, bank } = await linkedChecking();
+		const shop = await newMerchant("Primeur");
+		const other = await newMerchant("Marché");
+		const greens = await newCategory("Primeurs");
+		const name = await merchantName(shop);
+		await newRuleWith(
+			[
+				{ actionType: "set_transaction_category", value: greens },
+				{ actionType: "set_transaction_merchant", value: other },
+			],
+			[{ conditionType: "transaction_merchant", operator: "=", value: shop }],
+		);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "RULE-1", merchant: name.toUpperCase() }),
+		]);
+
+		const [id = ""] = synced.created;
+		await expect(categoryOf(id)).resolves.toBe(greens);
+		await expect(merchantOf(id)).resolves.toBe(other);
+	});
+
+	it("leaves no merchant behind that a rule replaced on every line", async () => {
+		const { account, bank } = await linkedChecking();
+		const other = await newMerchant("Remplaçant");
+		const name = `Remplacé ${crypto.randomUUID()}`;
+		await newRuleWith(
+			[{ actionType: "set_transaction_merchant", value: other }],
+			[labelLike("remplace moi")],
+		);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "RULE-2", label: "REMPLACE MOI", merchant: name }),
+		]);
+
+		await expect(merchantOf(synced.created[0] ?? "")).resolves.toBe(other);
+		await expect(merchantsNamed(name)).resolves.toEqual([]);
+	});
+
+	it("keeps the merchant a rule set on a pending entry once the bank books it", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const chosen = await newMerchant("Choisi par règle");
+		const name = `Banque ${crypto.randomUUID()}`;
+		await newRuleWith(
+			[{ actionType: "set_transaction_merchant", value: chosen }],
+			[labelLike("boulangerie en attente")],
+		);
+		const [id = ""] = (
+			await sync(account.id, bank.connectionId, [
+				pendingLine(amount, { externalId: "p-rule", merchant: name }),
+			])
+		).created;
+		await expect(merchantOf(id)).resolves.toBe(chosen);
+
+		await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "p-rule", merchant: name }),
+		]);
+
+		await expect(merchantOf(id)).resolves.toBe(chosen);
+		await expect(merchantsNamed(name)).resolves.toEqual([]);
+	});
+
 	it("never renames a line typed by hand, whose label is locked", async () => {
 		const account = await openChecking();
 		await newRuleWith([{ actionType: "set_transaction_name", value: "Boulangerie Paul" }]);
@@ -1455,6 +1523,26 @@ describe("rules at ingestion", () => {
 });
 
 // Story 10.3: the keyed path of `ingest`, as a bank sync drives it.
+
+/** The names of the merchants named `name`, case aside. */
+async function merchantsNamed(name: string) {
+	const rows = await temp.db.select({ name: merchants.name }).from(merchants);
+
+	return rows
+		.map((row) => row.name)
+		.filter((other) => other.toLocaleLowerCase("fr") === name.toLocaleLowerCase("fr"));
+}
+
+/** The name `newMerchant` gave the merchant `id`. */
+async function merchantName(id: string) {
+	const row = await temp.db
+		.select({ name: merchants.name })
+		.from(merchants)
+		.where(eq(merchants.id, id))
+		.get();
+
+	return row?.name ?? "";
+}
 
 /** The bank's 995,00, as it describes the end of `date`. */
 const bankBalance = (date: string) => ({ amount: toMinorUnits(99500), currency: "EUR", date });
@@ -1666,6 +1754,184 @@ describe("ingest from a bank connection", () => {
 		await expect(balanceOn(deps(), account.id, "2026-09-21")).resolves.toMatchObject({
 			amount: 100000,
 		});
+	});
+
+	// Story 29.4: merchants from the bank, as Sure's `find_or_create_merchant`.
+
+	it("creates the merchant a line names, unlocked, and finds it again case aside", async () => {
+		const { account, bank } = await linkedChecking();
+		const name = `Épicerie ${crypto.randomUUID()}`;
+
+		const first = await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "M1", merchant: name }),
+		]);
+		const again = await sync(account.id, bank.connectionId, [
+			newBankLine({
+				externalId: "M2",
+				date: "2026-09-13",
+				label: "AUTRE",
+				merchant: name.toLocaleUpperCase("fr"),
+			}),
+		]);
+
+		const [id = "", next = ""] = [...first.created, ...again.created];
+		const merchantId = await merchantOf(id);
+		expect(merchantId).toEqual(expect.any(String));
+		await expect(merchantOf(next)).resolves.toBe(merchantId);
+		await expect(merchantsNamed(name)).resolves.toEqual([name]);
+		await expect(lockedFields(id)).resolves.toEqual([]);
+	});
+
+	it("creates one merchant for two lines of a statement naming it in two cases", async () => {
+		const { account, bank } = await linkedChecking();
+		const name = `Épicerie ${crypto.randomUUID()}`;
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ externalId: "S1", merchant: name }),
+			newBankLine({
+				externalId: "S2",
+				date: "2026-09-13",
+				label: "AUTRE",
+				merchant: name.toLocaleUpperCase("fr"),
+			}),
+		]);
+
+		const [first = "", second = ""] = synced.created;
+		await expect(merchantOf(second)).resolves.toBe(await merchantOf(first));
+		await expect(merchantsNamed(name)).resolves.toEqual([name]);
+	});
+
+	it("takes a merchant the user created under that name", async () => {
+		const { account, bank } = await linkedChecking();
+		const florist = await newMerchant("Fleuriste");
+		const name = await merchantName(florist);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ merchant: name.toLowerCase() }),
+		]);
+
+		await expect(merchantOf(synced.created[0] ?? "")).resolves.toBe(florist);
+		await expect(merchantsNamed(name)).resolves.toEqual([name]);
+	});
+
+	it("takes the older of two merchants whose names fold alike", async () => {
+		const { account, bank } = await linkedChecking();
+		const suffix = crypto.randomUUID();
+		const [older, newer] = [crypto.randomUUID(), crypto.randomUUID()];
+		// SQLite's `lower` folds ASCII only, so both pass the unique index.
+		await temp.db.insert(merchants).values([
+			{ id: newer, name: `épicerie ${suffix}`, createdAt: 2, updatedAt: 2 },
+			{ id: older, name: `Épicerie ${suffix}`, createdAt: 1, updatedAt: 1 },
+		]);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({ merchant: `ÉPICERIE ${suffix}` }),
+		]);
+
+		await expect(merchantOf(synced.created[0] ?? "")).resolves.toBe(older);
+	});
+
+	it("leaves a line already present alone, and creates nothing on a dry run", async () => {
+		const { account, bank } = await linkedChecking();
+		const name = `Présent ${crypto.randomUUID()}`;
+		const [id = ""] = (await sync(account.id, bank.connectionId, [newBankLine()])).created;
+
+		const again = await sync(account.id, bank.connectionId, [newBankLine({ merchant: name })]);
+		const dry = await ingest(
+			deps(),
+			account.id,
+			{
+				transactions: [newBankLine({ externalId: "DRY", label: "NOUVEAU", merchant: name })],
+				balance: null,
+				rejected: [],
+			},
+			{ connectionId: bank.connectionId, missesFrom: null },
+			{ origin: "sync", dryRun: true },
+		);
+
+		expect(again.groups.present).toHaveLength(1);
+		expect(dry.groups.created).toHaveLength(1);
+		await expect(merchantOf(id)).resolves.toBeNull();
+		await expect(merchantsNamed(name)).resolves.toEqual([]);
+	});
+
+	it("gives an absorbed pending entry the booked line's merchant only when it has none", async () => {
+		const { account, bank } = await linkedChecking();
+		const [free, locked, kept, held] = [
+			-transferAmount(),
+			-transferAmount(),
+			-transferAmount(),
+			-transferAmount(),
+		];
+		const name = `Boulangerie ${crypto.randomUUID()}`;
+		const before = `Avant ${crypto.randomUUID()}`;
+		const unused = `Jamais ${crypto.randomUUID()}`;
+		const mine = await newMerchant("Ma boulangerie");
+		const [freeId = "", lockedId = "", keptId = "", heldId = ""] = (
+			await sync(account.id, bank.connectionId, [
+				pendingLine(free, { externalId: "p-free" }),
+				pendingLine(locked, { externalId: "p-locked" }),
+				pendingLine(kept, { externalId: "p-kept", merchant: before }),
+				pendingLine(held, { externalId: "p-held", merchant: before }),
+			])
+		).created;
+		await updateTransaction(deps(), lockedId, { merchantId: mine }, asUser);
+		const beforeId = await merchantOf(keptId);
+
+		await sync(account.id, bank.connectionId, [
+			bookedLine(free, { externalId: "p-free", merchant: name }),
+			bookedLine(locked, { externalId: "p-locked", merchant: name }),
+			bookedLine(kept, { externalId: "p-kept", merchant: null }),
+			bookedLine(held, { externalId: "p-held", merchant: unused }),
+		]);
+
+		const [named] = await temp.db
+			.select({ id: merchants.id })
+			.from(merchants)
+			.where(eq(merchants.name, name));
+		await expect(merchantOf(freeId)).resolves.toBe(named?.id);
+		await expect(merchantOf(lockedId)).resolves.toBe(mine);
+		await expect(merchantOf(keptId)).resolves.toBe(beforeId);
+		await expect(merchantOf(heldId)).resolves.toBe(beforeId);
+		expect(beforeId).toEqual(expect.any(String));
+		await expect(lockedFields(freeId)).resolves.toEqual([]);
+		// Created for the held line, kept by none: no merchant without a transaction.
+		await expect(merchantsNamed(unused)).resolves.toEqual([]);
+	});
+
+	it("leaves a merchant the user cleared on a pending entry cleared once booked", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const name = `Boulangerie ${crypto.randomUUID()}`;
+		const booked = `Comptabilisée ${crypto.randomUUID()}`;
+		const [id = ""] = (
+			await sync(account.id, bank.connectionId, [
+				pendingLine(amount, { externalId: "p-cleared", merchant: name }),
+			])
+		).created;
+		await updateTransaction(deps(), id, { merchantId: null }, asUser);
+
+		await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "p-cleared", merchant: booked }),
+		]);
+
+		await expect(merchantOf(id)).resolves.toBeNull();
+		await expect(lockedFields(id)).resolves.toContain("merchant");
+		await expect(merchantsNamed(booked)).resolves.toEqual([]);
+	});
+
+	it("recognises a line without reference by its key label, whatever its label", async () => {
+		const { account, bank } = await linkedChecking();
+		const bare = { externalId: null, label: "SUMUP *GLACIER", keyLabel: "SUMUP *GLACIER" };
+		const [id = ""] = (await sync(account.id, bank.connectionId, [newBankLine(bare)])).created;
+
+		const again = await sync(account.id, bank.connectionId, [
+			newBankLine({ ...bare, label: "Glacier" }),
+		]);
+
+		expect(again.created).toEqual([]);
+		expect(again.groups.present).toEqual([expect.objectContaining({ entryId: id })]);
+		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
 	it("refuses an unknown connection and writes nothing", async () => {

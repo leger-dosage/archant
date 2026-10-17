@@ -10,6 +10,7 @@ import { isCurrencyCode } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { merchants } from "@archant/data/schema/merchants";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
 import { addDays, addMonths, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
@@ -228,7 +229,22 @@ async function runSync(
 				await oldestPendingDate(deps, item.accountId, connectionId),
 				connection?.syncStartDate ?? null,
 			);
-			const statement = await connector.fetchStatement(item.providerUid, since, day);
+			// Read again for each account, as Sure's `known_merchant_names` per
+			// account batch: the account before may have created some. The order
+			// decides between two names of the same length a line holds: the
+			// first listed wins, as Sure's `max_by`.
+			const knownMerchants = (
+				await deps.db
+					.select({ name: merchants.name })
+					.from(merchants)
+					.orderBy(asc(merchants.createdAt), asc(merchants.id))
+			).map(({ name }) => name);
+			const statement = await connector.fetchStatement(
+				item.providerUid,
+				since,
+				day,
+				knownMerchants,
+			);
 			const { cutShort } = statement;
 
 			if (statement.from !== since) {

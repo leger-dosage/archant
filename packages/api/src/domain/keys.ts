@@ -14,6 +14,8 @@ export type KeyedLine = {
 	date: IsoDate;
 	amount: MinorUnits;
 	label: string;
+	/** Hashed instead of `label` when given: see `NormalizedTransaction.keyLabel`. */
+	keyLabel?: string | undefined;
 	externalId: string | null;
 };
 
@@ -22,9 +24,12 @@ export type LineKeys = { fingerprint: string; external: string | null };
 
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
-/** What makes two lines identical: the date, the amount and the normalised label. */
+/**
+ * What makes two lines identical: the date, the amount and the normalised
+ * label, the `keyLabel` when the line has one.
+ */
 export const tripleOf = (line: Omit<KeyedLine, "externalId">): string =>
-	`${line.date}|${line.amount}|${normalizeLabel(line.label)}`;
+	`${line.date}|${line.amount}|${normalizeLabel(line.keyLabel ?? line.label)}`;
 
 /** The fingerprint of the `occurrence`-th line, from 0, of a `tripleOf`. */
 export const fingerprintOf = (triple: string, occurrence: number): string =>
