@@ -48,7 +48,6 @@ import {
 import { createRule } from "../rules.ts";
 import { deleteTransaction, updateTransaction } from "./edits.ts";
 import { cashFlowByCategory, findTransaction, listTransactions } from "./queries.ts";
-import { oldestPendingDate } from "./snapshots.ts";
 
 useLedgerDatabase();
 
@@ -70,7 +69,7 @@ describe("pending transactions", () => {
 			pendingLine(amount, { date: "2026-09-21" }),
 		]);
 
-		await expect(rowOf(id)).resolves.toMatchObject({ amount, pending: true, missed: 0 });
+		await expect(rowOf(id)).resolves.toMatchObject({ amount, pending: true });
 		const days = await history(account.id);
 		expect(days.get("2026-09-21")).toBe(100000);
 		expect(days.get("2026-09-20")).toBe(100000);
@@ -209,8 +208,6 @@ describe("pending transactions", () => {
 			label: "BOULANGERIE",
 			notes: null,
 			pending: false,
-			missed: 0,
-			missedOn: null,
 		});
 		await expect(categoryOf(id)).resolves.toBe(category);
 		await expect(tagsOf(id)).resolves.toEqual([tag]);
@@ -266,13 +263,13 @@ describe("pending transactions", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
-	it("refreshes a pending entry from its pending line, and starts its missed syncs over", async () => {
+	it("refreshes a pending entry from its pending line after a sync without it", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		setToday("2026-09-22T10:00:00Z");
 		await sync(account.id, bank.connectionId, []);
-		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1, missedOn: "2026-09-22" });
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true });
 
 		await sync(account.id, bank.connectionId, [
 			pendingLine(amount - 100, { label: "BOULANGERIE CB", notes: "CB 19/09" }),
@@ -284,31 +281,72 @@ describe("pending transactions", () => {
 			label: "BOULANGERIE CB",
 			notes: "CB 19/09",
 			pending: true,
-			missed: 0,
-			missedOn: null,
 		});
 	});
 
-	it("books a pending entry without reference by amount within 5 days", async () => {
+	it("books a pending entry without reference by amount on the same day", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: null, date: "2026-09-16" }),
+			pendingLine(amount, { externalId: null, date: "2026-09-12" }),
 		]);
 
 		const booked = await sync(account.id, bank.connectionId, [
-			bookedLine(amount, { externalId: null, date: "2026-09-21", label: "CB BOULANGERIE 16/09" }),
+			bookedLine(amount, { externalId: null, date: "2026-09-12", label: "CB BOULANGERIE 12/09" }),
 		]);
 
 		expect(booked.created).toEqual([]);
 		await expect(rowOf(id)).resolves.toMatchObject({
-			date: "2026-09-21",
-			label: "CB BOULANGERIE 16/09",
+			date: "2026-09-12",
+			label: "CB BOULANGERIE 12/09",
+			pending: false,
+		});
+	});
+
+	it("books a pending entry by amount 8 days before, keeping the pending date, as Sure", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: null, date: "2026-09-04" }),
+		]);
+
+		const booked = await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: null, date: "2026-09-12", label: "CB BOULANGERIE 04/09" }),
+		]);
+
+		expect(booked.created).toEqual([]);
+		await expect(rowOf(id)).resolves.toMatchObject({
+			date: "2026-09-04",
+			label: "CB BOULANGERIE 04/09",
 			pending: false,
 		});
 		const days = await history(account.id);
-		expect(days.get("2026-09-20")).toBe(100000 - amount);
-		expect(days.get("2026-09-15")).toBe(100000 - amount);
+		expect(days.get("2026-09-04")).toBe(100000);
+		expect(days.get("2026-09-03")).toBe(100000 - amount);
+	});
+
+	it("keeps a pending date the user locked when its booked line comes by reference", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+		await updateTransaction(deps(), id, { date: "2026-09-17" }, asUser);
+
+		await sync(account.id, bank.connectionId, [bookedLine(amount, { date: "2026-09-20" })]);
+
+		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-17", pending: false });
+	});
+
+	it("keeps a pending date the user locked when its booked line comes by amount", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
+		await updateTransaction(deps(), id, { date: "2026-09-17" }, asUser);
+
+		await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: "ref-2", date: "2026-09-20" }),
+		]);
+
+		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-17", pending: false });
 	});
 
 	it("keeps a label the user locked, and takes the booked amount and date", async () => {
@@ -327,35 +365,54 @@ describe("pending transactions", () => {
 		});
 	});
 
-	it("creates a booked line more than 5 days from the pending entry, which counts a miss", async () => {
+	it("creates a booked line 9 days after the pending entry, which stays", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [pendingId = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: null, date: "2026-09-10" }),
+			pendingLine(amount, { externalId: null, date: "2026-09-03" }),
 		]);
 
 		const booked = await sync(account.id, bank.connectionId, [
-			bookedLine(amount, { externalId: null, date: "2026-09-20" }),
+			bookedLine(amount, { externalId: null, date: "2026-09-12" }),
 		]);
 
 		expect(booked.created).toHaveLength(1);
-		await expect(rowOf(pendingId)).resolves.toMatchObject({ pending: true, missed: 1 });
+		await expect(rowOf(pendingId)).resolves.toMatchObject({ date: "2026-09-03", pending: true });
 	});
 
-	it("gives a booked line to the pending entry at the nearest date", async () => {
+	it("never gives a booked line a pending entry dated after it", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
-		const [far = "", near = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: null, date: "2026-09-18" }),
-			pendingLine(amount, { externalId: null, date: "2026-09-20" }),
+		const [pendingId = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: null, date: "2026-09-13" }),
+		]);
+
+		const booked = await sync(account.id, bank.connectionId, [
+			bookedLine(amount, { externalId: null, date: "2026-09-12" }),
+		]);
+
+		expect(booked.created).toHaveLength(1);
+		await expect(rowOf(pendingId)).resolves.toMatchObject({ date: "2026-09-13", pending: true });
+	});
+
+	it("gives a booked line the pending entry of the latest date, as Sure", async () => {
+		const { account, bank } = await linkedChecking();
+		const amount = -transferAmount();
+		const [older = "", later = ""] = await createdBySync(account.id, bank.connectionId, [
+			pendingLine(amount, { externalId: null, date: "2026-09-05" }),
+			pendingLine(amount, { externalId: null, date: "2026-09-10" }),
 		]);
 
 		await sync(account.id, bank.connectionId, [
-			bookedLine(amount, { externalId: null, date: "2026-09-20", label: "AUTRE" }),
+			bookedLine(amount, { externalId: null, date: "2026-09-12", label: "AUTRE" }),
 		]);
 
-		await expect(rowOf(near)).resolves.toMatchObject({ pending: false, label: "AUTRE" });
-		await expect(rowOf(far)).resolves.toMatchObject({ pending: true, missed: 1 });
+		await expect(rowOf(later)).resolves.toMatchObject({
+			date: "2026-09-10",
+			pending: false,
+			label: "AUTRE",
+		});
+		await expect(rowOf(older)).resolves.toMatchObject({ date: "2026-09-05", pending: true });
 	});
 
 	it("never takes a pending entry of another connection by amount", async () => {
@@ -371,8 +428,7 @@ describe("pending transactions", () => {
 		]);
 
 		expect(booked.created).toHaveLength(1);
-		// Nor counts a miss for it: this statement does not speak for it.
-		await expect(rowOf(pendingId)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(pendingId)).resolves.toMatchObject({ pending: true });
 	});
 
 	it("never pairs a pending line with a file's entry by amount and date", async () => {
@@ -391,43 +447,26 @@ describe("pending transactions", () => {
 		expect(synced.created).not.toContain(result.created[0]);
 	});
 
-	it("deletes a pending entry missing from syncs on two days, with its keys and tags", async () => {
+	it("keeps a pending entry missing from syncs on several days, with its keys and tags, as Sure", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(amount, { date: "2026-09-21" }),
 		]);
-		await updateTransaction(deps(), id, { tagIds: [await newTag("Hôtel")] }, asUser);
-
-		setToday("2026-09-22T21:00:00Z");
-		await sync(account.id, bank.connectionId, []);
-		await expect(rowOf(id)).resolves.toMatchObject({ missed: 1, missedOn: "2026-09-22" });
-		// Past midnight in Paris, still the 22nd in UTC: the app's day has turned.
-		setToday("2026-09-22T22:30:00Z");
-		await sync(account.id, bank.connectionId, []);
-
-		await expect(rowOf(id)).resolves.toBeUndefined();
-		await expect(keysOf(id)).resolves.toEqual([]);
-		await expect(tagsOf(id)).resolves.toEqual([]);
-		expect((await history(account.id)).get("2026-09-21")).toBe(100000);
-	});
-
-	it("counts one miss for two syncs an hour apart without the line", async () => {
-		const { account, bank } = await linkedChecking();
-		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(-transferAmount(), { date: "2026-09-21" }),
-		]);
+		const tag = await newTag("Hôtel");
+		await updateTransaction(deps(), id, { tagIds: [tag] }, asUser);
+		const keys = await keysOf(id);
 
 		setToday("2026-09-22T10:00:00Z");
 		await sync(account.id, bank.connectionId, []);
-		setToday("2026-09-22T11:00:00Z");
+		setToday("2026-09-23T10:00:00Z");
+		await sync(account.id, bank.connectionId, []);
+		setToday("2026-09-30T10:00:00Z");
 		await sync(account.id, bank.connectionId, []);
 
-		await expect(rowOf(id)).resolves.toMatchObject({
-			pending: true,
-			missed: 1,
-			missedOn: "2026-09-22",
-		});
+		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-21", pending: true });
+		await expect(keysOf(id)).resolves.toEqual(keys);
+		await expect(tagsOf(id)).resolves.toEqual([tag]);
 	});
 
 	it("starts no balance at a pending line dated before every other entry", async () => {
@@ -444,92 +483,6 @@ describe("pending transactions", () => {
 		expect(days).toEqual(before);
 	});
 
-	it("counts no miss on a pending entry a refused line still names", async () => {
-		const { account, bank } = await linkedChecking();
-		const amount = -transferAmount();
-		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
-
-		const synced = await sync(account.id, bank.connectionId, [
-			pendingLine(amount, { date: "2027-10-23" }),
-		]);
-
-		expect(synced.rejected).toEqual([{ ref: "0", reason: "DATE_TOO_LATE" }]);
-		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
-	});
-
-	it("counts no miss on a pending entry a refused line names by its fingerprint", async () => {
-		const { account, bank } = await linkedChecking();
-		const amount = -transferAmount();
-		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: null }),
-		]);
-
-		const synced = await sync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: null, currency: "USD" }),
-		]);
-
-		expect(synced.rejected).toEqual([{ ref: "0", reason: "CURRENCY_MISMATCH" }]);
-		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
-	});
-
-	it("counts no miss for a read that stopped part way", async () => {
-		const { account, bank } = await linkedChecking();
-		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(-transferAmount(), { date: "2026-09-21" }),
-		]);
-
-		await sync(account.id, bank.connectionId, [], null, null);
-		await sync(account.id, bank.connectionId, [], null, null);
-
-		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
-	});
-
-	it("counts a miss only on a pending entry dated from the read's first day", async () => {
-		const { account, bank } = await linkedChecking();
-		const amount = -transferAmount();
-		const [before = "", onFirstDay = ""] = await createdBySync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: "p-1", date: "2026-09-10" }),
-			pendingLine(amount - 1, { externalId: "p-2", date: "2026-09-11" }),
-		]);
-
-		await sync(account.id, bank.connectionId, [], null, "2026-09-11");
-
-		await expect(rowOf(before)).resolves.toMatchObject({ date: "2026-09-10", missed: 0 });
-		await expect(rowOf(onFirstDay)).resolves.toMatchObject({ date: "2026-09-11", missed: 1 });
-	});
-
-	it("names the date of the oldest pending entry, none once booked", async () => {
-		const { account, bank } = await linkedChecking();
-		const amount = -transferAmount();
-
-		await expect(oldestPendingDate(deps(), account.id, bank.connectionId)).resolves.toBeNull();
-		await sync(account.id, bank.connectionId, [
-			pendingLine(amount, { externalId: "p-1", date: "2026-09-18" }),
-			pendingLine(amount - 1, { externalId: "p-2", date: "2026-09-12" }),
-		]);
-		await expect(oldestPendingDate(deps(), account.id, bank.connectionId)).resolves.toBe(
-			"2026-09-12",
-		);
-		await sync(account.id, bank.connectionId, [
-			bookedLine(amount, { externalId: "p-1", date: "2026-09-18" }),
-			bookedLine(amount - 1, { externalId: "p-2", date: "2026-09-12" }),
-		]);
-		await expect(oldestPendingDate(deps(), account.id, bank.connectionId)).resolves.toBeNull();
-	});
-
-	it("names no date for another connection's pending entry, which never moves the window", async () => {
-		const { account, bank } = await linkedChecking();
-		const other = await newBankAccount();
-		await sync(account.id, other.connectionId, [
-			pendingLine(-transferAmount(), { date: "2026-09-05" }),
-		]);
-
-		await expect(oldestPendingDate(deps(), account.id, bank.connectionId)).resolves.toBeNull();
-		await expect(oldestPendingDate(deps(), account.id, other.connectionId)).resolves.toBe(
-			"2026-09-05",
-		);
-	});
-
 	it("creates a booked line beside a pending entry its own pending line refreshes", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
@@ -541,7 +494,7 @@ describe("pending transactions", () => {
 		]);
 
 		expect(synced.created).toHaveLength(1);
-		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
@@ -642,9 +595,8 @@ describe("identical pending lines", () => {
 		await expect(rowOf(first)).resolves.toMatchObject({
 			pending: false,
 			label: "CB BOULANGERIE 19/09",
-			missed: 0,
 		});
-		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
@@ -655,7 +607,7 @@ describe("identical pending lines", () => {
 
 		expect(synced.created).toEqual([]);
 		expect(synced.groups.present).toEqual([expect.objectContaining({ entryId: first })]);
-		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
@@ -684,7 +636,7 @@ describe("identical pending lines", () => {
 			expect.objectContaining({ ref: "0", entryId: first }),
 			expect.objectContaining({ ref: "2", entryId: first }),
 		]);
-		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
@@ -706,11 +658,7 @@ describe("identical pending lines", () => {
 		expect(synced.created).toEqual([]);
 		expect(synced.groups.present).toEqual([]);
 		const rows = await Promise.all(ids.map(async (id) => rowOf(id)));
-		expect(rows.map((row) => [row?.pending, row?.missed])).toEqual([
-			[true, 0],
-			[true, 0],
-			[true, 0],
-		]);
+		expect(rows.map((row) => row?.pending)).toEqual([true, true, true]);
 	});
 
 	it("keeps one fingerprint per group once an index shifted, so the deleted twin and one bought since go in", async () => {
@@ -733,7 +681,7 @@ describe("identical pending lines", () => {
 		]);
 
 		expect(synced.created).toHaveLength(2);
-		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(3);
 	});
 
@@ -751,7 +699,7 @@ describe("identical pending lines", () => {
 		const synced = await sync(account.id, bank.connectionId, [twin(amount)]);
 
 		expect(synced.created).toEqual([]);
-		await expect(rowOf(third)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(third)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
@@ -772,7 +720,7 @@ describe("identical pending lines", () => {
 
 		expect(later).not.toBe(earlier);
 		await expect(rowOf(earlier)).resolves.toMatchObject({ pending: false });
-		await expect(rowOf(later)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(later)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
@@ -809,7 +757,7 @@ describe("identical pending lines", () => {
 		const synced = await sync(account.id, bank.connectionId, [twin(amount - 1), twin(amount)]);
 
 		expect(synced.created).toHaveLength(1);
-		await expect(rowOf(id)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true });
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 });
@@ -837,7 +785,7 @@ describe("a new pending purchase beside a booked one", () => {
 
 		expect(synced.created).toHaveLength(1);
 		expect(synced.groups.present).toEqual([expect.objectContaining({ ref: "1", entryId: first })]);
-		await expect(rowOf(second)).resolves.toMatchObject({ pending: true, missed: 0 });
+		await expect(rowOf(second)).resolves.toMatchObject({ pending: true });
 		await expect(keysOf(second)).resolves.toEqual(["ext:r9"]);
 		await expect(keysOf(first)).resolves.toEqual(["ext:r1", fingerprint]);
 		await expect(transactionCount(account.id)).resolves.toBe(2);

@@ -21,8 +21,6 @@ import {
 	pendingLine,
 	preview,
 	previewRow,
-	rowOf,
-	setToday,
 	splitInTwo,
 	statementOf,
 	sync,
@@ -148,22 +146,6 @@ describe("a deleted transaction and the next sync", () => {
 
 		expect(synced.created).toHaveLength(1);
 		await expect(transactionCount(account.id)).resolves.toBe(1);
-	});
-
-	it("brings back a pending entry deleted after two misses when the bank lists it again", async () => {
-		const { account, bank } = await linkedChecking();
-		const amount = -transferAmount();
-		const listed = pendingLine(amount, { date: "2026-09-21" });
-		const [id = ""] = await createdBySync(account.id, bank.connectionId, [listed]);
-		setToday("2026-09-22T10:00:00Z");
-		await sync(account.id, bank.connectionId, []);
-		setToday("2026-09-23T10:00:00Z");
-		await sync(account.id, bank.connectionId, []);
-		await expect(rowOf(id)).resolves.toBeUndefined();
-
-		const synced = await sync(account.id, bank.connectionId, [listed]);
-
-		expect(synced.created).toHaveLength(1);
 	});
 });
 

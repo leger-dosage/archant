@@ -3,7 +3,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, count, desc, eq, exists, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import { classificationOf, transactionsMoveBalance } from "@archant/data/account-types";
@@ -13,9 +13,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
 import type { ValuationKind } from "@archant/data/schema/entries";
 import { entries } from "@archant/data/schema/entries";
-import { entryKeys } from "@archant/data/schema/entry-keys";
 import { holdings } from "@archant/data/schema/holdings";
-import { transactions } from "@archant/data/schema/transactions";
 
 import { mergedNotes } from "../../domain/balances/citation.ts";
 import {
@@ -451,41 +449,6 @@ export async function findSnapshot(deps: ServiceDeps, id: string): Promise<Snaps
 	const withGap = await gapReader(deps.db, snapshot.accountId, [snapshot.date]);
 
 	return withGap(snapshot);
-}
-
-/**
- * The date of the account's oldest pending transaction carrying a key of the
- * connection, `null` when it has none. Scoped as `countMissedSyncs` is: an
- * entry whose connection is gone would otherwise hold the window back forever.
- */
-export async function oldestPendingDate(
-	deps: Pick<ServiceDeps, "db">,
-	accountId: string,
-	connectionId: string,
-): Promise<IsoDate | null> {
-	const row = await deps.db
-		.select({ date: entries.date })
-		.from(entries)
-		.innerJoin(transactions, eq(transactions.entryId, entries.id))
-		.where(
-			and(
-				eq(entries.accountId, accountId),
-				eq(transactions.pending, true),
-				exists(
-					deps.db
-						.select({ key: entryKeys.key })
-						.from(entryKeys)
-						.where(
-							and(eq(entryKeys.entryId, entries.id), eq(entryKeys.connectionId, connectionId)),
-						),
-				),
-			),
-		)
-		.orderBy(entries.date)
-		.limit(1)
-		.get();
-
-	return row?.date ?? null;
 }
 
 /** A page of an account's snapshots with their gaps, most recent first (AD-15). */

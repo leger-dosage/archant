@@ -5,6 +5,7 @@ import { createMiddleware } from "hono/factory";
 
 import { validated } from "../lib/validated.ts";
 import {
+	bankSyncSettingsSchema,
 	completeConnectionSchema,
 	connectionParamSchema,
 	linkBankAccountsSchema,
@@ -27,6 +28,7 @@ import {
 	resolveBankConnector,
 	saveBankCredentials,
 } from "../services/bank-credentials.ts";
+import { bankSyncSettings, saveBankSyncSettings } from "../services/bank-settings.ts";
 import { syncConnection } from "../services/sync.ts";
 import { requireRole } from "./middleware/roles.ts";
 
@@ -41,6 +43,15 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 			// Before the guard: it is how credentials come to exist at all.
 			.put("/credentials", validated("json", saveBankCredentialsSchema), async (c) =>
 				c.json({ data: await saveBankCredentials(deps, c.req.valid("json")) }, 200),
+			)
+			// Before the guard, as Sure's switch shows on its own page: the
+			// setting reads and writes no credential. Only an administrator sees
+			// it, as only one can change it.
+			.get("/settings", requireRole("admin"), async (c) =>
+				c.json({ data: await bankSyncSettings(deps) }, 200),
+			)
+			.put("/settings", validated("json", bankSyncSettingsSchema), async (c) =>
+				c.json({ data: await saveBankSyncSettings(deps, c.req.valid("json")) }, 200),
 			)
 			// Before the guard as well, so credentials that no longer resolve can
 			// still be removed, and before `/:id`, which would take it for an id.

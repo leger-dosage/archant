@@ -410,13 +410,12 @@ export const LEFT_OUT = {
 			"Fetch bookkeeping of the provider's last seven days; a typed price, the only kind exported, is never provisional.",
 	},
 	sessions: SECRETS,
-	settings: "Instance settings, the saved Enable Banking credentials among them.",
+	settings:
+		"Instance settings, the saved Enable Banking credentials and « Inclure les transactions en attente » among them.",
 	sign_in_failures: "Sign-in throttling.",
 	transactions: {
 		expectedTransferAccountId:
 			"A rule's « Virement avec » waiting for its other side, read once by the next matching.",
-		pendingMissedOn: "Sync bookkeeping for a pending line, recounted by the next sync.",
-		pendingMissedSyncs: "Sync bookkeeping for a pending line, recounted by the next sync.",
 	},
 	transaction_attachments: {
 		content:

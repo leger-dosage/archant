@@ -39,6 +39,27 @@ export function useBankSetup() {
 	});
 }
 
+/** Sure's « Paramètres de synchronisation »: whether syncs read pending lines. */
+export function useBankSyncSettings() {
+	return useQuery({
+		queryKey: queryKeys.bankConnections.settings,
+		queryFn: async () => (await unwrap(bank.settings.$get())).data,
+	});
+}
+
+/** Turns « Inclure les transactions en attente » on or off; the answer is the new state. */
+export function useSaveBankSyncSettings() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (includePending: boolean) =>
+			(await unwrap(bank.settings.$put({ json: { includePending } }))).data,
+		onSuccess: (settings) => {
+			queryClient.setQueryData(queryKeys.bankConnections.settings, settings);
+		},
+	});
+}
+
 export type SaveBankCredentialsInput = InferRequestType<typeof bank.credentials.$put>["json"];
 
 /**

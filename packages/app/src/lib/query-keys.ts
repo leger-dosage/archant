@@ -131,6 +131,7 @@ export const queryKeys = {
 	 */
 	bankConnections: {
 		setup: ["bank-connections", "setup"] as const,
+		settings: ["bank-connections", "settings"] as const,
 		list: ["bank-connections", "list"] as const,
 		/** Every country's list, gone stale once the credentials are saved or removed. */
 		allInstitutions: ["bank-connections", "institutions"] as const,

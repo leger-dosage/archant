@@ -50,6 +50,7 @@ const WRITING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** The reads only an administrator gets (AD-21). */
 const ADMIN_READS = [
 	"/api/bank-connections/setup",
+	"/api/bank-connections/settings",
 	"/api/assistants",
 	"/api/invitations",
 	"/api/members",

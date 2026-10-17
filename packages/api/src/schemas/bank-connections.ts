@@ -34,6 +34,9 @@ export const saveBankCredentialsSchema = z
 
 export type SaveBankCredentialsInput = z.infer<typeof saveBankCredentialsSchema>;
 
+/** « Paramètres de synchronisation », Sure's `syncs_include_pending` switch. */
+export const bankSyncSettingsSchema = z.object({ includePending: z.boolean() });
+
 /**
  * The bank the user picked, in the saved country, as Sure's `authorize`
  * reads it; the service reads it again from the provider's list.

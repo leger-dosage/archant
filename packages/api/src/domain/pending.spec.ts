@@ -19,22 +19,22 @@ const survivors = (lines: ReturnType<typeof booked>[], candidates: PendingCandid
 	absorbPending(lines, candidates).map(({ survivorId }) => survivorId);
 
 describe("absorbPending", () => {
-	it("takes the pending entry of the same amount within 5 days either side", () => {
-		expect(survivors([booked("2026-09-23")], [pending("p1", "2026-09-18")])).toEqual(["p1"]);
-		expect(survivors([booked("2026-09-13")], [pending("p1", "2026-09-18")])).toEqual(["p1"]);
-		expect(survivors([booked("2026-09-24")], [pending("p1", "2026-09-18")])).toEqual([null]);
-		expect(survivors([booked("2026-09-20")], [pending("p1", "2026-09-10")])).toEqual([null]);
+	it("takes the pending entry of the same amount dated 0 to 8 days before, as Sure", () => {
+		expect(survivors([booked("2026-09-12")], [pending("p1", "2026-09-12")])).toEqual(["p1"]);
+		expect(survivors([booked("2026-09-12")], [pending("p1", "2026-09-04")])).toEqual(["p1"]);
+		expect(survivors([booked("2026-09-12")], [pending("p1", "2026-09-03")])).toEqual([null]);
+		expect(survivors([booked("2026-09-12")], [pending("p1", "2026-09-13")])).toEqual([null]);
 		expect(survivors([booked("2026-09-20", -330)], [pending("p1", "2026-09-20")])).toEqual([null]);
 	});
 
-	it("takes the nearest date first, then the oldest entry, then the smaller id", () => {
+	it("takes the latest date first, then the oldest entry, then the smaller id", () => {
 		expect(
-			survivors([booked("2026-09-22")], [pending("p1", "2026-09-20"), pending("p2", "2026-09-22")]),
+			survivors([booked("2026-09-12")], [pending("p1", "2026-09-05"), pending("p2", "2026-09-10")]),
 		).toEqual(["p2"]);
 		expect(
 			survivors(
 				[booked("2026-09-22")],
-				[pending("p1", "2026-09-21", -320, 2), pending("p2", "2026-09-23", -320, 1)],
+				[pending("p1", "2026-09-21", -320, 2), pending("p2", "2026-09-21", -320, 1)],
 			),
 		).toEqual(["p2"]);
 		expect(

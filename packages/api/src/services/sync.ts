@@ -13,7 +13,7 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import { merchants } from "@archant/data/schema/merchants";
 
 import { BankProviderError } from "../connectors/bank-connector.ts";
-import { addDays, addMonths, daysBetween, minDate, startOfDay, today } from "../domain/dates.ts";
+import { addDays, addMonths, daysBetween, startOfDay, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import {
 	LEASE_MS,
@@ -23,8 +23,8 @@ import {
 	readableSessionId,
 } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
+import { includesPending } from "./bank-settings.ts";
 import { ingest } from "./ledger/ingest.ts";
-import { oldestPendingDate } from "./ledger/snapshots.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
 
 /** Two syncs of one connection at least this far apart: banks cap unattended reads per day. */
@@ -56,23 +56,18 @@ export type SyncStatus = { lastSyncedAt: number | null; lastError: string | null
  * months back without one. Sure's `determine_sync_start_date`: a start date chosen
  * later never re-reads a synced account's past. Per bank account, not per
  * connection: an account that keeps failing would otherwise come back with a
- * gap once the others moved on. Never after its oldest pending entry: a line
- * the window leaves out would count as missed, and a hotel pre-authorisation
- * older than the overlap would go while still pending.
+ * gap once the others moved on. A pending entry older than the window holds
+ * nothing back: no sync deletes it, as Sure's.
  */
 export function windowStart(
 	lastSyncedAt: number | null,
 	day: IsoDate,
 	timeZone: string,
-	oldestPending: IsoDate | null,
 	syncStartDate: IsoDate | null,
 ): IsoDate {
-	const start =
-		lastSyncedAt === null
-			? (syncStartDate ?? addMonths(day, -FIRST_WINDOW_MONTHS))
-			: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
-
-	return oldestPending === null ? start : minDate(start, oldestPending);
+	return lastSyncedAt === null
+		? (syncStartDate ?? addMonths(day, -FIRST_WINDOW_MONTHS))
+		: addDays(today(timeZone, new Date(lastSyncedAt)), -OVERLAP_DAYS);
 }
 
 /**
@@ -145,8 +140,9 @@ function refusal(syncStartedAt: number | null, now: number): AppError {
  * Syncs every linked bank account of the connection whose account is active,
  * one `ingest` each: a failed account rolls back alone and keeps its window.
  * A read the bank cut short after its first page is synced with the pages
- * read and its balance, as Sure's importer keeps them, but counts no pending
- * entry missing, since the unread pages would name some. A balance the bank
+ * read and its balance, as Sure's importer keeps them. The household's
+ * `syncs_include_pending` is read once per run, as Sure's importer reads
+ * `Setting.syncs_include_pending` before each fetch. A balance the bank
  * does not give costs the balance alone. The connection's last sync moves
  * only when every account succeeded; its last error holds the first failed
  * account's code, else `BANK_BALANCE_UNAVAILABLE` when a balance was
@@ -180,6 +176,7 @@ async function runSync(
 		// does, rather than letting the account stop without a word.
 		.where(and(eq(bankAccounts.bankConnectionId, connectionId), eq(accounts.active, true)))
 		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.id));
+	const includePending = await includesPending(deps);
 	const errors: ErrorCode[] = [];
 	let created = 0;
 	let balanceMissing = false;
@@ -226,7 +223,6 @@ async function runSync(
 				item.lastSyncedAt,
 				day,
 				deps.timeZone,
-				await oldestPendingDate(deps, item.accountId, connectionId),
 				connection?.syncStartDate ?? null,
 			);
 			// Read again for each account, as Sure's `known_merchant_names` per
@@ -244,6 +240,7 @@ async function runSync(
 				since,
 				day,
 				knownMerchants,
+				includePending,
 			);
 			const { cutShort } = statement;
 
@@ -260,7 +257,7 @@ async function runSync(
 				deps,
 				item.accountId,
 				toParsedStatement(statement, balance, day),
-				{ connectionId, missesFrom: cutShort === null ? statement.from : null },
+				{ connectionId },
 				{ origin: "sync" },
 			);
 

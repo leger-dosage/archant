@@ -865,3 +865,70 @@ describe("/api/bank-connections", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("BANK_PROVIDER_ERROR");
 	});
 });
+
+describe("/api/bank-connections/settings", () => {
+	it("reads pending lines included by default, then saves Sure's switch off and on", async () => {
+		const client = testClient(await bankApp()).api["bank-connections"];
+
+		const initial = await client.settings.$get();
+		expect(initial.status).toBe(200);
+		expect(await initial.json()).toEqual({ data: { includePending: true } });
+
+		const off = await client.settings.$put({ json: { includePending: false } });
+		expect(off.status).toBe(200);
+		expect(await off.json()).toEqual({ data: { includePending: false } });
+		expect(await (await client.settings.$get()).json()).toEqual({
+			data: { includePending: false },
+		});
+		await expect(
+			own?.db.all(sql`select value from settings where key = 'syncs_include_pending'`),
+		).resolves.toEqual([{ value: "false" }]);
+
+		const on = await client.settings.$put({ json: { includePending: true } });
+		expect(await on.json()).toEqual({ data: { includePending: true } });
+	});
+
+	it("refuses a body that is no boolean", async () => {
+		const app = await bankApp();
+
+		const refused = await app.request("/api/bank-connections/settings", {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ includePending: "no" }),
+		});
+
+		expect(refused.status).toBe(400);
+		expect(await fieldsOf(refused)).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "includePending", code: "invalid_type" }],
+		});
+	});
+
+	it("refuses a viewer's read and write", async () => {
+		const silent = createLogger("silent");
+		await bankApp();
+		const database = own;
+
+		if (database === undefined) {
+			throw new Error("bankApp opens the test's own database.");
+		}
+
+		const auth = createTestAuth(database.db, silent);
+		const viewerCookie = await addViewer(buildTestApp(database.db, silent, auth), auth);
+		const viewer = withSession(buildTestApp(database.db, silent, auth), viewerCookie);
+
+		const read = await viewer.request("/api/bank-connections/settings");
+		const write = await viewer.request("/api/bank-connections/settings", {
+			method: "PUT",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ includePending: false }),
+		});
+
+		expect(read.status).toBe(403);
+		expect(write.status).toBe(403);
+		expect(errorBody.parse(await write.json()).error.code).toBe("FORBIDDEN");
+		await expect(
+			database.db.all(sql`select value from settings where key = 'syncs_include_pending'`),
+		).resolves.toEqual([]);
+	});
+});

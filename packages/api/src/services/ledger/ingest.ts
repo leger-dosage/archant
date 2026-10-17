@@ -43,7 +43,7 @@ import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
-import { absorb, countMissedSyncs, heldFingerprints, pendingOfConnection } from "./pending.ts";
+import { absorb, heldFingerprints, pendingOfConnection } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -59,9 +59,7 @@ import { matchTransfers } from "./transfers.ts";
 /**
  * Where the statement comes from. A manual line carries no key; an import's
  * lines are keyed under its source, a sync's under its connection's
- * connector (AD-7). A sync's `missesFrom` is the first day its read speaks
- * for: a pending entry dated before it is not missing, only unread. `null`
- * when the bank cut the read short, which then speaks for no pending entry.
+ * connector (AD-7).
  */
 export type IngestSource =
 	| {
@@ -75,7 +73,7 @@ export type IngestSource =
 			assistantKey?: string | undefined;
 	  }
 	| { importId: string }
-	| { connectionId: string; missesFrom: IsoDate | null };
+	| { connectionId: string };
 
 /**
  * What an assistant's `create_transaction` sets on the line it records, as
@@ -327,11 +325,12 @@ type Paired = Keyed & { entryId: string };
 
 /**
  * `absorbed` holds step 3's lines (AD-17): a booked line taking over a pending
- * entry, or a pending line refreshing one. Only a sync has them. `named`
- * holds the entries a refused line's key names; `sharing`, the refs of
- * created lines whose fingerprint another entry already holds; `grouped`,
- * the refs of absorbed lines recognised within their group of identical
- * lines, whose fingerprint the entry does not take.
+ * entry, or a pending line refreshing one. Only a sync has them. `sharing`
+ * holds the refs of created lines whose fingerprint another entry already
+ * holds; `grouped`, the refs of absorbed lines recognised within their group
+ * of identical lines, whose fingerprint the entry does not take; `byAmount`,
+ * the refs of booked lines that took a pending entry by amount, which keeps
+ * its date.
  */
 type Groups = {
 	created: Keyed[];
@@ -339,9 +338,9 @@ type Groups = {
 	matched: Paired[];
 	duplicates: Keyed[];
 	absorbed: Paired[];
-	named: string[];
 	sharing: Set<string>;
 	grouped: Set<string>;
+	byAmount: Set<string>;
 };
 
 function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): PreviewLine {
@@ -370,22 +369,22 @@ function previewLine({ ref, line, ...rest }: Keyed & { entryId?: string }): Prev
  * present on the entry its fingerprint names when it has no reference, or
  * created. A line whose entry the user deleted has no key left, so it goes
  * through the same steps as a new one, as Sure's importer creates what its
- * reference no longer finds. The keys of the lines step 1 refused are looked
- * up too, for the entries they name.
+ * reference no longer finds.
  */
 async function groupLines(
 	tx: Transaction,
 	accountId: string,
 	target: KeyTarget,
 	accepted: readonly Keyed[],
-	refusedKeys: readonly string[],
 ): Promise<Groups> {
-	const known = await entriesByKey(tx, accountId, target.source, [
-		...accepted.flatMap(({ keys }) =>
+	const known = await entriesByKey(
+		tx,
+		accountId,
+		target.source,
+		accepted.flatMap(({ keys }) =>
 			keys.external === null ? [keys.fingerprint] : [keys.fingerprint, keys.external],
 		),
-		...refusedKeys,
-	]);
+	);
 	const groups: Groups = {
 		created: [],
 		present: [],
@@ -394,11 +393,7 @@ async function groupLines(
 		absorbed: [],
 		sharing: new Set(),
 		grouped: new Set(),
-		named: refusedKeys.flatMap((key) => {
-			const entry = known.get(key);
-
-			return entry === undefined ? [] : [entry.entryId];
-		}),
+		byAmount: new Set(),
 	};
 	const remaining: (Keyed & { date: IsoDate; amount: MinorUnits })[] = [];
 	const identical = new Map<string, Keyed[]>();
@@ -519,6 +514,7 @@ async function groupLines(
 				keys: item.keys,
 				entryId: survivorId,
 			});
+			groups.byAmount.add(item.ref);
 		}
 	}
 
@@ -736,15 +732,13 @@ function planCurrentAnchor(
  * Writes a statement into one account, in one transaction, following the
  * pipeline order of AD-4. A manual line carries no key and is always
  * created; an import's or a sync's lines are keyed and grouped (AD-7), and a
- * sync's reconcile with pending entries (AD-17): absorbed in place, or, when
- * dated `missesFrom` or later and named by no line of the statement, refused
- * ones included, counted missing once a day at most and deleted at the
- * second miss. With `dryRun`, the groups are computed and nothing is written.
- * Confirming an import refuses with `IMPORT_PREVIEW_STALE` when the groups
- * differ from its preview, and marks
- * it confirmed with its counts in the same transaction. A sync's statement
- * balance becomes the account's `current_anchor`, the anchor it supersedes
- * a reconciliation on its own day.
+ * sync's reconcile with pending entries (AD-17): absorbed in place, and
+ * never deleted when the bank stops listing them, as Sure. With `dryRun`,
+ * the groups are computed and nothing is written. Confirming an import
+ * refuses with `IMPORT_PREVIEW_STALE` when the groups differ from its
+ * preview, and marks it confirmed with its counts in the same transaction.
+ * A sync's statement balance becomes the account's `current_anchor`, the
+ * anchor it supersedes a reconciliation on its own day.
  */
 export async function ingest(
 	deps: ServiceDeps,
@@ -764,7 +758,6 @@ export async function ingest(
 						}
 					: null;
 			const connectionId = "connectionId" in source ? source.connectionId : null;
-			const missesFrom = "connectionId" in source ? source.missesFrom : null;
 			const keyTarget: KeyTarget | null =
 				target !== null
 					? { source: target.source, importId: target.id, connectionId: null }
@@ -778,8 +771,6 @@ export async function ingest(
 			const context = { currency: account.currency, today: today(deps.timeZone) };
 			const accepted: Keyed[] = [];
 			const refused: (RejectedLine & { line: NonNullable<RejectedLine["line"]> })[] = [];
-			// A refused line still names its entry: a pending one it names is not missed.
-			const refusedKeys: string[] = [];
 
 			// 1. Reject lines the account cannot hold. Keys cover every line,
 			// refused ones included, so a line's occurrence index never depends on
@@ -796,7 +787,6 @@ export async function ingest(
 						reason,
 						line: { date: line.date, amount: line.amount, label: line.label },
 					});
-					refusedKeys.push(...[keys.fingerprint, keys.external].filter((key) => key !== null));
 				}
 			}
 
@@ -821,11 +811,11 @@ export async function ingest(
 							matched: [],
 							duplicates: [],
 							absorbed: [],
-							named: [],
 							sharing: new Set(),
 							grouped: new Set(),
+							byAmount: new Set(),
 						}
-					: await groupLines(tx, accountId, keyTarget, accepted, refusedKeys);
+					: await groupLines(tx, accountId, keyTarget, accepted);
 			const unreadable: RejectedLine[] = statement.rejected.map((item) => ({
 				...item,
 				line: null,
@@ -936,7 +926,12 @@ export async function ingest(
 						await absorb(
 							tx,
 							entryId,
-							{ line, keys: taken, merchantId: merchantIds.get(line) ?? null },
+							{
+								line,
+								keys: taken,
+								merchantId: merchantIds.get(line) ?? null,
+								keepDate: grouped.byAmount.has(ref),
+							},
 							keyTarget,
 							options.origin,
 							now,
@@ -1056,25 +1051,6 @@ export async function ingest(
 					.where(eq(entries.id, account.openingId));
 			}
 
-			// A pending entry of the connection this statement did not speak for
-			// counts a miss, one per day at most; the second deletes it. A line the
-			// statement refused still speaks for the entry it names. A failed sync
-			// rolls back with this transaction, and one the bank cut short reads
-			// too little to tell, so neither counts.
-			const missedFrom: IsoDate[] = [];
-
-			if (connectionId !== null && missesFrom !== null) {
-				const seen = new Set([
-					...grouped.absorbed.map(({ entryId }) => entryId),
-					...rows.map(({ id }) => id),
-					...grouped.named,
-				]);
-
-				missedFrom.push(
-					...(await countMissedSyncs(tx, accountId, connectionId, missesFrom, seen, context.today)),
-				);
-			}
-
 			// 5. Rules, on the rows this ingest created, possible duplicates
 			// included. Loaded once per call, inside this transaction. A new row
 			// carries no transfer yet, nor a category or tag but an assistant's,
@@ -1155,7 +1131,6 @@ export async function ingest(
 			const [earliest] = [
 				...rows.map(({ line }) => line.date),
 				...absorbedFrom,
-				...missedFrom,
 				...(openingMovedTo === null ? [] : [openingMovedTo]),
 				...(snapshotDate === null ? [] : [snapshotDate]),
 				...(anchorWritten === null ? [] : [anchorWritten]),

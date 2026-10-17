@@ -182,7 +182,7 @@ export async function syncRows(
 			balance: null,
 			rejected: [],
 		},
-		{ connectionId, missesFrom: null },
+		{ connectionId },
 		{ origin: "sync" },
 	);
 

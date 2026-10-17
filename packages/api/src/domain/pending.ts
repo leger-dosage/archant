@@ -4,14 +4,11 @@ import type { MinorUnits } from "@archant/data/money";
 
 import { daysBetween } from "./dates.ts";
 
-/** How far apart a booked line and its pending entry may be dated and still meet (AD-17). */
-const PENDING_WINDOW_DAYS = 5;
-
 /**
- * Successful syncs without its line, on different days, after which a
- * pending entry goes (AD-17).
+ * How many days before a booked line its pending entry may be dated, as
+ * Sure's `find_pending_transaction` `date_window: 8` (AD-17).
  */
-export const MAX_MISSED_SYNCS = 2;
+const PENDING_WINDOW_DAYS = 8;
 
 /** A pending entry a booked line may absorb. */
 export type PendingCandidate = {
@@ -22,13 +19,16 @@ export type PendingCandidate = {
 };
 
 /**
- * Step 3 of the pipeline for booked lines no key recognised (AD-17): each
- * line, in statement order, takes the unused pending entry of the same amount
- * at the nearest date within 5 days, the oldest one first on a tie. A bank
- * books a card payment days after the purchase, often under a new label and
- * without the pending line's reference, so the amount is the only thing
- * that holds. Returns every line with the entry it absorbs, `null` for none,
- * in the order given.
+ * Step 3 of the pipeline for booked lines no key recognised (AD-17), as
+ * Sure's `find_pending_transaction`: each line, in statement order, takes the
+ * unused pending entry of the same amount dated on its day or up to 8 days
+ * before, the latest date first, as Sure's `order(date: :desc)`; the oldest
+ * created, then the id, only break a tie Sure leaves to the database. A
+ * pending entry dated after the line is never taken: the authorisation comes
+ * before the booking. A bank books a card payment days after the purchase,
+ * often under a new label and without the pending line's reference, so the
+ * amount is the only thing that holds. Returns every line with the entry it
+ * absorbs, `null` for none, in the order given.
  */
 export function absorbPending<Line extends { date: IsoDate; amount: MinorUnits }>(
 	lines: readonly Line[],
@@ -41,9 +41,9 @@ export function absorbPending<Line extends { date: IsoDate; amount: MinorUnits }
 			.filter((candidate) => candidate.amount === line.amount && !used.has(candidate.id))
 			.map((candidate) => ({
 				candidate,
-				distance: Math.abs(daysBetween(line.date, candidate.date)),
+				distance: daysBetween(candidate.date, line.date),
 			}))
-			.filter(({ distance }) => distance <= PENDING_WINDOW_DAYS)
+			.filter(({ distance }) => distance >= 0 && distance <= PENDING_WINDOW_DAYS)
 			.toSorted(
 				(a, b) =>
 					a.distance - b.distance ||

@@ -5,6 +5,7 @@ import { Link, createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, LandmarkIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { CredentialsForm, EnvironmentCredentials, Unavailable } from "@/components/BankCredentials";
 import { BankPickerDialog, countryName } from "@/components/BankPickerDialog";
@@ -15,9 +16,17 @@ import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBankConnections, useBankSetup } from "@/hooks/useBankConnections";
+import { Switch } from "@/components/ui/switch";
+import {
+	useBankConnections,
+	useBankSetup,
+	useBankSyncSettings,
+	useSaveBankSyncSettings,
+} from "@/hooks/useBankConnections";
 import { errorCodeOf } from "@/lib/api";
+import { showErrorToast } from "@/lib/error-toast";
 
 export const Route = createFileRoute("/_authed/settings/banks")({
 	component: BanksPage,
@@ -140,11 +149,61 @@ function Connections({ onChooseBank }: { onChooseBank?: (opener: HTMLElement) =>
 }
 
 /**
+ * Sure's `_sync_settings`: « Inclure les transactions en attente », saved on
+ * each change, as Sure's form submits itself. Turning it off deletes no
+ * pending line already stored.
+ */
+function SyncSettings() {
+	const { t } = useTranslation();
+	const settings = useBankSyncSettings();
+	const save = useSaveBankSyncSettings();
+
+	return (
+		<Section title={t("banks.syncSettings.title")}>
+			{settings.isPending && (
+				<div className="p-4">
+					<Skeleton className="h-14 w-full" />
+				</div>
+			)}
+			{settings.isError && (
+				<p role="alert" className="p-4 text-muted-foreground">
+					{t(`errors.${errorCodeOf(settings.error)}`)}
+				</p>
+			)}
+			{settings.data !== undefined && (
+				<div className="flex items-start gap-3 px-4 py-3">
+					<Switch
+						id="include-pending"
+						checked={settings.data.includePending}
+						disabled={save.isPending}
+						aria-describedby="include-pending-description"
+						className="mt-0.5"
+						onCheckedChange={(includePending) =>
+							save.mutate(includePending, {
+								onSuccess: () => toast.success(t("banks.syncSettings.saved")),
+								onError: (error) => showErrorToast(errorCodeOf(error)),
+							})
+						}
+					/>
+					<div className="flex flex-col gap-1">
+						<Label htmlFor="include-pending">{t("banks.syncSettings.includePending")}</Label>
+						<p id="include-pending-description" className="text-sm text-muted-foreground">
+							{t("banks.syncSettings.includePendingDescription")}
+						</p>
+					</div>
+				</div>
+			)}
+		</Section>
+	);
+}
+
+/**
  * Sure's `select_bank`: the connected banks first, then a button opening the
  * bank picker on the country saved with the credentials, then off to the
  * bank's consent page. The bank sends the browser back to
  * `/settings/banks/callback`. Until Enable Banking is set up, Sure's panel
- * stands in its place.
+ * stands in its place; once it is, Sure's sync settings follow the bank
+ * picker, since nothing syncs before.
  */
 function BanksPage() {
 	const { t } = useTranslation();
@@ -206,6 +265,7 @@ function BanksPage() {
 							onOpenChange={setPickerOpen}
 							opener={opener}
 						/>
+						<SyncSettings />
 						{data.source === "environment" ? (
 							<EnvironmentCredentials
 								applicationId={data.applicationId}

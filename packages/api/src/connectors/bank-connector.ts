@@ -77,8 +77,7 @@ export type BankStatement = Omit<ParsedStatement, "balance"> & {
 	/**
 	 * The latest start a page was accepted from: the one asked for, or a later
 	 * one when the bank refused that period. Lines are kept from the start
-	 * asked for, but nothing before this one says whether a pending entry
-	 * went away.
+	 * asked for; the sync only logs a window shortened this way.
 	 */
 	from: IsoDate;
 	/**
@@ -133,13 +132,16 @@ export type BankConnector = {
 	 * `cutShort`; any other failure throws. A line it cannot read goes to `rejected`; a cancelled or
 	 * informational one is left out. `knownMerchants`, the household's
 	 * merchant names, name a line and its merchant where the bank's text
-	 * holds one.
+	 * holds one. With `includePending` false, Sure's `syncs_include_pending`
+	 * turned off, only booked lines are asked for, and a pending one the bank
+	 * returns all the same is left out.
 	 */
 	fetchStatement: (
 		uid: string,
 		since: IsoDate,
 		today: IsoDate,
 		knownMerchants: readonly string[],
+		includePending: boolean,
 	) => Promise<BankStatement>;
 };
 

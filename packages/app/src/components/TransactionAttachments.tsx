@@ -157,10 +157,6 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 			<h3 id="transaction-attachments-title" className="text-sm font-medium">
 				{t("transactions.attachments.section")}
 			</h3>
-			{/* `countMissedSyncs` deletes a pending line the bank drops, receipts included. */}
-			{transaction.pending && (
-				<p className="text-xs text-muted-foreground">{t("transactions.attachments.pending")}</p>
-			)}
 			{attachments.isPending ? (
 				<Skeleton className="h-12 w-full" />
 			) : attachments.isError ? (

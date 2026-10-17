@@ -4,7 +4,7 @@ import type { NormalizedTransaction } from "../../domain/statement.ts";
 import type { KeyTarget, WrittenKeys } from "./entry-keys.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, eq, exists, inArray, sql } from "drizzle-orm";
+import { and, eq, exists, inArray } from "drizzle-orm";
 
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
@@ -12,15 +12,15 @@ import type { EntryKeySource } from "@archant/data/schema/entry-keys";
 import { transactions } from "@archant/data/schema/transactions";
 
 import { minDate } from "../../domain/dates.ts";
-import { MAX_MISSED_SYNCS } from "../../domain/pending.ts";
 import { attachKeys } from "./entry-keys.ts";
 import { changeOf, detailOf, transactionRow } from "./patch.ts";
-import { KEYS_PER_LOOKUP, deleteTransactionRows, inSequence } from "./shared.ts";
+import { KEYS_PER_LOOKUP, inSequence } from "./shared.ts";
 
 /**
  * The account's pending entries carrying a key of the connection (AD-17):
  * those a statement of that connection speaks for, so its booked lines may
- * absorb them and its silence counts as a miss.
+ * absorb them, as Sure's `find_pending_transaction` keeps to the entries of
+ * the line's `source`.
  */
 export async function pendingOfConnection(
 	tx: Transaction,
@@ -33,8 +33,6 @@ export async function pendingOfConnection(
 			date: entries.date,
 			amount: entries.amount,
 			createdAt: entries.createdAt,
-			missedSyncs: transactions.pendingMissedSyncs,
-			missedOn: transactions.pendingMissedOn,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
@@ -87,19 +85,26 @@ export async function heldFingerprints(
 /**
  * Step 3's write (AD-17): the survivor takes the line's date, amount, label
  * and notes, except the fields a user locked (`changeOf`), and its status;
- * its missed syncs start over, their count and their last day both, and the
- * line's keys join the ones it has. The old keys stay, so the bank sending
- * the old pending line again finds a booked entry and changes nothing. It
- * takes the line's merchant only when it has none and `merchant` is not
- * locked: rules do not run again here, where Sure's re-run after each sync
- * would put a rule's merchant back. The id, the category, the tags, the
- * transfer and the exclusion stay as they are. Returns the earlier of the
- * old and new dates, where balances move.
+ * the line's keys join the ones it has. With `keepDate`, for a line paired by
+ * amount, the survivor keeps its own date, as Sure's `effective_date` keeps
+ * the pending date of the entry its amount claimed; a line found by its
+ * reference takes the booked date, as Sure's same-`external_id` path assigns
+ * `date`. The old keys stay, so the bank sending the old pending line again
+ * finds a booked entry and changes nothing. It takes the line's merchant only
+ * when it has none and `merchant` is not locked: rules do not run again here,
+ * where Sure's re-run after each sync would put a rule's merchant back. The
+ * id, the category, the tags, the transfer and the exclusion stay as they
+ * are. Returns the earlier of the old and new dates, where balances move.
  */
 export async function absorb(
 	tx: Transaction,
 	survivorId: string,
-	line: { line: NormalizedTransaction; keys: WrittenKeys; merchantId: string | null },
+	line: {
+		line: NormalizedTransaction;
+		keys: WrittenKeys;
+		merchantId: string | null;
+		keepDate: boolean;
+	},
 	keyTarget: KeyTarget,
 	origin: Origin,
 	now: number,
@@ -109,7 +114,7 @@ export async function absorb(
 	const change = changeOf(
 		current,
 		{
-			date: line.line.date,
+			date: line.keepDate ? current.date : line.line.date,
 			amount: line.line.amount,
 			label: line.line.label,
 			notes: line.line.notes,
@@ -125,63 +130,11 @@ export async function absorb(
 		.where(eq(entries.id, survivorId));
 	await tx
 		.update(transactions)
-		.set({
-			...detailOf(change, origin, now),
-			pending: line.line.pending,
-			pendingMissedSyncs: 0,
-			pendingMissedOn: null,
-		})
+		.set({ ...detailOf(change, origin, now), pending: line.line.pending })
 		.where(eq(transactions.entryId, survivorId));
 	await attachKeys(tx, current.accountId, keyTarget, [{ entryId: survivorId, keys: line.keys }], {
 		keepExisting: true,
 	});
 
 	return minDate(current.date, next.date);
-}
-
-/**
- * Counts a miss on every pending entry of the connection dated `from` or
- * later and outside `seen`, unless one was counted on `day` already, and
- * deletes those reaching `MAX_MISSED_SYNCS` (AD-17). Two syncs an hour apart
- * both missing a line the bank dropped a little before booking it count
- * once, so the booked line still finds its entry the next day. Returns the
- * dates of the deleted ones, where balances move.
- */
-export async function countMissedSyncs(
-	tx: Transaction,
-	accountId: string,
-	connectionId: string,
-	from: IsoDate,
-	seen: ReadonlySet<string>,
-	day: IsoDate,
-): Promise<IsoDate[]> {
-	const missed = (await pendingOfConnection(tx, accountId, connectionId)).filter(
-		({ id, date, missedOn }) =>
-			date >= from && !seen.has(id) && (missedOn === null || missedOn < day),
-	);
-	const gone = missed.filter(({ missedSyncs }) => missedSyncs + 1 >= MAX_MISSED_SYNCS);
-	const kept = missed.filter(({ missedSyncs }) => missedSyncs + 1 < MAX_MISSED_SYNCS);
-
-	await inSequence(kept, KEYS_PER_LOOKUP, (chunk) =>
-		tx
-			.update(transactions)
-			.set({
-				pendingMissedSyncs: sql`${transactions.pendingMissedSyncs} + 1`,
-				pendingMissedOn: day,
-			})
-			.where(
-				inArray(
-					transactions.entryId,
-					chunk.map(({ id }) => id),
-				),
-			),
-	);
-	await inSequence(gone, KEYS_PER_LOOKUP, (chunk) =>
-		deleteTransactionRows(
-			tx,
-			chunk.map(({ id }) => id),
-		),
-	);
-
-	return gone.map(({ date }) => date);
 }
