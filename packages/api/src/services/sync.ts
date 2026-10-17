@@ -143,14 +143,14 @@ function refusal(syncStartedAt: number | null, now: number): AppError {
 /**
  * Syncs every linked bank account of the connection whose account is active,
  * one `ingest` each: a failed account rolls back alone and keeps its window.
- * A read that stops after its first page writes the lines read, counts no
- * pending entry missing and keeps its window too, so the next read starts
- * where this one did. The balance is read after a complete read only, and a
- * balance the bank does not give costs the balance alone. The connection's
- * last sync moves only when every account succeeded; its last error holds
- * the first failed account's code, else `BANK_BALANCE_UNAVAILABLE` when a
- * balance was missing. The recurring pipeline runs once, after every
- * account, and never fails the sync.
+ * A read the bank cut short after its first page is synced with the pages
+ * read and its balance, as Sure's importer keeps them, but counts no pending
+ * entry missing, since the unread pages would name some. A balance the bank
+ * does not give costs the balance alone. The connection's last sync moves
+ * only when every account succeeded; its last error holds the first failed
+ * account's code, else `BANK_BALANCE_UNAVAILABLE` when a balance was
+ * missing. The recurring pipeline runs once, after every account, and never
+ * fails the sync.
  */
 async function runSync(
 	deps: BankConnectionDeps,
@@ -229,7 +229,7 @@ async function runSync(
 				connection?.syncStartDate ?? null,
 			);
 			const statement = await connector.fetchStatement(item.providerUid, since, day);
-			const { interrupted } = statement;
+			const { cutShort } = statement;
 
 			if (statement.from !== since) {
 				deps.logger.info(
@@ -238,38 +238,31 @@ async function runSync(
 				);
 			}
 
-			const balance =
-				interrupted === null
-					? await readBalance(item.providerUid, item.accountId, item.currency)
-					: null;
+			const balance = await readBalance(item.providerUid, item.accountId, item.currency);
 			// Read before `ingest`, so the lines and the anchor commit together.
 			const result = await ingest(
 				deps,
 				item.accountId,
 				toParsedStatement(statement, balance, day),
-				{ connectionId, missesFrom: interrupted === null ? statement.from : null },
+				{ connectionId, missesFrom: cutShort === null ? statement.from : null },
 				{ origin: "sync" },
 			);
 
 			created += result.created.length;
 
-			if (interrupted !== null) {
-				const code = codeOf(interrupted);
-
-				errors.push(code);
-				logFailure(deps, connectionId, interrupted);
-				deps.logger.warn(
+			// Error, not warn, as Sure's: the unread pages are lines lost for any
+			// bank this happens to, not only Trade Republic's rejected key.
+			if (cutShort !== null) {
+				deps.logger.error(
 					{
 						connectionId,
 						accountId: item.accountId,
-						code,
+						code: cutShort.providerCode,
+						status: cutShort.status,
 						lines: statement.transactions.length,
-						created: result.created.length,
 					},
-					"bank account read interrupted",
+					"bank account read cut short",
 				);
-
-				return;
 			}
 
 			await deps.db

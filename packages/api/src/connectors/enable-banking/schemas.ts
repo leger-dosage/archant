@@ -3,6 +3,8 @@ import { z } from "zod";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
+import { providerDate, providerIsoDate } from "../../domain/provider-date.ts";
+
 // Every response is parsed, as any input crossing a boundary: a provider is
 // not trusted because it is a bank. Objects drop the keys they do not name,
 // so nothing unread travels further than this file.
@@ -175,18 +177,41 @@ export const transactionsPageSchema = z.object({
 	continuation_key: z.string().min(1).nullable().catch(null),
 });
 
+const providerCode = z
+	.string()
+	.regex(/^[A-Z][A-Z0-9_]{0,63}$/u)
+	.optional()
+	.catch(undefined);
+
 /**
  * The provider's error code, kept only when it looks like one: a free-text
  * message could carry anything, and the code is all a log line may hold.
- * The message only says whether it names the consent validity, as Sure's
- * `wrong_consent_validity?` reads it; its text never leaves this schema (AD-14).
+ * Most refusals name it in `error`, N26's in `code`; a refused period is
+ * either's, as Sure's `wrong_transactions_period?` reads them. The message
+ * only says whether it names the consent validity, as Sure's
+ * `wrong_consent_validity?` reads it, and `detail` only gives the start a
+ * bank suggests after refusing a period, Sure's `corrected_date_from`,
+ * `null` unless it reads as an ISO date; neither text leaves this schema
+ * (AD-14).
  */
 export const errorResponseSchema = z
 	.object({
-		error: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u),
+		error: providerCode,
+		code: providerCode,
 		message: z.string().optional().catch(undefined),
+		detail: z
+			.object({ date_from: z.string().optional().catch(undefined) })
+			.optional()
+			.catch(undefined),
 	})
-	.transform(({ error, message }) => ({
-		error,
+	.transform(({ error, code, message, detail }) => ({
+		error: error ?? code ?? null,
 		consentValidity: /consent validity/iu.test(message ?? ""),
+		periodRefused: error === "WRONG_TRANSACTIONS_PERIOD" || code === "PERIOD_INVALID",
+		// `Date.iso8601` reads the basic form, `20260710`, too.
+		suggestedFrom:
+			detail?.date_from === undefined
+				? null
+				: (providerIsoDate(detail.date_from) ??
+					(/^\d{8}$/u.test(detail.date_from) ? providerDate(detail.date_from) : null)),
 	}));

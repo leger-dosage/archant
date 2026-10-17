@@ -53,7 +53,7 @@ import { matchTransfers } from "./transfers.ts";
  * lines are keyed under its source, a sync's under its connection's
  * connector (AD-7). A sync's `missesFrom` is the first day its read speaks
  * for: a pending entry dated before it is not missing, only unread. `null`
- * when the read stopped part way and speaks for no pending entry.
+ * when the bank cut the read short, which then speaks for no pending entry.
  */
 export type IngestSource =
 	| {
@@ -968,8 +968,8 @@ export async function ingest(
 			// A pending entry of the connection this statement did not speak for
 			// counts a miss, one per day at most; the second deletes it. A line the
 			// statement refused still speaks for the entry it names. A failed sync
-			// rolls back with this transaction, and an interrupted one reads too
-			// little to tell, so neither counts.
+			// rolls back with this transaction, and one the bank cut short reads
+			// too little to tell, so neither counts.
 			const missedFrom: IsoDate[] = [];
 
 			if (connectionId !== null && missesFrom !== null) {
