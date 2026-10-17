@@ -6,6 +6,7 @@ import type {
 	BankConnector,
 	BankStatement,
 	Institution,
+	ProviderFailure,
 } from "../bank-connector.ts";
 import type { balanceSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
@@ -99,6 +100,25 @@ const failed = (status: number | null, providerCode: string | null = null) =>
  */
 class ConsentLengthRefused extends BankProviderError {}
 
+/**
+ * Sure's `wrong_transactions_period?`: the bank refused the period asked
+ * for, with the start it suggests, if any.
+ */
+class PeriodRefused extends BankProviderError {
+	readonly suggestedFrom: IsoDate | null;
+
+	constructor(failure: ProviderFailure, suggestedFrom: IsoDate | null) {
+		super("BANK_PROVIDER_ERROR", "The bank provider request failed.", failure);
+		this.suggestedFrom = suggestedFrom;
+	}
+}
+
+/**
+ * The statuses whose body Sure's `handle_response` never reads, so a refused
+ * period under one of them is no refusal there either.
+ */
+const BODILESS_STATUSES = new Set([401, 403, 404, 408, 429]);
+
 /** Sure's `wrong_consent_validity?`: a 422 `WRONG_REQUEST_PARAMETERS` naming the consent validity. */
 const refusesConsentLength = (status: number, error: z.output<typeof errorResponseSchema>) =>
 	status === 422 && error.error === "WRONG_REQUEST_PARAMETERS" && error.consentValidity;
@@ -189,22 +209,38 @@ export function toBankAccount(account: z.output<typeof sessionAccountSchema>): B
 export const MAX_PAGES = 100;
 
 /**
- * Sure's `EnableBankingItem::Importer`: the windows, in days before today,
- * asked for when a bank refuses the period with `WRONG_TRANSACTIONS_PERIOD`.
+ * Sure's `FALLBACK_TRANSACTIONS_DATE_FROM_DAYS`: the windows, in days before
+ * today, asked for when a bank refuses the period without suggesting a start
+ * that moves it forward.
  */
 const FALLBACK_WINDOW_DAYS = [89, 60, 30] as const;
 
 /**
- * The starts to try after `since` is refused, in order: each fallback window
- * ending `today`, but only those that start later than `since`, since a
- * longer window than the refused one would be refused too.
+ * Sure's `next_transactions_date_from`: the start to ask for after `refused`
+ * was refused at retry `attempt`, counted from 0 on each page. On the first
+ * retry, the bank's own `suggested` start when it is later; otherwise the
+ * first fallback window ending `today` that starts later than `refused`, so
+ * every retry moves forward. `null` once none is left, or after four retries.
  */
-export function fallbackStarts(since: IsoDate, today: IsoDate): IsoDate[] {
-	return FALLBACK_WINDOW_DAYS.map((days) => addDays(today, -days)).filter((start) => start > since);
-}
+export function nextStart(
+	refused: IsoDate,
+	suggested: IsoDate | null,
+	attempt: number,
+	today: IsoDate,
+): IsoDate | null {
+	if (attempt > FALLBACK_WINDOW_DAYS.length) {
+		return null;
+	}
 
-const refusedPeriod = (error: unknown) =>
-	error instanceof BankProviderError && error.failure.providerCode === "WRONG_TRANSACTIONS_PERIOD";
+	if (attempt === 0 && suggested !== null && suggested > refused) {
+		return suggested;
+	}
+
+	return (
+		FALLBACK_WINDOW_DAYS.map((days) => addDays(today, -days)).find((start) => start > refused) ??
+		null
+	);
+}
 
 /** Booked beats pending; any other status never reaches the ledger. */
 const rankOf = (status: string | null) => (status === "BOOK" ? 2 : status === "PDNG" ? 1 : 0);
@@ -552,6 +588,13 @@ async function call<Schema extends z.ZodType>(
 	if (!response.ok) {
 		const error = errorResponseSchema.safeParse(payload);
 
+		if (error.success && error.data.periodRefused && !BODILESS_STATUSES.has(response.status)) {
+			throw new PeriodRefused(
+				{ status: response.status, providerCode: error.data.error },
+				error.data.suggestedFrom,
+			);
+		}
+
 		if (error.success && refusesConsentLength(response.status, error.data)) {
 			throw new ConsentLengthRefused("BANK_PROVIDER_ERROR", "The bank provider request failed.", {
 				status: response.status,
@@ -587,82 +630,100 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 	}
 
 	/**
-	 * Every raw line since `since`, page after page. Sure's importer follows
-	 * the key until none comes back, it comes back a second time, or a
-	 * hundred pages went by. A provider failure after the first page keeps
-	 * the pages read, as Sure does; on the first page it throws.
+	 * One page from `from`, Sure's `get_account_transactions`: while the bank
+	 * refuses the period, asked again from `nextStart` with the same key. The
+	 * last refusal throws. Returns the page and the start it was accepted from.
+	 */
+	async function fetchPage(
+		uid: string,
+		from: IsoDate,
+		continuationKey: string | null,
+		today: IsoDate,
+		attempt = 0,
+	): Promise<{ page: z.output<typeof transactionsPageSchema>; from: IsoDate }> {
+		const query = new URLSearchParams({ date_from: from });
+
+		if (continuationKey !== null) {
+			query.set("continuation_key", continuationKey);
+		}
+
+		try {
+			const page = await call(
+				config,
+				{
+					method: "GET",
+					path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
+				},
+				transactionsPageSchema,
+			);
+
+			return { page, from };
+		} catch (error) {
+			const next =
+				error instanceof PeriodRefused
+					? nextStart(from, error.suggestedFrom, attempt, today)
+					: null;
+
+			if (next === null) {
+				throw error;
+			}
+
+			return fetchPage(uid, next, continuationKey, today, attempt + 1);
+		}
+	}
+
+	/**
+	 * Every raw line from `since`, page after page, Sure's
+	 * `fetch_paginated_transactions`: it follows the key until none comes
+	 * back, it comes back a second time, or a hundred pages went by, each page
+	 * asked from `since` and retried on its own; `from` is the latest start a
+	 * page was accepted from. After the first page, a 400 or 422 that is no
+	 * refused period ends the read with the pages read, as Trade Republic
+	 * rejects its own key; `cutShort` names it. Anything else throws.
 	 */
 	async function fetchLines(
 		uid: string,
 		since: IsoDate,
-	): Promise<{ lines: unknown[]; interrupted: BankProviderError | null }> {
+		today: IsoDate,
+	): Promise<{ lines: unknown[]; from: IsoDate; cutShort: ProviderFailure | null }> {
 		const seen = new Set<string>();
 		const lines: unknown[] = [];
 		const fromPage = async (
 			continuationKey: string | null,
 			page: number,
-		): Promise<BankProviderError | null> => {
-			const query = new URLSearchParams({ date_from: since });
-
-			if (continuationKey !== null) {
-				query.set("continuation_key", continuationKey);
-			}
-
-			let answer: z.output<typeof transactionsPageSchema>;
+			from: IsoDate,
+		): Promise<{ from: IsoDate; cutShort: ProviderFailure | null }> => {
+			let answer: Awaited<ReturnType<typeof fetchPage>>;
 
 			try {
-				answer = await call(
-					config,
-					{
-						method: "GET",
-						path: `/accounts/${encodeURIComponent(uid)}/transactions?${query.toString()}`,
-					},
-					transactionsPageSchema,
-				);
+				answer = await fetchPage(uid, since, continuationKey, today);
 			} catch (error) {
-				if (page === 0 || !(error instanceof BankProviderError)) {
+				if (
+					page === 0 ||
+					!(error instanceof BankProviderError) ||
+					error instanceof PeriodRefused ||
+					(error.failure.status !== 400 && error.failure.status !== 422)
+				) {
 					throw error;
 				}
 
-				return error;
+				return { from, cutShort: error.failure };
 			}
 
-			lines.push(...answer.transactions);
-			const next = answer.continuation_key;
+			lines.push(...answer.page.transactions);
+			const next = answer.page.continuation_key;
+			const latest = answer.from > from ? answer.from : from;
 
 			if (next === null || seen.has(next) || page + 1 >= MAX_PAGES) {
-				return null;
+				return { from: latest, cutShort: null };
 			}
 
 			seen.add(next);
 
-			return fromPage(next, page + 1);
+			return fromPage(next, page + 1, latest);
 		};
-		const interrupted = await fromPage(null, 0);
 
-		return { lines, interrupted };
-	}
-
-	/**
-	 * `fetchLines` from `since`, else from each fallback start while the bank
-	 * refuses the period on the first page; the last refusal throws.
-	 */
-	async function readFrom(
-		uid: string,
-		from: IsoDate,
-		fallbacks: readonly IsoDate[],
-	): Promise<{ lines: unknown[]; interrupted: BankProviderError | null; from: IsoDate }> {
-		try {
-			return { ...(await fetchLines(uid, from)), from };
-		} catch (error) {
-			const [next, ...rest] = fallbacks;
-
-			if (next === undefined || !refusedPeriod(error)) {
-				throw error;
-			}
-
-			return readFrom(uid, next, rest);
-		}
+		return { lines, ...(await fromPage(null, 0, since)) };
 	}
 
 	return {
@@ -801,14 +862,16 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 		fetchBalance,
 
 		async fetchStatement(uid, since, today): Promise<BankStatement> {
-			const { lines, interrupted, from } = await readFrom(uid, since, fallbackStarts(since, today));
+			const { lines, from, cutShort } = await fetchLines(uid, since, today);
 			const unique = withoutRepeats(lines);
 			const unsettled = withoutSettledPending(lines);
-			const statement: BankStatement = { transactions: [], rejected: [], from, interrupted };
+			const statement: BankStatement = { transactions: [], rejected: [], from, cutShort };
 
 			for (const [position, raw] of lines.entries()) {
 				const kept = unique.has(position) && unsettled.has(position);
-				const mapped = kept ? toTransaction(raw, from) : null;
+				// From the start asked for, as Sure's `filter_transactions_by_date`:
+				// a later page retried from a later start keeps the earlier pages' lines.
+				const mapped = kept ? toTransaction(raw, since) : null;
 
 				if (typeof mapped === "string") {
 					statement.rejected.push({ ref: String(position), reason: mapped });

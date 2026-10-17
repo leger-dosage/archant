@@ -75,16 +75,18 @@ export type BankBalance = {
  */
 export type BankStatement = Omit<ParsedStatement, "balance"> & {
 	/**
-	 * The first day actually read: the one asked for, or a later one when the
-	 * bank refused that period. No line before it is kept, and nothing before
-	 * it says whether a pending entry went away.
+	 * The latest start a page was accepted from: the one asked for, or a later
+	 * one when the bank refused that period. Lines are kept from the start
+	 * asked for, but nothing before this one says whether a pending entry
+	 * went away.
 	 */
 	from: IsoDate;
 	/**
-	 * The failure that stopped the read after its first page, `null` when every
-	 * page came back. The lines hold the pages read before it.
+	 * The 400 or 422, no refused period, that ended the read after its first
+	 * page, as Sure's
+	 * importer keeps the pages read; `null` when every page came back.
 	 */
-	interrupted: BankProviderError | null;
+	cutShort: ProviderFailure | null;
 };
 
 /**
@@ -124,11 +126,12 @@ export type BankConnector = {
 	fetchBalance: (uid: string, currency: CurrencyCode | null) => Promise<BankBalance | null>;
 	/**
 	 * The account's booked and pending lines dated `since` or later, every
-	 * page, a line the bank lists twice kept once. A bank that refuses the
-	 * period is asked again for a shorter one ending `today`; one that fails
-	 * after the first page leaves the pages read and says so in
-	 * `interrupted`. A failure on the first page throws. A line it cannot read
-	 * goes to `rejected`; a cancelled or informational one is left out.
+	 * page, a line the bank lists twice kept once. A page whose period the
+	 * bank refuses is asked again from the start it suggests, else for a
+	 * shorter window ending `today`. A 400 or 422 after the first page that
+	 * is no refused period ends the read with the pages read and says so in
+	 * `cutShort`; any other failure throws. A line it cannot read goes to `rejected`; a cancelled or
+	 * informational one is left out.
 	 */
 	fetchStatement: (uid: string, since: IsoDate, today: IsoDate) => Promise<BankStatement>;
 };

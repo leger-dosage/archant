@@ -329,12 +329,15 @@ function firstPage(withPending: boolean) {
 	});
 }
 
-/** Page one as the fixtures, less the pending line unless asked, then a 500 on page two. */
-function failingOnPageTwo(withPending = true) {
+/**
+ * Page one as the fixtures, less the pending line unless asked, then page
+ * two answering `status` with `code`, a 500 by default.
+ */
+function failingOnPageTwo(withPending = true, status = 500, code = "ASPSP_ERROR") {
 	return mockProvider({
 		transactions: (url) =>
 			url.searchParams.get("continuation_key") === "page-2"
-				? HttpResponse.json({ error: "ASPSP_ERROR" }, { status: 500 })
+				? HttpResponse.json({ error: code }, { status })
 				: firstPage(withPending),
 	});
 }
@@ -1319,6 +1322,8 @@ describe("a bank read that fails part way", () => {
 			[
 				"?date_from=2026-06-24",
 				"?date_from=2026-06-27",
+				// Each page asks from the start asked for, as Sure's importer.
+				"?date_from=2026-06-24&continuation_key=page-2",
 				"?date_from=2026-06-27&continuation_key=page-2",
 			],
 		);
@@ -1385,6 +1390,7 @@ describe("a bank read that fails part way", () => {
 			[
 				"?date_from=2026-07-07",
 				"?date_from=2026-07-27",
+				"?date_from=2026-07-07&continuation_key=page-2",
 				"?date_from=2026-07-27&continuation_key=page-2",
 			],
 		);
@@ -1396,15 +1402,14 @@ describe("a bank read that fails part way", () => {
 		);
 	});
 
-	it("keeps the lines of the pages read before a failure, reads no balance and leaves the account failed", async () => {
+	it("fails the account and writes nothing on a 500 after page one", async () => {
 		const requests = failingOnPageTwo();
 		const connectionId = await newConnection();
 		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 
 		await expect(syncAll(deps())).resolves.toEqual([{ id: connectionId, result: "failed" }]);
 
-		// Page one: three booked lines and the pending one.
-		await expect(transactionCount(accountId)).resolves.toBe(4);
+		await expect(transactionCount(accountId)).resolves.toBe(0);
 		await expect(anchorOf(accountId)).resolves.toMatchObject({ amount: 100000 });
 		expect(balanceRequests(requests)).toEqual([]);
 		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBeNull();
@@ -1414,33 +1419,62 @@ describe("a bank read that fails part way", () => {
 		});
 		expect(logged()).toContainEqual(
 			expect.objectContaining({
-				msg: "bank account read interrupted",
+				msg: "bank account sync failed",
 				accountId,
 				code: "BANK_PROVIDER_ERROR",
-				lines: 4,
 			}),
 		);
 		expectNoSecretLogged();
-
-		// The next read starts from the same day, and recognises what page one wrote.
-		const again = mockProvider();
-		vi.setSystemTime(NOW + 2 * 60 * MINUTE);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
-			lastError: null,
-		});
-		expect(transactionRequests(again, FIXTURE_CHECKING_UID)[0]?.search).toBe(
-			"?date_from=2026-06-24",
-		);
-		await expect(transactionCount(accountId)).resolves.toBe(6);
 	});
 
-	it("counts no miss on a read that stopped part way, and keeps the account's window", async () => {
+	it.each([400, 422])(
+		"syncs a read cut short by a %i after page one, with its balance",
+		async (status) => {
+			const requests = failingOnPageTwo(true, status, "WRONG_REQUEST_PARAMETERS");
+			const connectionId = await newConnection();
+			const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+			await expect(syncAll(deps())).resolves.toEqual([{ id: connectionId, result: "synced" }]);
+
+			// Page one: three booked lines and the pending one.
+			await expect(transactionCount(accountId)).resolves.toBe(4);
+			await expect(anchorOf(accountId)).resolves.toMatchObject({ amount: 123456 });
+			expect(balanceRequests(requests)).toHaveLength(1);
+			await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
+			await expect(connectionRow(connectionId)).resolves.toMatchObject({
+				lastSyncedAt: NOW,
+				lastError: null,
+			});
+			expect(logged()).toContainEqual(
+				expect.objectContaining({
+					level: 50,
+					msg: "bank account read cut short",
+					accountId,
+					code: "WRONG_REQUEST_PARAMETERS",
+					status,
+					lines: 4,
+				}),
+			);
+			expectNoSecretLogged();
+
+			// The next read starts from the window the cut-short read moved.
+			const again = mockProvider();
+			vi.setSystemTime(NOW + DAY);
+
+			await syncConnection(deps(), connectionId);
+
+			expect(transactionRequests(again, FIXTURE_CHECKING_UID)[0]?.search).toBe(
+				"?date_from=2026-09-17",
+			);
+		},
+	);
+
+	it("counts no miss on a read cut short", async () => {
 		mockProvider();
 		const connectionId = await newConnection();
-		const { accountId, bankAccountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 		await syncConnection(deps(), connectionId);
-		failingOnPageTwo(false);
+		failingOnPageTwo(false, 422, "WRONG_REQUEST_PARAMETERS");
 		vi.setSystemTime(NOW + DAY);
 
 		await syncConnection(deps(), connectionId);
@@ -1448,8 +1482,6 @@ describe("a bank read that fails part way", () => {
 		await expect(pendingOf(accountId)).resolves.toEqual([
 			{ date: "2026-09-23", amount: -1200, missed: 0 },
 		]);
-		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
-		await expect(connectionRow(connectionId)).resolves.toMatchObject({ lastSyncedAt: NOW });
 	});
 });
 

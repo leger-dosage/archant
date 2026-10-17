@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { server } from "../../../vitest.setup.ts";
+import { addDays } from "../../domain/dates.ts";
 import {
 	TEST_APPLICATION_ID,
 	TEST_PRIVATE_KEY,
@@ -28,7 +29,7 @@ import { createBankConnector } from "../registry.ts";
 import {
 	MAX_PAGES,
 	consentLadder,
-	fallbackStarts,
+	nextStart,
 	toBankAccount,
 	toTransaction,
 	withoutRepeats,
@@ -1112,7 +1113,7 @@ describe("fetchStatement", () => {
 			},
 		]);
 		expect(statement.rejected).toEqual([]);
-		expect(statement).toMatchObject({ from: SINCE, interrupted: null });
+		expect(statement).toMatchObject({ from: SINCE, cutShort: null });
 		expect(statement).not.toHaveProperty("balance");
 		expect(requests.map(({ path, search }) => `${path}${search}`)).toEqual([
 			`/accounts/${FIXTURE_CHECKING_UID}/transactions?date_from=2026-06-26`,
@@ -1192,7 +1193,31 @@ describe("fetchStatement", () => {
 		expect(requests).toHaveLength(1);
 	});
 
-	it("keeps the pages read before a failure, and names the failure", async () => {
+	it.each([400, 422])(
+		"keeps the pages read before a %i after page one, and names it",
+		async (status) => {
+			const requests = mockProvider({
+				transactions: (url) =>
+					url.searchParams.get("continuation_key") === "page-2"
+						? HttpResponse.json({ error: "WRONG_REQUEST_PARAMETERS" }, { status })
+						: transactionsPage(url),
+			});
+
+			const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+			expect(statement.transactions.map(({ externalId }) => externalId)).toEqual([
+				"20260920-0001",
+				"20260915-0002",
+				"20260923-0003",
+				null,
+			]);
+			expect(statement.from).toBe(SINCE);
+			expect(statement.cutShort).toEqual({ status, providerCode: "WRONG_REQUEST_PARAMETERS" });
+			expect(requests).toHaveLength(2);
+		},
+	);
+
+	it("throws a 500 after page one, keeping nothing", async () => {
 		const requests = mockProvider({
 			transactions: (url) =>
 				url.searchParams.get("continuation_key") === "page-2"
@@ -1200,18 +1225,20 @@ describe("fetchStatement", () => {
 					: transactionsPage(url),
 		});
 
-		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
 
-		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual([
-			"20260920-0001",
-			"20260915-0002",
-			"20260923-0003",
-			null,
-		]);
-		expect(statement.from).toBe(SINCE);
-		expect(statement.interrupted).toBeInstanceOf(BankProviderError);
-		expect(statement.interrupted?.failure).toEqual({ status: 500, providerCode: "ASPSP_ERROR" });
+		expect(error.failure).toEqual({ status: 500, providerCode: "ASPSP_ERROR" });
 		expect(requests).toHaveLength(2);
+	});
+
+	it("throws a 400 on page one, which no page read can stand for", async () => {
+		mockProvider({
+			transactions: () => HttpResponse.json({ error: "WRONG_REQUEST_PARAMETERS" }, { status: 400 }),
+		});
+
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+
+		expect(error.failure).toEqual({ status: 400, providerCode: "WRONG_REQUEST_PARAMETERS" });
 	});
 
 	it("throws what is not a provider failure, even after the first page", async () => {
@@ -1240,20 +1267,23 @@ describe("fetchStatement", () => {
 	});
 });
 
-const refused = () =>
+const refused = (detail?: unknown, status = 422) =>
 	HttpResponse.json(
-		{ error: "WRONG_TRANSACTIONS_PERIOD", message: "The period is too long" },
-		{ status: 400 },
+		{ error: "WRONG_TRANSACTIONS_PERIOD", message: "The period is too long", detail },
+		{ status },
 	);
 
-/** Refuses every `date_from` earlier than `accepted`; `null` refuses them all. */
-function acceptingFrom(accepted: string | null) {
+/**
+ * Refuses every `date_from` earlier than `accepted`, `null` refusing them
+ * all, with `detail` in the refusal.
+ */
+function acceptingFrom(accepted: string | null, detail?: unknown) {
 	return mockProvider({
 		transactions: (url) => {
 			const from = url.searchParams.get("date_from") ?? "";
 
 			return accepted === null || from < accepted
-				? refused()
+				? refused(detail)
 				: HttpResponse.json({
 						transactions: [
 							line({ entry_reference: "old", booking_date: "2026-07-01" }),
@@ -1268,13 +1298,27 @@ function acceptingFrom(accepted: string | null) {
 const dateFroms = (requests: ReturnType<typeof mockProvider>) =>
 	requests.map(({ search }) => new URLSearchParams(search).get("date_from"));
 
-describe("a refused period", () => {
-	it("lists the shorter windows that start later than the refused one", () => {
-		expect(fallbackStarts("2026-06-26", TODAY)).toEqual(["2026-06-27", "2026-07-26", "2026-08-25"]);
-		expect(fallbackStarts("2026-07-26", TODAY)).toEqual(["2026-08-25"]);
-		expect(fallbackStarts("2026-09-17", TODAY)).toEqual([]);
+describe("nextStart", () => {
+	it("takes the bank's suggested start on the first retry, when it is later", () => {
+		expect(nextStart(SINCE, "2026-07-10", 0, TODAY)).toBe("2026-07-10");
 	});
 
+	it("takes the first shorter window later than the refused start otherwise", () => {
+		expect(nextStart(SINCE, null, 0, TODAY)).toBe("2026-06-27");
+		expect(nextStart(SINCE, SINCE, 0, TODAY)).toBe("2026-06-27");
+		expect(nextStart(SINCE, "2026-06-01", 0, TODAY)).toBe("2026-06-27");
+		expect(nextStart("2026-07-10", "2026-08-01", 1, TODAY)).toBe("2026-07-26");
+		expect(nextStart("2026-07-26", null, 2, TODAY)).toBe("2026-08-25");
+	});
+
+	it("gives up once no window is later, or after four retries", () => {
+		expect(nextStart("2026-08-25", null, 3, TODAY)).toBeNull();
+		expect(nextStart("2026-09-17", "2026-09-20", 1, TODAY)).toBeNull();
+		expect(nextStart("2026-06-01", null, 4, TODAY)).toBeNull();
+	});
+});
+
+describe("a refused period", () => {
 	it("asks again for 89 days, and reads from the start the bank accepted", async () => {
 		const requests = acceptingFrom("2026-06-27");
 
@@ -1282,28 +1326,223 @@ describe("a refused period", () => {
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
 		expect(statement.from).toBe("2026-06-27");
-		expect(statement.interrupted).toBeNull();
+		expect(statement.cutShort).toBeNull();
 		expect(statement.transactions).toHaveLength(2);
 	});
 
-	it("goes down to 60 then 30 days, dropping the lines before the accepted start", async () => {
+	it("goes down to 60 then 30 days, keeping the lines from the start asked for", async () => {
 		const requests = acceptingFrom("2026-08-25");
 
 		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
 
 		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27", "2026-07-26", "2026-08-25"]);
 		expect(statement.from).toBe("2026-08-25");
-		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual(["recent"]);
+		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual(["old", "recent"]);
 	});
 
-	it("fails once the 30-day window is refused too", async () => {
-		const requests = acceptingFrom(null);
+	it("retries from the bank's suggested start when it is later", async () => {
+		const requests = acceptingFrom("2026-07-10", { date_from: "2026-07-10" });
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10"]);
+		expect(statement.from).toBe("2026-07-10");
+	});
+
+	it("takes 89 days when the suggested start is not later", async () => {
+		const requests = acceptingFrom("2026-06-27", { date_from: "2026-06-01" });
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
+		expect(statement.from).toBe("2026-06-27");
+	});
+
+	it("takes the first window later than a suggested start refused too", async () => {
+		const requests = acceptingFrom("2026-07-26", { date_from: "2026-07-10" });
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10", "2026-07-26"]);
+		expect(statement.from).toBe("2026-07-26");
+	});
+
+	it("ignores a suggested start that does not read as a date", async () => {
+		const requests = acceptingFrom("2026-06-27", { date_from: "soon" });
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
+		expect(statement.from).toBe("2026-06-27");
+	});
+
+	it("reads a suggested start in ISO 8601's basic form, as `Date.iso8601`", async () => {
+		const requests = acceptingFrom("2026-07-10", { date_from: "20260710" });
+
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-07-10"]);
+	});
+
+	it("follows the suggested start on the first retry of a page only", async () => {
+		const requests = mockProvider({
+			transactions: (url) => {
+				const from = url.searchParams.get("date_from") ?? "";
+
+				return from < "2026-08-25"
+					? refused({ date_from: addDays(from, 1) })
+					: HttpResponse.json({ transactions: [line()], continuation_key: null });
+			},
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27", "2026-07-26", "2026-08-25"]);
+		expect(statement.from).toBe("2026-08-25");
+	});
+
+	it.each([401, 403, 404, 408, 429])(
+		"takes a refused period under a %i as that failure, as Sure reads no body there",
+		async (status) => {
+			const requests = mockProvider({
+				transactions: () => HttpResponse.json({ error: "WRONG_TRANSACTIONS_PERIOD" }, { status }),
+			});
+
+			const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+
+			expect(error.failure).toEqual({ status, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
+			expect(requests).toHaveLength(1);
+		},
+	);
+
+	it("retries a refused period under a 500 too", async () => {
+		const requests = mockProvider({
+			transactions: (url) =>
+				(url.searchParams.get("date_from") ?? "") < "2026-06-27"
+					? HttpResponse.json({ error: "WRONG_TRANSACTIONS_PERIOD" }, { status: 500 })
+					: HttpResponse.json({ transactions: [line()], continuation_key: null }),
+		});
+
+		await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
+	});
+
+	it("reads N26's PERIOD_INVALID as a refusal without a date", async () => {
+		const requests = mockProvider({
+			transactions: (url) =>
+				(url.searchParams.get("date_from") ?? "") < "2026-06-27"
+					? HttpResponse.json(
+							{ code: "PERIOD_INVALID", detail: "dateFrom=2026-06-26,dateTo=2026-09-24" },
+							{ status: 400 },
+						)
+					: HttpResponse.json({ transactions: [line()], continuation_key: null }),
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(dateFroms(requests)).toEqual(["2026-06-26", "2026-06-27"]);
+		expect(statement.from).toBe("2026-06-27");
+	});
+
+	it("names N26's PERIOD_INVALID when every start is refused", async () => {
+		mockProvider({
+			transactions: () =>
+				HttpResponse.json({ code: "PERIOD_INVALID", detail: "dateFrom=..." }, { status: 400 }),
+		});
 
 		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
 
-		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status: 400, providerCode: "PERIOD_INVALID" });
+	});
+
+	it("reads PERIOD_INVALID only as N26 sends it, under `code`", async () => {
+		const requests = mockProvider({
+			transactions: () => HttpResponse.json({ error: "PERIOD_INVALID" }, { status: 400 }),
+		});
+
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+
+		expect(error.failure).toEqual({ status: 400, providerCode: "PERIOD_INVALID" });
+		expect(requests).toHaveLength(1);
+	});
+
+	it("retries a later page with its key, and asks the next from the start asked for", async () => {
+		const requests = mockProvider({
+			transactions: (url) => {
+				const key = url.searchParams.get("continuation_key");
+				const from = url.searchParams.get("date_from") ?? "";
+
+				if (key === "2" && from < "2026-07-26") {
+					return refused({ date_from: "2026-07-26" });
+				}
+
+				return HttpResponse.json({
+					transactions: [
+						line({
+							entry_reference: `ref-${key ?? "1"}`,
+							transaction_id: `tx-${key ?? "1"}`,
+							booking_date: "2026-07-01",
+						}),
+					],
+					continuation_key: key === null ? "2" : key === "2" ? "3" : null,
+				});
+			},
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY);
+
+		expect(requests.map(({ search }) => search)).toEqual([
+			"?date_from=2026-06-26",
+			"?date_from=2026-06-26&continuation_key=2",
+			"?date_from=2026-07-26&continuation_key=2",
+			"?date_from=2026-06-26&continuation_key=3",
+		]);
+		expect(statement.from).toBe("2026-07-26");
+		expect(statement.cutShort).toBeNull();
+		expect(statement.transactions.map(({ externalId }) => externalId)).toEqual([
+			"ref-1",
+			"ref-2",
+			"ref-3",
+		]);
+	});
+
+	it("throws a later page refused for every start with a 400, never cut short", async () => {
+		const requests = mockProvider({
+			transactions: (url) =>
+				url.searchParams.get("continuation_key") === null
+					? HttpResponse.json({ transactions: [line()], continuation_key: "2" })
+					: refused(undefined, 400),
+		});
+
+		const error = await rejection(connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY));
+
 		expect(error.failure).toEqual({ status: 400, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
-		expect(requests).toHaveLength(4);
+		expect(dateFroms(requests)).toEqual([
+			"2026-06-26",
+			"2026-06-26",
+			"2026-06-27",
+			"2026-07-26",
+			"2026-08-25",
+		]);
+	});
+
+	it("fails once the 30-day window is refused too, after four retries at most", async () => {
+		const requests = acceptingFrom(null, { date_from: "2026-06-26" });
+
+		const error = await rejection(
+			connector.fetchStatement(FIXTURE_CHECKING_UID, "2026-06-01", TODAY),
+		);
+
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status: 422, providerCode: "WRONG_TRANSACTIONS_PERIOD" });
+		expect(dateFroms(requests)).toEqual([
+			"2026-06-01",
+			"2026-06-26",
+			"2026-06-27",
+			"2026-07-26",
+			"2026-08-25",
+		]);
 	});
 
 	it("asks for no longer window than a short one the bank refused", async () => {
