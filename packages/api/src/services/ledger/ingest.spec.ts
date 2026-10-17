@@ -1845,7 +1845,7 @@ describe("ingest from a bank connection", () => {
 				balance: null,
 				rejected: [],
 			},
-			{ connectionId: bank.connectionId, missesFrom: null },
+			{ connectionId: bank.connectionId },
 			{ origin: "sync", dryRun: true },
 		);
 

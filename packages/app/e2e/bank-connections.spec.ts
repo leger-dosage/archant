@@ -368,6 +368,7 @@ test("Banques connectées comes first, and no bank is listed or asked for before
 	await expect(page.getByRole("main").getByRole("heading", { level: 2 })).toHaveText([
 		"Banques connectées",
 		"Connecter une banque",
+		"Paramètres de synchronisation",
 		"Application Enable Banking",
 	]);
 	await expect(page.getByRole("list", { name: "Banques disponibles" })).toHaveCount(0);
@@ -1153,6 +1154,56 @@ test("linking an account syncs the bank's lines, once, and the pages show the la
 		.filter({ has: page.locator(`[href="/settings/banks/${connectionId}"]`) });
 	await expect(row).toContainText("Dernière synchronisation :");
 	await expect(row).not.toContainText("Jamais synchronisée");
+});
+
+// Story 29.6: Sure's « Inclure les transactions en attente », on by default.
+const includePending = (page: Page) =>
+	page
+		.getByRole("region", { name: "Paramètres de synchronisation" })
+		.getByRole("switch", { name: "Inclure les transactions en attente" });
+
+test("« Inclure les transactions en attente » off syncs no pending line, and on again brings them back", async ({
+	page,
+}) => {
+	await visit(page);
+	await expect(includePending(page)).toBeChecked();
+	await expect(includePending(page)).toHaveAccessibleDescription(
+		/les transactions en attente \(non confirmées\) seront importées/u,
+	);
+
+	try {
+		await includePending(page).click();
+		await expect(toast(page, "Paramètres mis à jour")).toBeVisible();
+		await expect(includePending(page)).not.toBeChecked();
+		await page.reload();
+		await expect(includePending(page)).not.toBeChecked();
+
+		await connect(page);
+		await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+		await validate(page).click();
+		await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+		const withoutPending = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+		await page.goto(`/accounts/${withoutPending}`);
+		await expect(transactionRow(page, FAKE_LINES.groceries.label)).toContainText(euros(-4290));
+		await expect(transactionRow(page, FAKE_LINES.pending.label)).toHaveCount(0);
+		await expect(page.getByRole("main")).toContainText("1 234,56 €");
+	} finally {
+		await visit(page);
+
+		if (!(await includePending(page).isChecked())) {
+			await includePending(page).click();
+			await expect(toast(page, "Paramètres mis à jour")).toBeVisible();
+		}
+	}
+
+	await expect(includePending(page)).toBeChecked();
+	await connect(page);
+	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
+	await validate(page).click();
+	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	const withPending = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
+	await page.goto(`/accounts/${withPending}`);
+	await expect(transactionRow(page, FAKE_LINES.pending.label)).toContainText("En attente");
 });
 
 test("an account the bank fails to list shows the error, and the other one still syncs", async ({

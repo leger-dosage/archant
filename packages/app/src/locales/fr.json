@@ -694,8 +694,7 @@
 			"removeAction": "Supprimer",
 			"removeTitle": "Supprimer la pièce jointe ?",
 			"removeDescription": "« {{name}} » sera supprimée définitivement.",
-			"refused": "« {{name}} » : {{message}}",
-			"pending": "Opération en attente : si la banque ne la confirme pas, elle sera supprimée avec ses pièces jointes."
+			"refused": "« {{name}} » : {{message}}"
 		}
 	},
 	"operations": {
@@ -2480,6 +2479,12 @@
 			"title": "Aucune banque connectée pour l'instant",
 			"description": "Choisissez votre banque : ses comptes arriveront ici une fois votre accord donné.",
 			"action": "Choisir une banque"
+		},
+		"syncSettings": {
+			"title": "Paramètres de synchronisation",
+			"includePending": "Inclure les transactions en attente",
+			"includePendingDescription": "Lorsque cette option est activée, les transactions en attente (non confirmées) seront importées et automatiquement réconciliées lors de leur validation. Désactivez si votre banque fournit des données de transactions en attente peu fiables.",
+			"saved": "Paramètres mis à jour"
 		},
 		"consentUntil": "Consentement valable jusqu'au {{date}}",
 		"sync": {

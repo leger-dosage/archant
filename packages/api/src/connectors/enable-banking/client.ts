@@ -342,6 +342,13 @@ export function withoutSettledPending(raw: readonly unknown[]): Set<number> {
 	return kept;
 }
 
+/** Whether a raw line is one the bank lists as pending, `PDNG`. */
+function isPending(raw: unknown): boolean {
+	const parsed = transactionSchema.safeParse(raw);
+
+	return parsed.success && parsed.data.status === "PDNG";
+}
+
 /**
  * One line as the ledger takes it (AD-18); `null` when it is neither booked
  * nor pending, or dated before `since` because the bank ignored `date_from`;
@@ -621,15 +628,23 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 	 * One page from `from`, Sure's `get_account_transactions`: while the bank
 	 * refuses the period, asked again from `nextStart` with the same key. The
 	 * last refusal throws. Returns the page and the start it was accepted from.
+	 * Without `includePending`, the page asks `transaction_status=BOOK`, as
+	 * Sure's importer; with it, no status, so one read returns both, where
+	 * Sure's second `PDNG` read would only double the bank's unattended calls.
 	 */
 	async function fetchPage(
 		uid: string,
 		from: IsoDate,
 		continuationKey: string | null,
 		today: IsoDate,
+		includePending: boolean,
 		attempt = 0,
 	): Promise<{ page: z.output<typeof transactionsPageSchema>; from: IsoDate }> {
 		const query = new URLSearchParams({ date_from: from });
+
+		if (!includePending) {
+			query.set("transaction_status", "BOOK");
+		}
 
 		if (continuationKey !== null) {
 			query.set("continuation_key", continuationKey);
@@ -656,7 +671,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 				throw error;
 			}
 
-			return fetchPage(uid, next, continuationKey, today, attempt + 1);
+			return fetchPage(uid, next, continuationKey, today, includePending, attempt + 1);
 		}
 	}
 
@@ -673,6 +688,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 		uid: string,
 		since: IsoDate,
 		today: IsoDate,
+		includePending: boolean,
 	): Promise<{ lines: unknown[]; from: IsoDate; cutShort: ProviderFailure | null }> {
 		const seen = new Set<string>();
 		const lines: unknown[] = [];
@@ -684,7 +700,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			let answer: Awaited<ReturnType<typeof fetchPage>>;
 
 			try {
-				answer = await fetchPage(uid, since, continuationKey, today);
+				answer = await fetchPage(uid, since, continuationKey, today, includePending);
 			} catch (error) {
 				if (
 					page === 0 ||
@@ -849,14 +865,22 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 
 		fetchBalance,
 
-		async fetchStatement(uid, since, today, knownMerchants): Promise<BankStatement> {
-			const { lines, from, cutShort } = await fetchLines(uid, since, today);
+		async fetchStatement(
+			uid,
+			since,
+			today,
+			knownMerchants,
+			includePending,
+		): Promise<BankStatement> {
+			const { lines, from, cutShort } = await fetchLines(uid, since, today, includePending);
 			const unique = withoutRepeats(lines);
 			const unsettled = withoutSettledPending(lines);
 			const statement: BankStatement = { transactions: [], rejected: [], from, cutShort };
 
 			for (const [position, raw] of lines.entries()) {
-				const kept = unique.has(position) && unsettled.has(position);
+				// A bank may ignore `transaction_status=BOOK`: Sure drops its pending lines all the same.
+				const kept =
+					unique.has(position) && unsettled.has(position) && (includePending || !isPending(raw));
 				// From the start asked for, as Sure's `filter_transactions_by_date`:
 				// a later page retried from a later start keeps the earlier pages' lines.
 				const mapped = kept ? toTransaction(raw, since, knownMerchants) : null;

@@ -1997,7 +1997,8 @@ describe("recurring transactions", () => {
 		await before.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
 		before.$client.close();
 
-		const database = await migrated();
+		// 0086 drops the missed syncs again.
+		const database = await migratedBefore("0086");
 
 		await expect(
 			database.all(
@@ -2512,7 +2513,8 @@ describe("pending transactions", () => {
 		await insertKey(before, "fp:1", "e1", "csv");
 		before.$client.close();
 
-		const database = await migrated();
+		// 0086 drops the missed syncs again.
+		const database = await migratedBefore("0086");
 
 		await expect(
 			database.all(
@@ -2535,7 +2537,8 @@ describe("pending transactions", () => {
 	});
 
 	it("starts a transaction booked with no missed sync", async () => {
-		const database = await migrated();
+		// 0086 drops the missed syncs again.
+		const database = await migratedBefore("0086");
 		await insertAccount(database, "a1", "depository", "checking");
 		await insertEntry(database, "e1", "transaction", null);
 		await database.run(sql`insert into transactions (entry_id, label) values ('e1', 'A')`);
@@ -2621,13 +2624,45 @@ describe("pending misses by day", () => {
 		);
 		before.$client.close();
 
-		const database = await migrated();
+		// 0086 drops both columns again.
+		const database = await migratedBefore("0086");
 
 		await expect(
 			database.all(
 				sql`select entry_id as entryId, pending, pending_missed_syncs as missed, pending_missed_on as missedOn from transactions`,
 			),
 		).resolves.toEqual([{ entryId: "e1", pending: 1, missed: 1, missedOn: null }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps every pending transaction, its keys and taggings, and drops the missed syncs when 0086 runs", async () => {
+		const before = await migratedBefore("0086");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, pending, pending_missed_syncs, pending_missed_on) values ('e1', 'Carte', 1, 1, '2026-09-20')`,
+		);
+		await insertKey(before, "ext:1", "e1", "enable-banking");
+		await insertTag(before, "t1", "Pain");
+		await before.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select entry_id as entryId, label, pending from transactions`),
+		).resolves.toEqual([{ entryId: "e1", label: "Carte", pending: 1 }]);
+		await expect(
+			database.all(
+				sql`select name from pragma_table_info('transactions') where name like 'pending_missed%'`,
+			),
+		).resolves.toEqual([]);
+		await expect(
+			database.all(sql`select entry_id as entryId, key from entry_keys`),
+		).resolves.toEqual([{ entryId: "e1", key: "ext:1" }]);
+		await expect(database.all(sql`select transaction_id as id from taggings`)).resolves.toEqual([
+			{ id: "e1" },
+		]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 });

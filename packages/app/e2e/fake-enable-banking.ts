@@ -14,7 +14,7 @@ import { TIME_ZONE } from "./settings.ts";
  * the bank's consent page, which approves at once and
  * sends the browser back to `redirect_url` with a `code` and the `state`,
  * and `/accounts/{uid}/transactions`, two pages of lines dated a few days
- * back.
+ * back, its booked ones alone when asked `transaction_status=BOOK`.
  * It checks each request's RS256 token against the public key, as the real
  * service would refuse an unsigned one.
  */
@@ -623,14 +623,19 @@ export async function startFakeEnableBanking(options: {
 					continuationKey === null &&
 					(url.searchParams.get("date_from") ?? "") <= daysAgo(OLD_LINE.daysAgo);
 
-				json(
-					response,
-					200,
-					transactionsPage(uid, continuationKey, {
-						withSlowLine: (slowRead ?? 0) > 0,
-						withOldLine,
-					}),
-				);
+				const statement = transactionsPage(uid, continuationKey, {
+					withSlowLine: (slowRead ?? 0) > 0,
+					withOldLine,
+				});
+				const status = url.searchParams.get("transaction_status");
+
+				json(response, 200, {
+					...statement,
+					transactions:
+						status === null
+							? statement.transactions
+							: statement.transactions.filter((line) => line.status === status),
+				});
 				return;
 			}
 

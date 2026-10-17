@@ -269,7 +269,7 @@ describe("every ledger delete", () => {
 		await expect(rowsOf(parent)).resolves.toHaveLength(1);
 	});
 
-	it("deletes the attachments of a pending line missing from syncs on two days", async () => {
+	it("keeps the attachments of a pending line missing from syncs on two days, as Sure keeps the line", async () => {
 		const { account, bank } = await linkedChecking();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [
 			pendingLine(-transferAmount(), { date: "2026-09-21" }),
@@ -281,8 +281,8 @@ describe("every ledger delete", () => {
 		setToday("2026-09-23T10:00:00Z");
 		await sync(account.id, bank.connectionId, []);
 
-		await expect(rowOf(id)).resolves.toBeUndefined();
-		await expect(rowsOf(id)).resolves.toEqual([]);
+		await expect(rowOf(id)).resolves.toMatchObject({ pending: true });
+		await expect(rowsOf(id)).resolves.toHaveLength(1);
 	});
 });
 

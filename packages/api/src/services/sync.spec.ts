@@ -35,6 +35,7 @@ import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { updateAccount } from "./accounts.ts";
 import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
+import { saveBankSyncSettings } from "./bank-settings.ts";
 import { encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
@@ -103,6 +104,7 @@ beforeEach(async () => {
 	// tests' ones are set aside rather than removed.
 	await temp.db.update(accounts).set({ bankAccountId: null, active: false });
 	await temp.db.delete(bankConnections);
+	await saveBankSyncSettings(deps(), { includePending: true });
 });
 
 async function newConnection(fields: Partial<typeof bankConnections.$inferInsert> = {}) {
@@ -170,8 +172,8 @@ async function transactionCount(accountId: string) {
 }
 
 async function pendingOf(accountId: string) {
-	return temp.db.all<{ date: string; amount: number; missed: number }>(
-		sql`select e.date, e.amount, t.pending_missed_syncs as missed from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and t.pending = 1 order by e.date`,
+	return temp.db.all<{ date: string; amount: number }>(
+		sql`select e.date, e.amount from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and t.pending = 1 order by e.date`,
 	);
 }
 
@@ -349,46 +351,25 @@ const balanceRequests = (requests: ReturnType<typeof mockProvider>) =>
 
 describe("windowStart", () => {
 	it("reads three months back for an account never synced", () => {
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, null)).toBe("2026-06-24");
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", null)).toBe("2026-06-24");
 		// Rails' `3.months.ago` on the 31st of May: the last day of February.
-		expect(windowStart(null, "2026-05-31", "Europe/Paris", null, null)).toBe("2026-02-28");
+		expect(windowStart(null, "2026-05-31", "Europe/Paris", null)).toBe("2026-02-28");
 	});
 
 	it("reads from seven days before the last sync, on its day in the app's zone", () => {
 		// 23:30 UTC on the 20th is the 21st in Paris.
 		expect(
-			windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris", null, null),
+			windowStart(Date.parse("2026-09-20T23:30:00Z"), "2026-09-24", "Europe/Paris", null),
 		).toBe("2026-09-14");
 	});
 
-	it("starts no later than the oldest pending entry, so its absence means something", () => {
-		const yesterday = Date.parse("2026-09-23T10:00:00Z");
-
-		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-04", null)).toBe(
-			"2026-09-04",
-		);
-		expect(windowStart(yesterday, "2026-09-24", "Europe/Paris", "2026-09-20", null)).toBe(
-			"2026-09-16",
-		);
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2026-06-01", null)).toBe("2026-06-01");
-	});
-
 	it("reads from the connection's start date for an account never synced", () => {
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", null, "2025-01-15")).toBe("2025-01-15");
-		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2024-12-01", "2025-01-15")).toBe(
-			"2024-12-01",
-		);
+		expect(windowStart(null, "2026-09-24", "Europe/Paris", "2025-01-15")).toBe("2025-01-15");
 	});
 
 	it("keeps a synced account's window whatever the start date", () => {
 		expect(
-			windowStart(
-				Date.parse("2026-09-23T10:00:00Z"),
-				"2026-09-24",
-				"Europe/Paris",
-				null,
-				"2025-01-15",
-			),
+			windowStart(Date.parse("2026-09-23T10:00:00Z"), "2026-09-24", "Europe/Paris", "2025-01-15"),
 		).toBe("2026-09-16");
 	});
 });
@@ -417,9 +398,7 @@ describe("syncConnection", () => {
 		);
 		// Five booked lines and the pending one; the informational one stays out.
 		await expect(transactionCount(accountId)).resolves.toBe(6);
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 0 },
-		]);
+		await expect(pendingOf(accountId)).resolves.toEqual([{ date: "2026-09-23", amount: -1200 }]);
 		// The bank's booked 1 234,56: the pending 12,00 counts in no balance.
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
 			amount: 123456,
@@ -706,7 +685,7 @@ describe("syncConnection", () => {
 		await expect(transactionCount(bad.accountId)).resolves.toBe(6);
 	});
 
-	it("reads from the oldest pending entry when it is older than the overlap", async () => {
+	it("reads from seven days before the last sync, however old a pending entry, as Sure", async () => {
 		const requests = mockProvider();
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -719,52 +698,93 @@ describe("syncConnection", () => {
 		await syncConnection(deps(), connectionId);
 
 		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).at(-2)?.search).toBe(
-			"?date_from=2026-09-04",
+			"?date_from=2026-09-17",
 		);
 	});
 
-	it("deletes a pending entry missing from two successful syncs in a row", async () => {
+	it("keeps a pending entry missing from successful syncs on later days, as Sure", async () => {
 		mockProvider();
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 		await syncConnection(deps(), connectionId);
 		withoutPending();
+
 		vi.setSystemTime(NOW + DAY);
+		await syncConnection(deps(), connectionId);
+		vi.setSystemTime(NOW + 2 * DAY);
+		await syncConnection(deps(), connectionId);
+		vi.setSystemTime(NOW + 9 * DAY);
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([{ date: "2026-09-23", amount: -1200 }]);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+	});
+
+	it("asks only for booked lines and leaves pending ones out once the household turns them off, as Sure", async () => {
+		const requests = mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await saveBankSyncSettings(deps(), { includePending: false });
 
 		await syncConnection(deps(), connectionId);
 
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 1 },
-		]);
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
+			[
+				"?date_from=2026-06-24&transaction_status=BOOK",
+				"?date_from=2026-06-24&transaction_status=BOOK&continuation_key=page-2",
+			],
+		);
+		// The fixtures' pending line, which the mock returns all the same.
+		await expect(transactionCount(accountId)).resolves.toBe(5);
+		await expect(pendingOf(accountId)).resolves.toEqual([]);
+	});
+
+	it("keeps the stored pending entries once turned off, and books one by amount, keeping its date", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		await saveBankSyncSettings(deps(), { includePending: false });
+		vi.setSystemTime(NOW + DAY);
+		withoutPending();
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([{ date: "2026-09-23", amount: -1200 }]);
+
+		const page = z
+			.object({ transactions: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.transactionsPage1);
+		mockProvider({
+			transactions: (url) =>
+				url.searchParams.get("continuation_key") === "page-2"
+					? transactionsPage(url)
+					: HttpResponse.json({
+							...page,
+							transactions: page.transactions.map((line) =>
+								line["status"] === "PDNG"
+									? {
+											...line,
+											entry_reference: "20260925-0009",
+											status: "BOOK",
+											booking_date: "2026-09-25",
+										}
+									: line,
+							),
+						}),
+		});
 		vi.setSystemTime(NOW + 2 * DAY);
 
 		await syncConnection(deps(), connectionId);
 
 		await expect(pendingOf(accountId)).resolves.toEqual([]);
-		await expect(transactionCount(accountId)).resolves.toBe(5);
-		await expect(balanceOn(deps(), accountId, "2026-09-26")).resolves.toMatchObject({
-			amount: 123456,
-		});
-	});
-
-	it("counts one miss for two syncs an hour apart without the pending line", async () => {
-		mockProvider();
-		const connectionId = await newConnection();
-		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await syncConnection(deps(), connectionId);
-		withoutPending();
-		vi.setSystemTime(NOW + DAY);
-		await syncConnection(deps(), connectionId);
-		// Just over an hour on: the spacing between syncs refuses anything sooner.
-		vi.setSystemTime(NOW + DAY + 61 * MINUTE);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
-			lastError: null,
-		});
-
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 1 },
-		]);
+		await expect(transactionCount(accountId)).resolves.toBe(6);
+		await expect(
+			temp.db.all(
+				sql`select e.date from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and e.amount = -1200`,
+			),
+		).resolves.toEqual([{ date: "2026-09-23" }]);
 	});
 
 	it("keeps one entry for a pending line listed beside its booked version", async () => {
@@ -798,50 +818,11 @@ describe("syncConnection", () => {
 		await syncConnection(deps(), connectionId);
 
 		await expect(transactionCount(accountId)).resolves.toBe(6);
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 0 },
-		]);
+		await expect(pendingOf(accountId)).resolves.toEqual([{ date: "2026-09-23", amount: -1200 }]);
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toEqual({
 			amount: 123456,
 			currency: "EUR",
 		});
-	});
-
-	it("starts the count over when the pending line comes back", async () => {
-		mockProvider();
-		const connectionId = await newConnection();
-		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await syncConnection(deps(), connectionId);
-		withoutPending();
-		vi.setSystemTime(NOW + DAY);
-		await syncConnection(deps(), connectionId);
-		mockProvider();
-		vi.setSystemTime(NOW + 2 * DAY);
-
-		await syncConnection(deps(), connectionId);
-
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 0 },
-		]);
-	});
-
-	it("never counts a failed sync as a miss", async () => {
-		mockProvider();
-		const connectionId = await newConnection();
-		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await syncConnection(deps(), connectionId);
-		withoutPending();
-		vi.setSystemTime(NOW + DAY);
-		await syncConnection(deps(), connectionId);
-		failingOn(FIXTURE_CHECKING_UID);
-		vi.setSystemTime(NOW + 2 * DAY);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toMatchObject({
-			lastError: "BANK_PROVIDER_ERROR",
-		});
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 1 },
-		]);
 	});
 
 	it("refuses while another sync holds the lease, and reads nothing", async () => {
@@ -1322,9 +1303,7 @@ describe("a bank read that fails part way", () => {
 		await expect(transactionCount(accountId)).resolves.toBe(6);
 		await expect(anchorOf(accountId)).resolves.toEqual(anchor);
 		expect(anchor).toMatchObject({ amount: 100000 });
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 0 },
-		]);
+		await expect(pendingOf(accountId)).resolves.toEqual([{ date: "2026-09-23", amount: -1200 }]);
 		await expect(bankAccountSyncedAt(bankAccountId)).resolves.toBe(NOW);
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({
 			lastSyncedAt: NOW,
@@ -1457,43 +1436,6 @@ describe("a bank read that fails part way", () => {
 		);
 	});
 
-	it("counts no miss on a pending entry older than the window the bank accepted", async () => {
-		mockProvider();
-		const connectionId = await newConnection();
-		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await syncConnection(deps(), connectionId);
-		// Eighty days before the next sync's day, the 25th.
-		await temp.db.run(
-			sql`update entries set date = '2026-07-07' where account_id = ${accountId} and id in (select entry_id from transactions where pending = 1)`,
-		);
-		vi.setSystemTime(NOW + DAY);
-		const requests = refusingBefore("2026-07-27", (url) =>
-			url.searchParams.get("continuation_key") === "page-2"
-				? transactionsPage(url)
-				: firstPage(false),
-		);
-
-		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
-			lastSyncedAt: NOW + DAY,
-			lastError: null,
-		});
-		// The 89-day window starts before the refused one: never asked.
-		expect(transactionRequests(requests, FIXTURE_CHECKING_UID).map(({ search }) => search)).toEqual(
-			[
-				"?date_from=2026-07-07",
-				"?date_from=2026-07-27",
-				"?date_from=2026-07-07&continuation_key=page-2",
-				"?date_from=2026-07-27&continuation_key=page-2",
-			],
-		);
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-07-07", amount: -1200, missed: 0 },
-		]);
-		expect(logged()).toContainEqual(
-			expect.objectContaining({ msg: "bank account window shortened", windowDays: 60 }),
-		);
-	});
-
 	it("fails the account and writes nothing on a 500 after page one", async () => {
 		const requests = failingOnPageTwo();
 		const connectionId = await newConnection();
@@ -1560,21 +1502,6 @@ describe("a bank read that fails part way", () => {
 			);
 		},
 	);
-
-	it("counts no miss on a read cut short", async () => {
-		mockProvider();
-		const connectionId = await newConnection();
-		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
-		await syncConnection(deps(), connectionId);
-		failingOnPageTwo(false, 422, "WRONG_REQUEST_PARAMETERS");
-		vi.setSystemTime(NOW + DAY);
-
-		await syncConnection(deps(), connectionId);
-
-		await expect(pendingOf(accountId)).resolves.toEqual([
-			{ date: "2026-09-23", amount: -1200, missed: 0 },
-		]);
-	});
 });
 
 describe("a bank connected again", () => {

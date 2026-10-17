@@ -662,21 +662,17 @@ export async function linkedChecking(balance = 100000, overrides: Partial<NewAcc
 	return { account, bank };
 }
 
-/** A read that speaks for every pending entry, however old. */
-export const EVERY_DAY = "2000-01-01";
-
 export const sync = (
 	accountId: string,
 	connectionId: string,
 	lines: NormalizedTransaction[],
 	balance: ParsedStatement["balance"] = null,
-	missesFrom: string | null = EVERY_DAY,
 ) =>
 	ingest(
 		deps(),
 		accountId,
 		{ transactions: lines, balance, rejected: [] },
-		{ connectionId, missesFrom },
+		{ connectionId },
 		{ origin: "sync" },
 	);
 
@@ -694,7 +690,7 @@ export async function keyRows(entryId: string) {
 		.where(eq(entryKeys.entryId, entryId));
 }
 
-// Story 10.4: pending lines, their booked version and their disappearance.
+// Story 10.4: pending lines and their booked version.
 
 // Amounts of their own: step 6 would link them to another test's rows.
 export const pendingLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) =>
@@ -715,8 +711,6 @@ export async function rowOf(entryId: string) {
 			label: transactions.label,
 			notes: transactions.notes,
 			pending: transactions.pending,
-			missed: transactions.pendingMissedSyncs,
-			missedOn: transactions.pendingMissedOn,
 		})
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))

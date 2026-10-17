@@ -1907,7 +1907,7 @@ async function synced() {
 			balance: null,
 			rejected: [],
 		},
-		{ connectionId: linked.connection.id, missesFrom: "2026-06-26" },
+		{ connectionId: linked.connection.id },
 		{ origin: "sync" },
 	);
 

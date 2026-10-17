@@ -10,7 +10,6 @@ import { entries } from "@archant/data/schema/entries";
 import { transactions } from "@archant/data/schema/transactions";
 
 import {
-	EVERY_DAY,
 	add,
 	closingOn,
 	deps,
@@ -462,7 +461,7 @@ describe("unlinkBankAccount", () => {
 				balance: null,
 				rejected: [],
 			},
-			{ connectionId: bank.connectionId, missesFrom: EVERY_DAY },
+			{ connectionId: bank.connectionId },
 			{ origin: "sync" },
 		);
 		const before = await history(account.id);

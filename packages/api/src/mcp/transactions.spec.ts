@@ -203,7 +203,7 @@ async function bankLine(accountId: string) {
 				balance: null,
 				rejected: [],
 			},
-			{ connectionId, missesFrom: null },
+			{ connectionId },
 			{ origin: "sync" },
 		);
 	const [id] = (await resync()).created;
@@ -1252,7 +1252,7 @@ describe("get_transactions sorted and filtered as Sure's", () => {
 				balance: null,
 				rejected: [],
 			},
-			{ connectionId, missesFrom: null },
+			{ connectionId },
 			{ origin: "sync" },
 		);
 
