@@ -88,4 +88,12 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 		},
 	});
 	expect(saved.status()).toBe(200);
+
+	// Story 29.9: the server's own daily sync, on at 02:22 by default, would
+	// sync every test connection behind the tests' backs on a run crossing
+	// that minute. The settings test turns it on and off again.
+	const settings = await page.request.put("/api/bank-connections/settings", {
+		data: { includePending: true, autoSyncEnabled: false, autoSyncTime: "02:22" },
+	});
+	expect(settings.status()).toBe(200);
 });

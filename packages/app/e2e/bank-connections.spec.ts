@@ -590,6 +590,21 @@ async function choose(page: Page, name: string, option: string) {
 
 const validate = (page: Page) => page.getByRole("button", { name: "Valider" });
 
+/**
+ * « Valider », then the answer of the sync the link starts. The first visit
+ * already stamps a new connection, so « à l'instant » alone no longer says
+ * that sync has ended.
+ */
+async function validateAndSync(page: Page) {
+	const synced = page.waitForResponse(
+		(response) =>
+			response.request().method() === "POST" &&
+			/\/api\/bank-connections\/[^/]+\/sync$/u.test(new URL(response.url()).pathname),
+	);
+	await validate(page).click();
+	await synced;
+}
+
 /** The accounts column's link to an account, which carries its balance. */
 const columnAccount = (page: Page, accountId: string) =>
 	page
@@ -1087,7 +1102,7 @@ test("the first sync reads from the date chosen two years back, keeps what the b
 
 	await startDate(page).fill(typed(monthsBack(24)));
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-	await validate(page).click();
+	await validateAndSync(page);
 
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
@@ -1106,11 +1121,13 @@ test("the first sync reads from the date chosen two years back, keeps what the b
 test("linking an account syncs the bank's lines, once, and the pages show the last sync", async ({
 	page,
 }) => {
+	// Nothing linked yet: the first visit's sync has nothing to read and
+	// stamps the connection, as Sure's item sync completes.
 	const connectionId = await connect(page);
-	await expect(page.getByText("Jamais synchronisée")).toBeVisible();
+	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-	await validate(page).click();
+	await validateAndSync(page);
 
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
@@ -1143,12 +1160,14 @@ test("linking an account syncs the bank's lines, once, and the pages show the la
 	).toBeVisible();
 	await page.keyboard.press("Escape");
 
-	// A second run within the hour is refused, and nothing is fetched twice.
+	// A second run minutes later syncs again, as Sure's waits only for a
+	// running sync, and no line comes twice.
 	await page.goto(`/settings/banks/${connectionId}`);
 	await page.getByRole("button", { name: "Synchroniser" }).click();
-	await expect(
-		toast(page, "Cette banque a été synchronisée il y a moins d'une heure."),
-	).toBeVisible();
+	await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
+	await page.goto(`/accounts/${accountId}`);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toHaveCount(1);
+	await expect(transactionRow(page, FAKE_LINES.pending.label)).toHaveCount(1);
 
 	await visit(page);
 	const row = page
@@ -1209,6 +1228,72 @@ test("« Inclure les transactions en attente » off syncs no pending line, and o
 	await expect(transactionRow(page, FAKE_LINES.pending.label)).toContainText("En attente");
 });
 
+// Story 29.9: Sure's daily sync. `setup` turns it off, so the server's timer
+// never syncs test connections at 02:22; Vitest covers Sure's defaults.
+const syncSettings = (page: Page) =>
+	page.getByRole("region", { name: "Paramètres de synchronisation" });
+const autoSync = (page: Page) =>
+	syncSettings(page).getByRole("switch", { name: "Activer la synchronisation automatique" });
+const syncTime = (page: Page) => syncSettings(page).getByLabel("Heure de synchronisation (HH:MM)");
+
+test("« Heure de synchronisation » saves a new time, and auto sync turns on and off, both kept after a reload", async ({
+	page,
+}) => {
+	await visit(page);
+	await expect(autoSync(page)).not.toBeChecked();
+	await expect(autoSync(page)).toHaveAccessibleDescription(
+		"Lorsque cette option est activée, tous les comptes seront automatiquement synchronisés quotidiennement à l'heure spécifiée.",
+	);
+	await expect(syncTime(page)).toHaveValue("02:22");
+	await expect(syncTime(page)).toBeDisabled();
+	await expect(syncTime(page)).toHaveAccessibleDescription(
+		"Spécifiez l'heure à laquelle la synchronisation automatique doit se produire.",
+	);
+
+	try {
+		await autoSync(page).click();
+		await expect(toast(page, "Paramètres mis à jour")).toBeVisible();
+		await expect(autoSync(page)).toBeChecked();
+		await expect(syncTime(page)).toBeEnabled();
+		await page.reload();
+		await expect(autoSync(page)).toBeChecked();
+
+		await syncTime(page).fill("07:45");
+		await syncTime(page).blur();
+		await expect(toast(page, "Paramètres mis à jour")).toBeVisible();
+		await page.reload();
+		await expect(autoSync(page)).toBeChecked();
+		await expect(syncTime(page)).toHaveValue("07:45");
+
+		// A time Sure's format refuses, here none, is Sure's message, and the
+		// field shows the saved time again.
+		await syncTime(page).fill("");
+		await syncTime(page).blur();
+		await expect(
+			toast(
+				page,
+				"Format d'heure de synchronisation invalide. Veuillez utiliser le format HH:MM (ex. 02:30).",
+			),
+		).toBeVisible();
+		await expect(syncTime(page)).toHaveValue("07:45");
+
+		await autoSync(page).click();
+		await expect(toast(page, "Paramètres mis à jour")).toHaveCount(1);
+		await expect(autoSync(page)).not.toBeChecked();
+		await expect(syncTime(page)).toBeDisabled();
+		await page.reload();
+		await expect(autoSync(page)).not.toBeChecked();
+		await expect(syncTime(page)).toBeDisabled();
+		await expect(syncTime(page)).toHaveValue("07:45");
+	} finally {
+		// As `setup` left them, for every later test of the shared database.
+		await page.request.put("/api/bank-connections/settings", {
+			headers: { origin: WEB_URL },
+			data: { includePending: true, autoSyncEnabled: false, autoSyncTime: "02:22" },
+		});
+	}
+});
+
 test("an account the bank fails to list shows the error, and the other one still syncs", async ({
 	page,
 }) => {
@@ -1223,7 +1308,6 @@ test("an account the bank fails to list shows the error, and the other one still
 			"La dernière synchronisation a échoué : Enable Banking n'a pas répondu correctement.",
 		),
 	).toBeVisible();
-	await expect(page.getByText("Jamais synchronisée")).toBeVisible();
 
 	const checkingId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 	const cardId = await linkedAccountId(page, FAKE_ACCOUNTS.card.name);
@@ -1260,8 +1344,7 @@ test("a bank that gives no balance on sync still brings its lines, and says the 
 	// The 1 234,56 € given when linked, the pending 3,20 € left out.
 	await expect(page.getByRole("main")).toContainText("1 234,56 €");
 
-	// Two hours later, the button's own sync warns rather than fails.
-	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
+	// The button's own sync warns rather than fails.
 	await page.goto(`/settings/banks/${connectionId}`);
 	await page.getByRole("button", { name: "Synchroniser" }).click();
 	await expect(
@@ -1277,11 +1360,10 @@ test("a bank that gives no balance on sync still brings its lines, and says the 
 test("a bank balance a later sync supersedes stays in Soldes on its own day", async ({ page }) => {
 	const connectionId = await connect(page, DATED_BANK);
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-	await validate(page).click();
+	await validateAndSync(page);
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
-	// The sync the link starts, done: aged while it runs, the connection
-	// would end it synced « à l'instant » and refuse the one below.
+	// The sync the link starts, done, so the one below is no longer running.
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 	// The first figure, 1 200,00 €: no booked line since.
 	await toTransactions(page);
@@ -1291,10 +1373,9 @@ test("a bank balance a later sync supersedes stays in Soldes on its own day", as
 	// moves back a day as if that sync had run yesterday.
 	await anchorOn(accountId, yesterday);
 
-	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
 	await page.goto(`/settings/banks/${connectionId}`);
 	await page.getByRole("button", { name: "Synchroniser" }).click();
-	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+	await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
 
 	await toTransactions(page);
 	await expect(columnAccount(page, accountId)).toContainText(euros(123_456));
@@ -1311,7 +1392,7 @@ test("« Solde d'ouverture » on a linked account moves the opening day, the ban
 }) => {
 	await connect(page);
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-	await validate(page).click();
+	await validateAndSync(page);
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	const accountId = await linkedAccountId(page, FAKE_ACCOUNTS.checking.name);
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
@@ -1371,10 +1452,9 @@ test("a synced transaction deleted from its sheet comes back at the next sync", 
 	await expect(sheet).toBeHidden();
 	await expect(transactionRow(page, label)).toHaveCount(0);
 
-	await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60_000 });
 	await page.goto(`/settings/banks/${connectionId}`);
 	await page.getByRole("button", { name: "Synchroniser" }).click();
-	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+	await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
 
 	await page.goto(`/accounts/${accountId}`);
 	await expect(transactionRow(page, FAKE_LINES.salary.label)).toBeVisible();
@@ -1464,7 +1544,7 @@ async function anchorOn(accountId: string, day: string) {
 /** A connection whose accounts are both linked and synced, with the ids of those accounts. */
 async function connectAndLink(page: Page) {
 	const connectionId = await connect(page);
-	await validate(page).click();
+	await validateAndSync(page);
 	await expect(toast(page, "2 comptes reliés à la banque.")).toBeVisible();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 
@@ -1483,9 +1563,8 @@ test("an expiring consent shows a banner on every page, and renewing it keeps th
 
 	try {
 		const expiresAt = Date.now() + 10 * DAY_MS;
-		// Synced minutes ago, within the hour: « à l'instant » after the
-		// renewal can then only come from the sync the return page starts,
-		// which the renewal alone lets through.
+		// Synced minutes ago: « à l'instant » after the renewal can then only
+		// come from the sync the return page starts.
 		await age(connectionId, {
 			consentExpiresAt: expiresAt,
 			lastSyncedAt: Date.now() - 5 * 60 * 1000,
@@ -1601,7 +1680,7 @@ test("a session the bank revoked ends the consent at the first visit of the day,
 
 	try {
 		await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-		await validate(page).click();
+		await validateAndSync(page);
 		await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 		await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 
@@ -1714,8 +1793,7 @@ test("unlinking one account keeps it manual with its balance, offers its bank ac
 		await expect(choice(page, FAKE_ACCOUNTS.checking.name)).toBeVisible();
 		await expect(linkedAccountId(page, FAKE_ACCOUNTS.card.name)).resolves.toBe(cardId);
 
-		// Past the hour between two syncs, the connection syncs its card alone.
-		await age(connectionId, { lastSyncedAt: Date.now() - 2 * 60 * 60 * 1000 });
+		// Minutes after the last sync, the connection syncs its card alone.
 		await page.getByRole("button", { name: "Synchroniser" }).click();
 		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
 		await expect(toast(page, "Synchronisation terminée avec une erreur.")).toHaveCount(0);
@@ -1854,7 +1932,7 @@ test("a bank connected under credentials that no longer decrypt is listed above 
 async function connectSlowBank(page: Page) {
 	const connectionId = await connect(page, SLOW_BANK);
 	await choose(page, FAKE_ACCOUNTS.card.name, "Ignorer");
-	await validate(page).click();
+	await validateAndSync(page);
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 

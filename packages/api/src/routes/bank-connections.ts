@@ -1,8 +1,10 @@
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
+import type { Context } from "hono";
 
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 
+import { forwardedFor, psuAddress } from "../lib/client-address.ts";
 import { validated } from "../lib/validated.ts";
 import {
 	bankSyncSettingsSchema,
@@ -32,7 +34,25 @@ import { bankSyncSettings, saveBankSyncSettings } from "../services/bank-setting
 import { syncConnection } from "../services/sync.ts";
 import { requireRole } from "./middleware/roles.ts";
 
-export function bankConnectionsRoutes(deps: BankConnectionDeps) {
+type BankRouteDeps = BankConnectionDeps & {
+	/** `TRUSTED_PROXIES`, as the sign-in limit reads them. */
+	trustedProxies: string[];
+	/** The TCP peer's address, `undefined` for an in-process request. */
+	clientAddress: (c: Context) => string | undefined;
+};
+
+export function bankConnectionsRoutes(deps: BankRouteDeps) {
+	/** The browser's address for the bank's `Psu-Ip-Address`, Sure's `request.remote_ip`. */
+	const addressOf = (c: Context) =>
+		psuAddress(
+			forwardedFor(
+				c.req.header("x-forwarded-for") ?? null,
+				deps.clientAddress(c),
+				deps.trustedProxies.length > 0,
+			),
+			deps.trustedProxies,
+		);
+
 	return (
 		new Hono()
 			// Always answers an administrator: the page reads it to name what is
@@ -75,10 +95,10 @@ export function bankConnectionsRoutes(deps: BankConnectionDeps) {
 			)
 			.get("/institutions", async (c) => c.json({ data: await listInstitutions(deps) }, 200))
 			.post("/", validated("json", startConnectionSchema), async (c) =>
-				c.json({ data: await startConnection(deps, c.req.valid("json")) }, 200),
+				c.json({ data: await startConnection(deps, c.req.valid("json"), addressOf(c)) }, 200),
 			)
 			.post("/callback", validated("json", completeConnectionSchema), async (c) =>
-				c.json({ data: await completeConnection(deps, c.req.valid("json")) }, 200),
+				c.json({ data: await completeConnection(deps, c.req.valid("json"), addressOf(c)) }, 200),
 			)
 			.post("/:id/sync", validated("param", connectionParamSchema), async (c) =>
 				c.json({ data: await syncConnection(deps, c.req.valid("param").id) }, 200),

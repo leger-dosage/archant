@@ -866,35 +866,123 @@ describe("/api/bank-connections", () => {
 	});
 });
 
+const storedAddress = async () =>
+	own?.db.all<{ address: string | null }>(
+		sql`select psu_ip_address as address from bank_connections`,
+	);
+
+describe("the browser's address for the bank", () => {
+	it("stores the TCP peer at the start, whatever the client claims, and never returns it", async () => {
+		const requests = mockProvider();
+		const app = await bankApp(configuredBank(), { peer: "203.0.113.7" });
+
+		const started = await app.request("/api/bank-connections", {
+			method: "POST",
+			headers: { "content-type": "application/json", "x-forwarded-for": "198.51.100.1" },
+			body: JSON.stringify({ institution: "Banque Test" }),
+		});
+
+		expect(started.status).toBe(200);
+		await expect(storedAddress()).resolves.toEqual([{ address: "203.0.113.7" }]);
+
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+		const completed = await testClient(app).api["bank-connections"].callback.$post({
+			json: { code: "the-code", state },
+		});
+		const listed = await testClient(app).api["bank-connections"].$get();
+
+		expect(JSON.stringify(await completed.json())).not.toContain("203.0.113.7");
+		expect(JSON.stringify(await listed.json())).not.toContain("203.0.113.7");
+		expect(logLines.join("\n")).not.toContain("203.0.113.7");
+		expect(requests.every(({ psuIpAddress }) => psuIpAddress === null)).toBe(true);
+	});
+
+	it("reads the client past a trusted proxy at the callback, an IPv6 address kept whole", async () => {
+		const requests = mockProvider();
+		const app = await bankApp(configuredBank(), {
+			peer: "127.0.0.1",
+			trustedProxies: ["127.0.0.1"],
+		});
+		const client = testClient(app).api["bank-connections"];
+		await client.$post(
+			{ json: { institution: "Banque Test" } },
+			{ headers: { "x-forwarded-for": "203.0.113.7" } },
+		);
+		await expect(storedAddress()).resolves.toEqual([{ address: "203.0.113.7" }]);
+		const { state } = z
+			.object({ state: z.string() })
+			.parse(requests.find((sent) => sent.path === "/auth")?.body);
+
+		await client.callback.$post(
+			{ json: { code: "the-code", state } },
+			{ headers: { "x-forwarded-for": "2001:db8:1:2:3:4:5:6" } },
+		);
+
+		await expect(storedAddress()).resolves.toEqual([
+			{ address: "2001:0db8:0001:0002:0003:0004:0005:0006" },
+		]);
+	});
+
+	it("stores none from an in-process request", async () => {
+		mockProvider();
+		const client = testClient(await bankApp()).api["bank-connections"];
+
+		await client.$post({ json: { institution: "Banque Test" } });
+
+		await expect(storedAddress()).resolves.toEqual([{ address: null }]);
+	});
+});
+
 describe("/api/bank-connections/settings", () => {
-	it("reads pending lines included by default, then saves Sure's switch off and on", async () => {
+	it("reads Sure's defaults, then saves the three settings and reads them back", async () => {
 		const client = testClient(await bankApp()).api["bank-connections"];
 
 		const initial = await client.settings.$get();
 		expect(initial.status).toBe(200);
-		expect(await initial.json()).toEqual({ data: { includePending: true } });
-
-		const off = await client.settings.$put({ json: { includePending: false } });
-		expect(off.status).toBe(200);
-		expect(await off.json()).toEqual({ data: { includePending: false } });
-		expect(await (await client.settings.$get()).json()).toEqual({
-			data: { includePending: false },
+		expect(await initial.json()).toEqual({
+			data: { includePending: true, autoSyncEnabled: true, autoSyncTime: "02:22" },
 		});
-		await expect(
-			own?.db.all(sql`select value from settings where key = 'syncs_include_pending'`),
-		).resolves.toEqual([{ value: "false" }]);
 
-		const on = await client.settings.$put({ json: { includePending: true } });
-		expect(await on.json()).toEqual({ data: { includePending: true } });
+		const off = await client.settings.$put({
+			json: { includePending: false, autoSyncEnabled: false, autoSyncTime: "7:05" },
+		});
+		expect(off.status).toBe(200);
+		const saved = { includePending: false, autoSyncEnabled: false, autoSyncTime: "07:05" };
+		expect(await off.json()).toEqual({ data: saved });
+		expect(await (await client.settings.$get()).json()).toEqual({ data: saved });
+		await expect(
+			own?.db.all(
+				sql`select key, value from settings where key in ('syncs_include_pending', 'auto_sync_enabled', 'auto_sync_time') order by key`,
+			),
+		).resolves.toEqual([
+			{ key: "auto_sync_enabled", value: "false" },
+			{ key: "auto_sync_time", value: "07:05" },
+			{ key: "syncs_include_pending", value: "false" },
+		]);
+
+		const on = await client.settings.$put({
+			json: { includePending: true, autoSyncEnabled: true, autoSyncTime: "23:59" },
+		});
+		expect(await on.json()).toEqual({
+			data: { includePending: true, autoSyncEnabled: true, autoSyncTime: "23:59" },
+		});
 	});
 
-	it("refuses a body that is no boolean", async () => {
+	it("refuses a body that is no boolean, and a time Sure's format refuses", async () => {
 		const app = await bankApp();
+		const put = (body: unknown) =>
+			app.request("/api/bank-connections/settings", {
+				method: "PUT",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
 
-		const refused = await app.request("/api/bank-connections/settings", {
-			method: "PUT",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ includePending: "no" }),
+		const refused = await put({
+			includePending: "no",
+			autoSyncEnabled: true,
+			autoSyncTime: "02:22",
 		});
 
 		expect(refused.status).toBe(400);
@@ -902,6 +990,25 @@ describe("/api/bank-connections/settings", () => {
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "includePending", code: "invalid_type" }],
 		});
+
+		const times = await Promise.all(
+			["24:00", "02:60", "2:5", "02h22", "", " 02:22"].map(async (autoSyncTime) => {
+				const response = await put({ includePending: true, autoSyncEnabled: true, autoSyncTime });
+
+				return { status: response.status, error: await fieldsOf(response) };
+			}),
+		);
+
+		for (const time of times) {
+			expect(time.status).toBe(400);
+			expect(time.error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "autoSyncTime", code: "invalid_format" }],
+			});
+		}
+		await expect(
+			own?.db.all(sql`select value from settings where key = 'auto_sync_time'`),
+		).resolves.toEqual([]);
 	});
 
 	it("refuses a viewer's read and write", async () => {
@@ -921,7 +1028,11 @@ describe("/api/bank-connections/settings", () => {
 		const write = await viewer.request("/api/bank-connections/settings", {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ includePending: false }),
+			body: JSON.stringify({
+				includePending: false,
+				autoSyncEnabled: false,
+				autoSyncTime: "02:22",
+			}),
 		});
 
 		expect(read.status).toBe(403);

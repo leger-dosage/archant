@@ -421,7 +421,7 @@ function BankConnectionPage() {
 		if (accounts.data.some((row) => row.account !== null)) {
 			syncNow(undefined, {
 				onError: (error) => {
-					if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
+					if (errorCodeOf(error) !== "SYNC_IN_PROGRESS") {
 						showFailureToast(error);
 					}
 				},
@@ -461,11 +461,11 @@ function BankConnectionPage() {
 					setTypedStartDate(undefined);
 					toast.success(t("banks.accounts.linked", { count: links.length }));
 					// Sure's `complete_account_setup`: the new links bring their history
-					// at once. Quiet on success, and when a sync ran within the hour:
-					// the new link then waits for the next one, as the page shows.
+					// at once. Quiet on success, and while a sync is running: the new
+					// link then waits for the next one, as the page shows.
 					sync.mutate(undefined, {
 						onError: (error) => {
-							if (!["SYNC_TOO_RECENT", "SYNC_IN_PROGRESS"].includes(errorCodeOf(error))) {
+							if (errorCodeOf(error) !== "SYNC_IN_PROGRESS") {
 								showFailureToast(error);
 							}
 						},

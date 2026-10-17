@@ -146,8 +146,6 @@ export const ERROR_STATUSES = {
 	PAYMENT_EXCEEDS_TRANSACTION: 409,
 	/** A sync of this bank connection is running; its lease frees itself after ten minutes. */
 	SYNC_IN_PROGRESS: 409,
-	/** This bank connection synced less than an hour ago: banks cap how often they may be read. */
-	SYNC_TOO_RECENT: 409,
 	/** This bank connection's consent has ended: nothing is read until it is renewed. */
 	CONSENT_EXPIRED: 409,
 	/** « Mettre à jour les cours » while price fetching is off: nothing reaches the provider. */

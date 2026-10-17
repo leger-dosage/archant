@@ -3,11 +3,9 @@ import type { Page } from "@playwright/test";
 
 import { randomInt } from "node:crypto";
 
-import { createDb } from "@archant/data/client";
-
 import { FAKE_ACCOUNTS, FAKE_LINES, TIP_BANK, TIP_LINE } from "./fake-enable-banking.ts";
 import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
-import { DATABASE_FILE, WEB_URL } from "./settings.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Story 10.6: a line an import found two entries equally near is created
 // flagged « Doublon possible », then merged into one of them or dismissed.
@@ -120,20 +118,6 @@ const toast = (page: Page, text: string) =>
 const bankRows = (page: Page, label: string) =>
 	page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
 
-/** Two hours ago, past the hour the button waits between two syncs. */
-async function syncedHoursAgo(connectionId: string) {
-	const db = await createDb(`file:${DATABASE_FILE}`);
-
-	try {
-		await db.$client.execute({
-			sql: "update bank_connections set last_synced_at = ? where id = ?",
-			args: [Date.now() - 2 * 60 * 60_000, connectionId],
-		});
-	} finally {
-		db.$client.close();
-	}
-}
-
 /**
  * Connects `TIP_BANK` and links its current account, which syncs the pending
  * bill; returns the connection's id and the account's.
@@ -154,8 +138,15 @@ async function connectTipBank(page: Page) {
 
 	await page.getByRole("combobox", { name: `Que faire de ${FAKE_ACCOUNTS.card.name}` }).click();
 	await page.getByRole("option", { name: "Ignorer", exact: true }).click();
+	// The first visit already stamps a new connection: wait for the link's own sync.
+	const synced = page.waitForResponse(
+		(response) =>
+			response.request().method() === "POST" &&
+			/\/api\/bank-connections\/[^/]+\/sync$/u.test(new URL(response.url()).pathname),
+	);
 	await page.getByRole("button", { name: "Valider" }).click();
 	await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+	await synced;
 	await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
 	const link = page
 		.getByRole("list", { name: "Comptes de la banque" })
@@ -177,7 +168,6 @@ test("a sync suggests the pending bill booked with a tip, and « Oui, fusionnez-
 		await expect(bankRows(page, TIP_LINE.label)).not.toContainText("Doublon ?");
 
 		// The bank books the bill with the tip: the next sync suggests the two are one.
-		await syncedHoursAgo(connectionId);
 		await page.goto(`/settings/banks/${connectionId}`);
 		await page.getByRole("button", { name: "Synchroniser" }).click();
 		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();

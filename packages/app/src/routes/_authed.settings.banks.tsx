@@ -1,5 +1,5 @@
 import type { Status } from "@/components/StatusBadge";
-import type { BankConnectionData } from "@/hooks/useBankConnections";
+import type { BankConnectionData, BankSyncSettingsData } from "@/hooks/useBankConnections";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, LandmarkIcon } from "lucide-react";
@@ -16,6 +16,7 @@ import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -25,7 +26,7 @@ import {
 	useBankSyncSettings,
 	useSaveBankSyncSettings,
 } from "@/hooks/useBankConnections";
-import { errorCodeOf } from "@/lib/api";
+import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
 export const Route = createFileRoute("/_authed/settings/banks")({
@@ -149,14 +150,15 @@ function Connections({ onChooseBank }: { onChooseBank?: (opener: HTMLElement) =>
 }
 
 /**
- * Sure's `_sync_settings`: « Inclure les transactions en attente », saved on
- * each change, as Sure's form submits itself. Turning it off deletes no
- * pending line already stored.
+ * Sure's `_sync_settings`, in its order: « Inclure les transactions en
+ * attente » and « Activer la synchronisation automatique », each saved on
+ * change as Sure's form submits itself, then « Heure de synchronisation »,
+ * disabled while auto sync is off. Turning pending lines off deletes none
+ * already stored.
  */
 function SyncSettings() {
 	const { t } = useTranslation();
 	const settings = useBankSyncSettings();
-	const save = useSaveBankSyncSettings();
 
 	return (
 		<Section title={t("banks.syncSettings.title")}>
@@ -170,30 +172,100 @@ function SyncSettings() {
 					{t(`errors.${errorCodeOf(settings.error)}`)}
 				</p>
 			)}
-			{settings.data !== undefined && (
-				<div className="flex items-start gap-3 px-4 py-3">
-					<Switch
-						id="include-pending"
-						checked={settings.data.includePending}
-						disabled={save.isPending}
-						aria-describedby="include-pending-description"
-						className="mt-0.5"
-						onCheckedChange={(includePending) =>
-							save.mutate(includePending, {
-								onSuccess: () => toast.success(t("banks.syncSettings.saved")),
-								onError: (error) => showErrorToast(errorCodeOf(error)),
-							})
-						}
-					/>
-					<div className="flex flex-col gap-1">
-						<Label htmlFor="include-pending">{t("banks.syncSettings.includePending")}</Label>
-						<p id="include-pending-description" className="text-sm text-muted-foreground">
-							{t("banks.syncSettings.includePendingDescription")}
-						</p>
-					</div>
-				</div>
-			)}
+			{settings.data !== undefined && <SyncSettingsRows saved={settings.data} />}
 		</Section>
+	);
+}
+
+/** The three rows, each save sending the saved values with the one changed. */
+function SyncSettingsRows({ saved }: { saved: BankSyncSettingsData }) {
+	const { t } = useTranslation();
+	const save = useSaveBankSyncSettings();
+	// What the time field shows while it is being typed in; `undefined` once
+	// it shows the saved time again.
+	const [typedTime, setTypedTime] = useState<string | undefined>(undefined);
+
+	const saveWith = (change: Partial<BankSyncSettingsData>) =>
+		save.mutate(
+			{ ...saved, ...change },
+			{
+				onSuccess: () => toast.success(t("banks.syncSettings.saved")),
+				onError: (error) => {
+					const refusedTime =
+						error instanceof ApiError && error.fields.some(({ path }) => path === "autoSyncTime");
+
+					if (refusedTime) {
+						toast.error(t("banks.syncSettings.invalidTime"));
+					} else {
+						showErrorToast(errorCodeOf(error));
+					}
+				},
+				// The field returns to the saved time, the new one on success.
+				onSettled: () => setTypedTime(undefined),
+			},
+		);
+
+	return (
+		<div className="flex flex-col">
+			<div className="flex items-start gap-3 px-4 py-3">
+				<Switch
+					id="include-pending"
+					checked={saved.includePending}
+					disabled={save.isPending}
+					aria-describedby="include-pending-description"
+					className="mt-0.5"
+					onCheckedChange={(includePending) => saveWith({ includePending })}
+				/>
+				<div className="flex flex-col gap-1">
+					<Label htmlFor="include-pending">{t("banks.syncSettings.includePending")}</Label>
+					<p id="include-pending-description" className="text-sm text-muted-foreground">
+						{t("banks.syncSettings.includePendingDescription")}
+					</p>
+				</div>
+			</div>
+			<div className="flex items-start gap-3 px-4 py-3">
+				<Switch
+					id="auto-sync"
+					checked={saved.autoSyncEnabled}
+					disabled={save.isPending}
+					aria-describedby="auto-sync-description"
+					className="mt-0.5"
+					onCheckedChange={(autoSyncEnabled) => saveWith({ autoSyncEnabled })}
+				/>
+				<div className="flex flex-col gap-1">
+					<Label htmlFor="auto-sync">{t("banks.syncSettings.autoSync")}</Label>
+					<p id="auto-sync-description" className="text-sm text-muted-foreground">
+						{t("banks.syncSettings.autoSyncDescription")}
+					</p>
+				</div>
+			</div>
+			<div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+				<div className="flex flex-col gap-1">
+					<Label htmlFor="auto-sync-time">{t("banks.syncSettings.autoSyncTime")}</Label>
+					<p id="auto-sync-time-description" className="text-sm text-muted-foreground">
+						{t("banks.syncSettings.autoSyncTimeDescription")}
+					</p>
+				</div>
+				{/* Saved when it loses focus: a time field changes once per segment
+				    typed, and each would otherwise be saved. */}
+				<Input
+					id="auto-sync-time"
+					type="time"
+					className="w-32 shrink-0"
+					value={typedTime ?? saved.autoSyncTime}
+					disabled={!saved.autoSyncEnabled || save.isPending}
+					aria-describedby="auto-sync-time-description"
+					onChange={(event) => setTypedTime(event.target.value)}
+					onBlur={() => {
+						if (typedTime !== undefined && typedTime !== saved.autoSyncTime) {
+							saveWith({ autoSyncTime: typedTime });
+						} else {
+							setTypedTime(undefined);
+						}
+					}}
+				/>
+			</div>
+		</div>
 	);
 }
 

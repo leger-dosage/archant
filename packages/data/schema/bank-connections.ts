@@ -37,10 +37,18 @@ export const bankConnections = sqliteTable(
 		// Epoch milliseconds of the latest redirect to the bank, first consent or
 		// renewal: the callback accepts its `state` for 30 minutes from here.
 		authorizationStartedAt: integer("authorization_started_at"),
-		// Epoch milliseconds of the latest successful callback, cleared by the
-		// next sync to take the lease: one sync within the hour is let through
-		// after a renewal, so it can be checked at once, and only one.
-		authorizedAt: integer("authorized_at"),
+		// Sure's `aspsp_required_psu_headers`: the PSU headers the bank lists
+		// as required, as the provider's listing names them at the latest start
+		// or renewal. Only a list of `psu-ip-address` alone is ever satisfied.
+		requiredPsuHeaders: text("required_psu_headers", { mode: "json" })
+			.$type<string[]>()
+			.notNull()
+			.default(sql`'[]'`),
+		// Sure's `last_psu_ip`: the browser's address at the latest new start or
+		// callback, sent as `Psu-Ip-Address` on data calls to a bank that asks
+		// for it alone. In clear, as Sure's: no credential, but never logged nor
+		// returned, and cleared once the consent has ended.
+		psuIpAddress: text("psu_ip_address"),
 		// Encrypted by the API's crypto service (`v1:<iv>:<tag>:<ciphertext>`),
 		// never stored in clear: it is a bearer credential for the account data.
 		sessionId: text("session_id"),

@@ -1,6 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import { SHARED_CLIENT_KEY, clientKey, forwardedFor, withForwardedFor } from "./client-address.ts";
+import {
+	SHARED_CLIENT_KEY,
+	clientKey,
+	forwardedFor,
+	psuAddress,
+	withForwardedFor,
+} from "./client-address.ts";
 
 describe("forwardedFor", () => {
 	it.each([
@@ -145,5 +151,65 @@ describe("clientKey matrix", () => {
 		] as const)("%s shares one bucket", (_name, forwarded) => {
 			expect(productionClientKey(forwarded, [])).toBe(SHARED_CLIENT_KEY);
 		});
+	});
+});
+
+describe("psuAddress", () => {
+	const proxies = ["127.0.0.1", "::1", "10.0.0.0/8"];
+
+	it.each([
+		["the peer alone", "203.0.113.7", [], "203.0.113.7"],
+		[
+			"walks right to left past the trusted proxies",
+			"198.51.100.1, 203.0.113.7, 10.1.2.3",
+			proxies,
+			"203.0.113.7",
+		],
+		[
+			"keeps an IPv6 address whole",
+			"2001:db8:1:2:3:4:5:6",
+			[],
+			"2001:0db8:0001:0002:0003:0004:0005:0006",
+		],
+		[
+			"expands a compressed IPv6 address",
+			"2001:db8::1, ::1",
+			proxies,
+			"2001:0db8:0000:0000:0000:0000:0000:0001",
+		],
+		["reads an IPv4-mapped peer as its IPv4", "::ffff:203.0.113.7", [], "203.0.113.7"],
+		["takes a loopback peer for the development fallback", "127.0.0.1", [], null],
+		["believes no header", null, [], null],
+		["believes an empty header", " ", [], null],
+		["believes no list without a trusted proxy", "198.51.100.1, 203.0.113.7", [], null],
+		["believes no hop that is no address", "junk", [], null],
+		["believes only trusted hops as nobody", "10.0.0.1, 127.0.0.1", proxies, null],
+	] as const)("%s", (_name, forwarded, trusted, expected) => {
+		// Under test, where Better Auth's `getIP` falls back to 127.0.0.1.
+		expect(psuAddress(forwarded, trusted)).toBe(expected);
+	});
+});
+
+describe("psuAddress in production", () => {
+	let productionPsuAddress: typeof psuAddress;
+
+	beforeAll(async () => {
+		vi.stubEnv("NODE_ENV", "production");
+		vi.stubEnv("TEST", "false");
+		vi.resetModules();
+		productionPsuAddress = (await import("./client-address.ts")).psuAddress;
+	});
+
+	afterAll(() => {
+		vi.unstubAllEnvs();
+	});
+
+	it.each([
+		["a loopback peer", "127.0.0.1", "127.0.0.1"],
+		["a client", "203.0.113.7", "203.0.113.7"],
+		["nothing believable", "junk", null],
+		["no header", null, null],
+	] as const)("%s", (_name, forwarded, expected) => {
+		expect(productionPsuAddress(forwarded, [])).toBe(expected);
 	});
 });

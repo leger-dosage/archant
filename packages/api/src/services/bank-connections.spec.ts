@@ -38,6 +38,7 @@ import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	bankDepsFromEnv,
+	clearEndedPsuAddresses,
 	completeConnection,
 	disconnectConnection,
 	linkBankAccounts,
@@ -390,6 +391,104 @@ describe("startConnection", () => {
 	});
 });
 
+describe("the PSU address and headers", () => {
+	it("stores the bank's required PSU headers and the browser's address at a new start", async () => {
+		const requests = mockProvider();
+
+		await startConnection(deps(), { institution: "Banque Test" }, "203.0.113.7");
+		await startConnection(deps(), { institution: "Crédit Exemple" }, null);
+
+		const stored = await temp.db
+			.select({
+				name: bankConnections.institutionName,
+				headers: bankConnections.requiredPsuHeaders,
+				address: bankConnections.psuIpAddress,
+			})
+			.from(bankConnections)
+			.orderBy(bankConnections.institutionName);
+		expect(stored).toEqual([
+			{ name: "Banque Test", headers: ["psu-ip-address"], address: "203.0.113.7" },
+			{ name: "Crédit Exemple", headers: [], address: null },
+		]);
+		expect(requests.every(({ psuIpAddress }) => psuIpAddress === null)).toBe(true);
+		expect(logLines.join("")).not.toContain("203.0.113.7");
+	});
+
+	it("refreshes the address at the callback's claim, and keeps it when none is believable", async () => {
+		const requests = mockProvider();
+		await startConnection(deps(), { institution: "Banque Test" }, "203.0.113.7");
+
+		const connection = await completeConnection(
+			deps(),
+			{ code: "the-code", state: sentState(requests) },
+			"2001:0db8:0000:0000:0000:0000:0000:0001",
+		);
+
+		const [row] = await rows();
+		expect(row?.psuIpAddress).toBe("2001:0db8:0000:0000:0000:0000:0000:0001");
+		expect(JSON.stringify(connection)).not.toContain("2001:0db8");
+		expect(logLines.join("")).not.toContain("2001:0db8");
+
+		vi.setSystemTime(NOW + DAY);
+		const renewal = mockProvider();
+		await renewConnection(deps(), connection.id);
+		await completeConnection(deps(), { code: "new-code", state: sentState(renewal) }, null);
+
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({ psuIpAddress: "2001:0db8:0000:0000:0000:0000:0000:0001" }),
+		]);
+	});
+
+	it("takes the bank's headers again at a renewal's start, and no address, as Sure's reauthorize", async () => {
+		const connection = await connected();
+		await temp.db
+			.update(bankConnections)
+			.set({ requiredPsuHeaders: [], psuIpAddress: "203.0.113.7" })
+			.where(eq(bankConnections.id, connection.id));
+
+		await renew(connection.id);
+
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({
+				requiredPsuHeaders: ["psu-ip-address"],
+				psuIpAddress: "203.0.113.7",
+			}),
+		]);
+	});
+
+	it("clears the address once the consent has ended and on a pending attempt past its 30 minutes", async () => {
+		const insert = (id: string, fields: Partial<typeof bankConnections.$inferInsert>) =>
+			temp.db.insert(bankConnections).values({
+				id,
+				connector: "enable-banking",
+				institutionName: "Banque Test",
+				country: "FR",
+				status: "active",
+				psuIpAddress: "203.0.113.7",
+				createdAt: NOW,
+				updatedAt: NOW,
+				...fields,
+			});
+		await insert("ended", { consentExpiresAt: NOW });
+		await insert("running", { consentExpiresAt: NOW + DAY });
+		await insert("stale", { status: "pending", updatedAt: NOW - 31 * MINUTE });
+		await insert("waiting", { status: "pending", updatedAt: NOW - 29 * MINUTE });
+
+		await expect(clearEndedPsuAddresses(deps(), NOW)).resolves.toBe(2);
+
+		const stored = await temp.db
+			.select({ id: bankConnections.id, address: bankConnections.psuIpAddress })
+			.from(bankConnections)
+			.orderBy(bankConnections.id);
+		expect(stored).toEqual([
+			{ id: "ended", address: null },
+			{ id: "running", address: "203.0.113.7" },
+			{ id: "stale", address: null },
+			{ id: "waiting", address: "203.0.113.7" },
+		]);
+	});
+});
+
 async function started() {
 	const requests = mockProvider();
 	await startConnection(deps(), { institution: "Banque Test" });
@@ -416,7 +515,6 @@ describe("completeConnection", () => {
 		expect(row?.status).toBe("active");
 		expect(row?.authorizationState).toBeNull();
 		expect(row?.authorizationStartedAt).toBe(NOW);
-		expect(row?.authorizedAt).toBe(NOW);
 		expect(row?.sessionId).toMatch(/^v1:/u);
 		expect(row?.sessionId).not.toContain(FIXTURE_SESSION_ID);
 		expect(decrypt(Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"), row?.sessionId ?? "")).toBe(
@@ -1009,6 +1107,27 @@ async function refusedLink(input: Parameters<typeof linkBankAccounts>[2], connec
 describe("linkBankAccounts", () => {
 	const today = "2026-09-24";
 
+	it("reads the balance with the stored address for an IP-only bank, as a sync does", async () => {
+		const connection = await connected();
+		await temp.db
+			.update(bankConnections)
+			.set({ requiredPsuHeaders: ["psu-ip-address"], psuIpAddress: "203.0.113.7" })
+			.where(eq(bankConnections.id, connection.id));
+		const { checking } = await bankAccountsOf(connection.id);
+		const requests = mockProvider();
+
+		await linkBankAccounts(deps(), connection.id, {
+			links: [
+				{ bankAccountId: checking.id, action: "create", type: "depository", subtype: "checking" },
+			],
+		});
+
+		const balances = requests.filter(({ path }) => path.endsWith("/balances"));
+		expect(balances).toHaveLength(1);
+		expect(balances[0]?.psuIpAddress).toBe("203.0.113.7");
+		expect(logLines.join("")).not.toContain("203.0.113.7");
+	});
+
 	it("creates a checking account at the bank balance, opened two years back", async () => {
 		const connection = await connected();
 		const { checking } = await bankAccountsOf(connection.id);
@@ -1588,7 +1707,6 @@ describe("renewConnection", () => {
 			consentExpiresAt: Date.parse("2027-03-20T10:00:00Z"),
 		});
 		const [row] = await rows();
-		expect(row?.authorizedAt).toBe(NOW + DAY);
 		expect(row?.authorizationState).toBeNull();
 		expect(decrypt(Buffer.from(TEST_ENCRYPTION_KEY_BASE64, "base64"), row?.sessionId ?? "")).toBe(
 			"renewed-session",
@@ -2113,7 +2231,7 @@ describe("disconnectConnection", () => {
 		await expect(rows()).resolves.toEqual(before);
 	});
 
-	it("takes a lease older than ten minutes, and ignores the hour between two syncs", async () => {
+	it("takes a lease older than ten minutes, minutes after a sync", async () => {
 		const { connection } = await linkedConnection();
 		await temp.db
 			.update(bankConnections)

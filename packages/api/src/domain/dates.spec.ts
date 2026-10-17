@@ -4,6 +4,7 @@ import {
 	addDays,
 	addMonths,
 	daysBetween,
+	instantAt,
 	maxDate,
 	minDate,
 	monthRange,
@@ -24,6 +25,30 @@ describe("today", () => {
 
 	it("defaults to now", () => {
 		expect(today("UTC")).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+	});
+});
+
+describe("instantAt", () => {
+	it("is the local time in the zone, not UTC's", () => {
+		expect(instantAt("Europe/Paris", "2026-09-28", 2, 22)).toBe(Date.parse("2026-09-28T00:22:00Z"));
+		expect(instantAt("Europe/Paris", "2026-01-15", 2, 22)).toBe(Date.parse("2026-01-15T01:22:00Z"));
+		expect(instantAt("UTC", "2026-09-28", 23, 59)).toBe(Date.parse("2026-09-28T23:59:00Z"));
+		expect(instantAt("America/New_York", "2026-09-28", 0, 0)).toBe(
+			Date.parse("2026-09-28T04:00:00Z"),
+		);
+	});
+
+	it("moves a time the spring change skips to the hour after", () => {
+		// Paris jumps from 02:00 to 03:00 on 29 March 2026: 02:22 never shows,
+		// and the run comes at 03:22, the next minute the clock shows that far in.
+		expect(instantAt("Europe/Paris", "2026-03-29", 2, 22)).toBe(Date.parse("2026-03-29T01:22:00Z"));
+		expect(instantAt("Europe/Paris", "2026-03-29", 3, 0)).toBe(Date.parse("2026-03-29T01:00:00Z"));
+	});
+
+	it("takes the first of the two times the autumn change repeats", () => {
+		// Paris goes back from 03:00 to 02:00 on 25 October 2026.
+		expect(instantAt("Europe/Paris", "2026-10-25", 2, 22)).toBe(Date.parse("2026-10-25T00:22:00Z"));
+		expect(instantAt("Europe/Paris", "2026-10-25", 3, 0)).toBe(Date.parse("2026-10-25T02:00:00Z"));
 	});
 });
 

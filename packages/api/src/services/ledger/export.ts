@@ -353,7 +353,7 @@ export const LEFT_OUT = {
 	bank_accounts:
 		"Provider ids and IBAN hashes: the archive holds the accounts and, as Sure's `institution_name`, their bank's name, never the bank account behind them.",
 	bank_connections:
-		"Encrypted bank sessions and consent state, useless outside this instance; only the bank's name leaves, on its accounts' lines as Sure's `institution_name`.",
+		"Encrypted bank sessions, consent state and the browser address sent to the bank, useless outside this instance; only the bank's name leaves, on its accounts' lines as Sure's `institution_name`.",
 	budget_categories: {
 		rolledOverAmount:
 			"What the last budget write carried in, which a recategorised transaction leaves stale: the archive computes the chain again.",
