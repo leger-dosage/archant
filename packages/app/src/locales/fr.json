@@ -1391,6 +1391,7 @@
 	"csvImport": {
 		"sources": {
 			"heading": "Données brutes",
+			"transactions": "Importer les opérations",
 			"trades": "Importer les investissements",
 			"accounts": "Importer les comptes",
 			"categories": "Importer les catégories",
@@ -1435,6 +1436,39 @@
 			"firstDate": "Première date analysée : {{date}}",
 			"dateUnread": "Ce format ne lit pas la première date du fichier.",
 			"dateUndetected": "Impossible de détecter le format de date",
+			"transactions": {
+				"rowsToSkip": "Ignorer les n premières lignes",
+				"date": "Date",
+				"amount": "Montant",
+				"currency": "Devise",
+				"dateFormat": "Format de date",
+				"numberFormat": "Format numérique",
+				"amountTypeStrategy": "Stratégie de type de montant",
+				"strategies": {
+					"signed_amount": "Montant signé",
+					"custom_column": "Colonne personnalisée"
+				},
+				"amountType": "Type de montant",
+				"signages": {
+					"inflows_positive": "Les revenus sont positifs",
+					"inflows_negative": "Les revenus sont négatifs"
+				},
+				"typeColumn": "Colonne de type de montant",
+				"typeValue": "Valeur d'identifiant",
+				"selectValue": "Sélectionner une valeur",
+				"treatAs": "Traiter « {{value}} » comme",
+				"selectType": "Sélectionnez le type",
+				"inflows": {
+					"inflows_positive": "Revenu (entrée)",
+					"inflows_negative": "Dépense (sortie)"
+				},
+				"entity_type": "Colonne de type de montant",
+				"account": "Compte",
+				"name": "Nom",
+				"category": "Catégorie",
+				"tags": "Étiquettes",
+				"notes": "Notes"
+			},
 			"accounts": {
 				"entity_type": "Type d'entité",
 				"name": "Nom",
@@ -1478,20 +1512,37 @@
 			}
 		},
 		"map": {
-			"accountTypesTitle": "Attribuez vos types de comptes",
-			"accountTypesDescription": "Affectez tous les types de comptes importés dans votre fichier",
-			"accountsTitle": "Attribuez vos comptes",
-			"accountsDescription": "Affectez tous les comptes de votre fichier importé aux comptes existants. Vous pouvez également ajouter de nouveaux comptes.",
+			"titles": {
+				"accountTypes": "Attribuez vos types de comptes",
+				"accounts": "Attribuez vos comptes",
+				"categories": "Attribuez vos catégories",
+				"tags": "Attribuez vos étiquettes"
+			},
+			"descriptions": {
+				"accountTypes": "Affectez tous les types de comptes importés dans votre fichier",
+				"accounts": "Affectez tous les comptes de votre fichier importé aux comptes existants. Vous pouvez également ajouter de nouveaux comptes.",
+				"categories": "Affectez toutes les catégories importées dans votre fichier aux catégories existantes. Vous pouvez également ajouter de nouvelles catégories ou les laisser sans catégorie.",
+				"tags": "Affectez toutes les étiquettes importées dans votre fichier aux étiquettes existantes. Vous pouvez également ajouter de nouvelles étiquettes ou les laisser sans étiquette."
+			},
 			"csvColumn": "{{mapping}} dans le CSV",
 			"archantColumn": "{{mapping}} dans Archant",
-			"accountType": "Type de compte",
-			"account": "Compte",
+			"labels": {
+				"accountTypes": "Type de compte",
+				"accounts": "Compte",
+				"categories": "Catégorie",
+				"tags": "Étiquette"
+			},
 			"subtype": "Sous-type",
 			"rows_one": "{{count}} ligne",
 			"rows_other": "{{count}} lignes",
 			"unassigned": "(non attribué)",
 			"select": "Sélectionnez une option",
-			"createNew": "Ajouter comme nouveau compte",
+			"leaveUnassigned": "Laisser non attribué",
+			"createNew": {
+				"accounts": "Ajouter comme nouveau compte",
+				"categories": "Ajouter comme nouvelle catégorie",
+				"tags": "Ajouter comme nouvelle étiquette"
+			},
 			"next": "Suivant"
 		},
 		"confirm": {
@@ -1508,8 +1559,10 @@
 			"back": "Retour aux importations"
 		},
 		"resources": {
+			"transactions": "Opérations",
 			"accounts": "Comptes",
 			"categories": "Catégories",
+			"tags": "Étiquettes",
 			"merchants": "Marchands",
 			"rules": "Règles",
 			"trades": "Transactions boursières"
@@ -1536,6 +1589,8 @@
 			"date_out_of_range": "Ligne {{line}} : la date doit être comprise entre le {{min}} et le {{max}}.",
 			"invalid_currency": "Ligne {{line}} : {{value}} n'est pas un code de devise valide.",
 			"CURRENCY_MISMATCH": "Ligne {{line}} : la devise {{currency}} n'est pas celle du compte ({{account}}).",
+			"too_many_tags": "Ligne {{line}} : une opération porte au plus {{max}} étiquettes.",
+			"custom_column_requires_inflow": "Choisissez la colonne de type, la valeur d'identifiant et ce qu'elle désigne.",
 			"negative_price": "Ligne {{line}} : le prix ne peut pas être négatif.",
 			"trade_too_large": "Ligne {{line}} : le montant de cette transaction est trop grand.",
 			"security_currency": "Ligne {{line}} : le titre {{ticker}} est coté dans une autre devise que celle du compte.",

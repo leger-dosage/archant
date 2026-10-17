@@ -1,26 +1,27 @@
 import type { IsoDate } from "../domain/dates.ts";
-import type { Logger } from "../lib/logger.ts";
-import type {
-	ColumnKey,
-	CsvImportType,
-	CsvSeparator,
-	NumberFormat,
-	SignageConvention,
-	csvImportConfigurationSchema,
-	csvImportMappingsSchema,
-} from "../schemas/csv-imports.ts";
+import type { ColumnKey, CsvImportType } from "../schemas/csv-imports.ts";
 import type { CsvRow, CsvTable, HeaderLookup } from "./csv-import-format.ts";
+import type {
+	AccountTypeMapping,
+	Analysis,
+	Configuration,
+	CsvImportDeps,
+	Mappings,
+	PreviewMappings,
+	ResolvedConfiguration,
+	Sheet,
+	ValueMapping,
+} from "./csv-import-sheet.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { CsvTrade } from "./ledger/csv-trades.ts";
 import type { Transaction } from "./ledger/shared.ts";
 import type { ImportedAccount } from "./ledger/sure-import.ts";
 import type { PlanAccount } from "./sure-import-plan.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
-import type { z } from "zod";
 
 import { eq } from "drizzle-orm";
 
-import type { AccountSubtype, AccountType } from "@archant/data/account-types";
+import type { AccountType } from "@archant/data/account-types";
 import { isSubtypeOf, supportsTrades } from "@archant/data/account-types";
 import { errorCode } from "@archant/data/backup";
 import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
@@ -30,7 +31,6 @@ import {
 	CATEGORY_NAME_MAX_LENGTH,
 	newCategory,
 } from "@archant/data/category-presets";
-import type { Database } from "@archant/data/client";
 import { refreshStatistics } from "@archant/data/client";
 import {
 	formatQuantity,
@@ -53,7 +53,7 @@ import { AppError } from "../lib/errors.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import {
 	COLUMN_KEYS,
-	CREATE_NEW_ACCOUNT,
+	CREATE_NEW_KEY,
 	DEFAULT_DATE_FORMAT,
 	MAX_CSV_BYTES,
 	dateFormatsOf,
@@ -63,17 +63,25 @@ import {
 	columnOf,
 	csvIssue,
 	csvValue,
-	dateValidity,
 	detectDateFormat,
-	earliestDate,
 	headerLookup,
 	parseCsv,
-	plainDecimal,
-	sanitizeNumber,
 	strptime,
 	yearsFrom,
 } from "./csv-import-format.ts";
 import { analyseRules } from "./csv-import-rules.ts";
+import {
+	ALIASES,
+	cellOf,
+	currencyOf,
+	dateOf,
+	keysOf,
+	lineOf,
+	nothingToWrite,
+	numberOf,
+	valueMappings,
+} from "./csv-import-sheet.ts";
+import { analyseTransactions } from "./csv-import-transactions.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { insertCsvTrades, listingOf, storedListing } from "./ledger/csv-trades.ts";
 import { oneByOne } from "./ledger/shared.ts";
@@ -86,38 +94,12 @@ import { foldName, tooLarge } from "./sure-import-preflight.ts";
 // says what the import would write, and to the import, which reads them
 // again and writes everything in one immediate transaction, or nothing.
 
-/** `$client` too, for the statistics refreshed once trades are committed. */
-export type CsvImportDeps = ServiceDeps & { logger: Logger; db: Pick<Database, "$client"> };
-
-type Configuration = z.output<typeof csvImportConfigurationSchema>;
-type Mappings = z.output<typeof csvImportMappingsSchema>;
-
 export type CsvImportRequest = {
 	type: CsvImportType;
 	file: { name: string; bytes: Uint8Array };
 	configuration?: Configuration | undefined;
 	mappings?: Mappings | undefined;
 };
-
-/** The choices the preview read the file with: the page's, else Sure's defaults and the file's suggestions. */
-type ResolvedConfiguration = {
-	separator: CsvSeparator;
-	numberFormat: NumberFormat;
-	dateFormat: string;
-	signage: SignageConvention;
-	accountId: string | null;
-	/** Each column « Configurer » maps, by Sure's key; `null` is « Laisser vide ». */
-	columns: Partial<Record<ColumnKey, string | null>>;
-};
-
-type AccountTypeMapping = {
-	key: string;
-	count: number;
-	type: AccountType | null;
-	subtype: AccountSubtype | null;
-};
-
-type AccountMapping = { key: string; count: number; value: string | null };
 
 export type CsvImportPreview = {
 	headers: string[];
@@ -130,25 +112,16 @@ export type CsvImportPreview = {
 	 * without a date column.
 	 */
 	dates: { detected: boolean; first: IsoDate | null } | null;
-	mappings: { accountTypes: AccountTypeMapping[]; accounts: AccountMapping[] };
+	mappings: PreviewMappings;
+	/**
+	 * The type column's distinct values, in file order, among which « Définir
+	 * … comme valeur d'identifiant » picks, Sure's `selectable_amount_type_values`.
+	 */
+	typeValues: string[];
 	/** Sure's `dry_run`, by `dry_run_resources` key. */
 	counts: Record<string, number>;
 	/** Every refusal, its line among its params; any one leaves nothing to publish. */
 	errors: SureIssue[];
-};
-
-/** Sure's aliases of each key, `csv_value`'s fallbacks in `generate_rows_from_csv`. */
-const ALIASES: Record<ColumnKey, readonly string[]> = {
-	entity_type: ["entity_type", "account_type", "type"],
-	name: ["name"],
-	amount: ["amount", "balance"],
-	currency: ["currency"],
-	date: ["date"],
-	qty: ["qty", "quantity"],
-	ticker: ["ticker"],
-	exchange_operating_mic: ["exchange_operating_mic"],
-	price: ["price"],
-	account: ["account", "account_name"],
 };
 
 /** Sure's `AccountTypeMapping` keys preselected: its accountable classes, then Archant's own types. */
@@ -173,25 +146,9 @@ const ACCOUNTABLE_TYPES: Record<string, AccountType> = {
 	other_liability: "other_liability",
 };
 
-/** One file read: its table, its headers, the choices and the day it is read on. */
-type Sheet = {
-	type: CsvImportType;
-	table: CsvTable;
-	lookup: HeaderLookup;
-	configuration: ResolvedConfiguration;
-	today: IsoDate;
-	currency: CurrencyCode;
-};
-
-/** What a kind of import reads from a sheet, and how it writes it. */
-type Analysis = {
-	counts: Record<string, number>;
-	errors: SureIssue[];
-	mappings?: Partial<CsvImportPreview["mappings"]>;
-	write: (tx: Transaction, deps: ServiceDeps) => Promise<void>;
-};
-
-const nothingToWrite = async () => {};
+/** Sure's `rows_to_skip`, which only the transaction import's form offers. */
+const rowsToSkipOf = (type: CsvImportType, given: Configuration | undefined) =>
+	type === "transactions" ? (given?.rowsToSkip ?? 0) : 0;
 
 /**
  * The file as text and rows, or refused: larger than Sure's `MAX_CSV_SIZE`
@@ -205,7 +162,11 @@ function readTable(request: CsvImportRequest): CsvTable {
 		throw tooLarge({ maxBytes: MAX_CSV_BYTES, maxRows: max });
 	}
 
-	const table = parseCsv(decodeText(request.file.bytes), request.configuration?.separator ?? ",");
+	const table = parseCsv(
+		decodeText(request.file.bytes),
+		request.configuration?.separator ?? ",",
+		rowsToSkipOf(request.type, request.configuration),
+	);
 
 	if (table === null) {
 		throw new AppError(
@@ -236,14 +197,17 @@ function preselected(table: CsvTable, lookup: HeaderLookup, key: ColumnKey): str
 	return null;
 }
 
-/** The keys « Configurer » maps for `type`: a single-account trade import has no account column. */
+/**
+ * The keys « Configurer » maps for `type`: a single-account trade or
+ * transaction import has no account column.
+ */
 function columnKeysOf(type: CsvImportType, accountId: string | null): readonly ColumnKey[] {
 	if (type === "accounts") {
 		return COLUMN_KEYS.accounts;
 	}
 
-	if (type === "trades") {
-		return COLUMN_KEYS.trades.filter((key) => key !== "account" || accountId === null);
+	if (type === "trades" || type === "transactions") {
+		return COLUMN_KEYS[type].filter((key) => key !== "account" || accountId === null);
 	}
 
 	return [];
@@ -252,8 +216,9 @@ function columnKeysOf(type: CsvImportType, accountId: string | null): readonly C
 /**
  * The page's choices, each absent one taking Sure's default or the file's
  * suggestion: a column whose header is the key or an alias, the date format
- * `detect_date_format` finds among the offered ones. A column the file does
- * not have reads as none.
+ * `detect_date_format` finds among the offered ones. A transaction import's
+ * columns start empty, as Sure's form. A column the file does not have
+ * reads as none.
  */
 function resolveConfiguration(
 	type: CsvImportType,
@@ -262,7 +227,8 @@ function resolveConfiguration(
 	lookup: HeaderLookup,
 	day: IsoDate,
 ): ResolvedConfiguration {
-	const accountId = type === "trades" ? (given?.accountId ?? null) : null;
+	const accountId =
+		type === "trades" || type === "transactions" ? (given?.accountId ?? null) : null;
 	const columns: Partial<Record<ColumnKey, string | null>> = {};
 
 	for (const key of columnKeysOf(type, accountId)) {
@@ -270,7 +236,9 @@ function resolveConfiguration(
 
 		columns[key] =
 			chosen === undefined
-				? preselected(table, lookup, key)
+				? type === "transactions"
+					? null
+					: preselected(table, lookup, key)
 				: chosen !== null && table.headers.includes(chosen)
 					? chosen
 					: null;
@@ -291,107 +259,13 @@ function resolveConfiguration(
 					? DEFAULT_DATE_FORMAT
 					: detectDateFormat(samples, offered, day),
 		signage: given?.signage ?? "inflows_positive",
+		rowsToSkip: rowsToSkipOf(type, given),
+		amountTypeStrategy: given?.amountTypeStrategy ?? "signed_amount",
+		amountTypeIdentifier: given?.amountTypeIdentifier ?? null,
+		amountTypeInflow: given?.amountTypeInflow ?? null,
 		accountId,
 		columns,
 	};
-}
-
-/** A key's cell of a row, as Sure's `csv_value` reads it through the chosen column. */
-const cellOf = (sheet: Sheet, row: CsvRow, key: ColumnKey) =>
-	csvValue(sheet.lookup, row.cells, sheet.configuration.columns[key], ...ALIASES[key]);
-
-const lineOf = (row: CsvRow) => String(row.line);
-
-/** The date label « Format des dates » shows for a `strptime` format. */
-const dateLabelOf = (sheet: Sheet) =>
-	dateFormatsOf(sheet.type).find(([, format]) => format === sheet.configuration.dateFormat)?.[0] ??
-	sheet.configuration.dateFormat;
-
-/**
- * A row's date as Sure's `Import::Row#date_valid` checks it: `null` and an
- * issue when it does not read with the chosen format or falls out of range.
- */
-function dateOf(sheet: Sheet, row: CsvRow, text: string, errors: SureIssue[]): IsoDate | null {
-	const date = strptime(text, sheet.configuration.dateFormat);
-
-	if (date === null) {
-		errors.push(csvIssue("invalid_date", { line: lineOf(row), format: dateLabelOf(sheet) }));
-
-		return null;
-	}
-
-	if (dateValidity(date, sheet.today) === "out_of_range") {
-		errors.push(
-			csvIssue("date_out_of_range", {
-				line: lineOf(row),
-				min: earliestDate(sheet.today),
-				max: sheet.today,
-			}),
-		);
-
-		return null;
-	}
-
-	return date;
-}
-
-/**
- * A required cell of a row through `sanitize_number`: an issue when it is
- * blank (`required`) or reads as no number (`invalid_number`).
- */
-function numberOf(sheet: Sheet, row: CsvRow, key: ColumnKey, errors: SureIssue[]): string | null {
-	const raw = cellOf(sheet, row, key);
-
-	if (raw === undefined || raw.trim() === "") {
-		errors.push(csvIssue("required", { line: lineOf(row), field: key }));
-
-		return null;
-	}
-
-	const sanitized = sanitizeNumber(raw, sheet.configuration.numberFormat);
-
-	if (sanitized === "") {
-		errors.push(csvIssue("invalid_number", { line: lineOf(row), field: key }));
-
-		return null;
-	}
-
-	return plainDecimal(sanitized);
-}
-
-/** A currency cell, Sure's default when blank, refused unless ISO 4217 knows it. */
-function currencyOf(
-	sheet: Sheet,
-	row: CsvRow,
-	fallback: CurrencyCode | null,
-	errors: SureIssue[],
-): CurrencyCode | null {
-	const given = cellOf(sheet, row, "currency")?.trim().toUpperCase();
-
-	if (given === undefined || given === "") {
-		return fallback;
-	}
-
-	if (!isCurrencyCode(given)) {
-		errors.push(csvIssue("invalid_currency", { line: lineOf(row), value: given }));
-
-		return null;
-	}
-
-	return given;
-}
-
-/** Distinct values with their row counts, sorted by key as Sure lists its mappings. */
-function keysOf(values: readonly string[]): { key: string; count: number }[] {
-	const counts = new Map<string, number>();
-
-	for (const value of values) {
-		counts.set(value, (counts.get(value) ?? 0) + 1);
-	}
-
-	return [...counts]
-		.map(([key, count]) => ({ key, count }))
-		.toSorted((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
 }
 
 // --- Accounts ---------------------------------------------------------------
@@ -757,30 +631,20 @@ async function tradingAccounts(db: Pick<Transaction, "select">) {
 }
 
 /**
- * Each account name mapped as the page chose, else preselected as Sure's
- * `sync_mappings`: the trading account of that exact name, else « Ajouter
- * comme nouveau compte » for a name, nothing for a blank one. A choice that
- * names no trading account, or a new account for a blank name, is none.
+ * Each account name of a trade file mapped as Sure's `sync_mappings`: the
+ * trading account of that exact name, else a new one for a name.
  */
-function accountMappings(
+const accountMappings = (
 	keys: readonly { key: string; count: number }[],
 	given: Mappings["accounts"],
 	trading: readonly { id: string; name: string }[],
-): AccountMapping[] {
-	const chosen = new Map((given ?? []).map((mapping) => [mapping.key, mapping.value]));
-	const ids = new Set(trading.map((account) => account.id));
-
-	return keys.map(({ key, count }) => {
-		const value = chosen.has(key)
-			? (chosen.get(key) ?? null)
-			: (trading.find((account) => account.name === key)?.id ??
-				(key.trim() === "" ? null : CREATE_NEW_ACCOUNT));
-		const valid =
-			value !== null && (ids.has(value) || (value === CREATE_NEW_ACCOUNT && key.trim() !== ""));
-
-		return { key, count, value: valid ? value : null };
-	});
-}
+): ValueMapping[] =>
+	valueMappings(
+		keys,
+		given,
+		new Set(trading.map((account) => account.id)),
+		(key) => trading.find((account) => account.name === key)?.id,
+	);
 
 /** A quantity or a price that reads, `null` with an issue when it does not. */
 function decimalOf<Value>(
@@ -871,7 +735,7 @@ async function analyseTrades(
 		const accountCurrency: CurrencyCode | null =
 			account !== undefined && isCurrencyCode(account.currency)
 				? account.currency
-				: value === CREATE_NEW_ACCOUNT
+				: value === CREATE_NEW_KEY
 					? sheet.currency
 					: null;
 		const currency = currencyOf(sheet, row, accountCurrency, errors);
@@ -928,7 +792,7 @@ async function analyseTrades(
 			tickerCurrencies.set(ticker, accountCurrency);
 		}
 
-		const accountKey = value === CREATE_NEW_ACCOUNT ? `new ${keyOf(row)}` : value;
+		const accountKey = value === CREATE_NEW_KEY ? `new ${keyOf(row)}` : value;
 		const first = firstTrades.get(accountKey);
 
 		firstTrades.set(accountKey, first === undefined || date < first ? date : first);
@@ -944,7 +808,7 @@ async function analyseTrades(
 	// Only a name with a trade to hold gets an account: one whose every line
 	// was skipped at quantity zero would be empty.
 	const created = accountsMapped.filter(
-		(mapping) => mapping.value === CREATE_NEW_ACCOUNT && firstTrades.has(`new ${mapping.key}`),
+		(mapping) => mapping.value === CREATE_NEW_KEY && firstTrades.has(`new ${mapping.key}`),
 	);
 
 	return {
@@ -1000,6 +864,15 @@ async function analyseTrades(
 const sampleOf = (table: CsvTable) =>
 	table.rows.slice(0, 2).map((row) => table.headers.map((_, column) => row.cells[column] ?? ""));
 
+/** The chosen type column's values, as Sure's `selectable_amount_type_values`. */
+function typeValuesOf(sheet: Sheet): string[] {
+	const header = sheet.configuration.columns.entity_type ?? null;
+	const column =
+		sheet.type === "transactions" && header !== null ? sheet.table.headers.indexOf(header) : -1;
+
+	return column === -1 ? [] : [...new Set(sheet.table.rows.map((row) => row.cells[column] ?? ""))];
+}
+
 /** « Première date analysée », or « Impossible de détecter le format de date ». */
 function datesOf(sheet: Sheet): CsvImportPreview["dates"] {
 	if (sheet.configuration.columns.date === undefined || sheet.configuration.columns.date === null) {
@@ -1033,6 +906,7 @@ async function analyse(
 	const day = today(timeZone);
 	const sheet: Sheet = {
 		type: request.type,
+		fileName: request.file.name,
 		table,
 		lookup,
 		configuration: resolveConfiguration(request.type, request.configuration, table, lookup, day),
@@ -1071,6 +945,8 @@ async function analysisOf(
 			return analyseCategories(db, sheet);
 		case "merchants":
 			return analyseMerchants(db, sheet);
+		case "transactions":
+			return analyseTransactions(db, sheet, request.mappings);
 		case "rules":
 			return analyseRules(db, {
 				rows: sheet.table.rows,
@@ -1099,9 +975,12 @@ export async function previewCsvImport(
 		sample: sampleOf(table),
 		configuration: sheet.configuration,
 		dates: datesOf(sheet),
+		typeValues: typeValuesOf(sheet),
 		mappings: {
 			accountTypes: analysis.mappings?.accountTypes ?? [],
 			accounts: analysis.mappings?.accounts ?? [],
+			categories: analysis.mappings?.categories ?? [],
+			tags: analysis.mappings?.tags ?? [],
 		},
 		counts: analysis.counts,
 		errors: analysis.errors,
@@ -1124,7 +1003,7 @@ export async function importCsv(
 	try {
 		// Parsed before the write lock is taken: the table depends on no row.
 		const table = readTable(request);
-		const counts = await deps.db.transaction(
+		const { counts, committed } = await deps.db.transaction(
 			async (tx) => {
 				const { analysis } = await analyse(tx, request, table, deps.timeZone);
 
@@ -1134,11 +1013,13 @@ export async function importCsv(
 
 				await analysis.write(tx, deps);
 
-				return analysis.counts;
+				return analysis;
 			},
 			{ behavior: "immediate" },
 		);
 		const durationMs = Math.round(performance.now() - started);
+
+		await committed?.(deps);
 
 		if (request.type === "trades") {
 			try {

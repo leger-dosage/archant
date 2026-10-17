@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
-import { buildApp, logLines, ownDatabase, temp, useSignedInApp } from "../testing/app.ts";
+import { buildApp, logLines, openOwn, ownDatabase, temp, useSignedInApp } from "../testing/app.ts";
 import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
@@ -175,6 +175,42 @@ describe("POST /api/csv-imports", () => {
 		expect(response.status).toBe(400);
 		expect(response.body).toMatchObject({ error: { code: "CSV_IMPORT_INVALID" } });
 		expect(await own.db.all(sql`select id from categories`)).toEqual([]);
+	});
+
+	it("previews and imports a transactions file into the chosen account", async () => {
+		const own = await ownDatabase();
+		const app = buildApp(own.db);
+		const { id } = await openOwn();
+		const configuration = JSON.stringify({
+			accountId: id,
+			columns: { date: "Date", amount: "Montant", name: "Libellé" },
+		});
+		const file = "Date,Montant,Libellé\n2026-09-01,-12.5,Boulangerie";
+		const read = await post(
+			"/api/csv-imports/preview",
+			{ type: "transactions", configuration },
+			file,
+			app,
+		);
+
+		expect(read.status).toBe(200);
+		expect(read.body).toMatchObject({
+			data: { counts: { transactions: 1, categories: 0, tags: 0 }, errors: [] },
+		});
+
+		const published = await post(
+			"/api/csv-imports",
+			{ type: "transactions", configuration },
+			file,
+			app,
+		);
+
+		expect(published.status).toBe(201);
+		expect(
+			await own.db.all(
+				sql`select t.label, e.amount from transactions t join entries e on e.id = t.entry_id`,
+			),
+		).toEqual([{ label: "Boulangerie", amount: -1250 }]);
 	});
 
 	it("refuses a viewer FORBIDDEN, the preview too", async () => {

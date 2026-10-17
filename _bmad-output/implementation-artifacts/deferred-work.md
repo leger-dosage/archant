@@ -384,3 +384,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-3-import-accounts-categories-merchants-rules-and-trades-from-csv.md`
   summary: No Playwright test walks « Mapper » for an account file (a loan and its subtype) or a multi-account trade file.
   evidence: Story 30.3 asked one Playwright test on a categories file; the mapping is covered by service tests only, the page's choices are not.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats.md`
+  summary: Reverting a CSV transactions import keeps the accounts, categories and tags it created and the classification it gave lines already present, where Sure's revert destroys the import's accounts.
+  evidence: Archant's revert (`services/ledger/import-revert.ts`) deletes only the entries an import created, for every source; Sure's `Import#revert` runs `accounts.destroy_all`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats.md`
+  summary: « Importer les opérations » does not offer Sure's « Modèle trouvé », which applies the last completed import's configuration for the same account and type.
+  evidence: Sure's `Import#suggested_template` and `apply_template!` read the stored imports; Archant's CSV imports store no configuration, so it needs one kept per account.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats.md`
+  summary: No Playwright test walks « Attribuez vos comptes » of a multi-account transactions file, or picks an existing category or « Laisser non attribué ».
+  evidence: The story asks Playwright to map a category; the account mapping and the other choices are covered by service tests only.

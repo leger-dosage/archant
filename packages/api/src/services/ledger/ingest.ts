@@ -10,6 +10,7 @@ import type {
 } from "../../domain/statement.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { KeyTarget } from "./entry-keys.ts";
+import type { TransactionPatch } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
 import { and, asc, eq, inArray, lte, ne, notExists } from "drizzle-orm";
@@ -42,7 +43,15 @@ import { getReportingCurrency } from "../settings.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
-import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
+import {
+	categoryExists,
+	categoryOriginOf,
+	changeOf,
+	detailOf,
+	merchantExists,
+	tagsExist,
+	transactionRow,
+} from "./patch.ts";
 import { absorb, heldFingerprints, pendingOfConnection, suggestPostedMatches } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
 import {
@@ -126,6 +135,17 @@ export type IngestOptions = {
 	 * confirm: compared with the groups under the write lock, beside the digest.
 	 */
 	expectedCounts?: ImportCounts | undefined;
+	/**
+	 * The import is read and written in one request, under this write lock,
+	 * with no stored preview to hold it to: the CSV transaction import.
+	 */
+	stateless?: boolean | undefined;
+	/**
+	 * A line already present or matched takes the line's category, tags and
+	 * notes when it has them, unless the user locked that field (AD-10), as
+	 * Sure's `TransactionImport#import!` updates the duplicate it finds.
+	 */
+	updateMatched?: boolean | undefined;
 };
 
 /** A line as the preview shows it; `entryId` names the entry it is or pairs with. */
@@ -278,6 +298,48 @@ async function findOrCreateMerchants(
 	await inSequence(created, ROWS_PER_INSERT, (chunk) => tx.insert(merchants).values(chunk));
 
 	return { ids, created: created.map(({ id }) => id) };
+}
+
+/**
+ * Gives each entry a line was found on the line's category, tags and notes
+ * when the line has them, as Sure's `TransactionImport#import!` updates the
+ * duplicate it finds; a field the user locked stays (AD-10). Nothing here
+ * moves a balance.
+ */
+async function updateMatched(
+	tx: Transaction,
+	found: readonly Paired[],
+	origin: Origin,
+	now: number,
+): Promise<void> {
+	await oneByOne(found, async ({ entryId, line }) => {
+		const tagIds = line.tagIds ?? [];
+		const patch: TransactionPatch = {
+			...(line.categoryId === null || line.categoryId === undefined
+				? {}
+				: { categoryId: line.categoryId }),
+			...(tagIds.length === 0 ? {} : { tagIds }),
+			...(line.notes === null ? {} : { notes: line.notes }),
+		};
+
+		if (Object.keys(patch).length === 0) {
+			return;
+		}
+
+		const change = changeOf(await transactionRow(tx, entryId), patch, origin);
+		const detail = detailOf(change, origin, now);
+
+		if (Object.keys(detail).length > 0) {
+			await tx.update(transactions).set(detail).where(eq(transactions.entryId, entryId));
+		}
+
+		if (change.changed.includes("tags")) {
+			await tx.delete(taggings).where(eq(taggings.transactionId, entryId));
+			await tx
+				.insert(taggings)
+				.values(change.next.tagIds.map((tagId) => ({ transactionId: entryId, tagId })));
+		}
+	});
 }
 
 /** The previewed import a keyed ingest belongs to; anything else is unknown. */
@@ -893,7 +955,7 @@ export async function ingest(
 				return result;
 			}
 
-			if (target !== null) {
+			if (target !== null && options.stateless !== true) {
 				assertPreviewHolds(target.digest, digest, options.expectedCounts, countsOf(groups));
 			}
 
@@ -941,11 +1003,15 @@ export async function ingest(
 			}
 
 			// 4. Insert the new entries, attach keys to matched ones. An
-			// assistant's merchant, locked, wins over the one the line names.
+			// assistant's merchant, locked, wins over the one the line names, and
+			// so do its category and tags over the ones a file maps.
 			const rows = written.map((item) => ({
 				...item,
 				id: crypto.randomUUID(),
 				merchantId: classification.merchantId ?? merchantIds.get(item.line) ?? null,
+				categoryId: classification.categoryId ?? item.line.categoryId ?? null,
+				tagIds:
+					classification.tagIds.length > 0 ? classification.tagIds : [...(item.line.tagIds ?? [])],
 			}));
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
@@ -975,7 +1041,7 @@ export async function ingest(
 
 			await inSequence(rows, ROWS_PER_INSERT, (chunk) =>
 				tx.insert(transactions).values(
-					chunk.map(({ id, line, duplicate, merchantId }) => ({
+					chunk.map(({ id, line, duplicate, merchantId, categoryId }) => ({
 						entryId: id,
 						label: line.label,
 						notes: line.notes,
@@ -983,17 +1049,14 @@ export async function ingest(
 						possibleDuplicate: duplicate,
 						pending: line.pending,
 						lockedFields: locksOf(line),
-						categoryId: classification.categoryId,
-						categoryOrigin:
-							classification.categoryId === null ? null : categoryOriginOf(options.origin),
+						categoryId,
+						categoryOrigin: categoryId === null ? null : categoryOriginOf(options.origin),
 						merchantId,
 					})),
 				),
 			);
 			await inSequence(
-				rows.flatMap(({ id }) =>
-					classification.tagIds.map((tagId) => ({ transactionId: id, tagId })),
-				),
+				rows.flatMap(({ id, tagIds }) => tagIds.map((tagId) => ({ transactionId: id, tagId }))),
 				ROWS_PER_INSERT,
 				(chunk) => tx.insert(taggings).values(chunk),
 			);
@@ -1026,6 +1089,10 @@ export async function ingest(
 					sharing.map(({ id, keys }) => ({ entryId: id, keys })),
 					{ keepExisting: true },
 				);
+			}
+
+			if (options.updateMatched === true) {
+				await updateMatched(tx, [...grouped.present, ...grouped.matched], options.origin, now);
 			}
 
 			// A new booked line may repeat a pending entry at another amount, a
@@ -1076,7 +1143,7 @@ export async function ingest(
 			if (rows.length > 0) {
 				const { plan } = planActions(
 					await loadEnabledRules(tx),
-					rows.map(({ id, line, merchantId }) => ({
+					rows.map(({ id, line, merchantId, categoryId, tagIds }) => ({
 						id,
 						accountId,
 						date: line.date,
@@ -1085,8 +1152,8 @@ export async function ingest(
 						label: line.label,
 						notes: line.notes,
 						merchantId,
-						categoryId: classification.categoryId,
-						tagIds: [...classification.tagIds],
+						categoryId,
+						tagIds,
 						excluded: false,
 						transfer: null,
 						expectedTransferAccountId: null,

@@ -430,7 +430,7 @@ export async function confirmImport(
  * Statistics once a large confirm is committed. Best-effort, as Turso may
  * refuse `ANALYZE`: a failure is logged, code only, and the import stands.
  */
-async function refreshAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+export async function refreshAfterImport(deps: ImportDeps, importId: string): Promise<void> {
 	try {
 		await refreshStatistics(deps.db);
 	} catch (error) {
@@ -444,7 +444,7 @@ async function refreshAfterImport(deps: ImportDeps, importId: string): Promise<v
  * done by then: a failure here is logged, code only, and never fails the
  * request.
  */
-async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+export async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
 	try {
 		await runRecurring(deps, { backfill: false });
 	} catch (error) {
