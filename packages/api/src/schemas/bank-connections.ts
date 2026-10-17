@@ -9,23 +9,36 @@ import {
 import { BANK_COUNTRIES } from "@archant/data/bank-countries";
 
 /**
- * What « Réglages › Banques » sends: the application ID and the `.pem`
- * file's text, which the browser read. The service parses the key itself, so
- * a file that holds none fails on `privateKey` like any other field.
+ * What « Réglages › Banques » sends: Sure's country, then the application ID
+ * and the `.pem` file's text, which the browser read. The pair comes both or
+ * neither: without it, only the country changes, as Sure's `update` saves
+ * the country alone. The service parses the key itself, so a file that holds
+ * none fails on `privateKey` like any other field.
  */
-export const saveBankCredentialsSchema = z.object({
-	applicationId: z.string().trim().min(1).max(200),
-	// A key and its certificate fit in a few kilobytes; a larger file is not one.
-	privateKey: z.string().min(1).max(64_000),
-});
+export const saveBankCredentialsSchema = z
+	.object({
+		country: z.enum(BANK_COUNTRIES),
+		applicationId: z.string().trim().min(1).max(200).optional(),
+		// A key and its certificate fit in a few kilobytes; a larger file is not one.
+		privateKey: z.string().min(1).max(64_000).optional(),
+	})
+	.superRefine((value, context) => {
+		if (value.applicationId === undefined && value.privateKey !== undefined) {
+			context.addIssue({ code: "custom", path: ["applicationId"], message: "too_small" });
+		}
+
+		if (value.privateKey === undefined && value.applicationId !== undefined) {
+			context.addIssue({ code: "custom", path: ["privateKey"], message: "too_small" });
+		}
+	});
 
 export type SaveBankCredentialsInput = z.infer<typeof saveBankCredentialsSchema>;
 
-export const institutionsQuerySchema = z.object({ country: z.enum(BANK_COUNTRIES) });
-
-/** The bank the user picked; the service reads it again from the provider's list. */
+/**
+ * The bank the user picked, in the saved country, as Sure's `authorize`
+ * reads it; the service reads it again from the provider's list.
+ */
 export const startConnectionSchema = z.object({
-	country: z.enum(BANK_COUNTRIES),
 	institution: z.string().trim().min(1).max(200),
 });
 

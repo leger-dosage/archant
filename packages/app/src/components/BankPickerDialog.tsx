@@ -174,8 +174,9 @@ function Institutions({
 }
 
 /**
- * Sure's `select_bank` modal: a click on a bank starts its consent at once,
- * with no confirm step. Its content unmounts on close, so every opening
+ * Sure's `select_bank` modal, on the country saved with the credentials,
+ * which the server reads itself: a click on a bank starts its consent at
+ * once, with no confirm step. Its content unmounts on close, so every opening
  * starts with an empty search.
  */
 export function BankPickerDialog({
@@ -212,7 +213,7 @@ export function BankPickerDialog({
 	const pick = (institution: InstitutionData) => {
 		setPicked(institution.name);
 		start.mutate(
-			{ country, institution: institution.name },
+			{ institution: institution.name },
 			{
 				onSuccess: ({ url }) => window.location.assign(url),
 				onError: (error) => {

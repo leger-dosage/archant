@@ -2281,6 +2281,64 @@ describe("bank connections", () => {
 		await expect(insertConnection(database, "c4", { state: null })).resolves.toBeDefined();
 	});
 
+	it.each([
+		[
+			"the latest connection's country",
+			[
+				["FR", "active"],
+				["BE", "active"],
+			],
+			"BE",
+		],
+		[
+			"the latest active connection's country, over a newer attempt",
+			[
+				["FR", "active"],
+				["BE", "active"],
+				["DE", "pending"],
+			],
+			"BE",
+		],
+		["France without a connection", [], "FR"],
+	])("gives saved credentials %s when 0085 adds the country", async (_, countries, expected) => {
+		const before = await migratedBefore("0085");
+		await before.run(
+			sql`insert into settings (key, value, updated_at) values ('enable_banking_application_id', 'app', 1), ('enable_banking_private_key', 'v1:key', 1)`,
+		);
+		await countries.reduce<Promise<unknown>>(
+			(previous, [country, status], index) =>
+				previous.then(() =>
+					before.run(
+						sql`insert into bank_connections (id, connector, institution_name, country, status, created_at, updated_at) values (${`c${index}`}, 'enable-banking', 'Banque Test', ${country}, ${status}, ${index}, 0)`,
+					),
+				),
+			Promise.resolve(),
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select key, value from settings where key like 'enable_banking_%' order by key`,
+			),
+		).resolves.toEqual([
+			{ key: "enable_banking_application_id", value: "app" },
+			{ key: "enable_banking_country", value: expected },
+			{ key: "enable_banking_private_key", value: "v1:key" },
+		]);
+	});
+
+	it("adds no country where no credentials are saved", async () => {
+		const before = await migratedBefore("0085");
+		await insertConnection(before, "c1", { status: "active" });
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select key from settings`)).resolves.toEqual([]);
+	});
+
 	it("starts without a session or a consent expiry", async () => {
 		const database = await migrated();
 		await insertConnection(database, "c1");

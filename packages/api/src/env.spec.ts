@@ -36,6 +36,7 @@ describe("validateEnv", () => {
 		expect(env.WEB_DIST).toBeUndefined();
 		expect(env.ENABLE_BANKING_APPLICATION_ID).toBeUndefined();
 		expect(env.ENABLE_BANKING_PRIVATE_KEY).toBeUndefined();
+		expect(env.ENABLE_BANKING_COUNTRY).toBe("FR");
 		expect(env.ENCRYPTION_KEY).toBeUndefined();
 		expect(env.ENABLE_BANKING_API_URL).toBe("https://api.enablebanking.com");
 		expect(env.YAHOO_FINANCE_URL).toBe("https://query1.finance.yahoo.com");
@@ -194,6 +195,21 @@ describe("validateEnv", () => {
 		["not base64", "not base64 at all!"],
 	])("names an encryption key of %s", (_, key) => {
 		expect(() => validateEnv({ ...required, ENCRYPTION_KEY: key })).toThrow(/ENCRYPTION_KEY/);
+	});
+
+	it("reads a country Sure offers, France when empty, and names any other", () => {
+		expect(validateEnv({ ...required, ENABLE_BANKING_COUNTRY: "BE" }).ENABLE_BANKING_COUNTRY).toBe(
+			"BE",
+		);
+		expect(validateEnv({ ...required, ENABLE_BANKING_COUNTRY: "" }).ENABLE_BANKING_COUNTRY).toBe(
+			"FR",
+		);
+		expect(() => validateEnv({ ...required, ENABLE_BANKING_COUNTRY: "US" })).toThrow(
+			/ENABLE_BANKING_COUNTRY/,
+		);
+		expect(() => validateEnv({ ...required, ENABLE_BANKING_COUNTRY: "be" })).toThrow(
+			/ENABLE_BANKING_COUNTRY/,
+		);
 	});
 
 	it("names an application id made of spaces only", () => {

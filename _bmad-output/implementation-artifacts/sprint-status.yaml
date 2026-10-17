@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-17-2026 04:12
+last_updated: 10-17-2026 05:45
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -286,8 +286,8 @@ development_status:
   28-21-an-activity-label-on-investment-transactions-as-sure: done
   epic-28-retrospective: optional
 
-  epic-29: backlog
-  29-1-choose-the-banks-country-with-the-credentials-and-remove-them: backlog
+  epic-29: in-progress
+  29-1-choose-the-banks-country-with-the-credentials-and-remove-them: done
   29-2-ask-for-the-banks-longest-consent-and-step-down-on-refusal: backlog
   29-3-retry-from-the-banks-suggested-start-and-keep-a-statement-cut-short: backlog
   29-4-clean-bank-labels-and-create-merchants-from-counterparties: backlog

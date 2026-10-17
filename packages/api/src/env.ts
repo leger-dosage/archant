@@ -5,6 +5,8 @@ import { createPrivateKey } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { z } from "zod";
 
+import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
+
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 
 function isTimeZone(value: string): boolean {
@@ -134,6 +136,11 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return key;
 				}),
+			// The country whose banks the pinned pair lists, as Sure's panel saves
+			// one with its credentials. France by default, the country the page
+			// opened on; a pinned install outside France sets it. A country Sure
+			// does not offer fails startup rather than an empty list.
+			ENABLE_BANKING_COUNTRY: z.enum(BANK_COUNTRIES).default(DEFAULT_BANK_COUNTRY),
 			// Encrypts bank session ids and the private key saved from the
 			// interface at rest. Losing it means setting Enable Banking up again
 			// and reconnecting every bank; changing it without a migration has

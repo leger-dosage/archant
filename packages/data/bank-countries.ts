@@ -40,3 +40,6 @@ export const BANK_COUNTRIES = [
 export type BankCountry = (typeof BANK_COUNTRIES)[number];
 
 export const DEFAULT_BANK_COUNTRY: BankCountry = "FR";
+
+export const isBankCountry = (value: string | undefined): value is BankCountry =>
+	BANK_COUNTRIES.some((country) => country === value);

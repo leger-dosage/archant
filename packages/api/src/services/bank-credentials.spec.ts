@@ -22,6 +22,7 @@ import { fixtures, mockProvider } from "../testing/enable-banking.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	APPLICATION_ID_SETTING,
+	COUNTRY_SETTING,
 	PRIVATE_KEY_SETTING,
 	bankSetup,
 	resolveBankConnector,
@@ -55,15 +56,20 @@ function deps(overrides: Partial<BankCredentialDeps> = {}): BankCredentialDeps {
 }
 
 const fromEnvironment = () =>
-	deps({ bankCredentials: { applicationId: ENVIRONMENT_ID, privateKey: TEST_PRIVATE_KEY } });
+	deps({
+		bankCredentials: { applicationId: ENVIRONMENT_ID, privateKey: TEST_PRIVATE_KEY, country: "NL" },
+	});
 
 const stored = () => temp.db.select().from(settings).orderBy(settings.key);
 
-async function store(applicationId: string, privateKey: string) {
-	await temp.db.insert(settings).values([
-		{ key: APPLICATION_ID_SETTING, value: applicationId, updatedAt: 1 },
-		{ key: PRIVATE_KEY_SETTING, value: privateKey, updatedAt: 1 },
-	]);
+async function store(applicationId: string, privateKey: string, country: string | null = "BE") {
+	await temp.db
+		.insert(settings)
+		.values([
+			{ key: APPLICATION_ID_SETTING, value: applicationId, updatedAt: 1 },
+			{ key: PRIVATE_KEY_SETTING, value: privateKey, updatedAt: 1 },
+			...(country === null ? [] : [{ key: COUNTRY_SETTING, value: country, updatedAt: 1 }]),
+		]);
 }
 
 async function connection(status: "pending" | "active") {
@@ -129,6 +135,15 @@ describe("resolveBankConnector", () => {
 		await connector.listInstitutions("FR");
 
 		expect(signedFor(requests)).toBe(TEST_APPLICATION_ID);
+	});
+
+	it("carries the country of the credentials that apply", async () => {
+		await store(TEST_APPLICATION_ID, encrypt(ENCRYPTION_KEY, PKCS8), "DE");
+
+		await expect(resolveBankConnector(deps())).resolves.toMatchObject({ country: "DE" });
+		await expect(resolveBankConnector(fromEnvironment())).resolves.toMatchObject({
+			country: "NL",
+		});
 	});
 
 	it("reads what is stored at each call, never a value captured before", async () => {
@@ -197,27 +212,50 @@ describe("bankSetup", () => {
 			available: true,
 			source: "environment",
 			applicationId: ENVIRONMENT_ID,
+			country: "NL",
 			redirectUrl: REDIRECT_URL,
 			locked: false,
 			missing: [],
 		});
 	});
 
-	it("names the stored application", async () => {
+	it("names the stored application and its country", async () => {
 		await store(TEST_APPLICATION_ID, encrypt(ENCRYPTION_KEY, PKCS8));
 
 		await expect(bankSetup(deps())).resolves.toMatchObject({
 			available: true,
 			source: "interface",
 			applicationId: TEST_APPLICATION_ID,
+			country: "BE",
 		});
 	});
+
+	it.each([
+		["no country", null],
+		["a country Sure does not offer", "US"],
+	])(
+		"counts stored credentials with %s as none, as Sure's credentials_configured?",
+		async (_, country) => {
+			await store(TEST_APPLICATION_ID, encrypt(ENCRYPTION_KEY, PKCS8), country);
+
+			await expect(bankSetup(deps())).resolves.toMatchObject({
+				available: false,
+				source: null,
+				applicationId: null,
+				country: null,
+			});
+			await expect(resolveBankConnector(deps())).rejects.toMatchObject({
+				code: "BANK_CONNECTOR_UNAVAILABLE",
+			});
+		},
+	);
 
 	it("says nothing is set up on a fresh install", async () => {
 		await expect(bankSetup(deps())).resolves.toEqual({
 			available: false,
 			source: null,
 			applicationId: null,
+			country: null,
 			redirectUrl: REDIRECT_URL,
 			locked: false,
 			missing: [],
@@ -248,18 +286,28 @@ describe("saveBankCredentials", () => {
 		const requests = mockProvider();
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS1 }),
-		).resolves.toMatchObject({ available: true, source: "interface", locked: false });
+			saveBankCredentials(deps(), {
+				country: "BE",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS1,
+			}),
+		).resolves.toMatchObject({
+			available: true,
+			source: "interface",
+			country: "BE",
+			locked: false,
+		});
 
 		expect(requests.map(({ method, path }) => ({ method, path }))).toEqual([
 			{ method: "GET", path: "/application" },
 		]);
 		expect(signedFor(requests)).toBe(TEST_APPLICATION_ID);
-		const [applicationId, privateKey] = await stored();
+		const [applicationId, country, privateKey] = await stored();
 		expect(applicationId).toMatchObject({
 			key: APPLICATION_ID_SETTING,
 			value: TEST_APPLICATION_ID,
 		});
+		expect(country).toMatchObject({ key: COUNTRY_SETTING, value: "BE" });
 		expect(privateKey?.key).toBe(PRIVATE_KEY_SETTING);
 		expect(privateKey?.value).toMatch(/^v1:/u);
 		expect(decrypt(ENCRYPTION_KEY, privateKey?.value ?? "")).toBe(PKCS8);
@@ -279,11 +327,12 @@ describe("saveBankCredentials", () => {
 		].join("\n");
 
 		await saveBankCredentials(deps(), {
+			country: "FR",
 			applicationId: TEST_APPLICATION_ID,
 			privateKey: certificate + PKCS8,
 		});
 
-		const [, privateKey] = await stored();
+		const [, , privateKey] = await stored();
 		expect(decrypt(ENCRYPTION_KEY, privateKey?.value ?? "")).toBe(PKCS8);
 	});
 
@@ -291,10 +340,15 @@ describe("saveBankCredentials", () => {
 		await store("old-application", encrypt(ENCRYPTION_KEY, PKCS8));
 		mockProvider();
 
-		await saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 });
+		await saveBankCredentials(deps(), {
+			country: "FR",
+			applicationId: TEST_APPLICATION_ID,
+			privateKey: PKCS8,
+		});
 
 		await expect(stored()).resolves.toEqual([
 			expect.objectContaining({ value: TEST_APPLICATION_ID }),
+			expect.objectContaining({ key: COUNTRY_SETTING, value: "FR" }),
 			expect.objectContaining({ key: PRIVATE_KEY_SETTING }),
 		]);
 	});
@@ -305,7 +359,11 @@ describe("saveBankCredentials", () => {
 			mockProvider({ application: () => HttpResponse.json(fixtures.unauthorized, { status }) });
 
 			await expect(
-				saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+				saveBankCredentials(deps(), {
+					country: "FR",
+					applicationId: TEST_APPLICATION_ID,
+					privateKey: PKCS8,
+				}),
 			).rejects.toMatchObject({ code: "BANK_CREDENTIALS_REFUSED", status: 400 });
 			await expect(stored()).resolves.toEqual([]);
 			expect(logged()).toEqual([
@@ -325,7 +383,11 @@ describe("saveBankCredentials", () => {
 		});
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS8,
+			}),
 		).rejects.toMatchObject({ code: "BANK_PROVIDER_ERROR", status: 502 });
 		await expect(stored()).resolves.toEqual([]);
 	});
@@ -337,6 +399,7 @@ describe("saveBankCredentials", () => {
 		});
 
 		const error: unknown = await saveBankCredentials(deps(), {
+			country: "FR",
 			applicationId: TEST_APPLICATION_ID,
 			privateKey: PKCS8,
 		}).catch((reason: unknown) => reason);
@@ -355,7 +418,11 @@ describe("saveBankCredentials", () => {
 		});
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS8,
+			}),
 		).resolves.toMatchObject({ source: "interface" });
 	});
 
@@ -372,7 +439,11 @@ describe("saveBankCredentials", () => {
 		const requests = mockProvider();
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey,
+			}),
 		).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "privateKey", code: "invalid_private_key" }],
@@ -386,6 +457,7 @@ describe("saveBankCredentials", () => {
 
 		await expect(
 			saveBankCredentials(fromEnvironment(), {
+				country: "FR",
 				applicationId: TEST_APPLICATION_ID,
 				privateKey: PKCS8,
 			}),
@@ -397,6 +469,7 @@ describe("saveBankCredentials", () => {
 	it("refuses without ENCRYPTION_KEY", async () => {
 		await expect(
 			saveBankCredentials(deps({ encryptionKey: null }), {
+				country: "FR",
 				applicationId: TEST_APPLICATION_ID,
 				privateKey: PKCS8,
 			}),
@@ -409,7 +482,11 @@ describe("saveBankCredentials", () => {
 		const requests = mockProvider();
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS8,
+			}),
 		).rejects.toMatchObject({ code: "BANK_CREDENTIALS_LOCKED", status: 409 });
 		expect(requests).toEqual([]);
 		await expect(stored()).resolves.toEqual([]);
@@ -420,7 +497,11 @@ describe("saveBankCredentials", () => {
 		mockProvider();
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS8,
+			}),
 		).resolves.toMatchObject({ source: "interface" });
 	});
 
@@ -434,8 +515,74 @@ describe("saveBankCredentials", () => {
 		);
 
 		await expect(
-			saveBankCredentials(deps(), { applicationId: TEST_APPLICATION_ID, privateKey: PKCS8 }),
+			saveBankCredentials(deps(), {
+				country: "FR",
+				applicationId: TEST_APPLICATION_ID,
+				privateKey: PKCS8,
+			}),
 		).rejects.toMatchObject({ code: "BANK_CREDENTIALS_LOCKED" });
+		await expect(stored()).resolves.toEqual([]);
+	});
+});
+
+describe("saveBankCredentials without a pair", () => {
+	it("saves the country alone over the stored pair, asking the provider nothing", async () => {
+		const key = encrypt(ENCRYPTION_KEY, PKCS8);
+		await store(TEST_APPLICATION_ID, key);
+		const requests = mockProvider();
+
+		await expect(saveBankCredentials(deps(), { country: "DE" })).resolves.toMatchObject({
+			source: "interface",
+			applicationId: TEST_APPLICATION_ID,
+			country: "DE",
+		});
+
+		expect(requests).toEqual([]);
+		await expect(stored()).resolves.toEqual([
+			expect.objectContaining({ key: APPLICATION_ID_SETTING, value: TEST_APPLICATION_ID }),
+			expect.objectContaining({ key: COUNTRY_SETTING, value: "DE" }),
+			expect.objectContaining({ key: PRIVATE_KEY_SETTING, value: key }),
+		]);
+		expect(logged()).toContainEqual(expect.objectContaining({ msg: "bank country saved" }));
+	});
+
+	it("saves the country alone while a bank is connected, which keeps its own", async () => {
+		await store(TEST_APPLICATION_ID, encrypt(ENCRYPTION_KEY, PKCS8));
+		await connection("active");
+
+		await expect(saveBankCredentials(deps(), { country: "DE" })).resolves.toMatchObject({
+			country: "DE",
+			locked: true,
+		});
+		await expect(
+			temp.db.select({ country: bankConnections.country }).from(bankConnections),
+		).resolves.toEqual([{ country: "FR" }]);
+	});
+
+	it.each([
+		["nothing is stored", async () => {}],
+		[
+			"the stored key no longer decrypts",
+			() => store(TEST_APPLICATION_ID, encrypt(randomBytes(32), PKCS8)),
+		],
+	])("names the pair when %s, writing nothing", async (_, arrange) => {
+		await arrange();
+		const before = await stored();
+
+		await expect(saveBankCredentials(deps(), { country: "DE" })).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [
+				{ path: "applicationId", code: "too_small" },
+				{ path: "privateKey", code: "too_small" },
+			],
+		});
+		await expect(stored()).resolves.toEqual(before);
+	});
+
+	it("refuses the country of credentials the environment sets", async () => {
+		await expect(saveBankCredentials(fromEnvironment(), { country: "DE" })).rejects.toMatchObject({
+			code: "BANK_CREDENTIALS_FROM_ENVIRONMENT",
+		});
 		await expect(stored()).resolves.toEqual([]);
 	});
 });

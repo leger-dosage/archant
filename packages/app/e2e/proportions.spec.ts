@@ -385,6 +385,7 @@ async function mockConnection(page: Page) {
 					available: true,
 					source: "interface",
 					applicationId: "app-bloquee",
+					country: "FR",
 					redirectUrl: `${WEB_URL}/settings/banks/callback`,
 					locked: true,
 					missing: [],

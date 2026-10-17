@@ -3,11 +3,8 @@ import type { BankConnectionData } from "@/hooks/useBankConnections";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { ChevronRightIcon, LandmarkIcon } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-
-import type { BankCountry } from "@archant/data/bank-countries";
-import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
 
 import { CredentialsForm, EnvironmentCredentials, Unavailable } from "@/components/BankCredentials";
 import { BankPickerDialog, countryName } from "@/components/BankPickerDialog";
@@ -18,14 +15,6 @@ import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBankConnections, useBankSetup } from "@/hooks/useBankConnections";
 import { errorCodeOf } from "@/lib/api";
@@ -33,16 +22,6 @@ import { errorCodeOf } from "@/lib/api";
 export const Route = createFileRoute("/_authed/settings/banks")({
 	component: BanksPage,
 });
-
-const byName = new Intl.Collator("fr", { sensitivity: "base" });
-
-// France first, as the household's own; the rest by their French name.
-const COUNTRIES: readonly BankCountry[] = [
-	DEFAULT_BANK_COUNTRY,
-	...BANK_COUNTRIES.filter((code) => code !== DEFAULT_BANK_COUNTRY).toSorted((left, right) =>
-		byName.compare(countryName(left), countryName(right)),
-	),
-];
 
 const consentDate = new Intl.DateTimeFormat("fr-FR", {
 	day: "numeric",
@@ -161,10 +140,11 @@ function Connections({ onChooseBank }: { onChooseBank?: (opener: HTMLElement) =>
 }
 
 /**
- * Sure's `select_bank`: the connected banks first, then a country and a
- * button opening the bank picker, then off to the bank's consent page. The
- * bank sends the browser back to `/settings/banks/callback`.
- * Until Enable Banking is set up, Sure's panel stands in its place.
+ * Sure's `select_bank`: the connected banks first, then a button opening the
+ * bank picker on the country saved with the credentials, then off to the
+ * bank's consent page. The bank sends the browser back to
+ * `/settings/banks/callback`. Until Enable Banking is set up, Sure's panel
+ * stands in its place.
  */
 function BanksPage() {
 	const { t } = useTranslation();
@@ -175,9 +155,6 @@ function BanksPage() {
 	}, [t]);
 
 	const data = setup.data;
-	// Here rather than in `ConnectBank`, since the empty « Banques connectées »
-	// opens the same picker for the same country.
-	const [country, setCountry] = useState<BankCountry>(DEFAULT_BANK_COUNTRY);
 	const [pickerOpen, setPickerOpen] = useState(false);
 	const opener = useRef<HTMLElement | null>(null);
 
@@ -202,7 +179,7 @@ function BanksPage() {
 			)}
 
 			{data !== undefined &&
-				(data.missing.length > 0 || data.source === null ? (
+				(data.missing.length > 0 || data.source === null || data.country === null ? (
 					<>
 						{/* A bank connected under credentials that no longer resolve stays
 						    listed: disconnecting it is what unlocks the form. */}
@@ -217,14 +194,14 @@ function BanksPage() {
 					<>
 						<Connections onChooseBank={openPicker} />
 						<Section title={t("banks.picker")}>
-							<ConnectBank
-								country={country}
-								onCountryChange={setCountry}
-								onChooseBank={openPicker}
-							/>
+							<div className="p-4">
+								<Button type="button" onClick={(event) => openPicker(event.currentTarget)}>
+									{t("banks.chooseBank")}
+								</Button>
+							</div>
 						</Section>
 						<BankPickerDialog
-							country={country}
+							country={data.country}
 							open={pickerOpen}
 							onOpenChange={setPickerOpen}
 							opener={opener}
@@ -232,60 +209,15 @@ function BanksPage() {
 						{data.source === "environment" ? (
 							<EnvironmentCredentials
 								applicationId={data.applicationId}
+								country={data.country}
 								redirectUrl={data.redirectUrl}
 							/>
 						) : (
-							// Keyed, so a saved ID becomes the form's starting value.
-							<CredentialsForm key={data.applicationId} setup={data} />
+							// Keyed, so a saved ID and country become the form's starting values.
+							<CredentialsForm key={`${data.applicationId}:${data.country}`} setup={data} />
 						)}
 					</>
 				))}
 		</Page>
-	);
-}
-
-function ConnectBank({
-	country,
-	onCountryChange,
-	onChooseBank,
-}: {
-	country: BankCountry;
-	onCountryChange: (country: BankCountry) => void;
-	onChooseBank: (opener: HTMLElement) => void;
-}) {
-	const { t } = useTranslation();
-	const countryId = useId();
-
-	// The country stays on the page, as Sure asks it before opening its picker.
-	return (
-		<div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
-			<div className="flex flex-col gap-1.5">
-				<Label htmlFor={countryId}>{t("banks.country")}</Label>
-				<Select
-					value={country}
-					onValueChange={(value) => {
-						const next = COUNTRIES.find((code) => code === value);
-
-						if (next !== undefined) {
-							onCountryChange(next);
-						}
-					}}
-				>
-					<SelectTrigger id={countryId} className="w-full sm:w-64">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{COUNTRIES.map((code) => (
-							<SelectItem key={code} value={code}>
-								{countryName(code)}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-			</div>
-			<Button type="button" onClick={(event) => onChooseBank(event.currentTarget)}>
-				{t("banks.chooseBank")}
-			</Button>
-		</div>
 	);
 }
