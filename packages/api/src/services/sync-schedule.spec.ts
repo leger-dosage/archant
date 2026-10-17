@@ -29,6 +29,16 @@ const DAY = 24 * HOUR;
 /** 02:20 in Paris, two minutes before Sure's default time. */
 const BEFORE_DEFAULT = Date.parse("2026-09-24T00:20:00Z");
 
+/**
+ * Moves the clock to `instant`, then lets `then` pass: the pending wake, at
+ * most a minute away, fires at once. Advancing a day minute by minute reads
+ * the settings 1,440 times, which CI's coverage run takes over 5 s for.
+ */
+async function jumpTo(instant: number, then = MINUTE) {
+	vi.setSystemTime(instant);
+	await vi.advanceTimersByTimeAsync(then);
+}
+
 const ENV = {
 	DATABASE_URL: "file:x.db",
 	BETTER_AUTH_SECRET: "0123456789abcdef0123456789abcdef",
@@ -124,11 +134,11 @@ describe("startSyncSchedule", () => {
 		// 02:22:00 in Paris to the millisecond: it wakes at the time, not a minute later.
 		expect(Date.now()).toBe(Date.parse("2026-09-24T00:22:00Z"));
 
-		await vi.advanceTimersByTimeAsync(2 * HOUR);
+		await jumpTo(Date.parse("2026-09-24T02:22:00Z"));
 		expect(sync).toHaveBeenCalledTimes(1);
 
 		// And again the next day.
-		await vi.advanceTimersByTimeAsync(DAY - 2 * HOUR);
+		await jumpTo(BEFORE_DEFAULT + DAY, 5 * MINUTE);
 		expect(sync).toHaveBeenCalledTimes(2);
 	});
 
@@ -226,8 +236,8 @@ describe("startSyncSchedule", () => {
 		start();
 
 		await vi.advanceTimersByTimeAsync(5 * MINUTE);
-		await vi.advanceTimersByTimeAsync(DAY);
-		await vi.advanceTimersByTimeAsync(DAY);
+		await jumpTo(BEFORE_DEFAULT + DAY, 5 * MINUTE);
+		await jumpTo(BEFORE_DEFAULT + 2 * DAY, 5 * MINUTE);
 
 		expect(sync).toHaveBeenCalledTimes(3);
 		const failures = logLines
@@ -248,11 +258,11 @@ describe("startSyncSchedule", () => {
 		await expect(addresses()).resolves.toEqual(["a-ended:-", "b-running:203.0.113.7"]);
 
 		// Ended an hour later: kept until the first wake of the next day.
-		await vi.advanceTimersByTimeAsync(2 * HOUR);
+		await jumpTo(BEFORE_DEFAULT + 2 * HOUR);
 		await expect(addresses()).resolves.toEqual(["a-ended:-", "b-running:203.0.113.7"]);
 
 		// 00:00 in Paris on the 25th.
-		await vi.advanceTimersByTimeAsync(Date.parse("2026-09-24T22:00:00Z") - Date.now());
+		await jumpTo(Date.parse("2026-09-24T21:59:30Z"));
 		await expect(addresses()).resolves.toEqual(["a-ended:-", "b-running:-"]);
 		expect(logLines.join("\n")).not.toContain("203.0.113.7");
 	});
