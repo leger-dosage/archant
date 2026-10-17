@@ -2,6 +2,7 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { NormalizedTransaction } from "../domain/statement.ts";
 import type { CsvRow } from "./csv-import-format.ts";
 import type { Analysis, Mappings, Sheet, ValueMapping } from "./csv-import-sheet.ts";
+import type { AmountTerm } from "./csv-import-tools.ts";
 import type { CsvStatement } from "./ledger/csv-transactions.ts";
 import type { Transaction } from "./ledger/shared.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
@@ -25,15 +26,8 @@ import {
 	NOTES_MAX_LENGTH,
 } from "../schemas/transactions.ts";
 import { csvIssue, splitTags } from "./csv-import-format.ts";
-import {
-	cellOf,
-	currencyOf,
-	dateOf,
-	keysOf,
-	lineOf,
-	numberOf,
-	valueMappings,
-} from "./csv-import-sheet.ts";
+import { cellOf, currencyOf, dateOf, keysOf, lineOf, valueMappings } from "./csv-import-sheet.ts";
+import { amountTermsOf, categoryOf, rawLabelOf } from "./csv-import-tools.ts";
 import { STATISTICS_REFRESH_LINES, detectAfterImport, refreshAfterImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { ingestCsvStatements } from "./ledger/csv-transactions.ts";
@@ -41,7 +35,8 @@ import { oneByOne } from "./ledger/shared.ts";
 import { cut } from "./sure-import-plan.ts";
 import { foldName } from "./sure-import-preflight.ts";
 
-// Sure's `TransactionImport` at 00dd977fb: each row a transaction of the
+// Sure's `TransactionImport` at 00dd977fb, and the `MintImport`,
+// `YnabImport` and `ActualImport` built on it: each row a transaction of the
 // chosen account, or of the one « Attribuez vos comptes » maps its account
 // name to, filed under the categories and tags « Attribuez vos catégories »
 // and « Attribuez vos étiquettes » map. Each account's lines then go through
@@ -114,6 +109,27 @@ function signed(sheet: Sheet, row: CsvRow, amount: MinorUnits): MinorUnits {
 	return marked === inflows ? amount : negated;
 }
 
+/**
+ * A row's amount in `currency`'s minor units: its terms summed, an outflow
+ * term counted by its size; `null` when one has more decimals than the
+ * currency holds.
+ */
+function sumOf(terms: readonly AmountTerm[], currency: CurrencyCode): MinorUnits | null {
+	let sum = 0;
+
+	for (const { decimal, sign, absolute } of terms) {
+		const amount = parseDecimalAmount(decimal, currency);
+
+		if (amount === null) {
+			return null;
+		}
+
+		sum += sign * (absolute ? Math.abs(amount) : amount);
+	}
+
+	return toMinorUnits(sum);
+}
+
 /** Each row's cells read, an issue on its line for what does not. */
 function readRows(
 	sheet: Sheet,
@@ -129,7 +145,7 @@ function readRows(
 		}
 
 		const date = dateText === "" ? null : dateOf(sheet, row, dateText, errors);
-		const decimal = numberOf(sheet, row, "amount", errors);
+		const terms = amountTermsOf(sheet, row, errors);
 		const account =
 			sheet.configuration.accountId === null ? (cellOf(sheet, row, "account") ?? "") : "";
 		const expected = accountCurrency(account);
@@ -141,10 +157,9 @@ function readRows(
 			);
 		}
 
-		const amount =
-			decimal === null || currency === null ? null : parseDecimalAmount(decimal, currency);
+		const amount = terms === null || currency === null ? null : sumOf(terms, currency);
 
-		if (decimal !== null && currency !== null && amount === null) {
+		if (terms !== null && currency !== null && amount === null) {
 			errors.push(csvIssue("invalid_number", { line: lineOf(row), field: "amount" }));
 		}
 
@@ -152,7 +167,7 @@ function readRows(
 			return [];
 		}
 
-		const label = (cellOf(sheet, row, "name") ?? "").replaceAll(/\s+/gu, " ").trim();
+		const label = rawLabelOf(sheet, row).replaceAll(/\s+/gu, " ").trim();
 		const notes = (cellOf(sheet, row, "notes") ?? "").trim();
 
 		return [
@@ -164,7 +179,7 @@ function readRows(
 				label: cut(label === "" ? DEFAULT_LABEL : label, LABEL_MAX_LENGTH),
 				notes: notes === "" ? null : cut(notes, NOTES_MAX_LENGTH),
 				account,
-				category: cellOf(sheet, row, "category") ?? "",
+				category: categoryOf(sheet, row),
 				tags: splitTags(cellOf(sheet, row, "tags") ?? ""),
 			},
 		];
@@ -295,7 +310,7 @@ export async function analyseTransactions(
 		.from(categories);
 	const categoryByName = new Map(storedCategories.map((row) => [foldName(row.name), row]));
 	const categoriesMapped = valueMappings(
-		keysOf(sheet.table.rows.map((row) => cellOf(sheet, row, "category") ?? "")),
+		keysOf(sheet.table.rows.map((row) => categoryOf(sheet, row))),
 		mappings?.categories,
 		new Set(storedCategories.map((row) => row.id)),
 		(key) => (key.trim() === "" ? undefined : categoryByName.get(foldName(leafOf(key)))?.id),

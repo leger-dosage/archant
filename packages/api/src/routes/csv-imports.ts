@@ -23,8 +23,9 @@ async function requestOf(form: z.output<typeof csvImportUploadSchema>): Promise<
 }
 
 /**
- * « Importer les comptes », « les catégories », « des marchands », « les
- * règles » and « les investissements »: one CSV file with its choices, sent
+ * « Importer les opérations », « les comptes », « les catégories », « des
+ * marchands », « les règles », « les investissements », and « Importer
+ * depuis Mint », « YNAB » or « Actual »: one CSV file with its choices, sent
  * by the page at each step. The preview writes nothing; the import writes
  * everything or nothing. A viewer's post is refused before either runs (AD-21).
  */

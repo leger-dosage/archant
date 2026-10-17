@@ -6,15 +6,18 @@ import {
 	ChevronRightIcon,
 	FileBracesIcon,
 	FileSpreadsheetIcon,
+	LeafIcon,
+	PiggyBankIcon,
 	ShapesIcon,
 	SquarePercentIcon,
 	StoreIcon,
+	WalletIcon,
 	WorkflowIcon,
 } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CsvImportType } from "@archant/api/schemas/csv-imports";
+import type { CsvImportType, ToolImportType } from "@archant/api/schemas/csv-imports";
 
 import { InsetGroup } from "@/components/InsetGroup";
 import { Page } from "@/components/Page";
@@ -33,6 +36,20 @@ const RAW_DATA: readonly { type: CsvImportType; icon: LucideIcon }[] = [
 	{ type: "merchants", icon: StoreIcon },
 	{ type: "rules", icon: WorkflowIcon },
 ];
+
+/**
+ * Sure's financial tools after its archive, in its order, QIF left to each
+ * account's « Importer ». Sure shows Mint's and YNAB's logos; Archant ships
+ * no third-party logo, so each takes an icon, Actual Sure's own.
+ */
+const TOOLS: readonly { type: ToolImportType; icon: LucideIcon }[] = [
+	{ type: "mint", icon: LeafIcon },
+	{ type: "actual", icon: WalletIcon },
+	{ type: "ynab", icon: PiggyBankIcon },
+];
+
+const LINK =
+	"outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 const ROW = "flex items-center justify-between gap-3 p-4";
 
@@ -90,12 +107,9 @@ function ImportsPage() {
 		>
 			<div className="flex flex-col gap-6">
 				<InsetGroup level={2} title={t("sureImport.sources.heading")}>
-					<ul>
+					<ul className="divide-y divide-line">
 						<li>
-							<Link
-								to="/settings/imports/sure"
-								className={`${ROW} outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
-							>
+							<Link to="/settings/imports/sure" className={`${ROW} ${LINK}`}>
 								<SourceLabel
 									icon={FileBracesIcon}
 									label={t("sureImport.sources.sure")}
@@ -104,6 +118,18 @@ function ImportsPage() {
 								<ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
 							</Link>
 						</li>
+						{TOOLS.map(({ type, icon }) => (
+							<li key={type}>
+								<Link
+									to="/settings/imports/$kind"
+									params={{ kind: type }}
+									className={`${ROW} ${LINK}`}
+								>
+									<SourceLabel icon={icon} label={t(`csvImport.sources.${type}`)} />
+									<ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+								</Link>
+							</li>
+						))}
 					</ul>
 				</InsetGroup>
 				<InsetGroup level={2} title={t("csvImport.sources.heading")}>
@@ -122,7 +148,7 @@ function ImportsPage() {
 									<Link
 										to="/settings/imports/$kind"
 										params={{ kind: type }}
-										className={`${ROW} outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset`}
+										className={`${ROW} ${LINK}`}
 									>
 										<SourceLabel icon={icon} label={t(`csvImport.sources.${type}`)} />
 										<ChevronRightIcon aria-hidden="true" className="size-4 text-muted-foreground" />
