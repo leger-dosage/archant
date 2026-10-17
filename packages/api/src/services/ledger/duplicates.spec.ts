@@ -12,12 +12,13 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
 import { transactions } from "@archant/data/schema/transactions";
 
-import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
+import { MAX_TAGS_PER_TRANSACTION, NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import {
 	add,
 	addStandard,
 	asUser,
 	categoryOf,
+	categoryOriginOf,
 	deps,
 	history,
 	importStatement,
@@ -26,12 +27,15 @@ import {
 	keysOf,
 	line,
 	link,
+	linkedChecking,
 	lockedFields,
 	newBankAccount,
 	newCategory,
 	newTag,
 	openChecking,
+	pendingLine,
 	rejectedRows,
+	rowOf,
 	revert,
 	statementOf,
 	sync,
@@ -43,8 +47,17 @@ import {
 	unpair,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
-import { dismissDuplicate, duplicateCandidates, mergeDuplicate } from "./duplicates.ts";
-import { updateTransaction } from "./edits.ts";
+import { addAttachment, listAttachments } from "./attachments.ts";
+import {
+	dismissDuplicate,
+	dismissPostedMatch,
+	duplicateCandidates,
+	mergeDuplicate,
+	mergePending,
+	pendingMergeCandidates,
+	postedMatchOf,
+} from "./duplicates.ts";
+import { deleteTransaction, updateTransaction } from "./edits.ts";
 import { removableOf } from "./import-revert.ts";
 import { entryOrigins, findTransaction, listTransactions } from "./queries.ts";
 import { recordSnapshot } from "./snapshots.ts";
@@ -581,6 +594,519 @@ describe("possible duplicates", () => {
 				code: "TRANSACTION_SPLIT",
 			});
 			await expect(flagOf(flagged)).resolves.toBe(true);
+		});
+	});
+});
+
+// Story 29.7: a pending line booked at another amount, suggested and merged as Sure.
+
+let lastOwn = 0;
+
+/**
+ * An expense of its own, a hundred times `amount` in minor units: step 6
+ * never pairs it with another test's rows, and its ratio to another stays.
+ */
+const own = (amount: number) => amount * 100 - (lastOwn += 1);
+
+/** A bank line of « Le Bistrot », pending or booked, on a day of September. */
+const bistrot = (
+	amount: number,
+	day: number,
+	overrides: Partial<Parameters<typeof line>[0]> = {},
+) =>
+	pendingLine(amount, {
+		externalId: crypto.randomUUID(),
+		date: `2026-09-${String(day).padStart(2, "0")}`,
+		label: "LE BISTROT PARIS CB",
+		merchant: "Le Bistrot",
+		...overrides,
+	});
+
+const booked = (amount: number, day: number, overrides: Partial<Parameters<typeof line>[0]> = {}) =>
+	bistrot(amount, day, { label: "LE BISTROT PARIS", pending: false, ...overrides });
+
+/** A linked account with one pending line, and the entry it made. */
+async function pendingOf(
+	amount: number,
+	day = 18,
+	overrides: Partial<Parameters<typeof line>[0]> = {},
+) {
+	const { account, bank } = await linkedChecking();
+	const pendingLineOf = bistrot(amount, day, overrides);
+	const {
+		created: [pendingId = ""],
+	} = await sync(account.id, bank.connectionId, [pendingLineOf]);
+
+	return { account, bank, pendingId, pendingLineOf };
+}
+
+async function suggestionOf(entryId: string) {
+	return (await findTransaction(deps(), entryId))?.postedMatch;
+}
+
+describe("pending duplicates", () => {
+	describe("suggestions", () => {
+		it("suggests a tip's pending entry with medium confidence, and names the booked line", async () => {
+			const tip = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(tip);
+
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(tip - 30000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toEqual({
+				id: bookedId,
+				confidence: "medium",
+			});
+			await expect(postedMatchOf(deps(), pendingId)).resolves.toEqual({
+				id: bookedId,
+				date: "2026-09-19",
+				label: "LE BISTROT PARIS",
+				amount: tip - 30000,
+				currency: "EUR",
+				accountId: account.id,
+				accountName: account.name,
+			});
+			await expect(suggestionOf(bookedId)).resolves.toBeNull();
+			const { items } = await listTransactions(
+				deps(),
+				{ accountIds: [account.id] },
+				{ page: 1, pageSize: 50 },
+			);
+			expect(items.find(({ id }) => id === pendingId)?.postedMatch).toEqual({
+				id: bookedId,
+				confidence: "medium",
+			});
+		});
+
+		it.each([
+			["3 days before", 16, "medium"],
+			["4 days before", 15, null],
+			["after", 20, null],
+		])("keeps to pending entries 0 to 3 days before: %s", async (_, day, confidence) => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount, day);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			expect((await suggestionOf(pendingId))?.confidence ?? null).toBe(confidence);
+		});
+
+		it("suggests with low confidence on a large gap, merchant and words alike", async () => {
+			const amount = own(-1200);
+			const { account, bank, pendingId } = await pendingOf(amount);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 80000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ confidence: "low" });
+		});
+
+		it("suggests nothing on a large gap with another merchant, nor under half", async () => {
+			const gap = own(-1200);
+			const { account, bank, pendingId } = await pendingOf(gap);
+			const half = own(-900);
+			const under = await pendingOf(half);
+
+			await sync(account.id, bank.connectionId, [
+				booked(gap - 80000, 19, { merchant: "Autre Bistrot" }),
+			]);
+			await sync(under.account.id, under.bank.connectionId, [booked(half - 110000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+			await expect(suggestionOf(under.pendingId)).resolves.toBeNull();
+		});
+
+		it("lets the label words decide between two pending entries of the merchant", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [other = ""],
+			} = await sync(account.id, bank.connectionId, [
+				bistrot(amount - 10000, 18, { label: "BISTROT TERRASSE" }),
+			]);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ confidence: "medium" });
+			await expect(suggestionOf(other)).resolves.toBeNull();
+		});
+
+		it("suggests none when the words leave two pending entries", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [other = ""],
+			} = await sync(account.id, bank.connectionId, [bistrot(amount - 10000, 17)]);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+			await expect(suggestionOf(other)).resolves.toBeNull();
+		});
+
+		it("keeps the first suggestion, and never suggests again once dismissed", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [first = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 20000, 20)]);
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: first });
+
+			await dismissPostedMatch(deps(), pendingId);
+			await dismissPostedMatch(deps(), pendingId);
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+			await expect(postedMatchOf(deps(), pendingId)).resolves.toBeNull();
+
+			await deleteTransaction(deps(), first, asUser);
+			await sync(account.id, bank.connectionId, [booked(amount - 10000, 20)]);
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+		});
+
+		it("drops the suggestion with its booked line, and takes a new one then", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [first = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			await deleteTransaction(deps(), first, asUser);
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+
+			const {
+				created: [second = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 20000, 20)]);
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: second });
+		});
+
+		it("keeps an entry holding a suggestion among the candidates, so two fit entries stay ambiguous", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [first = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 20000, 19)]);
+			const {
+				created: [second = ""],
+			} = await sync(account.id, bank.connectionId, [bistrot(amount - 10000, 18)]);
+
+			await sync(account.id, bank.connectionId, [booked(amount - 30000, 20)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: first });
+			await expect(suggestionOf(second)).resolves.toBeNull();
+		});
+
+		it("answers no line once the suggested one is split, which the merge refuses", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+
+			await splitTransaction(
+				deps(),
+				bookedId,
+				[
+					{ label: "Repas", amount: toMinorUnits(amount - 29000), categoryId: null },
+					{ label: "Pourboire", amount: toMinorUnits(-1000), categoryId: null },
+				],
+				asUser,
+			);
+
+			await expect(postedMatchOf(deps(), pendingId)).resolves.toBeNull();
+		});
+
+		it("moves the suggestion onto the line its booked line is merged into", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const repeated = toMinorUnits(amount - 30000);
+			const kept = await add(account.id, { date: "2026-09-18", amount: repeated });
+			await add(account.id, { date: "2026-09-20", amount: repeated });
+			const {
+				created: [flagged = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: flagged });
+
+			await mergeDuplicate(deps(), flagged, kept);
+
+			await expect(suggestionOf(pendingId)).resolves.toEqual({ id: kept, confidence: "medium" });
+			await expect(postedMatchOf(deps(), pendingId)).resolves.toMatchObject({ id: kept });
+		});
+
+		it("suggests the first of two booked lines of one statement that fit", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+
+			const {
+				created: [first = ""],
+			} = await sync(account.id, bank.connectionId, [
+				booked(amount - 30000, 20),
+				booked(amount - 20000, 19),
+			]);
+
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: first });
+		});
+
+		it("dismisses nothing on an entry without a suggestion, so a later one still comes", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+
+			await dismissPostedMatch(deps(), pendingId);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+			await dismissPostedMatch(deps(), bookedId);
+
+			await expect(suggestionOf(pendingId)).resolves.toMatchObject({ id: bookedId });
+			const dismissed = await temp.db
+				.select({ dismissed: transactions.postedMatchDismissed })
+				.from(transactions)
+				.where(eq(transactions.entryId, bookedId))
+				.get();
+			expect(dismissed).toEqual({ dismissed: false });
+		});
+
+		it("suggests nothing from a file import, a manual line or a pending line", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+
+			await importStatement(
+				account.id,
+				statementOf(
+					line({
+						date: "2026-09-19",
+						amount: toMinorUnits(amount - 30000),
+						label: "LE BISTROT PARIS",
+					}),
+				),
+			);
+			await add(account.id, {
+				date: "2026-09-19",
+				amount: toMinorUnits(amount - 20000),
+				label: "LE BISTROT PARIS",
+			});
+			await sync(account.id, bank.connectionId, [bistrot(amount - 10000, 19)]);
+
+			await expect(suggestionOf(pendingId)).resolves.toBeNull();
+		});
+
+		it("refuses to dismiss an unknown transaction", async () => {
+			await expect(dismissPostedMatch(deps(), crypto.randomUUID())).rejects.toMatchObject({
+				code: "NOT_FOUND",
+			});
+			await expect(postedMatchOf(deps(), crypto.randomUUID())).rejects.toMatchObject({
+				code: "NOT_FOUND",
+			});
+		});
+	});
+
+	describe("mergePending", () => {
+		it("leaves the booked line, with the pending category, date, tags, attachment and notes", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId, pendingLineOf } = await pendingOf(amount);
+			const category = await newCategory("Restaurants");
+			const tag = await newTag("Sorties");
+			await updateTransaction(
+				deps(),
+				pendingId,
+				{ categoryId: category, tagIds: [tag], notes: "Avec Paul" },
+				asUser,
+			);
+			await addAttachment(
+				deps(),
+				pendingId,
+				{
+					filename: "ticket.png",
+					contentType: "image/png",
+					bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]),
+				},
+				asUser,
+			);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [
+				booked(amount - 30000, 20, { notes: "CB 18/09" }),
+			]);
+			const merchant = (await findTransaction(deps(), bookedId))?.merchantId;
+
+			await mergePending(deps(), pendingId, bookedId);
+
+			await expect(findTransaction(deps(), pendingId)).resolves.toBeNull();
+			await expect(findTransaction(deps(), bookedId)).resolves.toMatchObject({
+				date: "2026-09-18",
+				amount: amount - 30000,
+				label: "LE BISTROT PARIS",
+				merchantId: merchant,
+				categoryId: category,
+				notes: "CB 18/09\n\nAvec Paul",
+				tagIds: [tag],
+				pending: false,
+			});
+			await expect(categoryOriginOf(bookedId)).resolves.toBe("user");
+			await expect(lockedFields(bookedId)).resolves.toEqual(["date", "amount"]);
+			await expect(listAttachments(deps(), bookedId)).resolves.toHaveLength(1);
+			const days = await history(account.id);
+			expect(days.get("2026-09-17")).toBe(100000 - (amount - 30000));
+			expect(days.get("2026-09-18")).toBe(100000);
+
+			// The bank sending the pending line again finds the survivor.
+			const again = await sync(account.id, bank.connectionId, [pendingLineOf]);
+			expect(again.created).toEqual([]);
+			await expect(transactionCount(account.id)).resolves.toBe(1);
+		});
+
+		it("cuts the joined notes to the sheet's limit, the booked line's own first", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			await updateTransaction(deps(), pendingId, { notes: "p".repeat(1500) }, asUser);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [
+				booked(amount - 30000, 19, { notes: "b".repeat(1000) }),
+			]);
+
+			await mergePending(deps(), pendingId, bookedId);
+
+			const notes = (await rowOf(bookedId))?.notes ?? "";
+			expect(notes).toHaveLength(NOTES_MAX_LENGTH);
+			expect(notes).toBe(`${"b".repeat(1000)}\n\n${"p".repeat(NOTES_MAX_LENGTH - 1002)}`);
+		});
+
+		it("refuses a split's parent or line and writes nothing", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 19)]);
+			const {
+				childIds: [child = ""],
+			} = await splitTransaction(
+				deps(),
+				bookedId,
+				[
+					{ label: "Repas", amount: toMinorUnits(amount - 29000), categoryId: null },
+					{ label: "Pourboire", amount: toMinorUnits(-1000), categoryId: null },
+				],
+				asUser,
+			);
+
+			await expect(mergePending(deps(), pendingId, bookedId)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(mergePending(deps(), pendingId, child)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(rowOf(pendingId)).resolves.toMatchObject({ pending: true });
+			await expect(transactionCount(account.id)).resolves.toBe(4);
+		});
+
+		it("keeps a locked date and category, and an excluded line's own", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const category = await newCategory("Restaurants");
+			const kept = await newCategory("Gardée");
+			await updateTransaction(
+				deps(),
+				pendingId,
+				{ categoryId: category, notes: "Avec Paul" },
+				asUser,
+			);
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(amount - 30000, 20)]);
+			await updateTransaction(deps(), bookedId, { date: "2026-09-21", categoryId: kept }, asUser);
+
+			await mergePending(deps(), pendingId, bookedId);
+
+			await expect(rowOf(bookedId)).resolves.toMatchObject({
+				date: "2026-09-21",
+				notes: "Avec Paul",
+			});
+			await expect(categoryOf(bookedId)).resolves.toBe(kept);
+
+			const other = await pendingOf(own(-2000));
+			await updateTransaction(
+				deps(),
+				other.pendingId,
+				{ categoryId: category, notes: "CB" },
+				asUser,
+			);
+			const {
+				created: [excluded = ""],
+			} = await sync(other.account.id, other.bank.connectionId, [
+				booked(own(-50), 20, { notes: "CB" }),
+			]);
+			await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+
+			await mergePending(deps(), other.pendingId, excluded);
+
+			await expect(rowOf(excluded)).resolves.toMatchObject({ date: "2026-09-20", notes: "CB" });
+			await expect(categoryOf(excluded)).resolves.toBeNull();
+			await expect(lockedFields(excluded)).resolves.toEqual(["excluded", "date", "amount"]);
+		});
+
+		it("refuses an entry already booked, another account's line, a pending one and an unknown id", async () => {
+			const amount = own(-2000);
+			const { account, bank, pendingId } = await pendingOf(amount);
+			const {
+				created: [secondPending = ""],
+			} = await sync(account.id, bank.connectionId, [bistrot(own(-3000), 18)]);
+			const elsewhere = await pendingOf(own(-2000));
+			const {
+				created: [foreign = ""],
+			} = await sync(elsewhere.account.id, elsewhere.bank.connectionId, [booked(own(-70), 19)]);
+
+			await expect(mergePending(deps(), pendingId, foreign)).rejects.toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "into", code: "not_a_candidate" }],
+			});
+			await expect(mergePending(deps(), pendingId, secondPending)).rejects.toMatchObject({
+				code: "VALIDATION_ERROR",
+			});
+			await expect(mergePending(deps(), pendingId, pendingId)).rejects.toMatchObject({
+				code: "VALIDATION_ERROR",
+			});
+			await expect(mergePending(deps(), crypto.randomUUID(), foreign)).rejects.toMatchObject({
+				code: "NOT_FOUND",
+			});
+
+			// Booked at its own amount, the entry is pending no more.
+			const {
+				created: [bookedId = ""],
+			} = await sync(account.id, bank.connectionId, [booked(own(-80), 19)]);
+			await sync(account.id, bank.connectionId, [booked(amount, 19)]);
+
+			await expect(mergePending(deps(), pendingId, bookedId)).rejects.toMatchObject({
+				code: "DUPLICATE_RESOLVED",
+			});
+			await expect(transactionCount(account.id)).resolves.toBe(3);
+			await expect(pendingMergeCandidates(deps(), pendingId, 0)).resolves.toEqual({
+				candidates: [],
+				hasMore: false,
+			});
+		});
+	});
+
+	describe("pendingMergeCandidates", () => {
+		it("lists the account's booked lines ten at a time, the latest first", async () => {
+			const { account, bank, pendingId } = await pendingOf(own(-2000));
+			const lines = Array.from({ length: 11 }, (_, index) =>
+				booked(own(-100), 1 + index, { label: `LIGNE ${index}` }),
+			);
+			const { created } = await sync(account.id, bank.connectionId, lines);
+			await sync(account.id, bank.connectionId, [bistrot(own(-3000), 18)]);
+			const other = await openChecking({ name: "Autre" });
+			await add(other.id, { date: "2026-09-12" });
+
+			const first = await pendingMergeCandidates(deps(), pendingId, 0);
+			const second = await pendingMergeCandidates(deps(), pendingId, 10);
+
+			expect(first.hasMore).toBe(true);
+			expect(first.candidates.map(({ id }) => id)).toEqual(created.toReversed().slice(0, 10));
+			expect(second).toEqual({
+				candidates: [expect.objectContaining({ id: created[0], label: "LIGNE 0" })],
+				hasMore: false,
+			});
 		});
 	});
 });

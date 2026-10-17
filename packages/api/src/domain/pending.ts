@@ -129,3 +129,93 @@ export function assignIdentical<Line extends { referenced: boolean; holder: stri
 
 	return lines.map((line, index) => ({ line, entryId: taken.get(index) ?? null }));
 }
+
+/**
+ * How many days before a new booked line a pending entry it may repeat at
+ * another amount is dated, as Sure's fuzzy `date_window: 3`: a tip is added
+ * within days, not a week later.
+ */
+export const SUGGESTION_WINDOW_DAYS = 3;
+
+/** A pending entry a new booked line may repeat at another amount. */
+export type SuggestionCandidate = {
+	id: string;
+	date: IsoDate;
+	amount: MinorUnits;
+	merchantId: string | null;
+	label: string;
+};
+
+export type PostedMatchSuggestion = { id: string; confidence: "medium" | "low" };
+
+/**
+ * The first three words of a label, as Sure's
+ * `downcase.gsub(/[^a-z0-9\s]/, "").split.first(3).join(" ")`: every
+ * character but an ASCII letter, a digit or ASCII whitespace goes, accented
+ * letters included, so « Café » reads `caf`.
+ */
+export function labelWords(label: string): string {
+	return label
+		.toLowerCase()
+		.replaceAll(/[^a-z0-9 \t\n\v\f\r]/g, "")
+		.split(/[ \t\n\v\f\r]+/)
+		.filter((word) => word !== "")
+		.slice(0, 3)
+		.join(" ");
+}
+
+/** `items` when it holds exactly one, as Sure's `size == 1`; else `undefined`. */
+function single<Item>(items: readonly Item[]): Item | undefined {
+	return items.length === 1 ? items[0] : undefined;
+}
+
+/**
+ * The pending entry a new booked line may repeat at another amount, as Sure's
+ * `find_pending_transaction_fuzzy`, then `find_pending_transaction_low_confidence`
+ * when the first finds none. Both keep to entries dated on the line's day or
+ * up to 3 days before, and compare amounts without their sign, as Sure's
+ * `ABS`, in minor units. Medium: the line at most 30 % above the pending amount, the one
+ * sharing its merchant, else the one sharing its first three label words.
+ * Low: the line from about 30 % above to double the pending amount, the one sharing both, the line having a
+ * merchant and words. Two candidates equally fit are no suggestion: a
+ * café visited twice must not have its tip pinned on the wrong visit.
+ */
+export function suggestPostedMatch(
+	line: { date: IsoDate; amount: MinorUnits; merchantId: string | null; label: string },
+	candidates: readonly SuggestionCandidate[],
+): PostedMatchSuggestion | null {
+	const booked = Math.abs(line.amount);
+	const near = candidates.filter((candidate) => {
+		const distance = daysBetween(candidate.date, line.date);
+
+		return distance >= 0 && distance <= SUGGESTION_WINDOW_DAYS;
+	});
+	// `abs / 1.3 ≤ p ≤ abs`, and `abs / 2 ≤ p ≤ abs × 0.77`, in integers.
+	const medium = near.filter(({ amount }) => {
+		const pending = Math.abs(amount);
+
+		return pending * 13 >= booked * 10 && pending <= booked;
+	});
+	const low = near.filter(({ amount }) => {
+		const pending = Math.abs(amount);
+
+		return pending * 2 >= booked && pending * 100 <= booked * 77;
+	});
+	const words = labelWords(line.label);
+	const sameWords = (candidate: SuggestionCandidate) => labelWords(candidate.label) === words;
+	const sameMerchant = (candidate: SuggestionCandidate) => candidate.merchantId === line.merchantId;
+	const fuzzy =
+		(line.merchantId === null ? undefined : single(medium.filter(sameMerchant))) ??
+		(words === "" ? undefined : single(medium.filter(sameWords)));
+
+	if (fuzzy !== undefined) {
+		return { id: fuzzy.id, confidence: "medium" };
+	}
+
+	const loose =
+		line.merchantId === null || words === ""
+			? undefined
+			: single(low.filter((candidate) => sameMerchant(candidate) && sameWords(candidate)));
+
+	return loose === undefined ? null : { id: loose.id, confidence: "low" };
+}

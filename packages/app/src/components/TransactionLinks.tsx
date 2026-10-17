@@ -3,20 +3,28 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { TransferCandidateData } from "@/hooks/useTransfers";
 
 import { Link } from "@tanstack/react-router";
-import { Repeat } from "lucide-react";
+import { MergeIcon, Repeat, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { BillDialog, prefillFrom } from "@/components/BillDialog";
 import { DuplicateDialog } from "@/components/DuplicateDialog";
+import { Money } from "@/components/Money";
+import { PendingMergeDialog } from "@/components/PendingMergeDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { TransferDialog } from "@/components/TransferDialog";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useDismissDuplicate, useMergeDuplicate } from "@/hooks/useDuplicates";
+import {
+	useDismissDuplicate,
+	useDismissPostedMatch,
+	useMergeDuplicate,
+	useMergePending,
+	usePostedMatch,
+} from "@/hooks/useDuplicates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
 import {
@@ -28,7 +36,7 @@ import {
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
-import { dayAndMonth } from "@/lib/dates";
+import { dayAndMonth, longDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { transferCaption } from "@/lib/transfers";
 
@@ -286,6 +294,189 @@ export function DuplicateBlock({
 					/>
 				</>
 			)}
+		</section>
+	);
+}
+
+/** What a pending block does once a merge or a dismissal settles, here or elsewhere. */
+type PendingOutcomes = {
+	onMerged: (survivorId: string) => void;
+	/** Booked meanwhile, by a sync or another tab: nothing is left to merge. */
+	onResolved: () => void;
+	/** Merged away elsewhere meanwhile: nothing is left to edit. */
+	onGone: () => void;
+};
+
+/**
+ * A pending merge's refusal, as the sheet reacts to it: an entry booked or
+ * merged elsewhere meanwhile hides what offered it, a line no longer a
+ * candidate says so, anything else is the usual toast.
+ */
+function usePendingMergeFailure({ onResolved, onGone }: Omit<PendingOutcomes, "onMerged">) {
+	const { t } = useTranslation();
+
+	return (error: unknown, close: () => void) => {
+		const code = errorCodeOf(error);
+
+		if (code === "DUPLICATE_RESOLVED") {
+			close();
+			onResolved();
+			toast.error(t("transactions.postedMatch.resolved"));
+
+			return;
+		}
+
+		if (code === "NOT_FOUND") {
+			close();
+			onGone();
+		}
+
+		if (code === "VALIDATION_ERROR") {
+			toast.error(t("transactions.pendingMerge.notCandidate"));
+		} else {
+			showErrorToast(code);
+		}
+	};
+}
+
+/**
+ * The sheet's « Doublon possible détecté » alert, Sure's: the booked line a
+ * sync suggests this pending transaction repeats at another amount, with
+ * « Oui, fusionnez-les » and « Non, gardez les deux », which dismisses it for
+ * good. Both save at once, apart from the form. Nothing shows until the line
+ * is read, nor once it is gone. A viewer reads the alert without its actions.
+ */
+export function PostedMatchBlock({
+	transaction,
+	onDismissed,
+	...outcomes
+}: PendingOutcomes & { transaction: TransactionData; onDismissed: () => void }) {
+	const { t } = useTranslation();
+	const admin = useIsAdmin();
+	const match = usePostedMatch(transaction.id, true);
+	const mergePending = useMergePending();
+	const dismissPostedMatch = useDismissPostedMatch();
+	const failed = usePendingMergeFailure(outcomes);
+	const line = match.data;
+
+	if (line === undefined || line === null) {
+		return null;
+	}
+
+	const busy = mergePending.isPending || dismissPostedMatch.isPending;
+
+	return (
+		<section
+			aria-labelledby="transaction-posted-match-title"
+			className="flex items-start gap-3 rounded-lg border border-warning bg-warning/6 p-4 dark:bg-warning/17"
+		>
+			<TriangleAlertIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-warning" />
+			<div className="flex min-w-0 flex-1 flex-col gap-2">
+				<h3 id="transaction-posted-match-title" className="text-sm font-medium">
+					{t("transactions.postedMatch.title")}
+				</h3>
+				<p className="text-sm text-muted-foreground">{t("transactions.postedMatch.description")}</p>
+				<div className="flex items-center justify-between gap-4 rounded-md border bg-background p-3">
+					<p className="flex min-w-0 flex-col">
+						<span className="truncate text-sm font-medium">{line.label}</span>
+						<span className="truncate text-xs text-muted-foreground">
+							{longDate(line.date)} · {line.accountName}
+						</span>
+					</p>
+					<Money amount={line.amount} currency={line.currency} signed />
+				</div>
+				{admin && (
+					<div className="flex flex-wrap gap-2">
+						<Button
+							type="button"
+							disabled={busy}
+							onClick={() =>
+								mergePending.mutate(
+									{ id: transaction.id, into: line.id },
+									{
+										onSuccess: (survivor) => {
+											toast.success(t("transactions.postedMatch.merged"));
+											outcomes.onMerged(survivor.id);
+										},
+										onError: (error) => failed(error, () => undefined),
+									},
+								)
+							}
+						>
+							{t("transactions.postedMatch.merge")}
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							disabled={busy}
+							onClick={() =>
+								dismissPostedMatch.mutate(transaction.id, {
+									onSuccess: () => {
+										toast.success(t("transactions.postedMatch.kept"));
+										onDismissed();
+									},
+									onError: (error) => failed(error, () => undefined),
+								})
+							}
+						>
+							{t("transactions.postedMatch.keepBoth")}
+						</Button>
+					</div>
+				)}
+			</div>
+		</section>
+	);
+}
+
+/**
+ * Sure's « Doublon d'une opération validée ? » on every pending
+ * transaction, for an administrator: « Ouvrir la fusion » lists the booked
+ * lines of its account to merge it into by hand.
+ */
+export function PendingMergeBlock({
+	transaction,
+	...outcomes
+}: PendingOutcomes & { transaction: TransactionData }) {
+	const { t } = useTranslation();
+	const mergePending = useMergePending();
+	const [picking, setPicking] = useState(false);
+	const failed = usePendingMergeFailure(outcomes);
+
+	const merge = (into: string) =>
+		mergePending.mutate(
+			{ id: transaction.id, into },
+			{
+				onSuccess: (survivor) => {
+					setPicking(false);
+					toast.success(t("transactions.pendingMerge.merged"));
+					outcomes.onMerged(survivor.id);
+				},
+				onError: (error) => failed(error, () => setPicking(false)),
+			},
+		);
+
+	return (
+		<section
+			aria-labelledby="transaction-pending-merge-title"
+			className="flex items-center justify-between gap-4"
+		>
+			<div className="flex flex-col gap-1 text-sm">
+				<h3 id="transaction-pending-merge-title" className="font-medium">
+					{t("transactions.pendingMerge.title")}
+				</h3>
+				<p className="text-muted-foreground">{t("transactions.pendingMerge.description")}</p>
+			</div>
+			<Button type="button" variant="outline" className="shrink-0" onClick={() => setPicking(true)}>
+				<MergeIcon aria-hidden="true" />
+				{t("transactions.pendingMerge.open")}
+			</Button>
+			<PendingMergeDialog
+				transaction={transaction}
+				open={picking}
+				onOpenChange={setPicking}
+				onMerge={merge}
+				pending={mergePending.isPending}
+			/>
 		</section>
 	);
 }

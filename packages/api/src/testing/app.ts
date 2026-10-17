@@ -196,6 +196,7 @@ export const listItem = z.object({
 		})
 		.nullable(),
 	possibleDuplicate: z.boolean(),
+	postedMatch: z.object({ id: z.string(), confidence: z.enum(["medium", "low"]) }).nullable(),
 	parentEntryId: z.string().nullable(),
 	splitParent: z.boolean(),
 });

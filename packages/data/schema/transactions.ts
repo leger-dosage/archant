@@ -36,6 +36,15 @@ export type LockableField = (typeof LOCKABLE_FIELDS)[number];
 export type LockedFields = Partial<Record<LockableField, number | null>>;
 
 /**
+ * How sure a sync is that a pending entry repeats a booked line, as Sure's
+ * `potential_posted_match` `confidence`: `medium` when the booked line is at most
+ * 30 % above its amount, `low` from about 30 % above to double.
+ */
+export const POSTED_MATCH_CONFIDENCES = ["medium", "low"] as const;
+
+export type PostedMatchConfidence = (typeof POSTED_MATCH_CONFIDENCES)[number];
+
+/**
  * The transaction-only columns of an entry whose `kind` is `transaction`, as
  * in Sure's delegated types (AD-8). The date and the amount stay on `entries`,
  * where the balance computation reads them for transactions and valuations alike.
@@ -69,6 +78,19 @@ export const transactions = sqliteTable(
 		// stays out of cash flow (AD-8, AD-9); its booked version absorbs it in
 		// place, and no sync deletes it, as Sure's.
 		pending: integer("pending", { mode: "boolean" }).notNull().default(false),
+		// The booked line a sync suggests this pending entry repeats at another
+		// amount, as Sure's `potential_posted_match`. Set null: a deleted booked
+		// line takes its suggestion with it, where Sure keeps a dangling id. Only
+		// ever set on an entry holding none and never dismissed, as Sure keeps
+		// the first one found.
+		postedMatchId: text("posted_match_id").references(() => entries.id, {
+			onDelete: "set null",
+		}),
+		postedMatchConfidence: text("posted_match_confidence").$type<PostedMatchConfidence>(),
+		// « Non, gardez les deux »: no suggestion shows again for this entry.
+		postedMatchDismissed: integer("posted_match_dismissed", { mode: "boolean" })
+			.notNull()
+			.default(false),
 		// Keys added only by `origin: "user"` ledger calls, read by every later
 		// writer; the owner's unlock clears them all at once (AD-10).
 		lockedFields: text("locked_fields", { mode: "json" })
@@ -102,6 +124,9 @@ export const transactions = sqliteTable(
 		index("transactions_category").on(table.categoryId),
 		// Every merchant delete and merge, and the list's filter, look rows up by it.
 		index("transactions_merchant").on(table.merchantId),
+		// Deleting an entry sets its suggestions null: without it, every
+		// deleted entry would scan the table.
+		index("transactions_posted_match").on(table.postedMatchId),
 		check(
 			"transactions_category_origin_check",
 			sql`${table.categoryOrigin} in ${inList(CATEGORY_ORIGINS)}`,
@@ -109,6 +134,10 @@ export const transactions = sqliteTable(
 		check(
 			"transactions_category_origin_set_check",
 			sql`(${table.categoryId} is null) = (${table.categoryOrigin} is null)`,
+		),
+		check(
+			"transactions_posted_match_confidence_check",
+			sql`${table.postedMatchConfidence} in ${inList(POSTED_MATCH_CONFIDENCES)}`,
 		),
 		check(
 			"transactions_investment_activity_label_check",

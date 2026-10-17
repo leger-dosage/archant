@@ -24,7 +24,13 @@ import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { TransactionAttachments } from "@/components/TransactionAttachments";
 import { CategoryField, MerchantField, TagsField } from "@/components/TransactionFields";
-import { DuplicateBlock, RecurringBlock, TransferBlock } from "@/components/TransactionLinks";
+import {
+	DuplicateBlock,
+	PendingMergeBlock,
+	PostedMatchBlock,
+	RecurringBlock,
+	TransferBlock,
+} from "@/components/TransactionLinks";
 import { ProtectionBlock } from "@/components/TransactionProtection";
 import { SplitBlock } from "@/components/TransactionSplit";
 import { Button } from "@/components/ui/button";
@@ -150,6 +156,10 @@ export function TransactionForm({
 	// Hidden once resolved here; a refetch clearing the flag hides it too.
 	const [duplicateHidden, setDuplicateHidden] = useState(false);
 	const duplicate = transaction?.possibleDuplicate === true && !duplicateHidden;
+	// The pending blocks go once booked or dismissed here; a refetch hides them too.
+	const [pendingResolved, setPendingResolved] = useState(false);
+	const [postedMatchHidden, setPostedMatchHidden] = useState(false);
+	const pendingLine = transaction?.pending === true && !pendingResolved;
 	// Hidden once unlocked here, as the duplicate block once resolved.
 	const [unlocked, setUnlocked] = useState(false);
 	const locked = transaction !== null && protectedFromSync(transaction) && !unlocked;
@@ -340,6 +350,24 @@ export function TransactionForm({
 					}
 				}}
 			>
+				{transaction !== null &&
+					pendingLine &&
+					transaction.postedMatch !== null &&
+					!postedMatchHidden && (
+						<PostedMatchBlock
+							transaction={transaction}
+							onDismissed={() => {
+								setPostedMatchHidden(true);
+								// The block goes with the button that had focus: the next control takes it.
+								requestAnimationFrame(() =>
+									formRef.current?.querySelector<HTMLElement>("button, input, textarea")?.focus(),
+								);
+							}}
+							onMerged={onCloseFocusing}
+							onResolved={() => setPendingResolved(true)}
+							onGone={onClose}
+						/>
+					)}
 				{transaction !== null && locked && (
 					<ProtectionBlock
 						transaction={transaction}
@@ -386,6 +414,14 @@ export function TransactionForm({
 						}}
 						onMerged={onCloseFocusing}
 						onResolved={() => setDuplicateHidden(true)}
+						onGone={onClose}
+					/>
+				)}
+				{transaction !== null && admin && pendingLine && !inSplit && (
+					<PendingMergeBlock
+						transaction={transaction}
+						onMerged={onCloseFocusing}
+						onResolved={() => setPendingResolved(true)}
 						onGone={onClose}
 					/>
 				)}

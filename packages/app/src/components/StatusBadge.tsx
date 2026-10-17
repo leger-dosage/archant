@@ -7,6 +7,7 @@ import {
 	CircleAlertIcon,
 	CircleCheckBigIcon,
 	CircleCheckIcon,
+	CircleHelpIcon,
 	CirclePauseIcon,
 	CircleStopIcon,
 	ClockAlertIcon,
@@ -23,6 +24,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 /**
@@ -43,6 +45,10 @@ const STATUSES = {
 	split: { icon: SplitIcon, key: "transactions.split.badge", tone: "neutral" },
 	// The warning tint, which DESIGN.md keeps for states that need attention.
 	duplicate: { icon: TriangleAlertIcon, key: "transactions.duplicate.flag", tone: "warning" },
+	// A pending line a sync suggests is booked at another amount, as Sure's
+	// pills: a line at most 30 % above the pending amount, a warning; further, a neutral « Vérifier ».
+	postedMatch: { icon: TriangleAlertIcon, key: "transactions.postedMatch.badge", tone: "warning" },
+	postedMatchLow: { icon: CircleHelpIcon, key: "transactions.postedMatch.review", tone: "neutral" },
 	// A series' state is information, never an alarm: all neutral.
 	recurringActive: { icon: CircleCheckIcon, key: "recurring.statuses.active", tone: "neutral" },
 	recurringInactive: { icon: CirclePauseIcon, key: "recurring.statuses.inactive", tone: "neutral" },
@@ -121,5 +127,39 @@ export function StatusBadge({
 			<Icon aria-hidden="true" className="size-3 shrink-0" />
 			<span className={cn(iconBelowMd && "max-md:sr-only")}>{t(key)}</span>
 		</span>
+	);
+}
+
+/**
+ * Sure's « Doublon ? » or « Vérifier » pill on a pending transaction a sync
+ * suggests is booked at another amount, its tooltip Sure's title.
+ */
+export function PostedMatchBadge({
+	confidence,
+	iconBelowMd = false,
+}: {
+	confidence: "medium" | "low";
+	iconBelowMd?: boolean;
+}) {
+	const { t } = useTranslation();
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				<span className="inline-flex shrink-0">
+					<StatusBadge
+						status={confidence === "low" ? "postedMatchLow" : "postedMatch"}
+						iconBelowMd={iconBelowMd}
+					/>
+				</span>
+			</TooltipTrigger>
+			<TooltipContent side="bottom">
+				{t(
+					confidence === "low"
+						? "transactions.postedMatch.reviewTooltip"
+						: "transactions.postedMatch.badgeTooltip",
+				)}
+			</TooltipContent>
+		</Tooltip>
 	);
 }

@@ -637,6 +637,36 @@
 			"dismissed": "Ce n'est plus signalé comme doublon",
 			"notCandidate": "Cette opération ne peut plus être fusionnée avec celle-ci. Choisissez-en une autre."
 		},
+		"postedMatch": {
+			"badge": "Doublon ?",
+			"badgeTooltip": "Cette opération peut être un doublon d'une autre opération",
+			"review": "Vérifier",
+			"reviewTooltip": "Écart de montant important — vérification recommandée pour vérifier s'il s'agit d'un doublon",
+			"title": "Doublon possible détecté",
+			"description": "Cette opération en attente peut être la même que l'opération validée ci-dessous. Si tel est le cas, fusionnez-les pour éviter un double comptage.",
+			"merge": "Oui, fusionnez-les",
+			"keepBoth": "Non, gardez les deux",
+			"merged": "Opérations fusionnées avec succès",
+			"kept": "Conservées comme opérations distinctes",
+			"resolved": "Cette opération n'est plus en attente."
+		},
+		"pendingMerge": {
+			"title": "Doublon d'une opération validée ?",
+			"description": "Fusionnez manuellement cette opération en attente avec sa version validée.",
+			"open": "Ouvrir la fusion",
+			"dialogTitle": "Fusionner avec une opération validée",
+			"warningTitle": "Fusion manuelle de doublons",
+			"warningDescription": "Utilisez cette option pour fusionner manuellement une opération en attente avec sa version validée. Cela supprimera l'opération en attente et ne conservera que la version validée.",
+			"pendingTransaction": "Opération en attente",
+			"selectPosted": "Sélectionner l'opération validée à fusionner",
+			"showingRange": "Affichage de {{start}} - {{end}}",
+			"previous": "← 10 précédentes",
+			"next": "10 suivantes →",
+			"noCandidates": "Aucune opération validée trouvée sur ce compte.",
+			"submit": "Fusionner les opérations",
+			"merged": "Opération en attente fusionnée avec l'opération validée",
+			"notCandidate": "Opération non valide sélectionnée pour la fusion"
+		},
 		"recurring": {
 			"title": "Récurrence",
 			"description": "Suivez cette opération comme un paiement qui revient chaque mois à ce jour, ou créez une facture dont vous choisissez la fréquence.",

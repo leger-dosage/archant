@@ -34,7 +34,7 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { transactions } from "@archant/data/schema/transactions";
-import type { LockedFields } from "@archant/data/schema/transactions";
+import type { LockedFields, PostedMatchConfidence } from "@archant/data/schema/transactions";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
 import { both, filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
@@ -85,6 +85,12 @@ export type TransactionRecord = {
 	 * (AD-7), until the user merges or dismisses it.
 	 */
 	possibleDuplicate: boolean;
+	/**
+	 * The booked line a sync suggests this pending one repeats at another
+	 * amount, as Sure's `potential_posted_match`; `null` once booked, dismissed
+	 * or without one.
+	 */
+	postedMatch: { id: string; confidence: PostedMatchConfidence } | null;
 	/**
 	 * The transaction this one is a split line of (AD-20), `null` for an
 	 * unsplit transaction or a split's parent.
@@ -138,6 +144,9 @@ const transactionColumns = {
 	oneTime: transactions.oneTime,
 	pending: transactions.pending,
 	possibleDuplicate: transactions.possibleDuplicate,
+	postedMatchId: transactions.postedMatchId,
+	postedMatchConfidence: transactions.postedMatchConfidence,
+	postedMatchDismissed: transactions.postedMatchDismissed,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
 	investmentActivityLabel: transactions.investmentActivityLabel,
@@ -149,11 +158,27 @@ function toRecord<Row extends { amount: number }>(row: Row): Row & { amount: Min
 	return { ...row, amount: toMinorUnits(row.amount) };
 }
 
-/** Folds the transfer columns of a row into its `transfer`. */
-function withTransferLink<Row extends TransferColumns>(
+type PostedMatchColumns = {
+	pending: boolean;
+	postedMatchId: string | null;
+	postedMatchConfidence: PostedMatchConfidence | null;
+	postedMatchDismissed: boolean;
+};
+
+/**
+ * Folds the transfer columns of a row into its `transfer`, and its suggestion
+ * into its `postedMatch`.
+ */
+function withTransferLink<Row extends TransferColumns & PostedMatchColumns>(
 	row: Row,
-): Omit<Row, keyof TransferColumns> & { transfer: TransferLink | null } {
+): Omit<Row, keyof TransferColumns | Exclude<keyof PostedMatchColumns, "pending">> & {
+	transfer: TransferLink | null;
+	postedMatch: TransactionRecord["postedMatch"];
+} {
 	const {
+		postedMatchId,
+		postedMatchConfidence,
+		postedMatchDismissed,
 		transferId,
 		transferKind,
 		transferStatus,
@@ -166,6 +191,13 @@ function withTransferLink<Row extends TransferColumns>(
 
 	return {
 		...rest,
+		postedMatch:
+			rest.pending &&
+			!postedMatchDismissed &&
+			postedMatchId !== null &&
+			postedMatchConfidence !== null
+				? { id: postedMatchId, confidence: postedMatchConfidence }
+				: null,
 		transfer:
 			transferId === null ||
 			transferKind === null ||

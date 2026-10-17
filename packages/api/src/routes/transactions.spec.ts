@@ -1,3 +1,4 @@
+import type { NormalizedTransaction } from "../domain/statement.ts";
 import type { Auth } from "../services/auth.ts";
 
 import { sql } from "drizzle-orm";
@@ -5,7 +6,11 @@ import { testClient } from "hono/testing";
 import { beforeAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { toMinorUnits } from "@archant/data/money";
+import { bankConnections } from "@archant/data/schema/bank-connections";
+
 import { createLogger } from "../lib/logger.ts";
+import { ingest } from "../services/ledger/ingest.ts";
 import {
 	balanceOf,
 	buildApp,
@@ -1363,6 +1368,210 @@ describe("possible duplicates", () => {
 		]);
 
 		expect(responses.map((response) => response.status)).toEqual([401, 401, 401, 403, 403]);
+	});
+});
+
+const connectionOf = new Map<string, string>();
+
+/**
+ * Writes `lines` into `accountId` as a sync of its own connection, in the
+ * running test's database: only a sync's keys sit on a pending entry.
+ */
+async function syncOwn(accountId: string, lines: NormalizedTransaction[]) {
+	const db = own?.db ?? temp.db;
+	const connectionId = connectionOf.get(accountId) ?? crypto.randomUUID();
+
+	if (!connectionOf.has(accountId)) {
+		connectionOf.set(accountId, connectionId);
+		await db.insert(bankConnections).values({
+			id: connectionId,
+			connector: "enable-banking",
+			institutionName: "Banque Test",
+			country: "FR",
+			status: "active",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+	}
+
+	const result = await ingest(
+		{ db, timeZone: "Europe/Paris" },
+		accountId,
+		{ transactions: lines, balance: null, rejected: [] },
+		{ connectionId },
+		{ origin: "sync" },
+	);
+
+	return result.created;
+}
+
+const bankLine = (amount: number, overrides: Partial<NormalizedTransaction> = {}) => ({
+	externalId: crypto.randomUUID(),
+	date: "2026-09-04",
+	amount: toMinorUnits(amount),
+	currency: "EUR",
+	label: "LE BISTROT PARIS",
+	reference: null,
+	notes: null,
+	pending: false,
+	merchant: "Le Bistrot",
+	...overrides,
+});
+
+/** A pending -20,00 on the 3rd, and its booked -23,00 on the 4th, synced apart. */
+async function tip() {
+	await ownDatabase();
+	const account = await openOwn({ name: "Compte courant" });
+	const [pending = ""] = await syncOwn(account.id, [
+		bankLine(-2000, { date: "2026-09-03", pending: true, label: "LE BISTROT PARIS CB" }),
+	]);
+	const [booked = ""] = await syncOwn(account.id, [bankLine(-2300)]);
+
+	return { account, pending, booked };
+}
+
+describe("pending duplicates", () => {
+	const candidate = z.object({
+		id: z.string(),
+		date: z.string(),
+		label: z.string(),
+		amount: z.number(),
+		currency: z.string(),
+		accountId: z.string(),
+		accountName: z.string(),
+	});
+	const page = z.object({
+		data: z.strictObject({ candidates: z.array(candidate), hasMore: z.boolean() }),
+	});
+	const itemBody = z.object({
+		data: z.object({
+			id: z.string(),
+			date: z.string(),
+			pending: z.boolean(),
+			postedMatch: z.object({ id: z.string(), confidence: z.enum(["medium", "low"]) }).nullable(),
+		}),
+	});
+
+	it("shows the suggestion on the row and names its line, then merges it", async () => {
+		const { account, pending, booked } = await tip();
+
+		expect((await listed("")).items.find((item) => item.id === pending)).toMatchObject({
+			postedMatch: { id: booked, confidence: "medium" },
+		});
+		const match = await ownRequest("GET", `/api/transactions/${pending}/posted-match`);
+		expect(match.status).toBe(200);
+		expect(z.object({ data: candidate }).parse(match.body).data).toEqual({
+			id: booked,
+			date: "2026-09-04",
+			label: "LE BISTROT PARIS",
+			amount: -2300,
+			currency: "EUR",
+			accountId: account.id,
+			accountName: "Compte courant",
+		});
+
+		const merged = await ownRequest("POST", `/api/transactions/${pending}/merge-pending`, {
+			into: booked,
+		});
+
+		expect(merged.status).toBe(200);
+		expect(itemBody.parse(merged.body).data).toMatchObject({
+			id: booked,
+			date: "2026-09-03",
+			pending: false,
+			postedMatch: null,
+		});
+		expect((await listed("")).items.map((item) => item.id)).toEqual([booked]);
+		const gone = await ownRequest("GET", `/api/transactions/${pending}/posted-match`);
+		expect(errorBody.parse(gone.body).error.code).toBe("NOT_FOUND");
+	});
+
+	it("dismisses the suggestion for good", async () => {
+		const { pending } = await tip();
+
+		const dismissed = await ownRequest("POST", `/api/transactions/${pending}/dismiss-posted-match`);
+		const again = await ownRequest("POST", `/api/transactions/${pending}/dismiss-posted-match`);
+
+		expect([dismissed.status, again.status]).toEqual([200, 200]);
+		expect(itemBody.parse(again.body).data.postedMatch).toBeNull();
+		const match = await ownRequest("GET", `/api/transactions/${pending}/posted-match`);
+		expect(match.body).toEqual({ data: null });
+	});
+
+	it("lists the booked lines ten at a time, and refuses a page below zero", async () => {
+		const { account, pending, booked } = await tip();
+		const more = await syncOwn(
+			account.id,
+			Array.from({ length: 10 }, (_, index) => bankLine(-100 - index, { label: `LIGNE ${index}` })),
+		);
+
+		const first = await ownRequest("GET", `/api/transactions/${pending}/pending-merge-candidates`);
+		const second = await ownRequest(
+			"GET",
+			`/api/transactions/${pending}/pending-merge-candidates?offset=10`,
+		);
+		const negative = await ownRequest(
+			"GET",
+			`/api/transactions/${pending}/pending-merge-candidates?offset=-1`,
+		);
+
+		expect(page.parse(first.body).data.candidates).toHaveLength(10);
+		expect(page.parse(first.body).data.hasMore).toBe(true);
+		expect(page.parse(second.body).data.hasMore).toBe(false);
+		expect(
+			[...page.parse(first.body).data.candidates, ...page.parse(second.body).data.candidates]
+				.map(({ id }) => id)
+				.toSorted(),
+		).toEqual([booked, ...more].toSorted());
+		expect(negative.status).toBe(400);
+	});
+
+	it("refuses a line outside the candidates, then an entry no longer pending", async () => {
+		const { account, pending, booked } = await tip();
+		const other = await openOwn({ name: "Livret" });
+		const [elsewhere = ""] = await syncOwn(other.id, [bankLine(-2300)]);
+
+		const refused = await ownRequest("POST", `/api/transactions/${pending}/merge-pending`, {
+			into: elsewhere,
+		});
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "into", code: "not_a_candidate" }],
+		});
+
+		await syncOwn(account.id, [bankLine(-2000, { date: "2026-09-05" })]);
+		// Booked at its own amount, the entry shows its suggestion no more.
+		expect((await listed("")).items.find((item) => item.id === pending)).toMatchObject({
+			postedMatch: null,
+		});
+		const match = await ownRequest("GET", `/api/transactions/${pending}/posted-match`);
+		expect(match.body).toEqual({ data: null });
+		const resolved = await ownRequest("POST", `/api/transactions/${pending}/merge-pending`, {
+			into: booked,
+		});
+
+		expect(resolved.status).toBe(409);
+		expect(errorBody.parse(resolved.body).error.code).toBe("DUPLICATE_RESOLVED");
+	});
+
+	it("answers NOT_FOUND for an unknown transaction", async () => {
+		await ownDatabase();
+
+		const responses = await Promise.all([
+			ownRequest("GET", "/api/transactions/nope/posted-match"),
+			ownRequest("GET", "/api/transactions/nope/pending-merge-candidates"),
+			ownRequest("POST", "/api/transactions/nope/merge-pending", { into: "other" }),
+			ownRequest("POST", "/api/transactions/nope/dismiss-posted-match"),
+		]);
+
+		expect(responses.map(({ body }) => errorBody.parse(body).error.code)).toEqual([
+			"NOT_FOUND",
+			"NOT_FOUND",
+			"NOT_FOUND",
+			"NOT_FOUND",
+		]);
 	});
 });
 

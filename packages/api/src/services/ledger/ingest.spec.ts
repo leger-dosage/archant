@@ -105,6 +105,7 @@ describe("ingest", () => {
 			tagIds: [],
 			transfer: null,
 			possibleDuplicate: false,
+			postedMatch: null,
 			parentEntryId: null,
 			lockedFields: { date: anyTime, amount: anyTime, label: anyTime },
 		});
