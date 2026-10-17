@@ -2,12 +2,13 @@ import { z } from "zod";
 
 import { ACCOUNT_SUBTYPES, ACCOUNT_TYPE_IDS } from "@archant/data/account-types";
 
-// Sure's raw-data CSV imports at 00dd977fb: `TransactionImport`,
+// Sure's CSV imports at 00dd977fb: the raw-data `TransactionImport`,
 // `AccountImport`, `CategoryImport`, `MerchantImport`, `RuleImport` and
-// `TradeImport`, their choices and limits. Shared with the interface, which
+// `TradeImport`, and the financial tools' `MintImport`, `YnabImport` and
+// `ActualImport`, their choices and limits. Shared with the interface, which
 // lists the same choices in « Configurer ».
 
-/** The six sources of « Données brutes », as the routes name them. */
+/** The six sources of « Données brutes », then Sure's three financial tools, as the routes name them. */
 export const CSV_IMPORT_TYPES = [
 	"transactions",
 	"accounts",
@@ -15,9 +16,20 @@ export const CSV_IMPORT_TYPES = [
 	"merchants",
 	"rules",
 	"trades",
+	"mint",
+	"ynab",
+	"actual",
 ] as const;
 
 export type CsvImportType = (typeof CSV_IMPORT_TYPES)[number];
+
+/** Sure's financial tools whose export is a transactions CSV with its columns already mapped. */
+export const TOOL_IMPORT_TYPES = ["mint", "ynab", "actual"] as const;
+
+export type ToolImportType = (typeof TOOL_IMPORT_TYPES)[number];
+
+export const isToolImport = (type: CsvImportType): type is ToolImportType =>
+	TOOL_IMPORT_TYPES.some((tool) => tool === type);
 
 /** Sure's `Import::SEPARATORS`, the comma first and by default. */
 export const CSV_SEPARATORS = [",", ";"] as const;
@@ -83,7 +95,11 @@ export const AMOUNT_TYPE_STRATEGIES = ["signed_amount", "custom_column"] as cons
 
 export type AmountTypeStrategy = (typeof AMOUNT_TYPE_STRATEGIES)[number];
 
-/** Sure's `column_keys` of the imports « Configurer » maps by column, in its form's order. */
+/**
+ * Sure's `column_keys` of the imports « Configurer » maps by column, in its
+ * form's order; a tool's are those its `DEFAULT_COLUMN_MAPPINGS` reads,
+ * Mint's notes included though its form does not show them.
+ */
 export const COLUMN_KEYS = {
 	transactions: [
 		"date",
@@ -107,6 +123,9 @@ export const COLUMN_KEYS = {
 		"account",
 		"name",
 	],
+	mint: ["date", "amount", "currency", "account", "name", "category", "tags", "notes"],
+	ynab: ["date", "account", "name", "category", "notes"],
+	actual: ["date", "amount", "account", "name", "category", "notes"],
 } as const;
 
 export type ColumnKey = (typeof COLUMN_KEYS)[keyof typeof COLUMN_KEYS][number];
@@ -117,6 +136,7 @@ export const COLUMN_KEY_LIST = [
 		...COLUMN_KEYS.transactions,
 		...COLUMN_KEYS.accounts,
 		...COLUMN_KEYS.trades,
+		...COLUMN_KEYS.mint,
 	]),
 ];
 

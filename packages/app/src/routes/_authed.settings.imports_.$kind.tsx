@@ -16,6 +16,7 @@ import type {
 	CsvSeparator,
 	NumberFormat,
 	SignageConvention,
+	ToolImportType,
 } from "@archant/api/schemas/csv-imports";
 import {
 	AMOUNT_TYPE_STRATEGIES,
@@ -28,6 +29,7 @@ import {
 	NUMBER_FORMATS,
 	SIGNAGE_CONVENTIONS,
 	dateFormatsOf,
+	isToolImport,
 } from "@archant/api/schemas/csv-imports";
 import { supportsTrades } from "@archant/data/account-types";
 
@@ -90,6 +92,17 @@ const REQUIRED_COLUMNS: Partial<Record<CsvImportType, readonly ColumnKey[]>> = {
 	transactions: ["date", "amount"],
 	accounts: ["name", "amount"],
 	trades: ["date", "ticker", "qty", "price"],
+	mint: ["date", "amount"],
+	// YNAB's amount comes from its own columns, which the form does not map.
+	ynab: ["date"],
+	actual: ["date", "amount"],
+};
+
+/** The optional columns each tool's form shows last, in Sure's order: Mint's has tags, not notes. */
+const TOOL_FIELDS: Record<ToolImportType, readonly ColumnKey[]> = {
+	mint: ["account", "name", "category", "tags"],
+	ynab: ["account", "name", "category", "notes"],
+	actual: ["account", "name", "category", "notes"],
 };
 
 /** Sure's `csv_template` of each import, offered as « Téléchargez un exemple de fichier CSV ». */
@@ -129,6 +142,21 @@ const TEMPLATES: Record<CsvImportType, string> = {
 		"2024-05-16,GOOGL,XNAS,USD,-5,2500.00,Investment Account,Alphabet Inc. Sale",
 		"2024-05-17,TSLA,XNAS,USD,2,700.50,Retirement Account,Tesla Inc. Purchase",
 	].join("\n"),
+	mint: [
+		"Date,Amount,Account Name,Description,Category,Labels,Currency,Notes,Transaction Type",
+		"01/01/2024,8.55,Checking,Starbucks,Food & Drink,Coffee|Breakfast,USD,Morning coffee,debit",
+		"04/15/2024,2000,Savings,Paycheck,Income,,USD,Bi-weekly salary,credit",
+	].join("\n"),
+	ynab: [
+		"Account,Flag,Date,Payee,Category Group/Category,Category Group,Category,Memo,Outflow,Inflow,Cleared",
+		"Checking,,01/01/2024,Employer,Income: Paycheck,Income,Paycheck,Monthly salary,$0.00,$2500.00,Cleared",
+		"Credit Card,,01/03/2024,Coffee Shop,Dining Out: Coffee,Dining Out,Coffee,Morning coffee,$4.25,$0.00,Uncleared",
+	].join("\n"),
+	actual: [
+		"Account,Date,Payee,Notes,Category_Group,Category,Amount,Split_Amount,Cleared",
+		"Checking Account,2024-01-01,Employer,Monthly salary,Income,Paycheck,2500.00,0,Reconciled",
+		"Credit Card,2024-01-03,Coffee Shop,Morning coffee,Food,Coffee,-4.25,0,Cleared",
+	].join("\n"),
 };
 
 /** The choices the preview read the file with, kept for the next post. */
@@ -149,7 +177,8 @@ function configurationOf(resolved: Preview["configuration"]): CsvImportConfigura
 /**
  * Sure's `mapping_steps` of `type`: account types; the accounts of a
  * multi-account trade file; the categories and tags of a transaction file,
- * and its accounts when it names them.
+ * and its accounts when it names them; a Mint file's categories, tags and
+ * accounts; a YNAB or Actual file's categories and accounts.
  */
 function mapStepsOf(type: CsvImportType, accountId: string | null | undefined): MapKind[] {
 	const multiAccount = (accountId ?? null) === null;
@@ -161,6 +190,11 @@ function mapStepsOf(type: CsvImportType, accountId: string | null | undefined): 
 			return multiAccount ? ["accounts"] : [];
 		case "transactions":
 			return multiAccount ? ["categories", "tags", "accounts"] : ["categories", "tags"];
+		case "mint":
+			return ["categories", "tags", "accounts"];
+		case "ynab":
+		case "actual":
+			return ["categories", "accounts"];
 		default:
 			return [];
 	}
@@ -662,6 +696,22 @@ function useColumnLabel(type: CsvImportType) {
 		const accountKey = COLUMN_KEYS.accounts.find((known) => known === key);
 		const tradeKey = COLUMN_KEYS.trades.find((known) => known === key);
 
+		const mintKey = COLUMN_KEYS.mint.find((known) => known === key);
+		const ynabKey = COLUMN_KEYS.ynab.find((known) => known === key);
+		const actualKey = COLUMN_KEYS.actual.find((known) => known === key);
+
+		if (type === "mint" && mintKey !== undefined) {
+			return t(`csvImport.configure.mint.${mintKey}`);
+		}
+
+		if (type === "ynab" && ynabKey !== undefined) {
+			return t(`csvImport.configure.ynab.${ynabKey}`);
+		}
+
+		if (type === "actual" && actualKey !== undefined) {
+			return t(`csvImport.configure.actual.${actualKey}`);
+		}
+
 		if (type === "transactions" && transactionKey !== undefined) {
 			return t(`csvImport.configure.transactions.${transactionKey}`);
 		}
@@ -751,6 +801,9 @@ function ConfigureStep({
 }) {
 	const { t } = useTranslation();
 	const columnLabel = useColumnLabel(type);
+	const tool = isToolImport(type) ? type : null;
+	// The form whose labels « Format de date » and « Format numérique » use.
+	const form = tool ?? (type === "trades" || type === "transactions" ? type : "accounts");
 	const columns = configuration.columns ?? {};
 	const keys: readonly ColumnKey[] =
 		type === "accounts"
@@ -807,9 +860,7 @@ function ConfigureStep({
 		<div className="flex flex-col gap-1.5">
 			<ChoiceField
 				id="csv-import-date-format"
-				label={t(
-					`csvImport.configure.${type === "trades" || type === "transactions" ? type : "accounts"}.dateFormat`,
-				)}
+				label={t(`csvImport.configure.${form}.dateFormat`)}
 				value={configuration.dateFormat ?? "%Y-%m-%d"}
 				options={dateFormatsOf(type).map(([label, format]) => ({ value: format, label }))}
 				onChange={(value) => set({ dateFormat: value })}
@@ -829,9 +880,7 @@ function ConfigureStep({
 	const numberFormatField = (
 		<ChoiceField<NumberFormat>
 			id="csv-import-number-format"
-			label={t(
-				`csvImport.configure.${type === "trades" || type === "transactions" ? type : "accounts"}.numberFormat`,
-			)}
+			label={t(`csvImport.configure.${form}.numberFormat`)}
 			value={configuration.numberFormat ?? "1,234.56"}
 			options={NUMBER_FORMATS.map((value) => ({ value, label: value }))}
 			onChange={(value) => set({ numberFormat: value })}
@@ -997,6 +1046,48 @@ function ConfigureStep({
 						{keys.filter((key) => !["date", "qty", "currency"].includes(key)).map(columnField)}
 					</>
 				)}
+				{tool !== null && (
+					<>
+						<div className="flex items-center gap-3 rounded-lg border bg-card p-4">
+							<CircleCheckIcon aria-hidden="true" className="size-5 shrink-0 text-money-income" />
+							<p className="text-sm italic">{t(`csvImport.configure.${tool}.notice`)}</p>
+						</div>
+						<div className="grid gap-4 sm:grid-cols-2">
+							{columnField("date")}
+							{dateFormatField}
+						</div>
+						{tool === "ynab" ? (
+							<>
+								<p className="text-xs text-muted-foreground">
+									{t("csvImport.configure.ynab.amountNotice")}
+								</p>
+								{numberFormatField}
+							</>
+						) : (
+							<div className="grid gap-4 sm:grid-cols-2">
+								{columnField("amount")}
+								<ChoiceField<SignageConvention>
+									id="csv-import-signage"
+									label={t(`csvImport.configure.${tool}.signage`)}
+									value={configuration.signage ?? "inflows_positive"}
+									options={SIGNAGE_CONVENTIONS.map((value) => ({
+										value,
+										label: t(`csvImport.configure.transactions.signages.${value}`),
+									}))}
+									onChange={(value) => set({ signage: value })}
+								/>
+							</div>
+						)}
+						{tool === "mint" && (
+							<div className="grid gap-4 sm:grid-cols-2">
+								{columnField("currency")}
+								{numberFormatField}
+							</div>
+						)}
+						{tool === "actual" && numberFormatField}
+						{TOOL_FIELDS[tool].map(columnField)}
+					</>
+				)}
 				{(type === "categories" || type === "merchants" || type === "rules") && (
 					<div className="flex flex-col gap-3 text-sm text-muted-foreground">
 						<p>{t(`csvImport.configure.${type}.description`)}</p>
@@ -1006,7 +1097,10 @@ function ConfigureStep({
 				<Button type="submit" disabled={missing || reading}>
 					{reading
 						? t("csvImport.configure.applying")
-						: type === "transactions" || type === "accounts" || type === "trades"
+						: type === "transactions" ||
+							  type === "accounts" ||
+							  type === "trades" ||
+							  isToolImport(type)
 							? t("csvImport.configure.apply")
 							: t(`csvImport.configure.${type}.button`)}
 				</Button>

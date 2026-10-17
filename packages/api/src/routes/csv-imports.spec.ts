@@ -213,6 +213,27 @@ describe("POST /api/csv-imports", () => {
 		).toEqual([{ label: "Boulangerie", amount: -1250 }]);
 	});
 
+	it("imports a YNAB file with its columns preset, ignoring an account sent at upload", async () => {
+		const own = await ownDatabase();
+		const app = buildApp(own.db);
+		const { id } = await openOwn({ name: "Compte joint" });
+		const checking = await openOwn({ name: "Checking" });
+		const published = await post(
+			"/api/csv-imports",
+			{ type: "ynab", configuration: JSON.stringify({ accountId: id }) },
+			"Account,Date,Payee,Outflow,Inflow\nChecking,09/02/2026,Boulangerie,$12.50,",
+			app,
+		);
+
+		expect(published.status).toBe(201);
+		expect(published.body).toMatchObject({ data: { counts: { transactions: 1, accounts: 0 } } });
+		expect(
+			await own.db.all(
+				sql`select e.account_id as account, e.amount from transactions t join entries e on e.id = t.entry_id`,
+			),
+		).toEqual([{ account: checking.id, amount: -1250 }]);
+	});
+
 	it("refuses a viewer FORBIDDEN, the preview too", async () => {
 		const silent = createLogger("silent");
 		const auth = createTestAuth(temp.db, silent);

@@ -1,5 +1,5 @@
 import type { IsoDate } from "../domain/dates.ts";
-import type { ColumnKey, CsvImportType } from "../schemas/csv-imports.ts";
+import type { ColumnKey, CsvImportType, ToolImportType } from "../schemas/csv-imports.ts";
 import type { CsvRow, CsvTable, HeaderLookup } from "./csv-import-format.ts";
 import type {
 	AccountTypeMapping,
@@ -57,6 +57,7 @@ import {
 	DEFAULT_DATE_FORMAT,
 	MAX_CSV_BYTES,
 	dateFormatsOf,
+	isToolImport,
 	maxRowsOf,
 } from "../schemas/csv-imports.ts";
 import {
@@ -81,6 +82,7 @@ import {
 	numberOf,
 	valueMappings,
 } from "./csv-import-sheet.ts";
+import { TOOL_PRESETS } from "./csv-import-tools.ts";
 import { analyseTransactions } from "./csv-import-transactions.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { insertCsvTrades, listingOf, storedListing } from "./ledger/csv-trades.ts";
@@ -202,8 +204,8 @@ function preselected(table: CsvTable, lookup: HeaderLookup, key: ColumnKey): str
  * transaction import has no account column.
  */
 function columnKeysOf(type: CsvImportType, accountId: string | null): readonly ColumnKey[] {
-	if (type === "accounts") {
-		return COLUMN_KEYS.accounts;
+	if (type === "accounts" || isToolImport(type)) {
+		return COLUMN_KEYS[type];
 	}
 
 	if (type === "trades" || type === "transactions") {
@@ -213,12 +215,21 @@ function columnKeysOf(type: CsvImportType, accountId: string | null): readonly C
 	return [];
 }
 
+/** The header a tool's `DEFAULT_COLUMN_MAPPINGS` names for a key, when the file has it. */
+function presetColumn(table: CsvTable, lookup: HeaderLookup, type: ToolImportType, key: ColumnKey) {
+	const label = TOOL_PRESETS[type].columns[key];
+	const column = label === undefined ? undefined : columnOf(lookup, label);
+
+	return column === undefined ? null : (table.headers[column] ?? null);
+}
+
 /**
  * The page's choices, each absent one taking Sure's default or the file's
  * suggestion: a column whose header is the key or an alias, the date format
  * `detect_date_format` finds among the offered ones. A transaction import's
- * columns start empty, as Sure's form. A column the file does not have
- * reads as none.
+ * columns start empty, as Sure's form; a tool's take its
+ * `DEFAULT_COLUMN_MAPPINGS`, its date format included, and name no account
+ * at upload. A column the file does not have reads as none.
  */
 function resolveConfiguration(
 	type: CsvImportType,
@@ -229,6 +240,7 @@ function resolveConfiguration(
 ): ResolvedConfiguration {
 	const accountId =
 		type === "trades" || type === "transactions" ? (given?.accountId ?? null) : null;
+	const tool = isToolImport(type) ? type : null;
 	const columns: Partial<Record<ColumnKey, string | null>> = {};
 
 	for (const key of columnKeysOf(type, accountId)) {
@@ -236,9 +248,11 @@ function resolveConfiguration(
 
 		columns[key] =
 			chosen === undefined
-				? type === "transactions"
-					? null
-					: preselected(table, lookup, key)
+				? tool !== null
+					? presetColumn(table, lookup, tool, key)
+					: type === "transactions"
+						? null
+						: preselected(table, lookup, key)
 				: chosen !== null && table.headers.includes(chosen)
 					? chosen
 					: null;
@@ -255,14 +269,18 @@ function resolveConfiguration(
 		dateFormat:
 			given?.dateFormat !== undefined && offered.includes(given.dateFormat)
 				? given.dateFormat
-				: columns.date === undefined
-					? DEFAULT_DATE_FORMAT
-					: detectDateFormat(samples, offered, day),
-		signage: given?.signage ?? "inflows_positive",
+				: tool !== null
+					? TOOL_PRESETS[tool].dateFormat
+					: columns.date === undefined
+						? DEFAULT_DATE_FORMAT
+						: detectDateFormat(samples, offered, day),
+		// YNAB's form has no convention: its inflows are positive, Sure's preset.
+		signage: tool === "ynab" ? "inflows_positive" : (given?.signage ?? "inflows_positive"),
 		rowsToSkip: rowsToSkipOf(type, given),
-		amountTypeStrategy: given?.amountTypeStrategy ?? "signed_amount",
-		amountTypeIdentifier: given?.amountTypeIdentifier ?? null,
-		amountTypeInflow: given?.amountTypeInflow ?? null,
+		amountTypeStrategy:
+			tool === null ? (given?.amountTypeStrategy ?? "signed_amount") : "signed_amount",
+		amountTypeIdentifier: tool === null ? (given?.amountTypeIdentifier ?? null) : null,
+		amountTypeInflow: tool === null ? (given?.amountTypeInflow ?? null) : null,
 		accountId,
 		columns,
 	};
@@ -946,6 +964,9 @@ async function analysisOf(
 		case "merchants":
 			return analyseMerchants(db, sheet);
 		case "transactions":
+		case "mint":
+		case "ynab":
+		case "actual":
 			return analyseTransactions(db, sheet, request.mappings);
 		case "rules":
 			return analyseRules(db, {

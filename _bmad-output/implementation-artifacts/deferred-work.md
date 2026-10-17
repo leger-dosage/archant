@@ -393,3 +393,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-4-map-currency-category-tags-account-and-a-type-column-sures-date-formats.md`
   summary: No Playwright test walks « Attribuez vos comptes » of a multi-account transactions file, or picks an existing category or « Laisser non attribué ».
   evidence: The story asks Playwright to map a category; the account mapping and the other choices are covered by service tests only.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-2-import-mint-ynab-and-actual-files.md`
+  summary: Drive the Mint and Actual import forms from Playwright, as the YNAB one is (tags step for Mint, preset Actual form applying).
+  evidence: Story 30.2's review (V5): `mapStepsOf`, `REQUIRED_COLUMNS` and `TOOL_FIELDS` for `mint` and `actual` in `packages/app/src/routes/_authed.settings.imports_.$kind.tsx` run in no test; their server side is covered by `packages/api/src/services/csv-import-tools.spec.ts`.

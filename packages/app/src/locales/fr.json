@@ -1397,7 +1397,10 @@
 			"categories": "Importer les catégories",
 			"merchants": "Importer des marchands",
 			"rules": "Importer les règles",
-			"requiresAccount": "Importez d'abord des comptes pour débloquer cette option."
+			"requiresAccount": "Importez d'abord des comptes pour débloquer cette option.",
+			"mint": "Importer depuis Mint",
+			"ynab": "Importer depuis YNAB",
+			"actual": "Importer depuis Actual"
 		},
 		"steps": {
 			"label": "Étapes de l'importation",
@@ -1494,6 +1497,43 @@
 				"price": "Prix",
 				"account": "Compte",
 				"name": "Nom"
+			},
+			"mint": {
+				"notice": "Nous avons préconfiguré votre import Mint. Vous pouvez passer à l'étape suivante.",
+				"date": "Date",
+				"dateFormat": "Format de date",
+				"amount": "Montant",
+				"signage": "Convention de signe",
+				"currency": "Devise",
+				"numberFormat": "Format numérique",
+				"account": "Compte (facultatif)",
+				"name": "Nom (facultatif)",
+				"category": "Catégorie (facultatif)",
+				"tags": "Étiquettes (facultatif)",
+				"notes": "Notes (facultatif)"
+			},
+			"ynab": {
+				"notice": "Nous avons préconfiguré votre importation YNAB pour vous. Veuillez passer à l'étape suivante.",
+				"amountNotice": "Les montants sont détectés automatiquement à partir des colonnes Débit (Outflow) et Crédit (Inflow).",
+				"date": "Date",
+				"dateFormat": "Format de date",
+				"numberFormat": "Format numérique",
+				"account": "Compte (facultatif)",
+				"name": "Bénéficiaire (facultatif)",
+				"category": "Catégorie (facultatif)",
+				"notes": "Notes (facultatif)"
+			},
+			"actual": {
+				"notice": "Nous avons préconfiguré votre importation Actual pour vous. Veuillez passer à l'étape suivante.",
+				"date": "Date",
+				"dateFormat": "Format de date",
+				"amount": "Montant",
+				"signage": "Convention de signe",
+				"numberFormat": "Format numérique",
+				"account": "Compte (facultatif)",
+				"name": "Bénéficiaire (facultatif)",
+				"category": "Catégorie (facultatif)",
+				"notes": "Notes (facultatif)"
 			},
 			"categories": {
 				"description": "Téléversez un fichier CSV simple (comme celui que nous générons lorsque vous exportez vos données). Nous mapperons automatiquement les colonnes pour vous.",

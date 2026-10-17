@@ -6,7 +6,8 @@ import { expect, test, uniqueName } from "./fixtures.ts";
 // a categories file goes through « Téléverser », « Configurer » and
 // « Confirmer » before its categories land. Story 30.4: a transactions file
 // skips its preamble, signs its lines from a type column and maps its
-// categories before its lines land.
+// categories before its lines land. Story 30.2: a YNAB file, its columns
+// preset, lands in a new account under a new category.
 
 function csv(lines: readonly string[]): { name: string; mimeType: string; buffer: Buffer } {
 	return { name: "categories.csv", mimeType: "text/csv", buffer: Buffer.from(lines.join("\n")) };
@@ -163,5 +164,76 @@ test("imports a transactions file into an account, its category mapped to a new 
 	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: label });
 
 	await expect(row).toContainText(category);
+	await expect(row).toContainText("−4,20");
+});
+
+test("imports a YNAB file with its columns preset, into a new account and category", async ({
+	page,
+}) => {
+	const accountName = uniqueName("Carte YNAB");
+	const group = uniqueName("Sorties");
+	const category = uniqueName("Cafés");
+	const payee = uniqueName("Coffee Shop");
+
+	await page.goto("/settings/imports");
+	const sources = page.getByRole("region", { name: "Sources" });
+
+	await expect(sources.getByRole("listitem")).toHaveText([
+		/Importer depuis Sure/u,
+		/Importer depuis Mint/u,
+		/Importer depuis Actual/u,
+		/Importer depuis YNAB/u,
+	]);
+	await sources.getByRole("link", { name: "Importer depuis YNAB" }).click();
+	await expect(page).toHaveURL(/\/settings\/imports\/ynab$/u);
+	await expect(page.getByLabel("Compte (facultatif)")).toHaveCount(0);
+	await page.locator("#csv-import-file").setInputFiles({
+		name: "ynab.csv",
+		mimeType: "text/csv",
+		buffer: Buffer.from(
+			[
+				"Account,Flag,Date,Payee,Category Group/Category,Category Group,Category,Memo,Outflow,Inflow,Cleared",
+				`${accountName},,09/15/2026,${payee},${group}: ${category},${group},${category},,$4.20,$0.00,Cleared`,
+			].join("\n"),
+		),
+	});
+	await page.getByRole("button", { name: "Téléverser le CSV" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Configurez votre importation" }),
+	).toBeVisible();
+	await expect(
+		page.getByText("Nous avons préconfiguré votre importation YNAB pour vous."),
+	).toBeVisible();
+	await expect(page.getByLabel("Bénéficiaire (facultatif)")).toHaveText("Payee");
+	await expect(page.getByLabel("Format de date")).toHaveText("MM/DD/YYYY");
+	await page.getByRole("button", { name: "Appliquer la configuration" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Attribuez vos catégories" }),
+	).toBeVisible();
+	await expect(page.getByLabel("Catégorie dans Archant")).toHaveText(
+		"Ajouter comme nouvelle catégorie",
+	);
+	await page.getByRole("button", { name: "Suivant" }).click();
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Attribuez vos comptes" }),
+	).toBeVisible();
+	await expect(page.getByLabel("Compte dans Archant")).toHaveText("Ajouter comme nouveau compte");
+	await page.getByRole("button", { name: "Suivant" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Confirmez vos données d'importation" }),
+	).toBeVisible();
+	await expect(page.getByRole("row", { name: "Opérations 1" })).toBeVisible();
+	await expect(page.getByRole("row", { name: "Comptes 1" })).toBeVisible();
+	await page.getByRole("button", { name: "Publier l'importation" }).click();
+	await expect(page.getByRole("heading", { level: 1, name: "Importation réussie" })).toBeVisible();
+
+	await page.goto(`/transactions?q=${encodeURIComponent(payee)}`);
+	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: payee });
+
+	await expect(row).toContainText(category);
+	await expect(row).toContainText(accountName);
 	await expect(row).toContainText("−4,20");
 });
