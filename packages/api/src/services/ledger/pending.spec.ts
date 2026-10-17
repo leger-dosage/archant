@@ -140,9 +140,11 @@ describe("pending transactions", () => {
 
 		await add(account.id, { date: "2026-09-10", amount: toMinorUnits(-4292) });
 
+		// Forward from the opening balance, the bank's figure setting its own day.
 		const days = await history(account.id);
-		expect(days.get("2026-09-14")).toBe(100000 - 4292);
-		expect(days.get("2026-09-15")).toBe(100000 - 4292);
+		expect(days.get("2026-09-14")).toBe(123456 - 4292);
+		expect(days.get("2026-09-15")).toBe(123456 - 4292);
+		expect(days.get("2026-09-21")).toBe(100000);
 		await expect(rowOf(id)).resolves.toMatchObject({ date: "2026-09-15", pending: true });
 	});
 

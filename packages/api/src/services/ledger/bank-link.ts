@@ -3,29 +3,20 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
-import { and, between, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { AccountDetails, AccountType, CreditCardDetails } from "@archant/data/account-types";
-import { classificationOf, creditCardDetailsOf } from "@archant/data/account-types";
+import { creditCardDetailsOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
-import { balances } from "@archant/data/schema/balances";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { entries } from "@archant/data/schema/entries";
 import type { Account } from "@archant/data/types";
 
 import { interpretCreditCardBalance } from "../../domain/balances/credit-card-balance.ts";
 import { toStoredBankBalance } from "../../domain/balances/stored-balance.ts";
-import { addDays, maxDate, today } from "../../domain/dates.ts";
-import {
-	accountWithOpeningDate,
-	backwardAnchor,
-	bookedMovements,
-	historyStartOf,
-	recomputeBalances,
-} from "./balances.ts";
-import { oneByOne } from "./shared.ts";
+import { today } from "../../domain/dates.ts";
+import { accountWithOpeningDate, historyStartOf, recomputeBalances } from "./balances.ts";
 import { snapshotOn } from "./snapshots.ts";
 
 const NO_CARD_DETAILS: CreditCardDetails = {
@@ -87,9 +78,11 @@ export async function writeAvailableCredit(
 
 /**
  * Replaces the account's `current_anchor` with `anchor`, a stored balance,
- * or removes it for `null`. A link and an unlink replace the anchor through it
- * without keeping the earlier figure; a sync goes through
- * `rotateCurrentAnchor`, which keeps it. Returns the date written.
+ * or removes it for `null`. A link replaces the anchor through it without
+ * keeping the earlier figure; a sync goes through `rotateCurrentAnchor` and
+ * an unlink through `retireCurrentAnchor`, which keep it as a
+ * reconciliation unless another valuation holds its day. Returns the date
+ * written.
  */
 async function writeCurrentAnchor(
 	tx: Transaction,
@@ -119,6 +112,32 @@ async function writeCurrentAnchor(
 	});
 
 	return anchor.date;
+}
+
+/**
+ * Keeps the bank's figure `anchor`, the account's `current_anchor`, as a
+ * `reconciliation` on its day, keeping its id and losing its import, as
+ * Sure's `preserve_anchor_as_reconciliation_if_stale`. Deleted instead when
+ * a reconciliation, the user's or a file's, already holds its day, that
+ * value winning as AD-8 has it, or when it is dated on the opening date,
+ * which the opening anchor holds: Sure keeps one valuation per day.
+ */
+async function retireCurrentAnchor(
+	tx: Transaction,
+	accountId: string,
+	anchor: { id: string; date: IsoDate },
+	openingDate: IsoDate,
+	now: number,
+): Promise<void> {
+	const kept =
+		anchor.date !== openingDate && (await snapshotOn(tx, accountId, anchor.date)) === undefined;
+
+	await (kept
+		? tx
+				.update(entries)
+				.set({ valuationKind: "reconciliation", importId: null, updatedAt: now })
+				.where(eq(entries.id, anchor.id))
+		: tx.delete(entries).where(eq(entries.id, anchor.id)));
 }
 
 /**
@@ -174,16 +193,7 @@ export async function rotateCurrentAnchor(
 	}
 
 	if (previous !== undefined) {
-		const kept =
-			previous.date !== opening.date &&
-			(await snapshotOn(tx, account.id, previous.date)) === undefined;
-
-		await (kept
-			? tx
-					.update(entries)
-					.set({ valuationKind: "reconciliation", importId: null, updatedAt: now })
-					.where(eq(entries.id, previous.id))
-			: tx.delete(entries).where(eq(entries.id, previous.id)));
+		await retireCurrentAnchor(tx, account.id, previous, opening.date, now);
 	}
 
 	await writeCurrentAnchor(tx, account, anchor, now);
@@ -282,64 +292,16 @@ async function writeReconciliation(
 }
 
 /**
- * The days an unlinked account must fix to keep its stored balances, each
- * with the balance it keeps: the bank's day, and every day where going
- * forward would part from the history the backward computation stored.
- *
- * Going forward from the opening date's stored balance adds the movements
- * the backward pass subtracted, so the two agree up to the first
- * reconciliation or the opening anchor. Past it they part: backward, either
- * fixes its day and the days before it, the day after coming from the bank's
- * side; forward, the day after starts from it. The day after one
- * whose balance does not follow from it is fixed too. Going forward, the day
- * before the first starts from zero, so the first day is fixed when its
- * movements alone do not give its stored balance.
- */
-function unlinkReconciliations(input: {
-	rows: readonly { date: IsoDate; balance: MinorUnits }[];
-	/** The first day with a balance, the oldest entry's. */
-	start: IsoDate;
-	openingDate: IsoDate;
-	anchorDate: IsoDate;
-	reconciled: ReadonlySet<IsoDate>;
-	sums: ReadonlyMap<IsoDate, MinorUnits>;
-	sign: 1 | -1;
-}): { date: IsoDate; balance: MinorUnits }[] {
-	const stored = new Map(input.rows.map((row) => [row.date, row.balance]));
-	const fixes = (date: IsoDate) =>
-		date < input.start || date === input.openingDate || input.reconciled.has(date);
-
-	return input.rows
-		.filter((row) => {
-			// The opening day belongs to the opening anchor, even when the bank's
-			// anchor is dated before it.
-			if (row.date === input.anchorDate) {
-				return row.date > input.openingDate;
-			}
-
-			const previous = addDays(row.date, -1);
-			const before = previous < input.start ? 0 : stored.get(previous);
-
-			return (
-				before !== undefined &&
-				fixes(previous) &&
-				!fixes(row.date) &&
-				before + input.sign * (input.sums.get(row.date) ?? 0) !== row.balance
-			);
-		})
-		.map((row) => ({ date: row.date, balance: row.balance }));
-}
-
-/**
  * Sure's `unlink`: the account stops being fed by a bank and becomes a
- * manual one, computed forward, with every stored balance as it was (AD-8).
- * The bank's last figure becomes a reconciliation on its day, booked lines
- * only, since that is the balance the page showed; the opening anchor
- * already ends its own day; the `current_anchor` goes.
- * Balances start at the oldest entry, before the opening date when a line
- * precedes it: the range read starts there.
- * An account without a bank balance, already computed forward, only loses
- * its link.
+ * manual one, computed forward (AD-8), as Sure's `Account::Syncer` picks
+ * `:forward` once the account is not `linked?`. No reconciliation is
+ * written and every valuation stays, the bank's last balance included: it
+ * keeps its row as a `reconciliation` on its day (`retireCurrentAnchor`),
+ * since a manual account's valuations are its snapshots, which « Soldes »
+ * lists and the user edits, where Sure's activity feed shows its
+ * `current_anchor`. A past day the backward pass derived differently takes
+ * its forward value. An account without a bank balance, already computed
+ * forward, only loses its link.
  */
 export async function unlinkBankAccount(
 	deps: ServiceDeps,
@@ -349,52 +311,34 @@ export async function unlinkBankAccount(
 	await deps.db.transaction(
 		async (tx) => {
 			const account = await accountWithOpeningDate(tx, accountId);
-			const anchor = await backwardAnchor(tx, accountId);
+			// Only a linked account's anchor is the bank's balance (`backwardAnchor`).
+			const anchor = await tx
+				.select({ id: entries.id, date: entries.date })
+				.from(entries)
+				.where(and(eq(entries.accountId, accountId), eq(entries.valuationKind, "current_anchor")))
+				.get();
 			const now = Date.now();
+			const linked = account.bankAccountId !== null;
 
 			await tx
 				.update(accounts)
 				.set({ bankAccountId: null, updatedAt: now })
 				.where(eq(accounts.id, accountId));
 
-			if (anchor === undefined) {
+			if (!linked || anchor === undefined) {
 				return;
 			}
 
-			const start = await historyStartOf(tx, accountId, account.openingDate);
-			const last = maxDate(anchor.date, account.openingDate);
-			const rows = await tx
-				.select({ date: balances.date, balance: balances.balance })
-				.from(balances)
-				.where(and(eq(balances.accountId, accountId), between(balances.date, start, last)));
-			const movements = await bookedMovements(tx, accountId, between(entries.date, start, last));
-			const reconciled = await tx
-				.select({ date: entries.date })
-				.from(entries)
-				.where(
-					and(
-						eq(entries.accountId, accountId),
-						eq(entries.valuationKind, "reconciliation"),
-						between(entries.date, start, last),
-					),
-				);
+			await retireCurrentAnchor(tx, accountId, anchor, account.openingDate, now);
 
-			await oneByOne(
-				unlinkReconciliations({
-					rows: rows.map((row) => ({ date: row.date, balance: toMinorUnits(row.balance) })),
-					start,
-					openingDate: account.openingDate,
-					anchorDate: last,
-					reconciled: new Set(reconciled.map((row) => row.date)),
-					sums: new Map(movements.map((row) => [row.date, toMinorUnits(row.amount)])),
-					sign: classificationOf(account.type) === "asset" ? 1 : -1,
-				}),
-				(row) => writeReconciliation(tx, account, row.date, row.balance, now),
+			// From the first day: every row the backward pass stored is rewritten,
+			// those before the opening date included.
+			await recomputeBalances(
+				tx,
+				account,
+				await historyStartOf(tx, accountId, account.openingDate),
+				deps.timeZone,
 			);
-			await writeCurrentAnchor(tx, account, null, now);
-			// From the first day, so no row the backward pass derived before the
-			// opening date stays without the forward pass going over it.
-			await recomputeBalances(tx, account, start, deps.timeZone);
 		},
 		{ behavior: "immediate" },
 	);
