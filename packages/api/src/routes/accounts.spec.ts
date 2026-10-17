@@ -2960,22 +2960,52 @@ describe("PATCH /api/accounts/:id/opening-balance", () => {
 		await expect(balanceOnDay(account.id, "2026-01-12")).resolves.toBe(150000);
 	});
 
-	it("refuses a date on the oldest entry, naming its date, and writes nothing", async () => {
+	it("saves a date after the oldest entry, as Sure's drawer, the balances starting at that entry", async () => {
 		const account = await openPinned();
 
 		const { status, body } = await patchOpening(account.id, {
-			date: "2026-03-02",
+			date: "2026-03-10",
+			balance: "1 000,00",
+		});
+
+		expect(status).toBe(200);
+		expect(openingDetail.parse(body).data).toMatchObject({
+			openingDate: "2026-03-10",
+			openingBalance: { balance: 100000 },
+			balance: 100000,
+		});
+		await expect(balanceOnDay(account.id, "2026-03-01")).resolves.toBeUndefined();
+		await expect(balanceOnDay(account.id, "2026-03-02")).resolves.toBe(-12000);
+		await expect(balanceOnDay(account.id, "2026-03-10")).resolves.toBe(100000);
+	});
+
+	it("saves an amount alone when a line predates the opening date", async () => {
+		const account = await openPinned();
+		await postTransaction(account.id, { date: "2026-01-05", label: "Frais", amount: "-5,00" });
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "2026-01-10",
+			balance: "2 000,00",
+		});
+
+		expect(status).toBe(200);
+		expect(openingDetail.parse(body).data).toMatchObject({
+			openingDate: "2026-01-10",
+			openingBalance: { balance: 200000 },
+		});
+	});
+
+	it("refuses a day a snapshot holds, as Sure's unique valuation date, and writes nothing", async () => {
+		const account = await openPinned();
+		await recorded(account.id, { date: "2026-02-01", balance: "1 400,00" });
+
+		const { status, body } = await patchOpening(account.id, {
+			date: "2026-02-01",
 			balance: "1,00",
 		});
 
 		expect(status).toBe(400);
-		expect(body).toMatchObject({
-			error: {
-				code: "VALIDATION_ERROR",
-				fields: [{ path: "date", code: "not_before_oldest_entry" }],
-				params: { date: "2026-03-02" },
-			},
-		});
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "date", code: "snapshot_exists" }]);
 		const detail = await request("GET", `/api/accounts/${account.id}`);
 		expect(openingDetail.parse(detail.body).data).toMatchObject({
 			openingDate: "2026-01-10",

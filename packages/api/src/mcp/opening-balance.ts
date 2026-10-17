@@ -58,7 +58,7 @@ function effectOf(change: OpeningBalanceChange, currency: string) {
 	};
 }
 
-/** A refusal of the date by the service, as Sure's `invalid_date`; anything else passes. */
+/** Sure's `date_error` from the service, as its `invalid_date`; anything else passes. */
 function refuseDate(error: unknown): void {
 	if (!(error instanceof AppError) || error.code !== "VALIDATION_ERROR") {
 		return;
@@ -74,10 +74,6 @@ function refuseDate(error: unknown): void {
 			{ oldest_entry_date: oldest },
 		);
 	}
-
-	if (codes.has("date_in_future")) {
-		refuse("invalid_date", "date must not be after today.");
-	}
 }
 
 export const setOpeningBalanceTool = defineTool({
@@ -85,9 +81,9 @@ export const setOpeningBalanceTool = defineTool({
 	title: "Set an opening balance",
 	description: [
 		"Sets the opening balance of a manual account (one not synced from a bank or other provider) and, optionally, the date it applies from, as Sure's set_opening_balance and the « Solde d'ouverture » row of Archant's « Soldes » tab. Use it when an account's history starts on the wrong date or from the wrong amount, e.g. a loan whose first repayment predates its opening balance, or a savings account that opened at zero.",
-		"balance uses the same sign convention as get_accounts (a loan's outstanding amount is positive). date must be before the account's oldest entry and not after today; omit it to keep the current opening date.",
+		"balance uses the same sign convention as get_accounts (a loan's outstanding amount is positive). date must be before the account's oldest entry, and may be after today, the balances then starting there, though not more than a year ahead; omit it to keep the current opening date, which is then not checked.",
 		"The result says whether the current balance changes: if the account has a later balance update, only the history before it changes. Pass dry_run: true to see the effect without changing anything.",
-		"Refusals answer Sure's keys, in Sure's order: not_found, linked_account, invalid_balance, invalid_date, the last with oldest_entry_date when the date is on or after the oldest entry. An amount with more decimals than the account's currency holds answers validation_error naming balance, and a date before 1900 validation_error naming date.",
+		"Refusals answer Sure's keys, in Sure's order: not_found, linked_account, invalid_balance, invalid_date, the last with oldest_entry_date when the date is on or after the oldest entry. An amount with more decimals than the account's currency holds answers validation_error naming balance, and a date before 1900 or more than a year ahead validation_error naming date.",
 	].join("\n\n"),
 	scope: "archant:write",
 	annotations: REPLACES,
@@ -112,7 +108,8 @@ export const setOpeningBalanceTool = defineTool({
 		}),
 	}),
 	run: async (deps, input) => {
-		const account = await writableAccount(deps, input.account_id);
+		// Sure's uuid column matches any case; Archant's ids are stored lower case.
+		const account = await writableAccount(deps, input.account_id.toLowerCase());
 
 		if (account === null) {
 			refuse("not_found", `No account with id '${input.account_id}' that you can write to.`);
@@ -151,8 +148,12 @@ export const setOpeningBalanceTool = defineTool({
 			change = await setAccountOpeningBalance(
 				deps,
 				account.id,
-				{ date: input.date ?? account.openingDate, balance },
-				{ dryRun },
+				// Sure's manager is passed `date: nil` when none is given, and checks nothing.
+				{
+					...(input.date === undefined || input.date === null ? {} : { date: input.date }),
+					balance,
+				},
+				{ rule: "manager", dryRun },
 			);
 		} catch (error) {
 			refuseDate(error);

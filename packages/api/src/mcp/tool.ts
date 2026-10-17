@@ -122,6 +122,9 @@ export function pageOf<Item>(items: readonly Item[], page: number, pageSize: num
 	};
 }
 
+/** Sure's `UuidFormat::PATTERN`, its functions' `valid_uuid?`. */
+export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
 /**
  * The error keys Sure's functions refuse with, each beside the `AppError`
  * code `assistant_calls` records for it, the one a service would have thrown.
@@ -133,6 +136,7 @@ const SURE_REFUSALS = {
 	no_changes: "VALIDATION_ERROR",
 	validation_failed: "VALIDATION_ERROR",
 	account_not_found: "NOT_FOUND",
+	invalid_account_id: "VALIDATION_ERROR",
 	linked_account: "ACCOUNT_LINKED",
 	invalid_balance: "VALIDATION_ERROR",
 	invalid_date: "VALIDATION_ERROR",

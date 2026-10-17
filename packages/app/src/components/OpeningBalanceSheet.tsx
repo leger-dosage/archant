@@ -37,7 +37,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { useSetOpeningBalance, useSnapshotDryRun } from "@/hooks/useSnapshots";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
-import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
@@ -75,8 +74,6 @@ function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 	const confirmButton = useRef<HTMLButtonElement>(null);
 	// Set when a save from the step is refused, so the sheet's field takes focus back.
 	const refused = useRef(false);
-	// The oldest entry's date the API names when the date is not before it.
-	const [oldestEntryDate, setOldestEntryDate] = useState<string | null>(null);
 	const schema = useMemo(() => openingBalanceSchema(account.currency), [account.currency]);
 	const form = useForm<SnapshotFormInput>({
 		// `raw` hands the typed text to the API as is: the same schema parses it
@@ -102,7 +99,6 @@ function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 
 	const showError = (error: unknown) => {
 		const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
-		setOldestEntryDate(apiError.params["date"] ?? null);
 		const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
 
 		if (
@@ -179,11 +175,7 @@ function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 						invalid={errors.date !== undefined}
 						{...(errors.date === undefined ? {} : { describedBy: "opening-balance-date-error" })}
 					/>
-					<FieldMessage
-						id="opening-balance-date-error"
-						error={errors.date}
-						{...(oldestEntryDate === null ? {} : { date: formatTableDate(oldestEntryDate) })}
-					/>
+					<FieldMessage id="opening-balance-date-error" error={errors.date} />
 				</div>
 
 				<div className="flex flex-col gap-1.5">

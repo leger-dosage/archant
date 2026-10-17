@@ -14,6 +14,7 @@ import {
 	ownDatabase,
 	pinned,
 	postOwn,
+	sendOwn,
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
@@ -284,7 +285,30 @@ describe("set_opening_balance", () => {
 		await expect(openingOf(call, account.id)).resolves.toMatchObject({ amount: "1500.0" });
 	});
 
-	it("refuses a future date on an account without entries", async () => {
+	it("saves a future date on an account without entries, as Sure's manager", async () => {
+		db = (await ownDatabase()).db;
+		const account = await openOwn({ ...pinned, name: "Vide" });
+		const call = await assistant();
+
+		const result = await call("set_opening_balance", {
+			account_id: account.id,
+			balance: 250,
+			date: "2026-10-01",
+		});
+
+		expect(answer.parse(result.structuredContent)).toMatchObject({
+			changed: true,
+			after: { date: "2026-10-01", balance: "250.0" },
+			current_balance: { changes: true, by: "-1250.0" },
+		});
+		// The ledger's spec reads the balance rows running to that day.
+		await expect(openingOf(call, account.id)).resolves.toMatchObject({
+			date: "2026-10-01",
+			amount: "250.0",
+		});
+	});
+
+	it("refuses a date more than a year ahead with validation_error naming date, writing nothing", async () => {
 		db = (await ownDatabase()).db;
 		const account = await openOwn({ ...pinned, name: "Vide" });
 		const call = await assistant();
@@ -292,13 +316,46 @@ describe("set_opening_balance", () => {
 		const result = await call("set_opening_balance", {
 			account_id: account.id,
 			balance: 0,
-			date: "2026-09-22",
+			date: "2027-09-23",
 		});
 
-		expect(bodyOf(result)).toEqual({
-			success: false,
-			error: "invalid_date",
-			message: "date must not be after today.",
+		expect(result.isError).toBe(true);
+		expect(result.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
+		expect(result.content[0]?.text).toContain("date date_too_late");
+		await expect(openingOf(call, account.id)).resolves.toMatchObject({
+			date: "2026-01-10",
+			amount: "1500.0",
+		});
+	});
+
+	it("finds the account by an upper-case UUID, as Sure's uuid column", async () => {
+		const account = await savings();
+		const call = await assistant();
+
+		const result = await call("set_opening_balance", {
+			account_id: account.id.toUpperCase(),
+			balance: "750",
+		});
+
+		expect(answer.parse(result.structuredContent)).toMatchObject({
+			account: { id: account.id },
+			after: { balance: "750.0" },
+		});
+	});
+
+	it("checks no date when none is given, an opening date after a line kept, as Sure's date: nil", async () => {
+		const account = await savings();
+		await sendOwn("PATCH", `/api/accounts/${account.id}/opening-balance`, {
+			date: "2026-01-20",
+			balance: "1 500,00",
+		});
+		const call = await assistant();
+
+		const result = await call("set_opening_balance", { account_id: account.id, balance: "900" });
+
+		expect(answer.parse(result.structuredContent)).toMatchObject({
+			changed: true,
+			after: { date: "2026-01-20", balance: "900.0" },
 		});
 	});
 

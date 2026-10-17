@@ -84,7 +84,7 @@ async function legacyImport(
 			date: movedTo,
 			balance: toMinorUnits((anchor?.balance ?? 0) + (liability ? movedIn : -movedIn)),
 		},
-		{ origin: "user" },
+		{ origin: "user", rule: "manager" },
 	);
 	await temp.db
 		.update(imports)

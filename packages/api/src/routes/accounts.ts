@@ -114,8 +114,11 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		.patch("/:id/opening-balance", validated("json", snapshotBodySchema), async (c) =>
 			c.json(
 				{
-					data: (await setAccountOpeningBalance(deps, c.req.param("id"), c.req.valid("json")))
-						.account,
+					data: (
+						await setAccountOpeningBalance(deps, c.req.param("id"), c.req.valid("json"), {
+							rule: "drawer",
+						})
+					).account,
 				},
 				200,
 			),

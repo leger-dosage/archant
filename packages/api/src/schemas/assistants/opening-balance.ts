@@ -17,7 +17,7 @@ export const setOpeningBalanceInput = z.strictObject({
 		.nullable()
 		.optional()
 		.describe(
-			"Date the opening balance applies from (YYYY-MM-DD), before the account's oldest entry. Omit to keep the current date.",
+			"Date the opening balance applies from (YYYY-MM-DD), before the account's oldest entry; it may be after today, up to a year ahead. Omit to keep the current date, which is then not checked.",
 		),
 	dry_run: looseBoolean
 		.nullable()
