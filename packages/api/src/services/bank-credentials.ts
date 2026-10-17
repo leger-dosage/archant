@@ -52,6 +52,8 @@ export type BankCredentialDeps = ServiceDeps & {
 	encryptionKey: Uint8Array | null;
 	/** `ENABLE_BANKING_API_URL`. */
 	bankApiUrl: string;
+	/** `ENABLE_BANKING_CONSENT_DAYS`: the longest consent asked for, in days. */
+	bankConsentDays: number;
 	/** `BETTER_AUTH_URL` + `REDIRECT_PATH`, registered with the provider. */
 	redirectUrl: string;
 };
@@ -145,9 +147,15 @@ async function currentCredentials(
 }
 
 const connectorFor = (
-	deps: Pick<BankCredentialDeps, "bankApiUrl">,
+	deps: Pick<BankCredentialDeps, "bankApiUrl" | "bankConsentDays">,
 	{ applicationId, privateKey }: Pick<BankCredentials, "applicationId" | "privateKey">,
-) => createBankConnector("enable-banking", { applicationId, privateKey, apiUrl: deps.bankApiUrl });
+) =>
+	createBankConnector("enable-banking", {
+		applicationId,
+		privateKey,
+		apiUrl: deps.bankApiUrl,
+		consentDays: deps.bankConsentDays,
+	});
 
 /**
  * The connector, key and country for this call, or

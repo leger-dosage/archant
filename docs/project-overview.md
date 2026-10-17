@@ -42,7 +42,7 @@ Explicit non-goals: multi-tenancy beyond one household, a hosted offering, serve
 
 These are the places where the work is, and they are not the user interface.
 
-1. **Consent expiry.** A bank consent lasts at most what the bank allows, and Archant asks for 90 days at most. Renewal is a first-class flow, warned 14 days ahead, not an error case.
+1. **Consent expiry.** A bank consent lasts at most what the bank allows, and Archant asks for 180 days at most by default, stepping down to a shorter consent when the bank refuses the length, as Sure does. Renewal is a first-class flow, warned 14 days ahead, not an error case.
 2. **Pending transactions.** A pending entry becomes final, may change amount, and must not produce a duplicate. The booked line updates the pending entry in place; a pending line the bank stops listing is deleted after two syncs.
 3. **Deduplication.** Two sources for the same transaction, a file import and a bank sync, must converge on one row. Keys written at import time do most of it; a tie is flagged for the user to merge or dismiss.
 4. **Money.** Integer minor units and an explicit currency, everywhere. Totals use one reporting currency and leave other currencies out, with a notice, until historical exchange rates exist.

@@ -38,6 +38,8 @@ export const fixtures = {
 	transactionsPage1: await load("transactions-page-1.json"),
 	transactionsPage2: await load("transactions-page-2.json"),
 	redirectNotAllowed: await load("error-redirect-not-allowed.json"),
+	// Sure's Trade Republic refusal (we-promise/sure#2857), from its test.
+	wrongConsentValidity: await load("error-wrong-consent-validity.json"),
 	unauthorized: await load("error-unauthorized.json"),
 };
 

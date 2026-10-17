@@ -50,6 +50,7 @@ function deps(overrides: Partial<BankCredentialDeps> = {}): BankCredentialDeps {
 		bankCredentials: null,
 		encryptionKey: ENCRYPTION_KEY,
 		bankApiUrl: TEST_PROVIDER_URL,
+		bankConsentDays: 180,
 		redirectUrl: REDIRECT_URL,
 		...overrides,
 	};

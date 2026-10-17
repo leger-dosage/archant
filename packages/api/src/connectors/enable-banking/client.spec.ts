@@ -3,6 +3,7 @@ import type * as jwt from "./jwt.ts";
 import { jwtVerify } from "jose";
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { server } from "../../../vitest.setup.ts";
 import {
@@ -26,7 +27,7 @@ import { BankProviderError } from "../bank-connector.ts";
 import { createBankConnector } from "../registry.ts";
 import {
 	MAX_PAGES,
-	consentValidUntil,
+	consentLadder,
 	fallbackStarts,
 	toBankAccount,
 	toTransaction,
@@ -54,6 +55,7 @@ const connector = createBankConnector("enable-banking", {
 	applicationId: TEST_APPLICATION_ID,
 	privateKey: TEST_PRIVATE_KEY,
 	apiUrl: `${TEST_PROVIDER_URL}/`,
+	consentDays: 180,
 });
 
 const institution = {
@@ -79,6 +81,15 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
+const inDays = (days: number) => new Date(NOW + days * DAY - MARGIN).toISOString();
+
+/** The `valid_until` of each `/auth` sent, in order. */
+const validUntils = (requests: ReturnType<typeof mockProvider>) =>
+	requests
+		.filter((sent) => sent.path === "/auth")
+		.map((sent) => z.object({ access: z.object({ valid_until: z.string() }) }).parse(sent.body))
+		.map((body) => body.access.valid_until);
+
 async function rejection(promise: Promise<unknown>): Promise<BankProviderError> {
 	const error: unknown = await promise.then(
 		() => null,
@@ -92,17 +103,56 @@ async function rejection(promise: Promise<unknown>): Promise<BankProviderError> 
 	return error;
 }
 
-describe("consentValidUntil", () => {
-	it("caps the bank's maximum at 90 days, less a minute", () => {
-		expect(consentValidUntil(NOW, 180 * 86_400).getTime()).toBe(NOW + 90 * DAY - MARGIN);
+const SECONDS_A_DAY = 86_400;
+
+describe("consentLadder", () => {
+	it("caps the bank's maximum at the configured days, less a minute", () => {
+		expect(consentLadder(400 * SECONDS_A_DAY, 180)).toEqual([
+			180 * SECONDS_A_DAY - 60,
+			90 * SECONDS_A_DAY - 60,
+			45 * SECONDS_A_DAY - 60,
+			30 * SECONDS_A_DAY - 60,
+		]);
 	});
 
-	it("keeps a shorter maximum, less a minute", () => {
-		expect(consentValidUntil(NOW, 30 * 86_400).getTime()).toBe(NOW + 30 * DAY - MARGIN);
+	it("starts from a shorter maximum, then only shorter rungs", () => {
+		expect(consentLadder(60 * SECONDS_A_DAY, 180)).toEqual([
+			60 * SECONDS_A_DAY - 60,
+			45 * SECONDS_A_DAY - 60,
+			30 * SECONDS_A_DAY - 60,
+		]);
 	});
 
-	it("asks for 90 days less a minute when the bank says nothing", () => {
-		expect(consentValidUntil(NOW, null).getTime()).toBe(NOW + 90 * DAY - MARGIN);
+	it("starts from the cap when the bank says nothing", () => {
+		expect(consentLadder(null, 180)[0]).toBe(180 * SECONDS_A_DAY - 60);
+	});
+
+	it("starts from an overridden cap below the bank's maximum", () => {
+		expect(consentLadder(180 * SECONDS_A_DAY, 90)).toEqual([
+			90 * SECONDS_A_DAY - 60,
+			45 * SECONDS_A_DAY - 60,
+			30 * SECONDS_A_DAY - 60,
+		]);
+	});
+
+	it("never repeats a rung equal to the first", () => {
+		expect(consentLadder(90 * SECONDS_A_DAY, 180)).toEqual([
+			90 * SECONDS_A_DAY - 60,
+			45 * SECONDS_A_DAY - 60,
+			30 * SECONDS_A_DAY - 60,
+		]);
+		expect(consentLadder(30 * SECONDS_A_DAY, 180)).toEqual([30 * SECONDS_A_DAY - 60]);
+	});
+
+	it("steps down through 180 days when the cap is longer", () => {
+		const ladder = [365, 180, 90, 45, 30].map((days) => days * SECONDS_A_DAY - 60);
+
+		expect(consentLadder(null, 365)).toEqual(ladder);
+		expect(consentLadder(400 * SECONDS_A_DAY, 365)).toEqual(ladder);
+	});
+
+	it("never shaves a consent shorter than a minute to nothing", () => {
+		expect(consentLadder(30, 180)).toEqual([1]);
 	});
 });
 
@@ -202,7 +252,7 @@ describe("startAuthorization", () => {
 				method: "POST",
 				path: "/auth",
 				body: {
-					access: { valid_until: new Date(NOW + 90 * DAY - MARGIN).toISOString() },
+					access: { valid_until: new Date(NOW + 180 * DAY - MARGIN).toISOString() },
 					aspsp: { name: "Banque Test", country: "FR" },
 					state: request.state,
 					redirect_url: request.redirectUrl,
@@ -246,6 +296,103 @@ describe("startAuthorization", () => {
 		expect(error.failure).toEqual({ status: 401, providerCode: "UNAUTHORIZED" });
 		// The provider's message names the application; nothing of it is kept.
 		expect(JSON.stringify(error.toJSON())).not.toContain(TEST_APPLICATION_ID);
+	});
+
+	it("steps down to a shorter consent while the bank refuses its length", async () => {
+		let calls = 0;
+		const requests = mockProvider({
+			auth: () => {
+				calls += 1;
+
+				return calls === 1
+					? HttpResponse.json(fixtures.wrongConsentValidity, { status: 422 })
+					: HttpResponse.json(fixtures.auth);
+			},
+		});
+
+		await expect(
+			connector.startAuthorization({
+				...request,
+				institution: { ...institution, maximumConsentValidity: 90 * 86_400 },
+			}),
+		).resolves.toEqual({ url: FIXTURE_AUTH_URL });
+		expect(validUntils(requests)).toEqual([
+			new Date(NOW + 90 * DAY - MARGIN).toISOString(),
+			new Date(NOW + 45 * DAY - MARGIN).toISOString(),
+		]);
+	});
+
+	it("dates each attempt from the clock at that attempt", async () => {
+		let calls = 0;
+		const requests = mockProvider({
+			auth: () => {
+				calls += 1;
+				vi.setSystemTime(NOW + calls * 1000);
+
+				return calls === 1
+					? HttpResponse.json(fixtures.wrongConsentValidity, { status: 422 })
+					: HttpResponse.json(fixtures.auth);
+			},
+		});
+
+		await connector.startAuthorization(request);
+
+		expect(validUntils(requests)).toEqual([
+			new Date(NOW + 180 * DAY - MARGIN).toISOString(),
+			new Date(NOW + 1000 + 90 * DAY - MARGIN).toISOString(),
+		]);
+	});
+
+	it("throws the last refusal once every length is refused, keeping no message", async () => {
+		const requests = mockProvider({
+			auth: () => HttpResponse.json(fixtures.wrongConsentValidity, { status: 422 }),
+		});
+
+		const error = await rejection(
+			connector.startAuthorization({
+				...request,
+				institution: { ...institution, maximumConsentValidity: 90 * 86_400 },
+			}),
+		);
+
+		expect(validUntils(requests)).toEqual([90, 45, 30].map(inDays));
+		expect(error.code).toBe("BANK_PROVIDER_ERROR");
+		expect(error.failure).toEqual({ status: 422, providerCode: "WRONG_REQUEST_PARAMETERS" });
+		expect(JSON.stringify(error.toJSON())).not.toMatch(/consent validity|7776000/u);
+		expect(error.message).not.toMatch(/consent validity/u);
+	});
+
+	it.each([
+		["another message", 422, { error: "WRONG_REQUEST_PARAMETERS", message: "Wrong ASPSP name" }],
+		["no message", 422, { error: "WRONG_REQUEST_PARAMETERS" }],
+		["a message that is not text", 422, { error: "WRONG_REQUEST_PARAMETERS", message: 7 }],
+		["another code", 422, { error: "ASPSP_ERROR", message: "consent validity too long" }],
+		["another status", 400, fixtures.wrongConsentValidity],
+	])("fails at once on a refusal with %s", async (_, status, body) => {
+		const requests = mockProvider({ auth: () => HttpResponse.json(body, { status }) });
+
+		const error = await rejection(connector.startAuthorization(request));
+
+		expect(requests).toHaveLength(1);
+		expect(error.failure.status).toBe(status);
+	});
+
+	it("names the URL to register when the redirect is refused after a shorter consent", async () => {
+		let calls = 0;
+		const requests = mockProvider({
+			auth: () => {
+				calls += 1;
+
+				return calls === 1
+					? HttpResponse.json(fixtures.wrongConsentValidity, { status: 422 })
+					: HttpResponse.json(fixtures.redirectNotAllowed, { status: 400 });
+			},
+		});
+
+		const error = await rejection(connector.startAuthorization(request));
+
+		expect(requests).toHaveLength(2);
+		expect(error.code).toBe("BANK_REDIRECT_NOT_ALLOWED");
 	});
 
 	it("refuses a consent URL that is not http", async () => {

@@ -178,5 +178,15 @@ export const transactionsPageSchema = z.object({
 /**
  * The provider's error code, kept only when it looks like one: a free-text
  * message could carry anything, and the code is all a log line may hold.
+ * The message only says whether it names the consent validity, as Sure's
+ * `wrong_consent_validity?` reads it; its text never leaves this schema (AD-14).
  */
-export const errorResponseSchema = z.object({ error: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u) });
+export const errorResponseSchema = z
+	.object({
+		error: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/u),
+		message: z.string().optional().catch(undefined),
+	})
+	.transform(({ error, message }) => ({
+		error,
+		consentValidity: /consent validity/iu.test(message ?? ""),
+	}));

@@ -62,6 +62,10 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
       ENABLE_BANKING_APPLICATION_ID: ${ENABLE_BANKING_APPLICATION_ID:-}
       ENABLE_BANKING_PRIVATE_KEY: ${ENABLE_BANKING_PRIVATE_KEY:-}
+      # The pinned pair's country, FR when empty.
+      ENABLE_BANKING_COUNTRY: ${ENABLE_BANKING_COUNTRY:-}
+      # The longest consent asked of a bank, in days, 180 when empty.
+      ENABLE_BANKING_CONSENT_DAYS: ${ENABLE_BANKING_CONSENT_DAYS:-}
       # The bearer token of POST /api/sync. Empty, the scheduled sync is
       # refused and only the connection page's button syncs.
       SYNC_SECRET: ${SYNC_SECRET:-}

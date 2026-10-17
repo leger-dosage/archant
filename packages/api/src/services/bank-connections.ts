@@ -93,13 +93,17 @@ type BankEnv = Pick<
 	| "ENABLE_BANKING_COUNTRY"
 	| "ENCRYPTION_KEY"
 	| "ENABLE_BANKING_API_URL"
+	| "ENABLE_BANKING_CONSENT_DAYS"
 	| "BETTER_AUTH_URL"
 >;
 
 /** The bank part of the app's dependencies, from the validated environment. */
 export function bankDepsFromEnv(
 	env: BankEnv,
-): Pick<BankConnectionDeps, "bankCredentials" | "encryptionKey" | "bankApiUrl" | "redirectUrl"> {
+): Pick<
+	BankConnectionDeps,
+	"bankCredentials" | "encryptionKey" | "bankApiUrl" | "bankConsentDays" | "redirectUrl"
+> {
 	const applicationId = env.ENABLE_BANKING_APPLICATION_ID;
 	const privateKey = env.ENABLE_BANKING_PRIVATE_KEY;
 
@@ -111,6 +115,7 @@ export function bankDepsFromEnv(
 				: { applicationId, privateKey, country: env.ENABLE_BANKING_COUNTRY },
 		encryptionKey: env.ENCRYPTION_KEY ?? null,
 		bankApiUrl: env.ENABLE_BANKING_API_URL,
+		bankConsentDays: env.ENABLE_BANKING_CONSENT_DAYS,
 		redirectUrl: new URL(REDIRECT_PATH, env.BETTER_AUTH_URL).toString(),
 	};
 }

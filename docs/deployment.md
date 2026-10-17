@@ -75,6 +75,7 @@ Compose reads them from the shell, or from a `.env` file next to `docker-compose
 | `ENCRYPTION_KEY`                | no       | Encrypts bank session ids and the Enable Banking key at rest, base64 of 32 bytes. See [Connecting a bank](#connecting-a-bank).                                            |
 | `ENABLE_BANKING_APPLICATION_ID` | no       | Enable Banking application id, overriding the one saved in the interface. Set with the next one or not at all.                                                            |
 | `ENABLE_BANKING_PRIVATE_KEY`    | no       | The application's private key, base64 of the PEM, overriding the one saved in the interface.                                                                              |
+| `ENABLE_BANKING_CONSENT_DAYS`   | no       | The longest bank consent asked for, in days. Defaults to 180; a value that is not a whole number from 1 to 36500 is ignored. See [Connecting a bank](#connecting-a-bank). |
 | `SYNC_SECRET`                   | no       | The bearer token of `POST /api/sync`, at least 32 characters. See [Scheduled synchronisation](#scheduled-synchronisation).                                                |
 | `ARCHANT_VERSION`               | no       | The image tag to run, such as `1.2.3` or `1.2`. Defaults to `latest`. Read by Compose only, never by the server.                                                          |
 
@@ -289,7 +290,7 @@ export ENABLE_BANKING_COUNTRY=FR
 
 The connection's page, reached from « Banques connectées », shows the last sync and its error, and holds « Synchroniser », « Renouveler le consentement » and « Déconnecter ». Disconnecting turns the linked accounts into manual ones and keeps their transactions.
 
-Archant asks each bank for 90 days of consent, or less when the bank allows less. Before it ends, a warning offers « Renouveler ». Once it has ended, syncing stops and the warning offers « Reconnecter »; nothing is deleted, and the next sync picks up where the last one stopped.
+Archant asks each bank for 180 days of consent, or less when the bank allows less; `ENABLE_BANKING_CONSENT_DAYS` lowers or raises that ceiling. A bank that refuses the length asked for, as Trade Republic does, is asked again for 180, 90, 45 then 30 days, only those shorter than the first ask, as Sure does, and the connection takes the first it accepts. Before it ends, a warning offers « Renouveler ». Once it has ended, syncing stops and the warning offers « Reconnecter »; nothing is deleted, and the next sync picks up where the last one stopped.
 
 ## Connecting an assistant
 
