@@ -33,10 +33,21 @@ const unescapeFormula = (cell: string) => (/^'[=+\-@\t\r]/u.test(cell) ? cell.sl
  * every cell trimmed. `null` when the file holds no headers or no data row,
  * or a quote never closes, as Sure's `csv_valid?` refuses it. A blank line
  * is no row: Ruby's reader would give it empty cells every required column
- * then refuses, for no data.
+ * then refuses, for no data. `rowsToSkip` drops the file's first lines
+ * before, as Sure's `parsed_csv`; a row's line stays its line in the file.
  */
-export function parseCsv(text: string, separator: CsvSeparator): CsvTable | null {
-	const parsed = Papa.parse<string[]>(text.trim(), { delimiter: separator });
+export function parseCsv(text: string, separator: CsvSeparator, rowsToSkip = 0): CsvTable | null {
+	const kept =
+		rowsToSkip === 0
+			? text
+			: text
+					.split(/(?<=\n)/u)
+					.slice(rowsToSkip)
+					.join("");
+	// Past skipped lines, the blank ones the trim drops before the headers
+	// still count: the user counted the file's lines to skip them.
+	const blank = rowsToSkip === 0 ? 0 : (/^\s*\n/u.exec(kept)?.[0] ?? "").split("\n").length - 1;
+	const parsed = Papa.parse<string[]>(kept.trim(), { delimiter: separator });
 
 	if (parsed.errors.some((error) => error.code === "MissingQuotes")) {
 		return null;
@@ -46,7 +57,12 @@ export function parseCsv(text: string, separator: CsvSeparator): CsvTable | null
 	const rows = data.flatMap((cells, index): CsvRow[] =>
 		cells.every((cell) => cell.trim() === "")
 			? []
-			: [{ line: index + 2, cells: cells.map((cell) => unescapeFormula(cell.trim())) }],
+			: [
+					{
+						line: rowsToSkip + blank + index + 2,
+						cells: cells.map((cell) => unescapeFormula(cell.trim())),
+					},
+				],
 	);
 
 	if (header === undefined || header.every((cell) => cell.trim() === "") || rows.length === 0) {
@@ -54,6 +70,55 @@ export function parseCsv(text: string, separator: CsvSeparator): CsvTable | null
 	}
 
 	return { headers: header.map((cell) => cell.trim()), rows };
+}
+
+/**
+ * Sure's `Import::Row#split_tags`: a list split on `,` when one stands
+ * unescaped, else on `|`; a backslash escapes either, or itself. Each name
+ * trimmed; a blank cell is one blank name, as Sure's `tags_list`.
+ */
+export function splitTags(cell: string): string[] {
+	if (cell.trim() === "") {
+		return [""];
+	}
+
+	const unescaped = (delimiter: string) => {
+		let escaping = false;
+
+		for (const character of cell) {
+			if (escaping) {
+				escaping = false;
+			} else if (character === "\\") {
+				escaping = true;
+			} else if (character === delimiter) {
+				return true;
+			}
+		}
+
+		return false;
+	};
+	const delimiter = unescaped(",") ? "," : unescaped("|") ? "|" : ",";
+	const names: string[] = [];
+	let current = "";
+	let escaping = false;
+
+	for (const character of cell) {
+		if (escaping) {
+			current += [delimiter, ",", "|", "\\"].includes(character) ? character : `\\${character}`;
+			escaping = false;
+		} else if (character === "\\") {
+			escaping = true;
+		} else if (character === delimiter) {
+			names.push(current);
+			current = "";
+		} else {
+			current += character;
+		}
+	}
+
+	names.push(escaping ? `${current}\\` : current);
+
+	return names.map((name) => name.trim());
 }
 
 /** Sure's `normalize_header`: trimmed, lower case, `*` removed, spaces and dashes to `_`. */

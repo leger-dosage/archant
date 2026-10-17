@@ -37,6 +37,13 @@ export type NormalizedTransaction = {
 	 * household's merchants keeps the line's key. Only a bank connector sets it.
 	 */
 	keyLabel?: string | undefined;
+	/**
+	 * The category the line is filed under, an id of the household's. Only
+	 * the CSV transaction import sets it, from « Attribuez vos catégories ».
+	 */
+	categoryId?: string | null | undefined;
+	/** The line's tags, ids of the household's; only the CSV transaction import sets them. */
+	tagIds?: readonly string[] | undefined;
 };
 
 /**

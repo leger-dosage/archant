@@ -4,7 +4,9 @@ import { expect, test, uniqueName } from "./fixtures.ts";
 
 // Story 30.3: « Réglages › Importations » lists Sure's raw-data sources, and
 // a categories file goes through « Téléverser », « Configurer » and
-// « Confirmer » before its categories land.
+// « Confirmer » before its categories land. Story 30.4: a transactions file
+// skips its preamble, signs its lines from a type column and maps its
+// categories before its lines land.
 
 function csv(lines: readonly string[]): { name: string; mimeType: string; buffer: Buffer } {
 	return { name: "categories.csv", mimeType: "text/csv", buffer: Buffer.from(lines.join("\n")) };
@@ -16,6 +18,7 @@ async function openCategoriesImport(page: Page) {
 	const raw = page.getByRole("region", { name: "Données brutes" });
 
 	await expect(raw.getByRole("listitem")).toHaveText([
+		/Importer les opérations/u,
 		/Importer les investissements/u,
 		/Importer les comptes/u,
 		/Importer les catégories/u,
@@ -78,4 +81,87 @@ test("names the line of a category its own parent and leaves nothing to publish"
 		`Ligne 2 : la catégorie « ${name} » ne peut pas être son propre parent.`,
 	);
 	await expect(page.getByRole("button", { name: "Publier l'importation" })).toBeDisabled();
+});
+
+test("imports a transactions file into an account, its category mapped to a new one", async ({
+	page,
+	api,
+}) => {
+	const { name: accountName } = await api.openAccount();
+	const category = uniqueName("Boulangeries");
+	const label = uniqueName("Pain");
+
+	await page.goto("/settings/imports");
+	await page
+		.getByRole("region", { name: "Données brutes" })
+		.getByRole("link", { name: "Importer les opérations" })
+		.click();
+	await expect(page).toHaveURL(/\/settings\/imports\/transactions$/u);
+	await page.getByLabel("Compte (facultatif)").click();
+	await page.getByRole("option", { name: accountName }).click();
+	await page.locator("#csv-import-file").setInputFiles({
+		name: "releve.csv",
+		mimeType: "text/csv",
+		buffer: Buffer.from(
+			[
+				"Relevé du compte",
+				"Date,Montant,Sens,Libellé,Catégorie",
+				`15/09/2026,4.20,Débit,${label},${category}`,
+			].join("\n"),
+		),
+	});
+	await page.getByRole("button", { name: "Téléverser le CSV" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Configurez votre importation" }),
+	).toBeVisible();
+	await expect(page.getByRole("button", { name: "Appliquer la configuration" })).toBeDisabled();
+
+	const choose = async (field: string, column: string) => {
+		await page.getByLabel(field, { exact: true }).click();
+		await page.getByRole("option", { name: column, exact: true }).click();
+	};
+
+	// The bank's preamble line is skipped, and the file read again with its headers.
+	await page.getByLabel("Ignorer les n premières lignes").fill("1");
+	await page.getByLabel("Ignorer les n premières lignes").press("Enter");
+	await expect(page.getByRole("cell", { name: label })).toBeVisible();
+	await choose("Date", "Date");
+	await choose("Montant", "Montant");
+	// The sign comes from the « Sens » column, Sure's custom column.
+	await choose("Stratégie de type de montant", "Colonne personnalisée");
+	await choose("Colonne de type de montant", "Sens");
+	await choose("Valeur d'identifiant", "Débit");
+	await choose("Traiter « Débit » comme", "Dépense (sortie)");
+	await choose("Nom", "Libellé");
+	await choose("Catégorie", "Catégorie");
+
+	await expect(page.getByLabel("Format de date")).toHaveText("DD/MM/YYYY");
+	await page.getByRole("button", { name: "Appliquer la configuration" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Attribuez vos catégories" }),
+	).toBeVisible();
+	await expect(page.getByLabel("Catégorie dans Archant")).toHaveText(
+		"Ajouter comme nouvelle catégorie",
+	);
+	await page.getByRole("button", { name: "Suivant" }).click();
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Attribuez vos étiquettes" }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Suivant" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Confirmez vos données d'importation" }),
+	).toBeVisible();
+	await expect(page.getByRole("row", { name: "Opérations 1" })).toBeVisible();
+	await expect(page.getByRole("row", { name: "Catégories 1" })).toBeVisible();
+	await page.getByRole("button", { name: "Publier l'importation" }).click();
+	await expect(page.getByRole("heading", { level: 1, name: "Importation réussie" })).toBeVisible();
+
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: label });
+
+	await expect(row).toContainText(category);
+	await expect(row).toContainText("−4,20");
 });

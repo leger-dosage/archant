@@ -8,6 +8,7 @@ import {
 	normalizeHeader,
 	parseCsv,
 	sanitizeNumber,
+	splitTags,
 	strptime,
 } from "./csv-import-format.ts";
 
@@ -38,6 +39,32 @@ describe("parseCsv", () => {
 		['a\n"1', "an unclosed quote"],
 	])("refuses %j, %s", (text) => {
 		expect(parseCsv(text, ",")).toBeNull();
+	});
+});
+
+describe("rows to skip", () => {
+	it("drops the file's first lines before the headers, a row keeping its line in the file", () => {
+		expect(parseCsv("Compte 123\r\nExport\r\nDate,Montant\r\n2026-09-01,1\r\n", ",", 2)).toEqual({
+			headers: ["Date", "Montant"],
+			rows: [{ line: 4, cells: ["2026-09-01", "1"] }],
+		});
+		expect(parseCsv("a,b\n1,2", ",", 2)).toBeNull();
+		expect(parseCsv("Compte 123\n\n\nDate,Montant\n2026-09-01,1", ",", 1)?.rows).toEqual([
+			{ line: 5, cells: ["2026-09-01", "1"] },
+		]);
+	});
+});
+
+describe("splitTags", () => {
+	it("splits as Sure's `split_tags`: a comma first, else a pipe, a backslash escaping either", () => {
+		expect(splitTags("")).toEqual([""]);
+		expect(splitTags(" maison , été ")).toEqual(["maison", "été"]);
+		expect(splitTags("maison|été")).toEqual(["maison", "été"]);
+		expect(splitTags("a\\,b|c")).toEqual(["a,b", "c"]);
+		expect(splitTags("a\\|b,c")).toEqual(["a|b", "c"]);
+		expect(splitTags("a\\\\b")).toEqual(["a\\b"]);
+		expect(splitTags("a\\xb")).toEqual(["a\\xb"]);
+		expect(splitTags("trailing\\")).toEqual(["trailing\\"]);
 	});
 });
 

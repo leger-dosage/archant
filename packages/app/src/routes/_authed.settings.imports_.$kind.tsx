@@ -1,5 +1,6 @@
+import type { MapKind } from "@/components/CsvMapStep";
 import type { CsvImportDraft, CsvImportPreviewData } from "@/hooks/useCsvImport";
-import type { DragEvent, ReactNode } from "react";
+import type { DragEvent } from "react";
 
 import { Link, createFileRoute, notFound } from "@tanstack/react-router";
 import { CircleAlertIcon, CircleCheckIcon, FileSpreadsheetIcon } from "lucide-react";
@@ -7,6 +8,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+	AmountTypeStrategy,
 	ColumnKey,
 	CsvImportConfigurationInput,
 	CsvImportMappingsInput,
@@ -16,28 +18,24 @@ import type {
 	SignageConvention,
 } from "@archant/api/schemas/csv-imports";
 import {
+	AMOUNT_TYPE_STRATEGIES,
 	COLUMN_KEYS,
-	CREATE_NEW_ACCOUNT,
+	COLUMN_KEY_LIST,
 	CSV_IMPORT_TYPES,
 	CSV_ISSUE_CODES,
 	CSV_SEPARATORS,
+	MAX_ROWS_TO_SKIP,
 	NUMBER_FORMATS,
 	SIGNAGE_CONVENTIONS,
 	dateFormatsOf,
 } from "@archant/api/schemas/csv-imports";
-import type { AccountSubtype, AccountType } from "@archant/data/account-types";
-import {
-	ACCOUNT_TYPES,
-	ACCOUNT_TYPE_IDS,
-	isSubtypeOf,
-	supportsTrades,
-} from "@archant/data/account-types";
+import { supportsTrades } from "@archant/data/account-types";
 
-import { AccountSubtypeSelect } from "@/components/AccountSubtypeSelect";
 import { ChoiceField } from "@/components/ChoiceField";
+import { CsvMapStep } from "@/components/CsvMapStep";
 import { Page } from "@/components/Page";
-import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
 	Select,
@@ -77,8 +75,6 @@ type Step = "upload" | "configure" | "map" | "confirm";
 
 type Preview = CsvImportPreviewData;
 type Issue = Preview["errors"][number];
-type AccountTypeChoice = Preview["mappings"]["accountTypes"][number];
-type AccountChoice = Preview["mappings"]["accounts"][number];
 
 /** A file broken on every line would otherwise list 10,000 of them. */
 const SHOWN_ERRORS = 50;
@@ -86,14 +82,24 @@ const SHOWN_ERRORS = 50;
 /** No column chosen, « Laisser vide »: a value no header takes. */
 const NONE = "__none__";
 
+/** A blank cell of the type column, which a select cannot hold as its value. */
+const BLANK = "__blank__";
+
 /** Sure's `required_column_keys` of the forms that map columns. */
 const REQUIRED_COLUMNS: Partial<Record<CsvImportType, readonly ColumnKey[]>> = {
+	transactions: ["date", "amount"],
 	accounts: ["name", "amount"],
 	trades: ["date", "ticker", "qty", "price"],
 };
 
 /** Sure's `csv_template` of each import, offered as « Téléchargez un exemple de fichier CSV ». */
 const TEMPLATES: Record<CsvImportType, string> = {
+	transactions: [
+		"date*,amount*,name,currency,category,tags,account,notes",
+		"2024-05-15,-45.99,Grocery Store,USD,Food,groceries|essentials,Checking Account,Monthly grocery run",
+		"2024-05-16,1500.00,Salary,,Income,,Main Account,",
+		"2024-05-17,-12.50,Coffee Shop,,,coffee,,",
+	].join("\n"),
 	accounts: [
 		"Account type*,Name*,Balance*,Currency,Balance Date",
 		"Checking,Main Checking Account,1000.00,USD,2024-01-01",
@@ -130,7 +136,7 @@ function configurationOf(resolved: Preview["configuration"]): CsvImportConfigura
 	const columns: Partial<Record<ColumnKey, string | null>> = {};
 
 	for (const [key, value] of Object.entries(resolved.columns)) {
-		const known = [...COLUMN_KEYS.accounts, ...COLUMN_KEYS.trades].find((column) => column === key);
+		const known = COLUMN_KEY_LIST.find((column) => column === key);
 
 		if (known !== undefined && value !== undefined) {
 			columns[known] = value;
@@ -140,15 +146,43 @@ function configurationOf(resolved: Preview["configuration"]): CsvImportConfigura
 	return { ...resolved, columns };
 }
 
-/** Whether `type` has Sure's « Mapper » step: account types, or the accounts of a multi-account trade file. */
-const mapsValues = (type: CsvImportType, accountId: string | null | undefined) =>
-	type === "accounts" || (type === "trades" && (accountId ?? null) === null);
+/**
+ * Sure's `mapping_steps` of `type`: account types; the accounts of a
+ * multi-account trade file; the categories and tags of a transaction file,
+ * and its accounts when it names them.
+ */
+function mapStepsOf(type: CsvImportType, accountId: string | null | undefined): MapKind[] {
+	const multiAccount = (accountId ?? null) === null;
 
-/** The accounts a trade may go to, as Sure's `supports_trades?`. */
-function useTradingAccounts() {
+	switch (type) {
+		case "accounts":
+			return ["accountTypes"];
+		case "trades":
+			return multiAccount ? ["accounts"] : [];
+		case "transactions":
+			return multiAccount ? ["categories", "tags", "accounts"] : ["categories", "tags"];
+		default:
+			return [];
+	}
+}
+
+/** Whether an import of `type` names its account at upload, « Compte (facultatif) ». */
+const choosesAccount = (type: CsvImportType) => type === "trades" || type === "transactions";
+
+/**
+ * The accounts an import of `type` writes into: for trades those Sure's
+ * `supports_trades?` accepts; for transactions any active one at upload, as
+ * Sure's `accessible_accounts.visible`, and in « Attribuez vos comptes » only
+ * those no bank feeds, as Sure's `accounts.manual`.
+ */
+function useImportAccounts(type: CsvImportType, step: "upload" | "map") {
 	const accounts = useAccounts({ select: accountsByName });
 
-	return (accounts.data ?? []).filter((account) => account.active && supportsTrades(account));
+	return (accounts.data ?? []).filter(
+		(account) =>
+			account.active &&
+			(type === "trades" ? supportsTrades(account) : step === "upload" || !account.linked),
+	);
 }
 
 /** One page per import type: another type starts from an empty upload, never the last one's file. */
@@ -169,6 +203,8 @@ function CsvImportPage() {
 	const { kind } = Route.useParams();
 	const type = isCsvImportType(kind) ? kind : "categories";
 	const [step, setStep] = useState<Step>("upload");
+	// Which of Sure's mapping steps « Mapper » shows, as its `step` parameter.
+	const [mapIndex, setMapIndex] = useState(0);
 	const [file, setFile] = useState<File | null>(null);
 	const [configuration, setConfiguration] = useState<CsvImportConfigurationInput>({});
 	const [mappings, setMappings] = useState<CsvImportMappingsInput | undefined>(undefined);
@@ -176,6 +212,7 @@ function CsvImportPage() {
 	const [done, setDone] = useState(false);
 	const read = useCsvImportPreview();
 	const publish = usePublishCsvImport();
+	const mapAccounts = useImportAccounts(type, "map");
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", {
@@ -206,7 +243,10 @@ function CsvImportPage() {
 						subtype,
 					})),
 					accounts: data.mappings.accounts.map(({ key, value }) => ({ key, value })),
+					categories: data.mappings.categories.map(({ key, value }) => ({ key, value })),
+					tags: data.mappings.tags.map(({ key, value }) => ({ key, value })),
 				});
+				setMapIndex(0);
 				setStep(next);
 			},
 		});
@@ -229,24 +269,23 @@ function CsvImportPage() {
 		);
 	}
 
-	const steps: Step[] = mapsValues(type, configuration.accountId)
-		? ["upload", "configure", "map", "confirm"]
-		: ["upload", "configure", "confirm"];
+	const mapSteps = mapStepsOf(type, configuration.accountId);
+	const mapKind = mapSteps[mapIndex] ?? mapSteps[0] ?? "accounts";
+	const steps: Step[] =
+		mapSteps.length > 0
+			? ["upload", "configure", "map", "confirm"]
+			: ["upload", "configure", "confirm"];
 	const error = read.error === null ? null : errorMessage(read.error);
 	const stepTitles: Record<Step, string> = {
 		upload: t("csvImport.upload.title"),
 		configure: t("csvImport.configure.title"),
-		map:
-			type === "accounts" ? t("csvImport.map.accountTypesTitle") : t("csvImport.map.accountsTitle"),
+		map: t(`csvImport.map.titles.${mapKind}`),
 		confirm: t("csvImport.confirm.title"),
 	};
 	const stepDescriptions: Record<Step, string> = {
 		upload: t("csvImport.upload.description"),
 		configure: t("csvImport.configure.description"),
-		map:
-			type === "accounts"
-				? t("csvImport.map.accountTypesDescription")
-				: t("csvImport.map.accountsDescription"),
+		map: t(`csvImport.map.descriptions.${mapKind}`),
 		confirm: t("csvImport.confirm.description"),
 	};
 
@@ -259,6 +298,7 @@ function CsvImportPage() {
 					onBack={(target) => {
 						read.reset();
 						publish.reset();
+						setMapIndex(0);
 						setStep(target);
 					}}
 				/>
@@ -297,36 +337,48 @@ function CsvImportPage() {
 						preview={preview}
 						configuration={configuration}
 						onChange={(next) => {
-							// Another date column reads other dates: the server guesses its
-							// format again, as Sure's `detect_date_format`.
+							// Another date column reads other dates: the file is read again so
+							// the server guesses its format, as Sure's `detect_date_format`,
+							// and shows its first date.
 							if (next.columns?.date !== configuration.columns?.date) {
 								const { dateFormat: _guessedAgain, ...rest } = next;
 
 								setConfiguration(rest);
+								advance("configure", { configuration: rest });
 							} else {
 								setConfiguration(next);
 							}
+						}}
+						onReread={(next) => {
+							// Other lines skipped read other headers, another type column
+							// other values: the file is read again with them, as Sure's
+							// `refreshForm`. The choice is kept once the file reads with it.
+							advance("configure", { configuration: next });
 						}}
 						reading={read.isPending}
 						error={error}
 						onSubmit={() => {
 							// The values to map depend on the columns: chosen again after them.
-							advance(mapsValues(type, configuration.accountId) ? "map" : "confirm", {
-								mappings: undefined,
-							});
+							advance(mapSteps.length > 0 ? "map" : "confirm", { mappings: undefined });
 						}}
 					/>
 				)}
 				{step === "map" && preview !== null && mappings !== undefined && (
-					<MapStep
-						type={type}
+					<CsvMapStep
+						key={mapKind}
+						kind={mapKind}
 						preview={preview}
 						mappings={mappings}
+						accounts={mapAccounts}
 						onChange={setMappings}
 						reading={read.isPending}
 						error={error}
 						onSubmit={() => {
-							advance("confirm");
+							if (mapIndex < mapSteps.length - 1) {
+								setMapIndex(mapIndex + 1);
+							} else {
+								advance("confirm");
+							}
 						}}
 					/>
 				)}
@@ -429,7 +481,7 @@ function ErrorLine({ id, error }: { id?: string; error: string | null }) {
 }
 
 /**
- * Sure's upload page: « Séparateur de colonnes », a trade import's account,
+ * Sure's upload page: « Séparateur de colonnes », a trade or transaction import's account,
  * the dashed drop zone and « Téléverser le CSV », then the sample file.
  */
 function UploadStep({
@@ -455,13 +507,13 @@ function UploadStep({
 }) {
 	const { t } = useTranslation();
 	const [dragging, setDragging] = useState(false);
-	const trading = useTradingAccounts();
+	const offered = useImportAccounts(type, "upload");
+	// Sure's `csv_template` drops its account column once the account is chosen.
+	const lines = TEMPLATES[type].split("\n");
+	const accountColumn = (lines[0] ?? "").split(",").indexOf("account");
 	const template =
-		type === "trades" && accountId !== null
-			? TEMPLATES.trades
-					.split("\n")
-					.map((line) => line.split(",").toSpliced(6, 1).join(","))
-					.join("\n")
+		choosesAccount(type) && accountId !== null && accountColumn !== -1
+			? lines.map((line) => line.split(",").toSpliced(accountColumn, 1).join(",")).join("\n")
 			: TEMPLATES[type];
 
 	const onDrop = (event: DragEvent<HTMLLabelElement>) => {
@@ -488,7 +540,7 @@ function UploadStep({
 				}))}
 				onChange={(value) => onChoices({ separator: value, accountId })}
 			/>
-			{type === "trades" && (
+			{choosesAccount(type) && (
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="csv-import-account">{t("csvImport.upload.account")}</Label>
 					<Select
@@ -502,7 +554,7 @@ function UploadStep({
 						</SelectTrigger>
 						<SelectContent>
 							<SelectItem value={NONE}>{t("csvImport.upload.multiAccount")}</SelectItem>
-							{trading.map((account) => (
+							{offered.map((account) => (
 								<SelectItem key={account.id} value={account.id}>
 									{account.name}
 								</SelectItem>
@@ -601,13 +653,18 @@ function SampleTable({ preview }: { preview: Preview }) {
 	);
 }
 
-/** Each key's label in « Configurer », as Sure's account and trade forms word them. */
+/** Each key's label in « Configurer », as Sure's transaction, account and trade forms word them. */
 function useColumnLabel(type: CsvImportType) {
 	const { t } = useTranslation();
 
 	return (key: ColumnKey) => {
+		const transactionKey = COLUMN_KEYS.transactions.find((known) => known === key);
 		const accountKey = COLUMN_KEYS.accounts.find((known) => known === key);
 		const tradeKey = COLUMN_KEYS.trades.find((known) => known === key);
+
+		if (type === "transactions" && transactionKey !== undefined) {
+			return t(`csvImport.configure.transactions.${transactionKey}`);
+		}
 
 		if (type === "accounts" && accountKey !== undefined) {
 			return t(`csvImport.configure.accounts.${accountKey}`);
@@ -618,15 +675,66 @@ function useColumnLabel(type: CsvImportType) {
 }
 
 /**
+ * Sure's « Ignorer les n premières lignes »: applied when the field is left
+ * or Enter is pressed, as Sure's `change` event, since each value reads the
+ * file again.
+ */
+function RowsToSkipField({
+	value,
+	onCommit,
+}: {
+	value: number;
+	onCommit: (value: number) => void;
+}) {
+	const { t } = useTranslation();
+	const [text, setText] = useState(String(value));
+	const commit = () => {
+		const next = Number.parseInt(text, 10);
+
+		if (Number.isInteger(next) && next >= 0 && next <= MAX_ROWS_TO_SKIP && next !== value) {
+			onCommit(next);
+		} else {
+			setText(String(value));
+		}
+	};
+
+	return (
+		<div className="flex flex-col gap-1.5">
+			<Label htmlFor="csv-import-rows-to-skip">
+				{t("csvImport.configure.transactions.rowsToSkip")}
+			</Label>
+			<Input
+				id="csv-import-rows-to-skip"
+				type="number"
+				inputMode="numeric"
+				min={0}
+				max={MAX_ROWS_TO_SKIP}
+				step={1}
+				value={text}
+				onChange={(event) => setText(event.target.value)}
+				onBlur={commit}
+				onKeyDown={(event) => {
+					if (event.key === "Enter") {
+						event.preventDefault();
+						commit();
+					}
+				}}
+			/>
+		</div>
+	);
+}
+
+/**
  * Sure's « Configurez votre importation »: a column for each key with the
- * formats for accounts and trades, a short notice for the others, then the
- * file's first rows.
+ * formats for transactions, accounts and trades, a short notice for the
+ * others, then the file's first rows.
  */
 function ConfigureStep({
 	type,
 	preview,
 	configuration,
 	onChange,
+	onReread,
 	reading,
 	error,
 	onSubmit,
@@ -635,6 +743,8 @@ function ConfigureStep({
 	preview: Preview;
 	configuration: CsvImportConfigurationInput;
 	onChange: (configuration: CsvImportConfigurationInput) => void;
+	/** A choice that changes what the file reads as: the lines skipped, the type column. */
+	onReread: (configuration: CsvImportConfigurationInput) => void;
 	reading: boolean;
 	error: string | null;
 	onSubmit: () => void;
@@ -645,14 +755,23 @@ function ConfigureStep({
 	const keys: readonly ColumnKey[] =
 		type === "accounts"
 			? COLUMN_KEYS.accounts
-			: type === "trades"
-				? COLUMN_KEYS.trades.filter(
+			: type === "trades" || type === "transactions"
+				? COLUMN_KEYS[type].filter(
 						(key) => key !== "account" || (configuration.accountId ?? null) === null,
 					)
 				: [];
 	const headers = [...new Set(preview.headers.filter((header) => header.trim() !== ""))];
 	const required = REQUIRED_COLUMNS[type] ?? [];
-	const missing = required.some((key) => (columns[key] ?? null) === null);
+	const strategy = configuration.amountTypeStrategy ?? "signed_amount";
+	const typeColumn = columns.entity_type ?? null;
+	// Sure's `custom_column_import_requires_identifier`: the column, its value and what it marks.
+	const missing =
+		required.some((key) => (columns[key] ?? null) === null) ||
+		(type === "transactions" &&
+			strategy === "custom_column" &&
+			(typeColumn === null ||
+				(configuration.amountTypeIdentifier ?? null) === null ||
+				(configuration.amountTypeInflow ?? null) === null));
 	const set = (patch: CsvImportConfigurationInput) => onChange({ ...configuration, ...patch });
 	const dateUnchanged =
 		preview.configuration.dateFormat === configuration.dateFormat &&
@@ -688,11 +807,9 @@ function ConfigureStep({
 		<div className="flex flex-col gap-1.5">
 			<ChoiceField
 				id="csv-import-date-format"
-				label={
-					type === "accounts"
-						? t("csvImport.configure.accounts.dateFormat")
-						: t("csvImport.configure.trades.dateFormat")
-				}
+				label={t(
+					`csvImport.configure.${type === "trades" || type === "transactions" ? type : "accounts"}.dateFormat`,
+				)}
 				value={configuration.dateFormat ?? "%Y-%m-%d"}
 				options={dateFormatsOf(type).map(([label, format]) => ({ value: format, label }))}
 				onChange={(value) => set({ dateFormat: value })}
@@ -712,11 +829,9 @@ function ConfigureStep({
 	const numberFormatField = (
 		<ChoiceField<NumberFormat>
 			id="csv-import-number-format"
-			label={
-				type === "accounts"
-					? t("csvImport.configure.accounts.numberFormat")
-					: t("csvImport.configure.trades.numberFormat")
-			}
+			label={t(
+				`csvImport.configure.${type === "trades" || type === "transactions" ? type : "accounts"}.numberFormat`,
+			)}
 			value={configuration.numberFormat ?? "1,234.56"}
 			options={NUMBER_FORMATS.map((value) => ({ value, label: value }))}
 			onChange={(value) => set({ numberFormat: value })}
@@ -740,6 +855,122 @@ function ConfigureStep({
 							{dateFormatField}
 						</div>
 						{numberFormatField}
+					</>
+				)}
+				{type === "transactions" && (
+					<>
+						<RowsToSkipField
+							// A refused value comes back to the one the file was read with.
+							key={`${configuration.rowsToSkip ?? 0} ${reading}`}
+							value={configuration.rowsToSkip ?? 0}
+							onCommit={(rowsToSkip) => onReread({ ...configuration, rowsToSkip })}
+						/>
+						<div className="grid gap-4 sm:grid-cols-2">
+							{columnField("date")}
+							{dateFormatField}
+						</div>
+						<div className="grid gap-4 sm:grid-cols-3">
+							{columnField("amount")}
+							{columnField("currency")}
+							{numberFormatField}
+						</div>
+						<ChoiceField<AmountTypeStrategy>
+							id="csv-import-amount-type-strategy"
+							label={t("csvImport.configure.transactions.amountTypeStrategy")}
+							value={strategy}
+							options={AMOUNT_TYPE_STRATEGIES.map((value) => ({
+								value,
+								label: t(`csvImport.configure.transactions.strategies.${value}`),
+							}))}
+							onChange={(value) => set({ amountTypeStrategy: value })}
+						/>
+						{strategy === "signed_amount" ? (
+							<ChoiceField<SignageConvention>
+								id="csv-import-signage"
+								label={t("csvImport.configure.transactions.amountType")}
+								value={configuration.signage ?? "inflows_positive"}
+								options={SIGNAGE_CONVENTIONS.map((value) => ({
+									value,
+									label: t(`csvImport.configure.transactions.signages.${value}`),
+								}))}
+								onChange={(value) => set({ signage: value })}
+							/>
+						) : (
+							<fieldset className="flex flex-col gap-4 border-l-2 pl-4">
+								<legend className="sr-only">
+									{t("csvImport.configure.transactions.amountTypeStrategy")}
+								</legend>
+								<ChoiceField
+									id="csv-import-type-column"
+									label={t("csvImport.configure.transactions.typeColumn")}
+									value={typeColumn ?? NONE}
+									options={[
+										{ value: NONE, label: t("csvImport.configure.selectColumn") },
+										...headers.map((header) => ({ value: header, label: header })),
+									]}
+									onChange={(value) =>
+										onReread({
+											...configuration,
+											columns: { ...columns, entity_type: value === NONE ? null : value },
+											amountTypeIdentifier: null,
+										})
+									}
+								/>
+								{typeColumn !== null &&
+									preview.configuration.columns.entity_type === typeColumn && (
+										<ChoiceField
+											id="csv-import-type-value"
+											label={t("csvImport.configure.transactions.typeValue")}
+											value={
+												configuration.amountTypeIdentifier === ""
+													? BLANK
+													: (configuration.amountTypeIdentifier ?? NONE)
+											}
+											options={[
+												{ value: NONE, label: t("csvImport.configure.transactions.selectValue") },
+												...preview.typeValues.map((value) => ({
+													value: value === "" ? BLANK : value,
+													label: value === "" ? t("csvImport.map.unassigned") : value,
+												})),
+											]}
+											onChange={(value) =>
+												set({
+													amountTypeIdentifier:
+														value === NONE ? null : value === BLANK ? "" : value,
+												})
+											}
+										/>
+									)}
+								{(configuration.amountTypeIdentifier ?? null) !== null && (
+									<ChoiceField
+										id="csv-import-type-inflow"
+										label={t("csvImport.configure.transactions.treatAs", {
+											value:
+												configuration.amountTypeIdentifier === ""
+													? t("csvImport.map.unassigned")
+													: configuration.amountTypeIdentifier,
+										})}
+										value={configuration.amountTypeInflow ?? NONE}
+										options={[
+											{ value: NONE, label: t("csvImport.configure.transactions.selectType") },
+											...SIGNAGE_CONVENTIONS.map((value) => ({
+												value,
+												label: t(`csvImport.configure.transactions.inflows.${value}`),
+											})),
+										]}
+										onChange={(value) =>
+											set({
+												amountTypeInflow:
+													SIGNAGE_CONVENTIONS.find((known) => known === value) ?? null,
+											})
+										}
+									/>
+								)}
+							</fieldset>
+						)}
+						{keys
+							.filter((key) => ["account", "name", "category", "tags", "notes"].includes(key))
+							.map(columnField)}
 					</>
 				)}
 				{type === "trades" && (
@@ -775,205 +1006,13 @@ function ConfigureStep({
 				<Button type="submit" disabled={missing || reading}>
 					{reading
 						? t("csvImport.configure.applying")
-						: type === "accounts" || type === "trades"
+						: type === "transactions" || type === "accounts" || type === "trades"
 							? t("csvImport.configure.apply")
 							: t(`csvImport.configure.${type}.button`)}
 				</Button>
 				<ErrorLine error={error} />
 			</div>
 			<SampleTable preview={preview} />
-		</form>
-	);
-}
-
-/** One row of « Mapper »: the file's value, the choice, how many rows hold it. */
-function MappingRow({
-	label,
-	count,
-	children,
-}: {
-	label: string;
-	count: number;
-	children: ReactNode;
-}) {
-	const { t } = useTranslation();
-
-	return (
-		<li className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
-			<div className="flex min-w-0 flex-col">
-				<span className="truncate text-sm font-medium">{label}</span>
-				<span className="text-xs text-muted-foreground">{t("csvImport.map.rows", { count })}</span>
-			</div>
-			<div className="flex w-full flex-col gap-3 sm:w-72">{children}</div>
-		</li>
-	);
-}
-
-const mappedType = (mapping: { type: AccountType | null; subtype: AccountSubtype | null }) =>
-	mapping.type !== null && isSubtypeOf(mapping.type, mapping.subtype);
-
-/**
- * Sure's « Attribuez vos types de comptes » and « Attribuez vos comptes »:
- * each value of the file mapped to an Archant type, a loan's or a property's
- * subtype included, or to an account that takes trades or a new one.
- * « Suivant » waits for every value to be mapped, as Sure's `publishable?`.
- */
-function MapStep({
-	type,
-	preview,
-	mappings,
-	onChange,
-	reading,
-	error,
-	onSubmit,
-}: {
-	type: CsvImportType;
-	preview: Preview;
-	mappings: CsvImportMappingsInput;
-	onChange: (mappings: CsvImportMappingsInput) => void;
-	reading: boolean;
-	error: string | null;
-	onSubmit: () => void;
-}) {
-	const { t } = useTranslation();
-	const trading = useTradingAccounts();
-	const counts = new Map(
-		[...preview.mappings.accountTypes, ...preview.mappings.accounts].map((mapping) => [
-			mapping.key,
-			mapping.count,
-		]),
-	);
-	const accountTypes = mappings.accountTypes ?? [];
-	const accounts = mappings.accounts ?? [];
-	const keyLabel = (key: string) => (key === "" ? t("csvImport.map.unassigned") : key);
-	const complete =
-		type === "accounts"
-			? accountTypes.every(mappedType)
-			: accounts.every((mapping) => mapping.value !== null);
-
-	const setType = (key: string, patch: Partial<AccountTypeChoice>) =>
-		onChange({
-			...mappings,
-			accountTypes: accountTypes.map((mapping) =>
-				mapping.key === key ? { ...mapping, ...patch } : mapping,
-			),
-		});
-	const setAccount = (key: string, value: AccountChoice["value"]) =>
-		onChange({
-			...mappings,
-			accounts: accounts.map((mapping) => (mapping.key === key ? { ...mapping, value } : mapping)),
-		});
-
-	return (
-		<form
-			className="flex flex-col gap-4"
-			onSubmit={(event) => {
-				event.preventDefault();
-				onSubmit();
-			}}
-		>
-			<Section
-				title={t("csvImport.map.csvColumn", {
-					mapping:
-						type === "accounts" ? t("csvImport.map.accountType") : t("csvImport.map.account"),
-				})}
-			>
-				<ul className="divide-y divide-line">
-					{type === "accounts"
-						? accountTypes.map((mapping, index) => (
-								<MappingRow
-									key={mapping.key}
-									label={keyLabel(mapping.key)}
-									count={counts.get(mapping.key) ?? 0}
-								>
-									<div className="flex flex-col gap-1.5">
-										<Label htmlFor={`csv-import-type-${index}`}>
-											{t("csvImport.map.archantColumn", {
-												mapping: t("csvImport.map.accountType"),
-											})}
-										</Label>
-										<Select
-											value={mapping.type ?? ""}
-											onValueChange={(value) => {
-												const chosen = ACCOUNT_TYPE_IDS.find((id) => id === value);
-
-												if (chosen !== undefined) {
-													setType(mapping.key, { type: chosen, subtype: null });
-												}
-											}}
-										>
-											<SelectTrigger
-												id={`csv-import-type-${index}`}
-												className="w-full"
-												aria-invalid={mapping.type === null}
-											>
-												<SelectValue placeholder={t("csvImport.map.select")} />
-											</SelectTrigger>
-											<SelectContent>
-												{ACCOUNT_TYPE_IDS.map((id) => (
-													<SelectItem key={id} value={id}>
-														{t(`accounts.types.${id}`)}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-									{mapping.type !== null && ACCOUNT_TYPES[mapping.type].subtypes.length > 0 && (
-										<AccountSubtypeSelect
-											id={`csv-import-subtype-${index}`}
-											type={mapping.type}
-											value={mapping.subtype ?? null}
-											onChange={(subtype) => setType(mapping.key, { subtype })}
-											error={undefined}
-											label={t("csvImport.map.subtype")}
-											prompt={t("csvImport.map.select")}
-										/>
-									)}
-								</MappingRow>
-							))
-						: accounts.map((mapping, index) => (
-								<MappingRow
-									key={mapping.key}
-									label={keyLabel(mapping.key)}
-									count={counts.get(mapping.key) ?? 0}
-								>
-									<div className="flex flex-col gap-1.5">
-										<Label htmlFor={`csv-import-account-${index}`}>
-											{t("csvImport.map.archantColumn", { mapping: t("csvImport.map.account") })}
-										</Label>
-										<Select
-											value={mapping.value ?? ""}
-											onValueChange={(value) => setAccount(mapping.key, value)}
-										>
-											<SelectTrigger
-												id={`csv-import-account-${index}`}
-												className="w-full"
-												aria-invalid={mapping.value === null}
-											>
-												<SelectValue placeholder={t("csvImport.map.select")} />
-											</SelectTrigger>
-											<SelectContent>
-												{mapping.key.trim() !== "" && (
-													<SelectItem value={CREATE_NEW_ACCOUNT}>
-														{t("csvImport.map.createNew")}
-													</SelectItem>
-												)}
-												{trading.map((account) => (
-													<SelectItem key={account.id} value={account.id}>
-														{account.name}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-								</MappingRow>
-							))}
-				</ul>
-			</Section>
-			<Button type="submit" className="self-center" disabled={!complete || reading}>
-				{reading ? t("csvImport.configure.applying") : t("csvImport.map.next")}
-			</Button>
-			<ErrorLine error={error} />
 		</form>
 	);
 }
@@ -994,7 +1033,15 @@ const FIELDS = [
 	"actions",
 ] as const;
 
-const RESOURCES = ["accounts", "categories", "merchants", "rules", "trades"] as const;
+const RESOURCES = [
+	"transactions",
+	"accounts",
+	"categories",
+	"tags",
+	"merchants",
+	"rules",
+	"trades",
+] as const;
 
 /** One refusal in French; a value it names is never an amount. */
 function useIssueText() {

@@ -5,6 +5,7 @@ import {
 	BuildingIcon,
 	ChevronRightIcon,
 	FileBracesIcon,
+	FileSpreadsheetIcon,
 	ShapesIcon,
 	SquarePercentIcon,
 	StoreIcon,
@@ -25,6 +26,7 @@ export const Route = createFileRoute("/_authed/settings/imports")({
 
 /** Sure's « Données brutes », in its order, each with its icon. */
 const RAW_DATA: readonly { type: CsvImportType; icon: LucideIcon }[] = [
+	{ type: "transactions", icon: FileSpreadsheetIcon },
 	{ type: "trades", icon: SquarePercentIcon },
 	{ type: "accounts", icon: BuildingIcon },
 	{ type: "categories", icon: ShapesIcon },
@@ -65,7 +67,8 @@ function SourceLabel({
  * « Réglages › Importations »: the import sources, as Sure's « Nouvelle
  * importation » lists them, its two tabs as two groups. Archant keeps no
  * list of past imports here: each account's own history lists its
- * statements. Trades wait for an account, as Sure's `requires_account`.
+ * statements. Transactions and trades wait for an account, as Sure's
+ * `requires_account`.
  */
 function ImportsPage() {
 	const { t } = useTranslation();
@@ -107,7 +110,7 @@ function ImportsPage() {
 					<ul className="divide-y divide-line">
 						{RAW_DATA.map(({ type, icon }) => (
 							<li key={type}>
-								{type === "trades" && !hasAccounts ? (
+								{(type === "transactions" || type === "trades") && !hasAccounts ? (
 									<div className={`${ROW} text-muted-foreground`} aria-disabled="true">
 										<SourceLabel
 											icon={icon}
