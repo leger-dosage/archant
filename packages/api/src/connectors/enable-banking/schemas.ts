@@ -150,7 +150,10 @@ export const transactionSchema = z.object({
 	// Never a key (AD-18), only part of what tells two copies of a line apart.
 	transaction_id: text,
 	transaction_amount: z.object({ amount: z.string(), currency: z.string() }).nullable().catch(null),
-	credit_debit_indicator: z.enum(["CRDT", "DBIT"]).nullable().catch(null),
+	// A string as the bank sent it, anything else `null`: only `CRDT` is money
+	// in (AD-18), and `contentKey` hashes it raw, as Sure's
+	// `build_transaction_content_key` and `compute_external_id`.
+	credit_debit_indicator: z.string().nullable().catch(null),
 	status: z.string().nullable().catch(null),
 	booking_date: z.string().nullable().catch(null),
 	value_date: z.string().nullable().catch(null),

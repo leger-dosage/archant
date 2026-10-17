@@ -1077,7 +1077,63 @@ describe("toTransaction", () => {
 		expect(toTransaction(line({ booking_date: SINCE }), SINCE, [])).not.toBeNull();
 	});
 
-	it("refuses a line without a readable date, amount or direction", () => {
+	it("reads a line without CRDT as money out, its creditor its counterparty, as Sure", () => {
+		const boulangerie = {
+			amount: -1000,
+			label: "Boulangerie",
+			keyLabel: "Boulangerie",
+			merchant: "Boulangerie",
+		};
+
+		for (const credit_debit_indicator of [undefined, null, "OTHR", "crdt", "", 3]) {
+			expect(toTransaction(line({ credit_debit_indicator }), SINCE, [])).toMatchObject(boulangerie);
+		}
+
+		expect(
+			toTransaction(
+				line({
+					credit_debit_indicator: undefined,
+					transaction_amount: { amount: "-10.00", currency: "EUR" },
+				}),
+				SINCE,
+				[],
+			),
+		).toMatchObject({ amount: -1000 });
+	});
+
+	it("never names a line without direction by its debtor, and falls back to « Virement sortant »", () => {
+		const bare = { credit_debit_indicator: undefined, creditor: null };
+
+		expect(
+			toTransaction(line({ ...bare, debtor: { name: "Employeur" } }), SINCE, []),
+		).toMatchObject({ label: "Paiement carte", keyLabel: "Paiement carte", merchant: null });
+		expect(
+			toTransaction(
+				line({
+					...bare,
+					debtor: { name: "Employeur" },
+					bank_transaction_code: null,
+					remittance_information: [],
+				}),
+				SINCE,
+				[],
+			),
+		).toMatchObject({ label: "Virement sortant", keyLabel: "Virement sortant", merchant: null });
+		expect(
+			toTransaction(
+				line({ ...bare, debtor: null, bank_transaction_code: null, remittance_information: [] }),
+				SINCE,
+				[],
+			),
+		).toMatchObject({
+			amount: -1000,
+			label: "Virement sortant",
+			keyLabel: "Virement sortant",
+			merchant: null,
+		});
+	});
+
+	it("refuses a line without a readable date or amount", () => {
 		expect(toTransaction(line({ booking_date: null }), SINCE, [])).toBe("INVALID_DATE");
 		expect(toTransaction(line({ booking_date: "2026-02-30" }), SINCE, [])).toBe("INVALID_DATE");
 		expect(toTransaction(line({ transaction_amount: null }), SINCE, [])).toBe("INVALID_AMOUNT");
@@ -1087,9 +1143,16 @@ describe("toTransaction", () => {
 		expect(
 			toTransaction(line({ transaction_amount: { amount: "1.00", currency: "XXX" } }), SINCE, []),
 		).toBe("INVALID_AMOUNT");
-		expect(toTransaction(line({ credit_debit_indicator: "OTHR" }), SINCE, [])).toBe(
-			"INVALID_AMOUNT",
-		);
+		expect(
+			toTransaction(
+				line({
+					credit_debit_indicator: undefined,
+					transaction_amount: { amount: "douze", currency: "EUR" },
+				}),
+				SINCE,
+				[],
+			),
+		).toBe("INVALID_AMOUNT");
 		expect(toTransaction("not a line", SINCE, [])).toBe("INVALID_AMOUNT");
 	});
 });
@@ -1198,6 +1261,24 @@ describe("fetchStatement", () => {
 		expect(statement.rejected).toEqual([
 			{ ref: "1", reason: "INVALID_DATE" },
 			{ ref: "3", reason: "INVALID_AMOUNT" },
+		]);
+	});
+
+	it("lists a line without direction as money out, never refused", async () => {
+		pages({
+			transactions: [
+				line({ entry_reference: "missing", credit_debit_indicator: undefined }),
+				line({ entry_reference: "unknown", credit_debit_indicator: "OTHR" }),
+			],
+			continuation_key: null,
+		});
+
+		const statement = await connector.fetchStatement(FIXTURE_CHECKING_UID, SINCE, TODAY, []);
+
+		expect(statement.rejected).toEqual([]);
+		expect(statement.transactions).toEqual([
+			expect.objectContaining({ externalId: "missing", amount: -1000, label: "Boulangerie" }),
+			expect.objectContaining({ externalId: "unknown", amount: -1000, label: "Boulangerie" }),
 		]);
 	});
 
@@ -1674,6 +1755,8 @@ describe("a line listed twice", () => {
 			line({ remittance_information: ["CB BOULANGERIE"] }),
 			line({ transaction_id: "tx-1" }),
 			line({ credit_debit_indicator: "CRDT" }),
+			line({ credit_debit_indicator: "OTHR" }),
+			line({ credit_debit_indicator: undefined }),
 		];
 
 		expect(withoutRepeats(variants).size).toBe(variants.length);
