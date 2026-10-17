@@ -381,3 +381,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-1-import-a-sure-archive.md`
   summary: No test proves that `index.ts` hands `SURE_IMPORT_MAX_NDJSON_SIZE_MB` and `SURE_IMPORT_MAX_ROWS` to the routes.
   evidence: `env.spec.ts` reads the variables and the route spec injects `sureImport` itself; removing the key in `index.ts` breaks no test, as for the rest of its wiring.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-3-import-accounts-categories-merchants-rules-and-trades-from-csv.md`
+  summary: No Playwright test walks « Mapper » for an account file (a loan and its subtype) or a multi-account trade file.
+  evidence: Story 30.3 asked one Playwright test on a categories file; the mapping is covered by service tests only, the page's choices are not.

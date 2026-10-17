@@ -44,6 +44,7 @@ import { Route as AuthedBudgetsMonthCategoriesRouteImport } from './routes/_auth
 import { Route as AuthedBudgetsMonthEditRouteImport } from './routes/_authed.budgets.$month_.edit'
 import { Route as AuthedSettingsBanksConnectionIdRouteImport } from './routes/_authed.settings.banks_.$connectionId'
 import { Route as AuthedSettingsBanksCallbackRouteImport } from './routes/_authed.settings.banks_.callback'
+import { Route as AuthedSettingsImportsKindRouteImport } from './routes/_authed.settings.imports_.$kind'
 import { Route as AuthedSettingsImportsSureRouteImport } from './routes/_authed.settings.imports_.sure'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -227,6 +228,12 @@ const AuthedSettingsBanksCallbackRoute =
     path: '/banks/callback',
     getParentRoute: () => AuthedSettingsRoute,
   } as any)
+const AuthedSettingsImportsKindRoute =
+  AuthedSettingsImportsKindRouteImport.update({
+    id: '/imports_/$kind',
+    path: '/imports/$kind',
+    getParentRoute: () => AuthedSettingsRoute,
+  } as any)
 const AuthedSettingsImportsSureRoute =
   AuthedSettingsImportsSureRouteImport.update({
     id: '/imports_/sure',
@@ -269,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
+  '/settings/imports/$kind': typeof AuthedSettingsImportsKindRoute
   '/settings/imports/sure': typeof AuthedSettingsImportsSureRoute
 }
 export interface FileRoutesByTo {
@@ -305,6 +313,7 @@ export interface FileRoutesByTo {
   '/budgets/$month/edit': typeof AuthedBudgetsMonthEditRoute
   '/settings/banks/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/settings/banks/callback': typeof AuthedSettingsBanksCallbackRoute
+  '/settings/imports/$kind': typeof AuthedSettingsImportsKindRoute
   '/settings/imports/sure': typeof AuthedSettingsImportsSureRoute
 }
 export interface FileRoutesById {
@@ -344,6 +353,7 @@ export interface FileRoutesById {
   '/_authed/budgets/$month_/edit': typeof AuthedBudgetsMonthEditRoute
   '/_authed/settings/banks_/$connectionId': typeof AuthedSettingsBanksConnectionIdRoute
   '/_authed/settings/banks_/callback': typeof AuthedSettingsBanksCallbackRoute
+  '/_authed/settings/imports_/$kind': typeof AuthedSettingsImportsKindRoute
   '/_authed/settings/imports_/sure': typeof AuthedSettingsImportsSureRoute
 }
 export interface FileRouteTypes {
@@ -383,6 +393,7 @@ export interface FileRouteTypes {
     | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
+    | '/settings/imports/$kind'
     | '/settings/imports/sure'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -419,6 +430,7 @@ export interface FileRouteTypes {
     | '/budgets/$month/edit'
     | '/settings/banks/$connectionId'
     | '/settings/banks/callback'
+    | '/settings/imports/$kind'
     | '/settings/imports/sure'
   id:
     | '__root__'
@@ -457,6 +469,7 @@ export interface FileRouteTypes {
     | '/_authed/budgets/$month_/edit'
     | '/_authed/settings/banks_/$connectionId'
     | '/_authed/settings/banks_/callback'
+    | '/_authed/settings/imports_/$kind'
     | '/_authed/settings/imports_/sure'
   fileRoutesById: FileRoutesById
 }
@@ -715,6 +728,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsBanksCallbackRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/settings/imports_/$kind': {
+      id: '/_authed/settings/imports_/$kind'
+      path: '/imports/$kind'
+      fullPath: '/settings/imports/$kind'
+      preLoaderRoute: typeof AuthedSettingsImportsKindRouteImport
+      parentRoute: typeof AuthedSettingsRoute
+    }
     '/_authed/settings/imports_/sure': {
       id: '/_authed/settings/imports_/sure'
       path: '/imports/sure'
@@ -753,6 +773,7 @@ interface AuthedSettingsRouteChildren {
   AuthedSettingsIndexRoute: typeof AuthedSettingsIndexRoute
   AuthedSettingsBanksConnectionIdRoute: typeof AuthedSettingsBanksConnectionIdRoute
   AuthedSettingsBanksCallbackRoute: typeof AuthedSettingsBanksCallbackRoute
+  AuthedSettingsImportsKindRoute: typeof AuthedSettingsImportsKindRoute
   AuthedSettingsImportsSureRoute: typeof AuthedSettingsImportsSureRoute
 }
 
@@ -772,6 +793,7 @@ const AuthedSettingsRouteChildren: AuthedSettingsRouteChildren = {
   AuthedSettingsIndexRoute: AuthedSettingsIndexRoute,
   AuthedSettingsBanksConnectionIdRoute: AuthedSettingsBanksConnectionIdRoute,
   AuthedSettingsBanksCallbackRoute: AuthedSettingsBanksCallbackRoute,
+  AuthedSettingsImportsKindRoute: AuthedSettingsImportsKindRoute,
   AuthedSettingsImportsSureRoute: AuthedSettingsImportsSureRoute,
 }
 

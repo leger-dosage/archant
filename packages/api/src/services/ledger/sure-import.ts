@@ -32,21 +32,23 @@ import { clearOneTime } from "./transfers.ts";
 // every id fresh; the archive's ids map to them per type.
 
 /** Rows a few hundred at a time, as every bulk write of the ledger. */
-const insertAll = async <Row>(rows: readonly Row[], write: (chunk: Row[]) => Promise<unknown>) =>
-	inSequence(rows, ROWS_PER_INSERT, write);
+export const insertAll = async <Row>(
+	rows: readonly Row[],
+	write: (chunk: Row[]) => Promise<unknown>,
+) => inSequence(rows, ROWS_PER_INSERT, write);
 
 /**
  * Creation times one millisecond apart from `now`, in the archive's order,
  * so the list and the cost basis read rows in the order they came, as Sure
  * orders a day's rows by creation.
  */
-function clock(now: number) {
+export function clock(now: number) {
 	let next = now;
 
 	return () => next++;
 }
 
-type Clock = ReturnType<typeof clock>;
+export type Clock = ReturnType<typeof clock>;
 
 export type ImportedAccount = Pick<Account, "id" | "type" | "currency">;
 
@@ -363,7 +365,7 @@ const securityColumns = { id: securities.id, currency: securities.currency };
  * MIC, as the unique index compares them, else by ISIN; one typed by hand by
  * its ISIN, else by its name among those with neither.
  */
-async function existingSecurity(tx: Transaction, security: PlanSecurity) {
+export async function existingSecurity(tx: Pick<Transaction, "select">, security: PlanSecurity) {
 	if (!security.byHand) {
 		const listed = await tx
 			.select(securityColumns)
@@ -407,16 +409,25 @@ async function existingSecurity(tx: Transaction, security: PlanSecurity) {
 }
 
 /**
- * Finds or creates each security once per archive, in the account's currency
+ * Finds or creates each security once per import, in the account's currency
  * (AD-6): a listing priced by Yahoo, or one typed by hand. A security found
- * in another currency than the account's fails the import, as a trade the
- * form would refuse.
+ * in another currency than the account's fails the import with `conflict`,
+ * as a trade the form would refuse.
  */
-function securityResolver(tx: Transaction, stamp: Clock) {
+export function securityResolver(
+	tx: Transaction,
+	stamp: Clock,
+	conflict: () => AppError = () =>
+		new AppError(
+			"SURE_IMPORT_INVALID",
+			"A security of the archive is priced in another currency than its account.",
+		),
+	find: typeof existingSecurity = existingSecurity,
+) {
 	const found = new Map<string, { id: string; currency: string }>();
 
 	return async (security: PlanSecurity, currency: string): Promise<string> => {
-		const known = found.get(security.key) ?? (await existingSecurity(tx, security));
+		const known = found.get(security.key) ?? (await find(tx, security));
 
 		if (known === undefined) {
 			const at = stamp();
@@ -439,10 +450,7 @@ function securityResolver(tx: Transaction, stamp: Clock) {
 		}
 
 		if (known.currency !== currency) {
-			throw new AppError(
-				"SURE_IMPORT_INVALID",
-				"A security of the archive is priced in another currency than its account.",
-			);
+			throw conflict();
 		}
 
 		found.set(security.key, known);

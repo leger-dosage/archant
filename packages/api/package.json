@@ -10,6 +10,7 @@
 		"./schemas/bills": "./src/schemas/bills.ts",
 		"./schemas/budgets": "./src/schemas/budgets.ts",
 		"./schemas/categories": "./src/schemas/categories.ts",
+		"./schemas/csv-imports": "./src/schemas/csv-imports.ts",
 		"./schemas/goals": "./src/schemas/goals.ts",
 		"./schemas/holdings": "./src/schemas/holdings.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",

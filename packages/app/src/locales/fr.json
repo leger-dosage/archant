@@ -1388,6 +1388,173 @@
 			"dashboard": "Retour au tableau de bord"
 		}
 	},
+	"csvImport": {
+		"sources": {
+			"heading": "Données brutes",
+			"trades": "Importer les investissements",
+			"accounts": "Importer les comptes",
+			"categories": "Importer les catégories",
+			"merchants": "Importer des marchands",
+			"rules": "Importer les règles",
+			"requiresAccount": "Importez d'abord des comptes pour débloquer cette option."
+		},
+		"steps": {
+			"label": "Étapes de l'importation",
+			"upload": "Téléverser",
+			"configure": "Configurer",
+			"map": "Mapper",
+			"confirm": "Confirmer"
+		},
+		"upload": {
+			"title": "Importez vos données",
+			"description": "Téléversez votre fichier CSV ci-dessous. Veuillez examiner les instructions dans le tableau ci-dessous avant de commencer.",
+			"separator": "Séparateur de colonnes",
+			"separators": {
+				"comma": "Virgule (,)",
+				"semicolon": "Point-virgule (;)"
+			},
+			"account": "Compte (facultatif)",
+			"multiAccount": "Importation multi-comptes",
+			"browse": "Parcourir",
+			"browseHint": "pour ajouter votre fichier CSV ici",
+			"chosen": "Fichier choisi : {{name}}",
+			"submit": "Téléverser le CSV",
+			"reading": "Lecture du fichier…",
+			"sample": "Téléchargez un exemple de fichier CSV",
+			"sampleHint": "pour voir le format CSV requis"
+		},
+		"configure": {
+			"title": "Configurez votre importation",
+			"description": "Sélectionnez les colonnes qui correspondent à chaque champ dans votre CSV.",
+			"apply": "Appliquer la configuration",
+			"applying": "Lecture du fichier…",
+			"leaveEmpty": "Laisser vide",
+			"selectColumn": "Sélectionner une colonne",
+			"default": "Par défaut",
+			"sampleCaption": "Les deux premières lignes de votre fichier",
+			"firstDate": "Première date analysée : {{date}}",
+			"dateUnread": "Ce format ne lit pas la première date du fichier.",
+			"dateUndetected": "Impossible de détecter le format de date",
+			"accounts": {
+				"entity_type": "Type d'entité",
+				"name": "Nom",
+				"amount": "Solde",
+				"currency": "Devise",
+				"date": "Date du solde",
+				"dateFormat": "Format des dates",
+				"numberFormat": "Format numérique"
+			},
+			"trades": {
+				"date": "Date",
+				"dateFormat": "Format de date",
+				"qty": "Quantité",
+				"signage": "Convention de signe",
+				"signages": {
+					"inflows_positive": "Les achats sont en quantité positive",
+					"inflows_negative": "Les achats sont en quantité négative"
+				},
+				"currency": "Devise",
+				"numberFormat": "Formater",
+				"ticker": "Ticker",
+				"exchange_operating_mic": "Code de bourse",
+				"price": "Prix",
+				"account": "Compte",
+				"name": "Nom"
+			},
+			"categories": {
+				"description": "Téléversez un fichier CSV simple (comme celui que nous générons lorsque vous exportez vos données). Nous mapperons automatiquement les colonnes pour vous.",
+				"instructions": "Sélectionnez continuer pour analyser votre CSV et passer à l'étape suivante.",
+				"button": "Continuer"
+			},
+			"merchants": {
+				"description": "Téléversez un fichier CSV avec vos marchands. Nous mapperons automatiquement les colonnes pour vous.",
+				"instructions": "Sélectionnez continuer pour analyser votre CSV et passer à l'étape suivante.",
+				"button": "Continuer"
+			},
+			"rules": {
+				"description": "Configurez votre importation de règles. Les règles seront créées ou mises à jour en fonction des données CSV.",
+				"instructions": "Cliquez sur le bouton ci-dessous pour traiter votre CSV et générer les lignes de règles.",
+				"button": "Traiter les règles"
+			}
+		},
+		"map": {
+			"accountTypesTitle": "Attribuez vos types de comptes",
+			"accountTypesDescription": "Affectez tous les types de comptes importés dans votre fichier",
+			"accountsTitle": "Attribuez vos comptes",
+			"accountsDescription": "Affectez tous les comptes de votre fichier importé aux comptes existants. Vous pouvez également ajouter de nouveaux comptes.",
+			"csvColumn": "{{mapping}} dans le CSV",
+			"archantColumn": "{{mapping}} dans Archant",
+			"accountType": "Type de compte",
+			"account": "Compte",
+			"subtype": "Sous-type",
+			"rows_one": "{{count}} ligne",
+			"rows_other": "{{count}} lignes",
+			"unassigned": "(non attribué)",
+			"select": "Sélectionnez une option",
+			"createNew": "Ajouter comme nouveau compte",
+			"next": "Suivant"
+		},
+		"confirm": {
+			"title": "Confirmez vos données d'importation",
+			"description": "Voici un résumé des nouveaux éléments qui seront ajoutés à votre compte une fois que vous aurez publié cette importation.",
+			"errorsTitle": "Ce fichier ne peut pas être importé",
+			"moreErrors_one": "… et {{count}} autre erreur",
+			"moreErrors_other": "… et {{count}} autres erreurs",
+			"item": "Élément",
+			"count": "Nombre",
+			"empty": "Aucun enregistrement importable n'a été trouvé dans ce fichier.",
+			"publish": "Publier l'importation",
+			"publishing": "Importation en cours…",
+			"back": "Retour aux importations"
+		},
+		"resources": {
+			"accounts": "Comptes",
+			"categories": "Catégories",
+			"merchants": "Marchands",
+			"rules": "Règles",
+			"trades": "Transactions boursières"
+		},
+		"fields": {
+			"entity_type": "le type",
+			"name": "le nom",
+			"amount": "le montant",
+			"currency": "la devise",
+			"date": "la date",
+			"qty": "la quantité",
+			"ticker": "le ticker",
+			"price": "le prix",
+			"resource_type": "le type de ressource",
+			"conditions": "les conditions",
+			"actions": "les actions"
+		},
+		"issues": {
+			"duplicate_headers": "Noms de colonnes en double après normalisation : {{columns}}",
+			"missing_columns": "Colonnes obligatoires manquantes : {{columns}}",
+			"required": "Ligne {{line}} : {{field}} est obligatoire.",
+			"invalid_number": "Ligne {{line}} : {{field}} n'est pas un nombre valide.",
+			"invalid_date": "Ligne {{line}} : la date doit suivre exactement le format {{format}}.",
+			"date_out_of_range": "Ligne {{line}} : la date doit être comprise entre le {{min}} et le {{max}}.",
+			"invalid_currency": "Ligne {{line}} : {{value}} n'est pas un code de devise valide.",
+			"CURRENCY_MISMATCH": "Ligne {{line}} : la devise {{currency}} n'est pas celle du compte ({{account}}).",
+			"negative_price": "Ligne {{line}} : le prix ne peut pas être négatif.",
+			"trade_too_large": "Ligne {{line}} : le montant de cette transaction est trop grand.",
+			"security_currency": "Ligne {{line}} : le titre {{ticker}} est coté dans une autre devise que celle du compte.",
+			"own_parent": "Ligne {{line}} : la catégorie « {{name}} » ne peut pas être son propre parent.",
+			"nested_category": "Ligne {{line}} : la catégorie « {{name}} » ferait plus de deux niveaux.",
+			"unsupported_resource_type": "Ligne {{line}} : type de ressource non pris en charge : {{resource_type}}.",
+			"invalid_json": "Ligne {{line}} : JSON non valide dans les conditions ou actions.",
+			"min_actions": "Ligne {{line}} : la règle doit avoir au moins une action.",
+			"unsupported_rule": "Ligne {{line}} : Archant ne peut pas garder cette règle, une de ses conditions ou de ses actions lui manque.",
+			"unmapped_account_type": "Le type de compte {{key}} n'est pas attribué.",
+			"unmapped_account": "Le compte {{key}} n'est pas attribué.",
+			"unknown": "Une ligne du fichier est refusée."
+		},
+		"success": {
+			"title": "Importation réussie",
+			"description": "Vos données importées ont été ajoutées avec succès à l'application et sont maintenant prêtes à être utilisées.",
+			"dashboard": "Retour au tableau de bord"
+		}
+	},
 	"categories": {
 		"title": "Catégories",
 		"description": "Les catégories classent vos opérations. Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
@@ -2768,9 +2935,11 @@
 		"NETWORK_ERROR": "Le serveur ne répond pas. Vérifiez qu'il est démarré, puis réessayez.",
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"NDJSON_INVALID": "Le fichier doit être un NDJSON valide avec au moins un enregistrement",
+		"CSV_INVALID": "Doit être un CSV valide avec des en-têtes et au moins une ligne de données",
 		"IMPORT_FILE_TOO_LARGE": "Le fichier dépasse {{maxSize}} Mo.",
 		"IMPORT_TOO_MANY_ROWS": "Le fichier compte plus de {{max}} enregistrements.",
 		"SURE_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",
+		"CSV_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"RULE_PREVIEW_STALE": "Les opérations ont changé depuis l'aperçu ({{changed}} à modifier maintenant). Relancez l'aperçu avant d'appliquer.",
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",
