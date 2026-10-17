@@ -269,6 +269,18 @@ describe("get_valuations", () => {
 		]);
 	});
 
+	it("filters by an upper-case UUID, as Sure's uuid column", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = await tools.read("get_valuations", { account_id: account.id.toUpperCase() });
+
+		expect(valuations.parse(result.structuredContent)).toMatchObject({
+			valuations: [{ kind: "opening_anchor", account: { id: account.id } }],
+			total_results: 1,
+		});
+	});
+
 	it("refuses a reversed range or a malformed date with Sure's invalid_date, without success", async () => {
 		await checking();
 		const tools = await assistants();
@@ -450,19 +462,65 @@ describe("record_valuation", () => {
 		});
 	});
 
-	it("refuses a day before 1900, tomorrow and an amount the currency cannot hold, writing nothing", async () => {
+	it("records tomorrow, as Sure's manager, the balances running to it", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = await tools.write("record_valuation", {
+			account_id: account.id,
+			date: "2026-09-22",
+			amount: "2000.00",
+			source: "Relevé de compte (grade: A)",
+		});
+
+		expect(recordedValuation.parse(result.structuredContent)).toMatchObject({
+			date: "2026-09-22",
+			amount: "2000.0",
+			replaced_existing: false,
+		});
+		expect((await snapshotsOf(tools, account.id)).items).toMatchObject([
+			{ date: "2026-09-22", amount: "2000.0" },
+		]);
+	});
+
+	it("refuses a date more than a year ahead with validation_error naming date", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = await tools.write("record_valuation", {
+			account_id: account.id,
+			date: "2027-09-23",
+			amount: "1.00",
+			source: "Relevé de compte (grade: A)",
+		});
+
+		expect(result.content[0]?.text).toContain("date date_too_late");
+		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
+	});
+
+	it("finds the account by an upper-case UUID, as Sure's uuid column", async () => {
+		const account = await checking();
+		const tools = await assistants();
+
+		const result = await tools.write("record_valuation", {
+			account_id: account.id.toUpperCase(),
+			date: "2026-08-15",
+			amount: "2500.00",
+			source: "Relevé de compte (grade: A)",
+		});
+
+		expect(recordedValuation.parse(result.structuredContent)).toMatchObject({
+			account: { id: account.id },
+		});
+	});
+
+	it("refuses a day before 1900 and an amount the currency cannot hold, writing nothing", async () => {
 		const account = await checking();
 		const tools = await assistants();
 
 		const opening = await tools.write("record_valuation", {
 			account_id: account.id,
 			date: "1899-12-31",
-			amount: "1.00",
-			source: "Relevé de compte (grade: A)",
-		});
-		const tomorrow = await tools.write("record_valuation", {
-			account_id: account.id,
-			date: "2026-09-22",
 			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
@@ -476,11 +534,9 @@ describe("record_valuation", () => {
 		expect(opening.isError).toBe(true);
 		expect(opening.content[0]?.text).toMatch(/^\{"success":false,"error":"validation_error"/u);
 		expect(opening.content[0]?.text).toContain("date date_too_early");
-		expect(tomorrow.content[0]?.text).toContain("date date_in_future");
 		expect(badAmount.content[0]?.text).toContain("amount invalid_amount");
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 		expect(await calls()).toEqual([
-			{ tool: "record_valuation", outcome: "VALIDATION_ERROR", changedRows: 0 },
 			{ tool: "record_valuation", outcome: "VALIDATION_ERROR", changedRows: 0 },
 			{ tool: "record_valuation", outcome: "VALIDATION_ERROR", changedRows: 0 },
 			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
@@ -512,7 +568,7 @@ describe("record_valuation", () => {
 		).toBe(17_500_050);
 	});
 
-	it("refuses with Sure's keys in Sure's order: citation, date, amount, then account", async () => {
+	it("refuses with Sure's keys in Sure's order: citation, date, amount, account id, then account", async () => {
 		const account = await checking();
 		const tools = await assistants();
 		const good = {
@@ -544,7 +600,11 @@ describe("record_valuation", () => {
 			account_id: "nothing",
 			amount: "12,50",
 		});
-		const unknown = await tools.write("record_valuation", { ...good, account_id: "nothing" });
+		const malformed = await tools.write("record_valuation", { ...good, account_id: "nothing" });
+		const unknown = await tools.write("record_valuation", {
+			...good,
+			account_id: crypto.randomUUID(),
+		});
 
 		expect(bodyOf(everything)).toEqual({
 			success: false,
@@ -567,6 +627,11 @@ describe("record_valuation", () => {
 			error: "invalid_amount",
 			message: "amount must be a number.",
 		});
+		expect(bodyOf(malformed)).toEqual({
+			success: false,
+			error: "invalid_account_id",
+			message: "account_id must be a UUID.",
+		});
 		expect(bodyOf(unknown)).toEqual({
 			success: false,
 			error: "account_not_found",
@@ -574,6 +639,7 @@ describe("record_valuation", () => {
 		});
 		expect((await snapshotsOf(tools, account.id)).total).toBe(0);
 		expect((await calls()).map(({ outcome }) => outcome)).toEqual([
+			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
@@ -713,23 +779,46 @@ describe("record_valuation", () => {
 });
 
 describe("an unknown account", () => {
-	it("answers not_found to get_valuations and Sure's account_not_found to record_valuation, writing nothing", async () => {
+	it("answers get_valuations an empty page and record_valuation Sure's account_not_found, writing nothing", async () => {
 		await checking();
 		const tools = await assistants();
+		const id = crypto.randomUUID();
 
-		const read = await tools.read("get_valuations", { account_id: "nothing" });
+		const read = await tools.read("get_valuations", { account_id: id });
 		const written = await tools.write("record_valuation", {
-			account_id: "nothing",
+			account_id: id,
 			date: "2026-08-15",
 			amount: "1.00",
 			source: "Relevé de compte (grade: A)",
 		});
 
-		expect(read.content[0]?.text).toContain('"error":"not_found"');
+		expect(valuations.parse(read.structuredContent)).toEqual({
+			valuations: [],
+			total_results: 0,
+			page: 1,
+			page_size: 50,
+			total_pages: 1,
+		});
 		expect(written.content[0]?.text).toContain('"error":"account_not_found"');
 		expect(await calls()).toEqual([
-			{ tool: "get_valuations", outcome: "NOT_FOUND", changedRows: 0 },
+			{ tool: "get_valuations", outcome: "OK", changedRows: 0 },
 			{ tool: "record_valuation", outcome: "NOT_FOUND", changedRows: 0 },
+		]);
+	});
+
+	it("refuses a malformed account_id to get_valuations with Sure's invalid_account_id, without success", async () => {
+		await checking();
+		const tools = await assistants();
+
+		const read = await tools.read("get_valuations", { account_id: "nothing" });
+
+		expect(read.isError).toBe(true);
+		expect(bodyOf(read)).toEqual({
+			error: "invalid_account_id",
+			message: "account_id must be a UUID from get_accounts.",
+		});
+		expect(await calls()).toEqual([
+			{ tool: "get_valuations", outcome: "VALIDATION_ERROR", changedRows: 0 },
 		]);
 	});
 });

@@ -24,7 +24,10 @@ import { recordTrade } from "./trades.ts";
 
 useLedgerDatabase();
 
-const user = { origin: "user" } as const;
+/** `set_opening_balance`'s rule, Sure's `OpeningBalanceManager`. */
+const user = { origin: "user", rule: "manager" } as const;
+/** The « Solde d'ouverture » sheet's rule, Sure's valuation drawer. */
+const drawer = { origin: "user", rule: "drawer" } as const;
 
 /** The matrix's account: opened on 2026-01-10 at 1 500,00, with −120,00 on 2026-01-15. */
 async function opened() {
@@ -143,7 +146,7 @@ describe("setOpeningBalance", () => {
 		expect((await history(account.id)).get("2026-09-21")).toBe(63000);
 	});
 
-	it("refuses a date on or after the oldest entry, a snapshot or a pending line included", async () => {
+	it("refuses a date on or after the oldest entry under Sure's manager, a snapshot or a pending line included", async () => {
 		const account = await opened();
 		const before = await history(account.id);
 
@@ -171,12 +174,148 @@ describe("setOpeningBalance", () => {
 		expect((await history(account.id)).get("2026-01-10")).toBe(before.get("2026-01-10"));
 	});
 
-	it("refuses a future date on an account without entries", async () => {
+	it("saves a future date under Sure's manager, the balances running to it", async () => {
 		const account = await openChecking({ openingDate: "2026-09-01" });
 
 		await expect(
-			setOpeningBalance(deps(), account.id, { date: "2026-09-22", balance: toMinorUnits(1) }, user),
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-10-01", balance: toMinorUnits(50000) },
+				user,
+			),
+		).resolves.toMatchObject({ status: "set", after: { date: "2026-10-01", balance: 50000 } });
+
+		const days = await history(account.id);
+		expect([...days.keys()]).toEqual(["2026-10-01"]);
+		expect(days.get("2026-10-01")).toBe(50000);
+	});
+
+	it("refuses a date more than a year ahead under Sure's manager, as no entry may be dated", async () => {
+		const account = await openChecking({ openingDate: "2026-09-01" });
+
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2027-09-22", balance: toMinorUnits(1) }, user),
+		).resolves.toMatchObject({ status: "set" });
+		await expect(
+			setOpeningBalance(deps(), account.id, { date: "2027-09-23", balance: toMinorUnits(1) }, user),
+		).resolves.toEqual({ status: "rejected", reason: "DATE_TOO_LATE" });
+	});
+
+	it("checks no unchanged date from the sheet, an amount alone saving on the bank balance's day", async () => {
+		const account = await openChecking({ openingDate: "2026-09-21" });
+		const bank = await newBankAccount();
+		await link(account.id, bank.id, 100000);
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-09-21", balance: toMinorUnits(5000) },
+				drawer,
+			),
+		).resolves.toMatchObject({ status: "set", after: { date: "2026-09-21", balance: 5000 } });
+	});
+
+	it("checks no unchanged future opening date from the sheet, an assistant having set it", async () => {
+		const account = await openChecking({ openingDate: "2026-09-01" });
+		await setOpeningBalance(
+			deps(),
+			account.id,
+			{ date: "2026-10-01", balance: toMinorUnits(1000) },
+			user,
+		);
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-10-01", balance: toMinorUnits(2000) },
+				drawer,
+			),
+		).resolves.toMatchObject({ status: "set", after: { date: "2026-10-01", balance: 2000 } });
+	});
+
+	it("checks nothing without a date under Sure's manager, an opening date after a line kept", async () => {
+		const account = await opened();
+		await setOpeningBalance(
+			deps(),
+			account.id,
+			{ date: "2026-01-20", balance: toMinorUnits(150000) },
+			drawer,
+		);
+
+		await expect(
+			setOpeningBalance(deps(), account.id, { balance: toMinorUnits(100000) }, user),
+		).resolves.toMatchObject({ status: "set", after: { date: "2026-01-20", balance: 100000 } });
+	});
+
+	it("saves a date after the oldest entry from the sheet, the balances starting at that entry", async () => {
+		const account = await opened();
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-01-20", balance: toMinorUnits(100000) },
+				drawer,
+			),
+		).resolves.toMatchObject({ status: "set", changed: true });
+
+		await expect(anchorOf(account.id)).resolves.toMatchObject({
+			date: "2026-01-20",
+			amount: 100000,
+		});
+		const days = await history(account.id);
+		// Sure's `opening_starting_balances`: zero before the anchor, which sets its own day.
+		expect([...days.keys()][0]).toBe("2026-01-15");
+		expect(days.get("2026-01-15")).toBe(-12000);
+		expect(days.get("2026-01-20")).toBe(100000);
+		expect(days.get("2026-09-21")).toBe(100000);
+	});
+
+	it("refuses a future date from the sheet, as Sure's field's max", async () => {
+		const account = await openChecking({ openingDate: "2026-09-01" });
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-09-22", balance: toMinorUnits(1) },
+				drawer,
+			),
 		).resolves.toEqual({ status: "rejected", reason: "DATE_IN_FUTURE" });
+	});
+
+	it("refuses from the sheet a day a snapshot or the bank's balance holds, writing nothing", async () => {
+		const account = await opened();
+		await snapshot(account.id, "2026-02-01", 200000);
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				account.id,
+				{ date: "2026-02-01", balance: toMinorUnits(1) },
+				drawer,
+			),
+		).resolves.toEqual({ status: "rejected", reason: "SNAPSHOT_EXISTS" });
+		await expect(anchorOf(account.id)).resolves.toMatchObject({
+			date: "2026-01-10",
+			amount: 150000,
+		});
+
+		const linked = await openChecking();
+		const bank = await newBankAccount();
+		await link(linked.id, bank.id, 100000);
+
+		await expect(
+			setOpeningBalance(
+				deps(),
+				linked.id,
+				{ date: "2026-09-21", balance: toMinorUnits(1) },
+				drawer,
+			),
+		).resolves.toEqual({ status: "rejected", reason: "SNAPSHOT_EXISTS" });
 	});
 
 	it("moves a linked account's, its history ending the opening day there, today staying the bank's", async () => {

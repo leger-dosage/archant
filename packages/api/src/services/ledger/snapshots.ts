@@ -24,6 +24,7 @@ import {
 	snapshotRejectionFor,
 } from "../../domain/balances/snapshot.ts";
 import { addDays, minDate, today } from "../../domain/dates.ts";
+import { isTooFarAhead } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
 import {
 	accountWithOpeningDate,
@@ -56,7 +57,8 @@ export type SnapshotPatch = {
 export type RecordSnapshotResult =
 	/** `replaced`: a snapshot already held the date, and now holds this balance. */
 	| { status: "recorded"; id: string; replaced: boolean }
-	| { status: "rejected"; reason: SnapshotRejectionCode };
+	/** `DATE_TOO_LATE`: more than a year ahead, where `afterToday` lets a date pass today. */
+	| { status: "rejected"; reason: SnapshotRejectionCode | "DATE_TOO_LATE" };
 
 export type SnapshotUpdateResult =
 	| { status: "updated" }
@@ -120,26 +122,35 @@ async function snapshotRow(tx: Transaction, id: string) {
  * valuation (AD-8), and recomputes the balances from that day. A valuation
  * already on that date is updated in place and keeps its id and kind, as in
  * Sure's `Account::ReconciliationManager`: on the opening date, the opening
- * anchor takes the amount and keeps its date.
+ * anchor takes the amount and keeps its date. A date after today is refused
+ * unless `afterToday`: Sure's forms cap the date at today, its manager does
+ * not, and `record_valuation` goes through the manager alone.
  */
 export async function recordSnapshot(
 	deps: ServiceDeps,
 	accountId: string,
 	input: SnapshotInput,
-	_options: { origin: Origin },
+	options: { origin: Origin; afterToday?: boolean },
 ): Promise<RecordSnapshotResult> {
 	return deps.db.transaction(
 		async (tx): Promise<RecordSnapshotResult> => {
 			const account = await accountWithOpeningDate(tx, accountId);
 			const reason = snapshotRejection(account, input.date, deps.timeZone);
 
-			if (reason !== null && reason !== "OPENING_DATE") {
+			if (reason === "DATE_IN_FUTURE" && options.afterToday !== true) {
 				return { status: "rejected", reason };
 			}
 
+			// Every day up to the latest entry gets a balance row: a far date
+			// would write them by the million under the write lock.
+			if (isTooFarAhead(input.date, today(deps.timeZone))) {
+				return { status: "rejected", reason: "DATE_TOO_LATE" };
+			}
+
 			const now = Date.now();
+			// Read from the date rather than `reason`, which names a future day first.
 			const held =
-				reason === "OPENING_DATE"
+				input.date === account.openingDate
 					? await openingAnchorRow(tx, account.openingId)
 					: await snapshotOn(tx, accountId, input.date);
 			const existing = held?.id;
@@ -207,7 +218,10 @@ export async function updateSnapshot(
 				return { status: "rejected", reason: "SNAPSHOT_EXISTS" };
 			}
 
-			if (reason !== null) {
+			// A date that does not move is not checked again: `record_valuation`
+			// may have dated the snapshot after today, and its amount and notes
+			// stay editable.
+			if (reason !== null && !(reason === "DATE_IN_FUTURE" && date === current.date)) {
 				return { status: "rejected", reason };
 			}
 

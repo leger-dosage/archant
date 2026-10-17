@@ -309,3 +309,4 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-28-17-honour-a-linked-accounts-opening-balance.md`
   summary: « Solde d'ouverture » refuses an amount-only edit when a line or a snapshot precedes the opening date, since the sheet always sends the date and `setOpeningBalance` checks it against the oldest entry even unchanged; a linked account whose bank lines go back past its opening date meets it now that its sheet opens.
   evidence: pre-existing on manual accounts since Story 27.21. Story 28.20 drops the oldest-entry check from the sheet, as Sure's valuation drawer refuses only a future date, which settles it for both kinds of account.
+  resolved: Story 28.20. The sheet checks the date as Sure's valuation drawer, only after today or on a day another valuation holds, so an amount-only edit saves whatever entry precedes the opening date, on both kinds of account.

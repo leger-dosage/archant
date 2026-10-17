@@ -25,6 +25,7 @@ import {
 	refuse,
 	refuseWithoutSuccess,
 	sureDecimalText,
+	UUID,
 } from "./tool.ts";
 
 /** Sure's `{ id, name, currency }` of the account a valuation is on: every amount is in it. */
@@ -88,12 +89,22 @@ function optionalDate(value: string | undefined): string | null | undefined {
 export const getValuations = defineTool({
 	name: "get_valuations",
 	title: "Valuations",
-	description: `Lists recorded account valuations, as Sure's get_valuations, newest first, ${DEFAULT_PAGE_SIZE} a page: every active account's opening balance, its snapshots, the « Soldes » tab's, and the balance a bank last gave, unless account_id names one account, between two optional dates. Each entry includes its notes, where record_valuation stores the source it cites. Use it to audit what record_valuation wrote, to find the dates that already carry a value, or to trace where a balance came from. A malformed date, or a start_date after end_date, answers { error: "invalid_date", message }. ${BANK_TEXT}`,
+	description: `Lists recorded account valuations, as Sure's get_valuations, newest first, ${DEFAULT_PAGE_SIZE} a page: every active account's opening balance, its snapshots, the « Soldes » tab's, and the balance a bank last gave, unless account_id names one account, between two optional dates. Each entry includes its notes, where record_valuation stores the source it cites. Use it to audit what record_valuation wrote, to find the dates that already carry a value, or to trace where a balance came from. An account_id that is not a UUID answers { error: "invalid_account_id", message }; a UUID no active account has, an empty page. A malformed date, or a start_date after end_date, answers { error: "invalid_date", message }. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: valuationsInput,
 	output: z.object({ valuations: z.array(valuation), ...pageOutput }),
-	run: async (deps, { account_id: accountId, start_date: start, end_date: end, page }) => {
+	run: async (deps, { account_id: named, start_date: start, end_date: end, page }) => {
+		// Sure's `present?`: a blank id filters nothing.
+		const blank = named === undefined || named.trim() === "";
+
+		if (!blank && !UUID.test(named)) {
+			refuseWithoutSuccess("invalid_account_id", "account_id must be a UUID from get_accounts.");
+		}
+
+		// Sure's uuid column matches any case; Archant's ids are stored lower case.
+		const accountId = blank ? undefined : named.toLowerCase();
+
 		const from = optionalDate(start);
 		const to = optionalDate(end);
 
@@ -151,7 +162,7 @@ export const recordValuationTool = defineTool({
 		`The source citation is required, as in Sure, and checked against this grammar: ${GRAMMAR}. The "${ESTIMATED_PREFIX}" prefix says the value was interpolated or proxied, not read off a document; an estimate must carry a grade. Grade A is an official document for that exact date, such as a statement or a loan table; B is derived with a document; C is a proxy or an assumption, to derive again from the real source. For example "Relevé Boursorama 2026-03-31, solde de fin de mois (grade: A)" or "estimated: linear interpolation over 2026-02 / 2026-04 statements (grade: C)".`,
 		"If you have no document to cite, do not invent one and do not call this tool: ask the owner for the source. A value with no provenance is worse than a missing one, because it looks authoritative.",
 		"The citation is stored in the snapshot's notes; what the owner wrote there is kept and the new citation appended below it, and a citation already there is not added again.",
-		"Refusals answer Sure's keys, in Sure's order: invalid_source_citation, its message saying why; invalid_date; invalid_amount; account_not_found. On the opening date, the value sets the opening balance, as Sure's; a date before it is recorded as a snapshot the balances start from; a date after today answers validation_error naming date; an amount with more decimals than the account's currency holds, validation_error naming amount.",
+		"Refusals answer Sure's keys, in Sure's order: invalid_source_citation, its message saying why; invalid_date; invalid_amount; invalid_account_id, for an id that is not a UUID; account_not_found. On the opening date, the value sets the opening balance, as Sure's; a date before it is recorded as a snapshot the balances start from; a date after today is recorded too, as Sure's, the balances running to it, but one more than a year ahead answers validation_error naming date; an amount with more decimals than the account's currency holds answers validation_error naming amount.",
 	].join("\n\n"),
 	scope: "archant:write",
 	annotations: REPLACES,
@@ -178,7 +189,7 @@ export const recordValuationTool = defineTool({
 			.describe("The source as parsed, Sure's provenance."),
 		message: z.string(),
 	}),
-	run: async (deps, { account_id: accountId, date, amount, source }) => {
+	run: async (deps, { account_id: givenId, date, amount, source }) => {
 		const cited = parseCitation(source);
 
 		if (!cited.ok) {
@@ -198,6 +209,13 @@ export const recordValuationTool = defineTool({
 			refuse("invalid_amount", "amount must be a number.");
 		}
 
+		if (!UUID.test(givenId)) {
+			refuse("invalid_account_id", "account_id must be a UUID.");
+		}
+
+		// Sure's uuid column matches any case; Archant's ids are stored lower case.
+		const accountId = givenId.toLowerCase();
+
 		let recorded;
 
 		try {
@@ -205,7 +223,7 @@ export const recordValuationTool = defineTool({
 				deps,
 				accountId,
 				{ date, balance },
-				{ source: cited.citation.source },
+				{ source: cited.citation.source, afterToday: true },
 			);
 		} catch (error) {
 			if (error instanceof AppError && error.code === "NOT_FOUND") {

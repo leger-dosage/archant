@@ -69,6 +69,11 @@ export type ParsedStatement = {
  */
 const MAX_DAYS_AHEAD = 366;
 
+/** Whether `date` is further ahead of `today` than any entry may be dated. */
+export function isTooFarAhead(date: IsoDate, today: IsoDate): boolean {
+	return date > addDays(today, MAX_DAYS_AHEAD);
+}
+
 export type LineContext = { currency: string; today: IsoDate };
 
 /** Step 1 of the ingestion pipeline (AD-4) for one line; `null` when it may go in. */
@@ -76,7 +81,7 @@ export function rejectionFor(
 	line: Pick<NormalizedTransaction, "date" | "currency">,
 	context: LineContext,
 ): RejectionCode | null {
-	if (line.date > addDays(context.today, MAX_DAYS_AHEAD)) {
+	if (isTooFarAhead(line.date, context.today)) {
 		return "DATE_TOO_LATE";
 	}
 

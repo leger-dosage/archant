@@ -388,7 +388,7 @@ test("« Solde d'ouverture » moves the opening balance to an earlier date, and 
 	await expect(row.getByRole("button")).toBeFocused();
 });
 
-test("« Solde d'ouverture » refuses a date on the oldest line, naming it", async ({
+test("« Solde d'ouverture » saves a date after a line's, as Sure's drawer, the opening balance setting its day", async ({
 	page,
 	api,
 }) => {
@@ -400,22 +400,46 @@ test("« Solde d'ouverture » refuses a date on the oldest line, naming it", asy
 	});
 
 	await page.goto(`/accounts/${account.id}?tab=snapshots`);
+	const row = page.getByRole("row", { name: "Solde d'ouverture" });
+	await row.getByRole("button").click();
+	const sheet = page.getByRole("dialog", { name: "Solde d'ouverture" });
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(5)));
+	await sheet.getByLabel("Valeur du compte à ce jour").fill("1 500,00");
+	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
+	await confirmUpdate(page);
+
+	await expect(sheet).toBeHidden();
+	await expect(row.getByRole("cell").first()).toHaveText(
+		`${formatTableDate(daysAgo(5))}Solde d'ouverture`,
+	);
+	await expect(header(page, account.name)).toContainText(euros(150_000));
+});
+
+test("« Solde d'ouverture » refuses a day a snapshot holds, as Sure's unique valuation date", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	await api.recordSnapshot(account.id, { date: daysAgo(20), balance: "1 200,00" });
+
+	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 	await page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("button").click();
 	const sheet = page.getByRole("dialog", { name: "Solde d'ouverture" });
-	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(10)));
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(20)));
 	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
 	// The dry run checks only the date's format, as Sure's: the ledger refuses at the save.
 	await confirmUpdate(page);
 
 	await expect(
-		sheet.getByText(
-			`La date doit précéder la plus ancienne opération du compte, le ${formatTableDate(daysAgo(10))}.`,
-		),
+		sheet.getByText("Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord."),
 	).toBeVisible();
 	await expect(sheet.getByLabel("Date", { exact: true })).toHaveAttribute("aria-invalid", "true");
 	await expect(sheet.getByLabel("Date", { exact: true })).toBeFocused();
 	await sheet.getByRole("button", { name: "Annuler" }).click();
-	await expect(header(page, account.name)).toContainText(euros(90_000));
+	await expect(stored(page, `/api/accounts/${account.id}`)).resolves.toMatchObject({
+		openingDate: daysAgo(30),
+	});
+	await expect(header(page, account.name)).toContainText(euros(120_000));
 });
 
 test("a blank balance is refused before any request, and « Annuler » on the step writes nothing", async ({

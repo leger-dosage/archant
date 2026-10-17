@@ -222,6 +222,79 @@ describe("recordSnapshot", () => {
 		});
 	});
 
+	it("records tomorrow for an assistant, as Sure's manager, the balances running to it", async () => {
+		const account = await openPinned();
+
+		const result = await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-09-22", balance: toMinorUnits(200000) },
+			{ origin: "user", afterToday: true },
+		);
+
+		expect(result).toMatchObject({ status: "recorded", replaced: false });
+		const days = await history(account.id);
+		expect([...days.keys()].at(-1)).toBe("2026-09-22");
+		expect(days.get("2026-09-22")).toBe(200000);
+	});
+
+	it("edits a snapshot an assistant dated after today, its date unmoved", async () => {
+		const account = await openPinned();
+		const recorded = await recordSnapshot(
+			deps(),
+			account.id,
+			{ date: "2026-10-01", balance: toMinorUnits(200000) },
+			{ origin: "user", afterToday: true },
+		);
+		const id = recorded.status === "recorded" ? recorded.id : "";
+
+		await expect(
+			updateSnapshot(deps(), id, { balance: toMinorUnits(210000) }, { origin: "user" }),
+		).resolves.toEqual({ status: "updated" });
+		await expect(
+			updateSnapshot(
+				deps(),
+				id,
+				{ date: "2026-10-01", balance: toMinorUnits(220000) },
+				{ origin: "user" },
+			),
+		).resolves.toEqual({ status: "updated" });
+		await expect(
+			updateSnapshot(deps(), id, { date: "2026-10-02" }, { origin: "user" }),
+		).resolves.toEqual({ status: "rejected", reason: "DATE_IN_FUTURE" });
+		expect((await history(account.id)).get("2026-10-01")).toBe(220000);
+	});
+
+	it("refuses for an assistant a date more than a year ahead, writing nothing", async () => {
+		const account = await openPinned();
+
+		await expect(
+			recordSnapshot(
+				deps(),
+				account.id,
+				{ date: "2027-09-23", balance: toMinorUnits(1) },
+				{ origin: "user", afterToday: true },
+			),
+		).resolves.toEqual({ status: "rejected", reason: "DATE_TOO_LATE" });
+		await expect(listSnapshots(deps(), account.id, firstPage)).resolves.toMatchObject({ total: 0 });
+	});
+
+	it("sets a future opening date's anchor for an assistant, keeping its kind", async () => {
+		const account = await openChecking({ openingDate: "2026-10-01" });
+
+		await expect(
+			recordSnapshot(
+				deps(),
+				account.id,
+				{ date: "2026-10-01", balance: toMinorUnits(700) },
+				{ origin: "user", afterToday: true },
+			),
+		).resolves.toMatchObject({ status: "recorded", replaced: true });
+		await expect(listSnapshots(deps(), account.id, firstPage)).resolves.toMatchObject({
+			total: 0,
+		});
+	});
+
 	it("refuses an account that does not exist", async () => {
 		setToday("2026-09-21T10:00:00Z");
 

@@ -5,7 +5,7 @@ import type { SnapshotInput } from "../schemas/snapshots.ts";
 import type { BankConnectionDeps } from "./bank-connections.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
-import type { OpeningBalanceResult } from "./ledger/opening.ts";
+import type { OpeningBalanceResult, OpeningDateRule } from "./ledger/opening.ts";
 
 import { eq } from "drizzle-orm";
 
@@ -506,22 +506,31 @@ function openingRejection(result: Extract<OpeningBalanceResult, { status: "rejec
 		);
 	}
 
-	return new AppError("VALIDATION_ERROR", "The request is invalid.", [
-		{ path: "date", code: "date_in_future" },
-	]);
+	const code = {
+		SNAPSHOT_EXISTS: "snapshot_exists",
+		DATE_IN_FUTURE: "date_in_future",
+		DATE_TOO_LATE: "date_too_late",
+	}[result.reason];
+
+	return new AppError("VALIDATION_ERROR", "The request is invalid.", [{ path: "date", code }]);
 }
+
+/** An opening balance's fields; an absent date keeps the opening date. */
+type OpeningBalanceRequest = Omit<SnapshotInput, "date"> & { date?: string | undefined };
 
 /**
  * Moves the account's opening balance, date and amount, on the user's behalf
- * or an assistant's, and returns the account as its page shows it. A date on
- * or after the account's oldest entry is refused naming that entry's date,
- * a date and never an amount (AD-14). A dry run writes nothing.
+ * or an assistant's, and returns the account as its page shows it. `rule`
+ * names whose checks the date meets, the « Solde d'ouverture » sheet's or
+ * `set_opening_balance`'s (`OpeningDateRule`); a refusal of a date on or
+ * after the oldest entry names that entry's date, a date and never an amount
+ * (AD-14). A dry run writes nothing.
  */
 export async function setAccountOpeningBalance(
 	deps: ServiceDeps,
 	id: string,
-	input: SnapshotInput,
-	options: { dryRun?: boolean } = {},
+	input: OpeningBalanceRequest,
+	options: { rule: OpeningDateRule; dryRun?: boolean },
 ): Promise<OpeningBalanceChange> {
 	const account = await getAccount(deps, id);
 
@@ -529,16 +538,23 @@ export async function setAccountOpeningBalance(
 		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 	}
 
-	const parsed = openingBalanceSchema(account.currency).safeParse(input);
+	// The schema wants a date: without one, the opening date stands in for
+	// the parse alone, and the ledger is told none was given.
+	const parsed = openingBalanceSchema(account.currency).safeParse({
+		...input,
+		date: input.date ?? account.openingDate,
+	});
 
 	if (!parsed.success) {
 		throw validationError(parsed.error);
 	}
 
-	const result = await setOpeningBalance(deps, id, parsed.data, {
-		origin: "user",
-		dryRun: options.dryRun ?? false,
-	});
+	const result = await setOpeningBalance(
+		deps,
+		id,
+		{ ...parsed.data, date: input.date === undefined ? undefined : parsed.data.date },
+		{ origin: "user", rule: options.rule, dryRun: options.dryRun ?? false },
+	);
 
 	if (result.status === "rejected") {
 		throw openingRejection(result);

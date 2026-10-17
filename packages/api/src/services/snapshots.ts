@@ -33,12 +33,13 @@ export type SnapshotPage = {
 // The ledger names why it refused a snapshot; the form shows it under the
 // date. A snapshot may fall on the opening date, where it sets the opening
 // balance.
-const REJECTION_FIELDS: Record<SnapshotRejectionCode, FieldError> = {
+const REJECTION_FIELDS: Record<SnapshotRejectionCode | "DATE_TOO_LATE", FieldError> = {
 	DATE_IN_FUTURE: { path: "date", code: "date_in_future" },
+	DATE_TOO_LATE: { path: "date", code: "date_too_late" },
 	SNAPSHOT_EXISTS: { path: "date", code: "snapshot_exists" },
 };
 
-function rejectionError(reason: SnapshotRejectionCode): AppError {
+function rejectionError(reason: keyof typeof REJECTION_FIELDS): AppError {
 	return new AppError("VALIDATION_ERROR", "The request is invalid.", [REJECTION_FIELDS[reason]]);
 }
 
@@ -66,17 +67,14 @@ export async function listAccountSnapshots(
 
 /**
  * A page of valuations, anchors included, of every active account or the one
- * named, as Sure's `get_valuations`: an unknown account is `NOT_FOUND`.
+ * named, as Sure's `get_valuations`: an id no active account has filters
+ * every valuation out, as Sure's `where`.
  */
 export async function listValuations(
 	deps: ServiceDeps,
 	filter: ValuationFilter,
 	page: { page: number; pageSize: number },
 ): Promise<{ items: ValuationRecord[]; page: number; pageSize: number; total: number }> {
-	if (filter.accountId !== undefined) {
-		await getAccount(deps, filter.accountId);
-	}
-
 	const { items, total } = await listLedgerValuations(deps, filter, page);
 
 	return { items, page: page.page, pageSize: page.pageSize, total };
@@ -88,13 +86,14 @@ type RecordedSnapshot = SnapshotRecord & { replacedExisting: boolean };
 /**
  * Records the balance the user read at the bank; replaces one on the same
  * date, keeping its notes. `source`, an assistant's parsed citation, is
- * appended to them, as Sure's `record_valuation` does.
+ * appended to them, as Sure's `record_valuation` does, which also records a
+ * date after today: `afterToday` says so, where Sure's forms cap the date.
  */
 export async function createSnapshot(
 	deps: ServiceDeps,
 	accountId: string,
 	input: SnapshotInput,
-	cited: { source?: string } = {},
+	assistant: { source?: string; afterToday?: boolean } = {},
 ): Promise<RecordedSnapshot> {
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createSnapshotSchema(currency).safeParse(input);
@@ -106,8 +105,8 @@ export async function createSnapshot(
 	const result = await recordSnapshot(
 		deps,
 		accountId,
-		{ ...parsed.data, source: cited.source },
-		{ origin: "user" },
+		{ ...parsed.data, source: assistant.source },
+		{ origin: "user", afterToday: assistant.afterToday ?? false },
 	);
 
 	if (result.status === "rejected") {

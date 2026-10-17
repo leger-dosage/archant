@@ -13,7 +13,9 @@ import { accountId, clampedPageFields, requiredLoose, sureAmount } from "./field
 export const valuationsInput = z.strictObject({
 	account_id: accountId
 		.optional()
-		.describe("Only this account's; every active account's without it."),
+		.describe(
+			"Only valuations for this account UUID (from get_accounts); every active account's without it.",
+		),
 	start_date: z.string().optional().describe("Only valuations on or after this date, YYYY-MM-DD."),
 	end_date: z.string().optional().describe("Only valuations on or before this date, YYYY-MM-DD."),
 	page: clampedPageFields.page.describe(
@@ -29,7 +31,7 @@ export const valuationsInput = z.strictObject({
 export const recordValuationInput = z.strictObject({
 	account_id: accountId,
 	date: requiredLoose(z.string()).describe(
-		"ISO 8601 date (YYYY-MM-DD) the value applies to, not after today; on the opening date, it sets the opening balance. For a period-end value, use the last day of the period.",
+		"ISO 8601 date (YYYY-MM-DD) the value applies to; it may be after today, up to a year ahead; on the opening date, it sets the opening balance. For a period-end value, use the last day of the period.",
 	),
 	amount: requiredLoose(sureAmount).describe(
 		"The account's stored balance on that date in its own currency, a number or a decimal string: what an asset holds or is worth, what a liability still owes, both positive; an overdraft is negative.",

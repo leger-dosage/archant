@@ -42,6 +42,7 @@ import {
 	RAILS_FALSE,
 	READ_ONLY,
 	SETS,
+	UUID,
 	defineTool,
 	formatMoney,
 	formatted,
@@ -58,9 +59,6 @@ const PRICE_CHANGE_MONTHS = 24;
 
 /** Sure's `UpdateBill::EDITABLE_BILL_TYPES`: what a tool may set, and change from. */
 const SURE_BILL_TYPES = ["bill", "subscription", "installment"] as const;
-
-/** Sure's `UuidFormat::PATTERN`. */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /** Sure's `FIX_HINT` of a write the model refuses. */
 const FIX_HINT = "Fix the named fields and retry once.";

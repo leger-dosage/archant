@@ -2666,7 +2666,6 @@
 			"invalid_type": "Valeur invalide.",
 			"unknown": "Valeur invalide.",
 			"date_too_early": "La date doit être au plus tôt le 1er janvier 1900.",
-			"not_before_oldest_entry": "La date doit précéder la plus ancienne opération du compte, le {{date}}.",
 			"date_too_late": "La date ne peut pas dépasser d'un an la date du jour.",
 			"date_in_future": "La date ne peut pas dépasser la date du jour.",
 			"sync_start_too_early": "La date ne peut pas remonter à plus de deux ans.",
