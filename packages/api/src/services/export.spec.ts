@@ -1193,6 +1193,23 @@ describe("exportArchive", () => {
 		expect(transactions.get(appliance)).toMatchObject({ kind: "one_time", excluded: false });
 	});
 
+	it("writes the activity label under `archant`, which Sure's `Transaction` line has no field for", async () => {
+		const { ids } = await household();
+		const sweep = await postOwn(ids.checking, {
+			date: "2026-09-14",
+			label: "BALAYAGE",
+			amount: "-100,00",
+		});
+		await sendOwn("PATCH", `/api/transactions/${sweep}`, { investmentActivityLabel: "Sweep Out" });
+
+		const archive = await exported();
+		const row = archive.of("Transaction").find((transaction) => transaction["id"] === sweep);
+
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+		expect(row).not.toHaveProperty("investment_activity_label");
+		expect(row).toMatchObject({ archant: { investment_activity_label: "Sweep Out" } });
+	});
+
 	it("writes amounts in Sure's sign, balances and valuations as stored", async () => {
 		const { ids, bread, salary, bakery, baker, trip, odd } = await household();
 		// A lock 0070 migrated, whose time nobody knows.
@@ -1230,6 +1247,7 @@ describe("exportArchive", () => {
 				category_origin: "user",
 				reference: null,
 				possible_duplicate: false,
+				investment_activity_label: null,
 			},
 		});
 		expect(transactions.get(salary)).toMatchObject({ amount: "-2500.00" });
@@ -1453,6 +1471,7 @@ describe("exportArchive", () => {
 							category_origin: "user",
 							reference: null,
 							possible_duplicate: false,
+							investment_activity_label: null,
 						},
 					},
 					expect.objectContaining({ id: second?.id, amount: "40.00", category_id: null }),

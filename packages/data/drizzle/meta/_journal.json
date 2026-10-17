@@ -589,6 +589,13 @@
       "when": 1792171818787,
       "tag": "0083_account_details",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "6",
+      "when": 1792201209374,
+      "tag": "0084_investment_activity_label",
+      "breakpoints": true
     }
   ]
 }

@@ -424,6 +424,26 @@ describe("a budget and a one-time transaction", () => {
 	});
 });
 
+describe("a budget and an investment account's internal movement", () => {
+	it("leaves a brokerage account's sweep out of the actuals, and counts its fee", async () => {
+		await household();
+		const brokerage = await openOwn({
+			type: "investment",
+			subtype: "brokerage",
+			openingDate: "2026-04-01",
+			openingBalance: "10 000,00",
+		});
+		const sweep = await line(brokerage.id, "2026-09-12", "-500,00");
+		await sendOwn("PATCH", `/api/transactions/${sweep}`, { investmentActivityLabel: "Sweep Out" });
+		const fee = await line(brokerage.id, "2026-09-12", "-15,00");
+		await sendOwn("PATCH", `/api/transactions/${fee}`, { investmentActivityLabel: "Fee" });
+
+		const budget = await budgetOf("2026-09");
+
+		expect(budget.actual).toEqual({ spending: 9_000, income: 103_000 });
+	});
+});
+
 describe("PUT /api/budgets/:month", () => {
 	it("sets up a month, then updates the same row", async () => {
 		await household();

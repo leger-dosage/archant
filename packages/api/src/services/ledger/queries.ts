@@ -5,10 +5,25 @@ import type { TransactionFilter } from "./filter.ts";
 import type { Transaction, TransferColumns } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, asc, count, desc, eq, inArray, not, notInArray, sql, sum } from "drizzle-orm";
+import {
+	and,
+	asc,
+	count,
+	desc,
+	eq,
+	inArray,
+	isNull,
+	not,
+	notInArray,
+	or,
+	sql,
+	sum,
+} from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import { isTaxAdvantaged } from "@archant/data/account-types";
+import type { ActivityLabel } from "@archant/data/activity-labels";
+import { INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -56,6 +71,11 @@ export type TransactionRecord = {
 	categoryId: string | null;
 	/** `null` is « Sans marchand ». */
 	merchantId: string | null;
+	/**
+	 * Sure's `investment_activity_label`, `null` for none; an internal
+	 * movement is left out of cash flow (AD-9).
+	 */
+	investmentActivityLabel: ActivityLabel | null;
 	/** Sorted by id; the interface sorts the names. */
 	tagIds: string[];
 	/** The transfer it is a side of, with the other side's account. */
@@ -120,6 +140,7 @@ const transactionColumns = {
 	possibleDuplicate: transactions.possibleDuplicate,
 	categoryId: transactions.categoryId,
 	merchantId: transactions.merchantId,
+	investmentActivityLabel: transactions.investmentActivityLabel,
 	lockedFields: transactions.lockedFields,
 	parentEntryId: entries.parentEntryId,
 };
@@ -563,8 +584,9 @@ export async function sumTransactionsByLabel(
 
 /**
  * The rows every cash-flow query counts (AD-9): transactions of `accountIds`
- * in the range, neither excluded, one-time nor pending, and no transfer side but the
- * outflow of a loan payment or an investment contribution. One definition, so
+ * in the range, neither excluded, one-time nor pending, no internal movement
+ * of an investment account, and no transfer side but the outflow of a loan
+ * payment or an investment contribution. One definition, so
  * the month's breakdown and the budget's history never disagree; `null` when
  * nothing can match. No trade counts, as Sure's `trades_subquery_sql`.
  */
@@ -579,6 +601,11 @@ function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: re
 				eq(transactions.excluded, false),
 				eq(transactions.oneTime, false),
 				eq(transactions.pending, false),
+				// `not in` alone would drop unlabelled rows: a null never compares.
+				or(
+					isNull(transactions.investmentActivityLabel),
+					notInArray(transactions.investmentActivityLabel, [...INTERNAL_MOVEMENT_LABELS]),
+				),
 			);
 }
 

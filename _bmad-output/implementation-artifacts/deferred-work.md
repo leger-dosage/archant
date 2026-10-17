@@ -310,3 +310,9 @@
   summary: « Solde d'ouverture » refuses an amount-only edit when a line or a snapshot precedes the opening date, since the sheet always sends the date and `setOpeningBalance` checks it against the oldest entry even unchanged; a linked account whose bank lines go back past its opening date meets it now that its sheet opens.
   evidence: pre-existing on manual accounts since Story 27.21. Story 28.20 drops the oldest-entry check from the sheet, as Sure's valuation drawer refuses only a future date, which settles it for both kinds of account.
   resolved: Story 28.20. The sheet checks the date as Sure's valuation drawer, only after today or on a day another valuation holds, so an amount-only edit saves whatever entry precedes the opening date, on both kinds of account.
+
+## Deferred from: code review of spec-28-21-an-activity-label-on-investment-transactions (2026-10-17)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-28-21-an-activity-label-on-investment-transactions.md`
+  summary: The monthly statistics (medians and means) leave a row labelled `Transfer`, `Sweep In`, `Sweep Out` or `Exchange` out, where Sure's `IncomeStatement::FamilyStats` and `CategoryStats` keep it, since only `Totals` and `DailyExpenseTotals` call `investment_activity_label_sql`.
+  evidence: `statisticsOf` and `getIncomeStatement`'s statistics read `cashFlowByMonth` and `cashFlowByDay`, built on `countedInCashFlow`, which the budget's rollover and the month's totals share; following Sure means keying those rows by the label so the statistics keep what the totals drop.

@@ -54,12 +54,21 @@ import { clearOneTime, sidesOf } from "./transfers.ts";
 /** What only `services/ledger/splits.ts` changes on a split's rows (AD-20). */
 const SPLIT_FIELDS: ReadonlySet<LockableField> = new Set(["date", "amount", "excluded"]);
 
+/** What only classifies a row: written beside the entry, never on it. */
+const CLASSIFYING_FIELDS: ReadonlySet<LockableField> = new Set([
+	"category",
+	"merchant",
+	"tags",
+	"investmentActivityLabel",
+]);
+
 /**
  * Edits a transaction and recomputes its account's balances from the earlier
- * of its old and new dates; a change to the category or the merchant alone
- * touches neither the entry nor the balances. A `user` edit locks every
- * field it changes, clearing the category or the merchant included, as in
- * Sure; any other origin leaves locked fields as they are (AD-10). The
+ * of its old and new dates; a change to the category, the merchant, the
+ * tags or the activity label alone touches neither the entry nor the
+ * balances. A `user` edit locks every field it changes, clearing the
+ * category, the merchant or the activity label included, as in Sure; any
+ * other origin leaves locked fields as they are (AD-10). The
  * category's origin is the call's, `null` without a category. Throws
  * `VALIDATION_ERROR` on `categoryId` or `merchantId` for an unknown category
  * or merchant, checked in the same transaction as the write so a concurrent
@@ -129,11 +138,10 @@ export async function updateTransaction(
 				return { status: "updated" };
 			}
 
-			// The category, the merchant and the tags live beside the entry and move
-			// no balance, so classifying a row does not rewrite a decade of daily balances.
-			const touchesEntry = changed.some(
-				(field) => field !== "category" && field !== "merchant" && field !== "tags",
-			);
+			// The category, the merchant, the tags and the activity label live beside
+			// the entry and move no balance, so classifying a row does not rewrite a
+			// decade of daily balances.
+			const touchesEntry = changed.some((field) => !CLASSIFYING_FIELDS.has(field));
 
 			if (touchesEntry) {
 				await tx

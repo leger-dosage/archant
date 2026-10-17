@@ -6,6 +6,7 @@
 	"exports": {
 		"./account-orders": "./account-orders.ts",
 		"./account-types": "./account-types.ts",
+		"./activity-labels": "./activity-labels.ts",
 		"./attachments": "./attachments.ts",
 		"./backup": "./backup.ts",
 		"./bank-countries": "./bank-countries.ts",

@@ -97,6 +97,7 @@ describe("ingest", () => {
 			pending: false,
 			categoryId: null,
 			merchantId: null,
+			investmentActivityLabel: null,
 			tagIds: [],
 			transfer: null,
 			possibleDuplicate: false,

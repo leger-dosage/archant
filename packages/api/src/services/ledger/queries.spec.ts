@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
 import { toMinorUnits } from "@archant/data/money";
 import { securities } from "@archant/data/schema/securities";
 
@@ -608,6 +609,19 @@ describe("cashFlowByCategory", () => {
 		await pairOf("credit_card_payment", joint.id, card.id);
 		await loanPaymentOf(joint.id, mortgage.id);
 		await contributionOf(joint.id, pea.id);
+		// Sure's `INTERNAL_MOVEMENT_LABELS` leave cash flow; any other label counts.
+		const labelled = async (amount: number, investmentActivityLabel: ActivityLabel) => {
+			const id = await add(pea.id, {
+				amount: toMinorUnits(amount),
+				label: investmentActivityLabel,
+			});
+			await updateTransaction(deps(), id, { investmentActivityLabel }, asUser);
+		};
+		await labelled(transferAmount(), "Sweep In");
+		await labelled(-transferAmount(), "Sweep Out");
+		await labelled(-transferAmount(), "Transfer");
+		await labelled(transferAmount(), "Exchange");
+		await labelled(transferAmount(), "Dividend");
 		// A split: the list leaves its parent out, so it is read apart, and
 		// `countsInCashFlow` must leave it out on its own.
 		const split = await splitInTwo(joint.id, { date: "2026-09-12" });
@@ -634,7 +648,8 @@ describe("cashFlowByCategory", () => {
 
 		expect(byCategoryAndAmount(rows)).toEqual(byCategoryAndAmount([...expected.values()]));
 		// Courses: both signs of three counted expenses and one refund, and
-		// uncategorised: one income, then the expense, the zero and two outflows.
+		// uncategorised: the income and the PEA's dividend, then the expense,
+		// the zero and two outflows. The four internal movements count nowhere.
 		expect(rows).toHaveLength(4);
 		await expect(
 			cashFlowByCategory(deps(), { from: "2026-09-01", to: "2026-09-30", accountIds: [] }),
