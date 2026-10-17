@@ -92,3 +92,24 @@ export function useDeleteAccount(accountId: string) {
 		},
 	});
 }
+
+/**
+ * Turns a linked account manual, as Sure's `unlink`. Its link shows on every
+ * account view and in its connection's list of bank accounts, which offers
+ * the bank account for linking again.
+ */
+export function useUnlinkAccount(accountId: string) {
+	const queryClient = useQueryClient();
+	const invalidate = useInvalidateAccount(accountId);
+
+	return useMutation({
+		mutationFn: async () =>
+			(await unwrap(api.accounts[":id"].unlink.$delete({ param: { id: accountId } }))).data,
+		onSuccess: () =>
+			Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.list }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.bankConnections.allAccounts }),
+			]),
+	});
+}

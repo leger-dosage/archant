@@ -127,7 +127,8 @@ export const queryKeys = {
 	 * a new connection, and removing the credentials, also invalidate `list`.
 	 * `institutions` is keyed by the country saved with the credentials, which
 	 * the server reads, so a new country is a new list. Linking rewrites
-	 * `accounts(id)` from its own answer; a disconnection drops it.
+	 * `accounts(id)` from its own answer; a disconnection drops it; unlinking an
+	 * account invalidates `list` and `allAccounts`.
 	 */
 	bankConnections: {
 		setup: ["bank-connections", "setup"] as const,
@@ -136,6 +137,8 @@ export const queryKeys = {
 		/** Every country's list, gone stale once the credentials are saved or removed. */
 		allInstitutions: ["bank-connections", "institutions"] as const,
 		institutions: (country: string) => ["bank-connections", "institutions", country] as const,
+		/** Every connection's bank accounts, gone stale once an account is unlinked. */
+		allAccounts: ["bank-connections", "accounts"] as const,
 		accounts: (connectionId: string) => ["bank-connections", "accounts", connectionId] as const,
 	},
 	/**

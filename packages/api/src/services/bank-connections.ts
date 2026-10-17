@@ -895,24 +895,7 @@ export async function disconnectConnection(
 	connectionId: string,
 ): Promise<{ id: string; accounts: number }> {
 	const connection = await activeConnection(deps, connectionId);
-	const now = Date.now();
-	const [leased] = await deps.db
-		.update(bankConnections)
-		.set({ syncStartedAt: now })
-		.where(
-			and(
-				eq(bankConnections.id, connection.id),
-				or(
-					isNull(bankConnections.syncStartedAt),
-					lt(bankConnections.syncStartedAt, now - LEASE_MS),
-				),
-			),
-		)
-		.returning({ id: bankConnections.id });
-
-	if (leased === undefined) {
-		throw new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.");
-	}
+	const now = await takeWriteLease(deps, connection.id);
 
 	try {
 		// Sure's `revoke_session` returns before looking for a provider when
@@ -955,12 +938,99 @@ export async function disconnectConnection(
 
 		return { id: connection.id, accounts: linked.length };
 	} catch (error) {
-		await deps.db
-			.update(bankConnections)
-			.set({ syncStartedAt: null })
-			.where(and(eq(bankConnections.id, connection.id), eq(bankConnections.syncStartedAt, now)));
+		await releaseWriteLease(deps, connection.id, now);
 		throw error;
 	}
+}
+
+/**
+ * Sure's `unlink` on one account: it turns manual with every line and
+ * balance it holds (AD-8), while its bank account stays with the connection,
+ * which keeps syncing the others and offers it for linking again. Takes the
+ * connection's sync lease, so no run writes the bank's figures back onto the
+ * account while it turns manual.
+ */
+export async function unlinkAccount(
+	deps: BankConnectionDeps,
+	accountId: string,
+): Promise<{ id: string }> {
+	const connectionId = await feedingConnection(deps, accountId);
+	const startedAt = await takeWriteLease(deps, connectionId);
+
+	try {
+		// Read again under the lease: a concurrent unlink, or a relink to another
+		// connection's bank account, may have changed it since the first read.
+		if ((await feedingConnection(deps, accountId)) !== connectionId) {
+			throw new AppError("SYNC_IN_PROGRESS", "This account's link changed meanwhile.");
+		}
+		await unlinkBankAccount(deps, accountId, { origin: "user" });
+	} finally {
+		await releaseWriteLease(deps, connectionId, startedAt);
+	}
+
+	deps.logger.info({ connectionId, accountId }, "bank account unlinked");
+
+	return { id: accountId };
+}
+
+/** The connection whose bank account feeds the account, refused as Sure's `ensure_linked_account`. */
+async function feedingConnection(deps: BankConnectionDeps, accountId: string): Promise<string> {
+	const row = await deps.db
+		.select({ connectionId: bankAccounts.bankConnectionId })
+		.from(accounts)
+		.leftJoin(bankAccounts, eq(bankAccounts.id, accounts.bankAccountId))
+		.where(eq(accounts.id, accountId))
+		.get();
+
+	if (row === undefined) {
+		throw new AppError("NOT_FOUND", "No account has this id.");
+	}
+
+	if (row.connectionId === null) {
+		throw new AppError("ACCOUNT_NOT_LINKED", "This account is not linked to a provider.");
+	}
+
+	return row.connectionId;
+}
+
+/**
+ * Takes the connection's sync lease for a write other than a run, ignoring
+ * the hour between two syncs: a running sync answers `SYNC_IN_PROGRESS`.
+ * Returns the time it holds it by, which `releaseWriteLease` needs.
+ */
+async function takeWriteLease(deps: BankConnectionDeps, connectionId: string): Promise<number> {
+	const now = Date.now();
+	const [leased] = await deps.db
+		.update(bankConnections)
+		.set({ syncStartedAt: now })
+		.where(
+			and(
+				eq(bankConnections.id, connectionId),
+				or(
+					isNull(bankConnections.syncStartedAt),
+					lt(bankConnections.syncStartedAt, now - LEASE_MS),
+				),
+			),
+		)
+		.returning({ id: bankConnections.id });
+
+	if (leased === undefined) {
+		throw new AppError("SYNC_IN_PROGRESS", "This bank connection is already syncing.");
+	}
+
+	return now;
+}
+
+/** Frees a lease `takeWriteLease` took, unless it expired and another run holds it now. */
+async function releaseWriteLease(
+	deps: BankConnectionDeps,
+	connectionId: string,
+	startedAt: number,
+) {
+	await deps.db
+		.update(bankConnections)
+		.set({ syncStartedAt: null })
+		.where(and(eq(bankConnections.id, connectionId), eq(bankConnections.syncStartedAt, startedAt)));
 }
 
 /**

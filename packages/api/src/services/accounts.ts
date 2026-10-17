@@ -568,8 +568,8 @@ export async function setAccountOpeningBalance(
 
 /**
  * Deletes an account and everything it holds, on the user's behalf. A linked
- * account is refused, as Sure's `cannot_delete_linked`: deleting it would
- * leave its bank account unlinked and offered for linking again. The check
+ * account is refused, as Sure's `cannot_delete_linked`: it is unlinked
+ * first, which keeps its bank account with the connection. The check
  * lives here, not in the ledger, whose delete also serves disconnection.
  */
 export async function deleteAccount(deps: ServiceDeps, id: string): Promise<{ id: string }> {
@@ -584,7 +584,7 @@ export async function deleteAccount(deps: ServiceDeps, id: string): Promise<{ id
 	}
 
 	if (account.bankAccountId !== null) {
-		throw new AppError("ACCOUNT_LINKED", "Disconnect the bank before deleting this account.");
+		throw new AppError("ACCOUNT_LINKED", "Unlink this account before deleting it.");
 	}
 
 	await deleteLedgerAccount(deps, id, { origin: "user" });

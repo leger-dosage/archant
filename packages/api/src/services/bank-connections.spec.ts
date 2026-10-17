@@ -47,6 +47,7 @@ import {
 	removeBankCredentials,
 	renewConnection,
 	startConnection,
+	unlinkAccount,
 } from "./bank-connections.ts";
 import {
 	APPLICATION_ID_SETTING,
@@ -2167,6 +2168,164 @@ describe("disconnectConnection", () => {
 			code: "NOT_FOUND",
 		});
 		await expect(rows()).resolves.toHaveLength(1);
+	});
+});
+
+async function linkOf(accountId: string) {
+	const row = await temp.db
+		.select({ bankAccountId: accounts.bankAccountId })
+		.from(accounts)
+		.where(eq(accounts.id, accountId))
+		.get();
+
+	return row?.bankAccountId;
+}
+
+const transactionsAmong = (list: Record<string, unknown>[]) =>
+	list.filter((entry) => entry["kind"] === "transaction");
+
+/** `synced()` with its lines' account, the bank account feeding it, and the other account. */
+async function unlinkable() {
+	const linked = await synced();
+	const target = linked.checkingAccount;
+	const bankAccountId = (await linkOf(target)) ?? "";
+	const other = linked.accountIds.find((id) => id !== target) ?? "";
+
+	return { ...linked, target, bankAccountId, other, otherBankAccountId: await linkOf(other) };
+}
+
+describe("unlinkAccount", () => {
+	it("turns one account manual with its lines and balances, the other still linked", async () => {
+		const {
+			connection,
+			target: checkingAccount,
+			bankAccountId,
+			other,
+			otherBankAccountId,
+		} = await unlinkable();
+		await temp.db
+			.update(bankConnections)
+			.set({ lastSyncedAt: NOW - DAY, lastError: "BANK_PROVIDER_ERROR" })
+			.where(eq(bankConnections.id, connection.id));
+		const before = await rows();
+		const history = await balancesOf(checkingAccount);
+		const entries = await entriesOf(checkingAccount);
+		const keys = await keysOf(checkingAccount);
+		const requests = mockProvider();
+
+		await expect(unlinkAccount(deps(), checkingAccount)).resolves.toEqual({
+			id: checkingAccount,
+		});
+
+		expect(requests).toEqual([]);
+		await expect(linkOf(checkingAccount)).resolves.toBeNull();
+		expect(otherBankAccountId).not.toBeNull();
+		await expect(linkOf(other)).resolves.toBe(otherBankAccountId);
+		await expect(balancesOf(checkingAccount)).resolves.toEqual(history);
+		// Its lines stay; the bank's current anchor goes, as a disconnection's does.
+		expect(transactionsAmong(entries)).toHaveLength(2);
+		await expect(entriesOf(checkingAccount).then(transactionsAmong)).resolves.toEqual(
+			transactionsAmong(entries),
+		);
+		expect(keys.length).toBeGreaterThan(0);
+		await expect(keysOf(checkingAccount)).resolves.toEqual(keys);
+		await expect(rows()).resolves.toEqual(before);
+		await expect(bankRows(connection.id)).resolves.toHaveLength(2);
+		expect(logLines.join("")).toContain("bank account unlinked");
+
+		const offered = (await listBankAccounts(deps(), connection.id)).find(
+			(row) => row.id === bankAccountId,
+		);
+		expect(offered).toMatchObject({ account: null });
+		expect(offered?.candidates).toContainEqual(expect.objectContaining({ id: checkingAccount }));
+	});
+
+	it("links the bank account to the account again, its window started afresh", async () => {
+		const { connection, target: checkingAccount, bankAccountId } = await unlinkable();
+		await temp.db
+			.update(bankAccounts)
+			.set({ lastSyncedAt: NOW - DAY })
+			.where(eq(bankAccounts.id, bankAccountId));
+		await unlinkAccount(deps(), checkingAccount);
+		mockProvider();
+
+		await linkBankAccounts(deps(), connection.id, {
+			links: [{ bankAccountId: bankAccountId, action: "link", accountId: checkingAccount }],
+		});
+
+		await expect(linkOf(checkingAccount)).resolves.toBe(bankAccountId);
+		await expect(
+			temp.db
+				.select({ lastSyncedAt: bankAccounts.lastSyncedAt })
+				.from(bankAccounts)
+				.where(eq(bankAccounts.id, bankAccountId))
+				.get(),
+		).resolves.toEqual({ lastSyncedAt: null });
+	});
+
+	it("frees the lease once done, so the connection syncs at once", async () => {
+		const { connection, target: checkingAccount } = await unlinkable();
+		await unlinkAccount(deps(), checkingAccount);
+		mockProvider();
+
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({ id: connection.id, syncStartedAt: null }),
+		]);
+		await expect(syncConnection(deps(), connection.id)).resolves.toMatchObject({
+			lastError: null,
+		});
+	});
+
+	it("refuses while a sync holds the lease, the account still linked", async () => {
+		const { connection, target: checkingAccount, bankAccountId } = await unlinkable();
+		await temp.db
+			.update(bankConnections)
+			.set({ syncStartedAt: NOW - 2 * MINUTE })
+			.where(eq(bankConnections.id, connection.id));
+		const before = await rows();
+
+		await expect(unlinkAccount(deps(), checkingAccount)).rejects.toMatchObject({
+			code: "SYNC_IN_PROGRESS",
+			status: 409,
+		});
+		await expect(linkOf(checkingAccount)).resolves.toBe(bankAccountId);
+		await expect(rows()).resolves.toEqual(before);
+	});
+
+	it("keeps the link and frees the lease when unlinking fails", async () => {
+		const { connection, target: checkingAccount, bankAccountId } = await unlinkable();
+		const service = deps();
+		const { db } = service;
+		const failing: BankConnectionDeps = {
+			...service,
+			db: {
+				select: db.select.bind(db),
+				selectDistinct: db.selectDistinct.bind(db),
+				insert: db.insert.bind(db),
+				delete: db.delete.bind(db),
+				update: db.update.bind(db),
+				transaction: () => Promise.reject(new Error("disk full")),
+			},
+		};
+
+		await expect(unlinkAccount(failing, checkingAccount)).rejects.toThrow("disk full");
+		await expect(linkOf(checkingAccount)).resolves.toBe(bankAccountId);
+		await expect(rows()).resolves.toEqual([
+			expect.objectContaining({ id: connection.id, syncStartedAt: null }),
+		]);
+	});
+
+	it("refuses a manual account with ACCOUNT_NOT_LINKED, and an unknown one with NOT_FOUND", async () => {
+		const manual = await openAccount({ name: "Espèces" });
+
+		await expect(unlinkAccount(deps(), manual.id)).rejects.toMatchObject({
+			code: "ACCOUNT_NOT_LINKED",
+			status: 409,
+		});
+		await expect(unlinkAccount(deps(), crypto.randomUUID())).rejects.toMatchObject({
+			code: "NOT_FOUND",
+			status: 404,
+		});
 	});
 });
 

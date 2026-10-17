@@ -34,7 +34,12 @@ import {
 import { loggedFigures } from "../testing/logs.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { updateAccount } from "./accounts.ts";
-import { bankDepsFromEnv, completeConnection, disconnectConnection } from "./bank-connections.ts";
+import {
+	bankDepsFromEnv,
+	completeConnection,
+	disconnectConnection,
+	unlinkAccount,
+} from "./bank-connections.ts";
 import { saveBankSyncSettings } from "./bank-settings.ts";
 import { encrypt } from "./crypto.ts";
 import { createAccount } from "./ledger/accounts.ts";
@@ -1534,6 +1539,32 @@ describe("a bank connected again", () => {
 		await expect(syncConnection(deps(), second)).resolves.toMatchObject({ lastError: null });
 
 		await expect(transactionCount(accountId)).resolves.toBe(6);
+	});
+});
+
+describe("a connection with one account unlinked", () => {
+	it("reads and ingests the others, never the unlinked one's bank account", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const checking = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		const card = await linkedAccount(connectionId, FIXTURE_CARD_UID);
+		await syncConnection(deps(), connectionId);
+		const lines = await transactionCount(checking.accountId);
+		await unlinkAccount(deps(), checking.accountId);
+		vi.setSystemTime(NOW + DAY);
+		const requests = mockProvider();
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW + DAY,
+			lastError: null,
+		});
+
+		expect(transactionRequests(requests, FIXTURE_CHECKING_UID)).toEqual([]);
+		expect(requests.filter(({ path }) => path.includes(FIXTURE_CHECKING_UID))).toEqual([]);
+		expect(transactionRequests(requests, FIXTURE_CARD_UID).length).toBeGreaterThan(0);
+		await expect(bankAccountSyncedAt(card.bankAccountId)).resolves.toBe(NOW + DAY);
+		await expect(bankAccountSyncedAt(checking.bankAccountId)).resolves.toBe(NOW);
+		await expect(transactionCount(checking.accountId)).resolves.toBe(lines);
 	});
 });
 

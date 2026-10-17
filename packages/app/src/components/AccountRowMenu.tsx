@@ -10,6 +10,7 @@ import {
 	ToggleLeftIcon,
 	ToggleRightIcon,
 	Trash2Icon,
+	UnlinkIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -26,6 +27,7 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { UnlinkAccountDialog } from "@/components/UnlinkAccountDialog";
 import { useAccount } from "@/hooks/useAccount";
 import { useRemoveDefaultAccount, useSetDefaultAccount } from "@/hooks/useAccounts";
 import { useAccountToggles } from "@/hooks/useAccountToggles";
@@ -35,7 +37,7 @@ import { showErrorToast } from "@/lib/error-toast";
 /**
  * The menu at the end of an account's row on `/accounts`, as Sure's
  * `accounts/_account`: its items, words, icons and order. Sure's sharing
- * and provider items have no counterpart here yet. The edit
+ * and « Lier avec un fournisseur » have no counterpart here yet. The edit
  * dialog's account and the confirmation's count load only once chosen, so
  * the list sends no request per row.
  */
@@ -53,6 +55,9 @@ export function AccountRowMenu({
 	// Kept once chosen, so the dialog stays mounted through its closing animation.
 	const [editMounted, setEditMounted] = useState(false);
 	const [confirming, setConfirming] = useState(false);
+	const [unlinking, setUnlinking] = useState(false);
+	// Kept once chosen, so the dialog stays mounted through its closing animation.
+	const [unlinkMounted, setUnlinkMounted] = useState(false);
 	const detail = useAccount(account.id, { enabled: editing });
 	const toggles = useAccountToggles(account);
 	const setDefault = useSetDefaultAccount();
@@ -97,6 +102,18 @@ export function AccountRowMenu({
 						<PencilLineIcon aria-hidden="true" className="size-3.5" />
 						{t("accounts.rowMenu.edit")}
 					</DropdownMenuItem>
+					{/* Sure's `unlink_provider`, offered on a linked account only. */}
+					{account.linked && (
+						<DropdownMenuItem
+							onSelect={() => {
+								setUnlinkMounted(true);
+								setUnlinking(true);
+							}}
+						>
+							<UnlinkIcon aria-hidden="true" className="size-3.5" />
+							{t("accounts.rowMenu.unlink")}
+						</DropdownMenuItem>
+					)}
 					<DropdownMenuSeparator />
 					<DropdownMenuItem disabled={toggles.pending} onSelect={() => void toggles.toggleActive()}>
 						{account.active ? (
@@ -160,6 +177,10 @@ export function AccountRowMenu({
 					onOpenChange={setEditing}
 					returnFocusTo={trigger}
 				/>
+			)}
+
+			{(account.linked || unlinkMounted) && (
+				<UnlinkAccountDialog account={account} open={unlinking} onOpenChange={setUnlinking} />
 			)}
 
 			{!account.linked && (
