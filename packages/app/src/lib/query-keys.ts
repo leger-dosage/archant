@@ -212,6 +212,12 @@ export const queryKeys = {
 		/** Under `all`, for the same reason as `transferCandidates`. */
 		duplicateCandidates: (transactionId: string) =>
 			["transactions", "duplicate-candidates", transactionId] as const,
+		/** The booked line a sync suggests a pending transaction repeats. */
+		postedMatch: (transactionId: string) =>
+			["transactions", "posted-match", transactionId] as const,
+		/** « Ouvrir la fusion »'s page of booked lines, ten from `offset`. */
+		pendingMergeCandidates: (transactionId: string, offset: number) =>
+			["transactions", "pending-merge-candidates", transactionId, offset] as const,
 		/**
 		 * The split a transaction's sheet shows, from its parent or a line.
 		 * Under `all`: an edit of a line, or of the parent, changes what it lists.

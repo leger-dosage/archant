@@ -43,7 +43,7 @@ import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
 import { categoryExists, categoryOriginOf, merchantExists, tagsExist } from "./patch.ts";
-import { absorb, heldFingerprints, pendingOfConnection } from "./pending.ts";
+import { absorb, heldFingerprints, pendingOfConnection, suggestPostedMatches } from "./pending.ts";
 import { applyRulePlan } from "./rule-plans.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -1025,6 +1025,23 @@ export async function ingest(
 					keyTarget,
 					sharing.map(({ id, keys }) => ({ entryId: id, keys })),
 					{ keepExisting: true },
+				);
+			}
+
+			// A new booked line may repeat a pending entry at another amount, a
+			// tip added: suggested on that entry, never merged (Sure's fuzzy match).
+			// Only a sync's lines, since only a connection's keys sit on a pending
+			// entry, and with the bank's merchant, before any rule.
+			if (connectionId !== null) {
+				await suggestPostedMatches(
+					tx,
+					accountId,
+					connectionId,
+					rows
+						.filter(({ line }) => !line.pending)
+						// In statement order, the possible duplicates among the created lines.
+						.toSorted((a, b) => Number(a.ref) - Number(b.ref))
+						.map(({ id, line }) => ({ id, line, merchantId: merchantIds.get(line) ?? null })),
 				);
 			}
 

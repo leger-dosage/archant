@@ -17,7 +17,7 @@ import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { OneTimeMarker } from "@/components/OneTimeMarker";
-import { StatusBadge } from "@/components/StatusBadge";
+import { PostedMatchBadge, StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { ProtectionMarker } from "@/components/TransactionProtection";
 import { Badge } from "@/components/ui/badge";
@@ -524,6 +524,9 @@ function RowLine({
 							)}
 							{item.possibleDuplicate && (
 								<StatusBadge status="duplicate" iconBelowMd className="shrink-0" />
+							)}
+							{item.postedMatch !== null && (
+								<PostedMatchBadge confidence={item.postedMatch.confidence} iconBelowMd />
 							)}
 						</span>
 						{(subtitle !== undefined || rowTags.length > 0) && (

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-17-2026 11:36
+last_updated: 10-17-2026 13:24
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -293,7 +293,7 @@ development_status:
   29-4-clean-bank-labels-and-create-merchants-from-counterparties: done
   29-5-read-a-line-without-direction-as-money-out: done
   29-6-settle-pending-lines-as-sure: done
-  29-7-suggest-and-merge-pending-duplicates: backlog
+  29-7-suggest-and-merge-pending-duplicates: done
   29-8-unlink-one-bank-account: backlog
   29-9-sync-at-the-chosen-time-on-demand-with-the-psu-address: backlog
   29-10-recompute-an-unlinked-accounts-history-forward: backlog

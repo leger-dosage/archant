@@ -70,6 +70,13 @@ export const mergeDuplicateBodySchema = z.object({ into: z.string().min(1) });
 export type MergeDuplicateInput = z.input<typeof mergeDuplicateBodySchema>;
 export type MergeDuplicateRequest = z.output<typeof mergeDuplicateBodySchema>;
 
+/** « Ouvrir la fusion »'s page: an offset below zero is refused, where Sure's `[offset, 0].max` clamps it. */
+export const pendingMergeCandidatesSchema = z.object({
+	offset: z.coerce.number().int().min(0).default(0),
+});
+
+export type PendingMergeCandidatesQuery = z.output<typeof pendingMergeCandidatesSchema>;
+
 export type TransactionInput = z.input<typeof transactionBodySchema>;
 export type TransactionPatchInput = z.input<typeof transactionPatchBodySchema>;
 

@@ -1,10 +1,10 @@
-import type { GroupCandidate, PendingCandidate } from "./pending.ts";
+import type { GroupCandidate, PendingCandidate, SuggestionCandidate } from "./pending.ts";
 
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 
-import { absorbPending, assignIdentical } from "./pending.ts";
+import { absorbPending, assignIdentical, labelWords, suggestPostedMatch } from "./pending.ts";
 
 const booked = (date: string, amount = -320) => ({ date, amount: toMinorUnits(amount) });
 
@@ -131,5 +131,141 @@ describe("assignIdentical", () => {
 	it("leaves every line over without a candidate, and needs no line", () => {
 		expect(assigned(["l1"], [])).toEqual([["l1", null]]);
 		expect(assigned([], [candidate("e1", 0)])).toEqual([]);
+	});
+});
+
+const posted = (
+	amount: number,
+	merchantId: string | null = "m1",
+	label = "Le Bistrot Paris 75",
+) => ({
+	date: "2026-09-12",
+	amount: toMinorUnits(amount),
+	merchantId,
+	label,
+});
+
+const suggestible = (
+	id: string,
+	amount: number,
+	{
+		date = "2026-09-11",
+		merchantId = "m1",
+		label = "LE BISTROT PARIS 75 CB",
+	}: { date?: string; merchantId?: string | null; label?: string } = {},
+): SuggestionCandidate => ({ id, date, amount: toMinorUnits(amount), merchantId, label });
+
+/** What a booked line of `postedAmount` suggests among one pending entry of `amount`, dated `date`. */
+const pairOf = (postedAmount: number, amount: number, date?: string) =>
+	suggestPostedMatch(posted(postedAmount), [
+		suggestible("p1", amount, date === undefined ? {} : { date }),
+	]);
+
+describe("labelWords", () => {
+	it("keeps the first three words, lower-cased, with only ASCII letters and digits, as Sure", () => {
+		expect(labelWords("CB  Café-Bar\tN°12 Paris")).toBe("cb cafbar n12");
+		expect(labelWords("  Uber   ")).toBe("uber");
+		expect(labelWords("€ — ·")).toBe("");
+		expect(labelWords("")).toBe("");
+	});
+});
+
+describe("suggestPostedMatch", () => {
+	it("suggests a tip's pending entry, with medium confidence, by merchant", () => {
+		expect(suggestPostedMatch(posted(-2300), [suggestible("p1", -2000)])).toEqual({
+			id: "p1",
+			confidence: "medium",
+		});
+	});
+
+	it("keeps to entries dated 0 to 3 days before the line", () => {
+		expect(pairOf(-2300, -2000, "2026-09-12")).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-2300, -2000, "2026-09-09")).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-2300, -2000, "2026-09-08")).toBeNull();
+		expect(pairOf(-2300, -2000, "2026-09-13")).toBeNull();
+	});
+
+	it("bounds the medium band at a line 30 % above the pending amount and at its own amount, sign aside", () => {
+		expect(pairOf(-1300, -1000)).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-1300, 1000)).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-1300, -1300)).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-1300, -1301)).toBeNull();
+		// A line more than 30 % above falls in the low band.
+		expect(pairOf(-1300, -999)).toEqual({ id: "p1", confidence: "low" });
+	});
+
+	it("bounds the low band from a line about 30 % above the pending amount to double it", () => {
+		expect(pairOf(-2000, -1200)).toEqual({ id: "p1", confidence: "low" });
+		expect(pairOf(-2000, -1000)).toEqual({ id: "p1", confidence: "low" });
+		expect(pairOf(-2000, -1540)).toEqual({ id: "p1", confidence: "medium" });
+		expect(pairOf(-2000, -999)).toBeNull();
+		expect(suggestPostedMatch(posted(-10000), [suggestible("p1", -7700)])).toEqual({
+			id: "p1",
+			confidence: "medium",
+		});
+		expect(suggestPostedMatch(posted(-100000), [suggestible("p1", -77001)])).toEqual({
+			id: "p1",
+			confidence: "medium",
+		});
+	});
+
+	it("lets the label words decide between two entries of the merchant, else suggests none", () => {
+		expect(
+			suggestPostedMatch(posted(-2300), [
+				suggestible("p1", -2000),
+				suggestible("p2", -2100, { label: "Autre chose" }),
+			]),
+		).toEqual({ id: "p1", confidence: "medium" });
+		expect(
+			suggestPostedMatch(posted(-2300), [suggestible("p1", -2000), suggestible("p2", -2100)]),
+		).toBeNull();
+	});
+
+	it("falls back on the label words without a merchant, or with another one", () => {
+		expect(
+			suggestPostedMatch(posted(-2300, null), [suggestible("p1", -2000, { merchantId: null })]),
+		).toEqual({ id: "p1", confidence: "medium" });
+		expect(
+			suggestPostedMatch(posted(-2300), [suggestible("p1", -2000, { merchantId: "m2" })]),
+		).toEqual({ id: "p1", confidence: "medium" });
+		expect(
+			suggestPostedMatch(posted(-2300, "m1", "Autre"), [
+				suggestible("p1", -2000, { merchantId: "m2" }),
+			]),
+		).toBeNull();
+		expect(
+			suggestPostedMatch(posted(-2300, null, "€"), [suggestible("p1", -2000, { label: "€" })]),
+		).toBeNull();
+	});
+
+	it("wants the merchant and the words for a low suggestion, and exactly one entry", () => {
+		expect(suggestPostedMatch(posted(-2000), [suggestible("p1", -1200)])).toEqual({
+			id: "p1",
+			confidence: "low",
+		});
+		expect(
+			suggestPostedMatch(posted(-2000), [suggestible("p1", -1200, { merchantId: "m2" })]),
+		).toBeNull();
+		expect(
+			suggestPostedMatch(posted(-2000), [suggestible("p1", -1200, { label: "Autre" })]),
+		).toBeNull();
+		expect(
+			suggestPostedMatch(posted(-2000, null), [suggestible("p1", -1200, { merchantId: null })]),
+		).toBeNull();
+		expect(
+			suggestPostedMatch(posted(-2000, "m1", "€"), [suggestible("p1", -1200, { label: "€" })]),
+		).toBeNull();
+		expect(
+			suggestPostedMatch(posted(-2000), [suggestible("p1", -1200), suggestible("p2", -1100)]),
+		).toBeNull();
+	});
+
+	it("tries the low band only when the medium one finds none", () => {
+		expect(
+			suggestPostedMatch(posted(-2000), [
+				suggestible("p1", -1200),
+				suggestible("p2", -1800, { merchantId: "m2" }),
+			]),
+		).toEqual({ id: "p2", confidence: "medium" });
 	});
 });

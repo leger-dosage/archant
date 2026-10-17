@@ -93,6 +93,20 @@ export const SHORT_CONSENT_BANK = "Banque Consentement Court";
 /** The longest consent `SHORT_CONSENT_BANK` grants, in seconds. */
 const SHORT_CONSENT_SECONDS = 90 * 86_400;
 
+/**
+ * The bank whose current account lists `TIP_LINE` pending, yesterday, in
+ * its first statement, then booked today with a tip from its second on, as
+ * a restaurant's card payment: a sync then suggests the two are one.
+ */
+export const TIP_BANK = "Banque Pourboire";
+
+/** The restaurant bill `TIP_BANK` books higher than it authorised. */
+export const TIP_LINE = {
+	label: "Bistrot Pourboire",
+	pending: "-20.00",
+	booked: "-23.00",
+} as const;
+
 /** The French banks the fake lists. `Banque Démo` is the one the tests connect. */
 export const FAKE_BANKS = [
 	"Banque Démo",
@@ -106,6 +120,7 @@ export const FAKE_BANKS = [
 	HISTORY_BANK,
 	REVOKED_BANK,
 	SHORT_CONSENT_BANK,
+	TIP_BANK,
 ] as const;
 
 /**
@@ -149,12 +164,17 @@ const direction = (value: string) => (value.startsWith("-") ? "DBIT" : "CRDT");
 /**
  * One page of `uid`'s statement: the first without a key, the second on
  * `page-2`. `withSlowLine` adds `SLOW_LINE`, booked today, to the second;
- * `withOldLine` adds `OLD_LINE` to the first.
+ * `withOldLine` adds `OLD_LINE` to the first, and `tip` `TIP_LINE`, pending
+ * yesterday or booked today.
  */
 function transactionsPage(
 	uid: string,
 	continuationKey: string | null,
-	{ withSlowLine = false, withOldLine = false } = {},
+	{
+		withSlowLine = false,
+		withOldLine = false,
+		tip = null,
+	}: { withSlowLine?: boolean; withOldLine?: boolean; tip?: "pending" | "booked" | null } = {},
 ) {
 	const { groceries, salary, subscription, pending } = FAKE_LINES;
 
@@ -196,6 +216,29 @@ function transactionsPage(
 
 	return {
 		transactions: [
+			...(tip === "pending"
+				? [
+						{
+							transaction_amount: unsigned(TIP_LINE.pending),
+							creditor: { name: TIP_LINE.label },
+							credit_debit_indicator: "DBIT",
+							status: "PDNG",
+							transaction_date: daysAgo(1),
+						},
+					]
+				: []),
+			...(tip === "booked"
+				? [
+						{
+							entry_reference: `${uid}-tip`,
+							transaction_amount: unsigned(TIP_LINE.booked),
+							creditor: { name: TIP_LINE.label },
+							credit_debit_indicator: "DBIT",
+							status: "BOOK",
+							booking_date: daysAgo(0),
+						},
+					]
+				: []),
 			...(withOldLine
 				? [
 						{
@@ -324,6 +367,8 @@ export async function startFakeEnableBanking(options: {
 	const datedReads = new Map<string, number>();
 	// The accounts of each `SLOW_BANK` session, with the number of statements read.
 	const slowReads = new Map<string, number>();
+	// The current account of each `TIP_BANK` session, with the number of statements read.
+	const tipReads = new Map<string, number>();
 	// The accounts of each `HISTORY_BANK` session.
 	const history = new Set<string>();
 	// Every session opened and not revoked yet, with the end of its consent.
@@ -465,6 +510,10 @@ export async function startFakeEnableBanking(options: {
 				if (attempt.bank === SLOW_BANK) {
 					slowReads.set(checkingUid, 0);
 					slowReads.set(cardUid, 0);
+				}
+
+				if (attempt.bank === TIP_BANK) {
+					tipReads.set(checkingUid, 0);
 				}
 
 				if (attempt.bank === HISTORY_BANK) {
@@ -618,6 +667,12 @@ export async function startFakeEnableBanking(options: {
 					slowReads.set(uid, slowRead + 1);
 				}
 
+				const tipRead = tipReads.get(uid);
+
+				if (tipRead !== undefined && continuationKey === "page-2") {
+					tipReads.set(uid, tipRead + 1);
+				}
+
 				const withOldLine =
 					history.has(uid) &&
 					continuationKey === null &&
@@ -626,6 +681,7 @@ export async function startFakeEnableBanking(options: {
 				const statement = transactionsPage(uid, continuationKey, {
 					withSlowLine: (slowRead ?? 0) > 0,
 					withOldLine,
+					tip: tipRead === undefined ? null : tipRead === 0 ? "pending" : "booked",
 				});
 				const status = url.searchParams.get("transaction_status");
 

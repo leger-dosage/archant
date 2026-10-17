@@ -1,8 +1,21 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "./shared.ts";
+import type { SQL } from "drizzle-orm";
 
-import { and, between, eq, inArray, isNull, ne, notExists, or } from "drizzle-orm";
+import {
+	and,
+	between,
+	desc,
+	eq,
+	inArray,
+	isNotNull,
+	isNull,
+	ne,
+	notExists,
+	or,
+	sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { MinorUnits } from "@archant/data/money";
@@ -19,15 +32,17 @@ import { taggings } from "@archant/data/schema/taggings";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
-import { addDays, daysBetween } from "../../domain/dates.ts";
+import { addDays, daysBetween, minDate } from "../../domain/dates.ts";
 import { MATCH_WINDOW_DAYS } from "../../domain/keys.ts";
 import { AppError } from "../../lib/errors.ts";
+import { NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { refreshCloseState } from "../recurring/payments.ts";
 import { moveAttachments } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import { transactionRow } from "./patch.ts";
+import { stampedLocks, transactionRow } from "./patch.ts";
 import {
 	deleteTransactionRows,
+	inSplit,
 	invalidField,
 	notSplitParent,
 	oneByOne,
@@ -144,6 +159,12 @@ async function absorbEntry(
 	const absorbed = await transactionRow(tx, absorbedId);
 
 	await tx.update(entryKeys).set({ entryId: survivorId }).where(eq(entryKeys.entryId, absorbedId));
+	// A pending entry suggested to repeat the absorbed line now repeats the
+	// survivor; set null on delete would drop the suggestion.
+	await tx
+		.update(transactions)
+		.set({ postedMatchId: survivorId })
+		.where(and(eq(transactions.postedMatchId, absorbedId), ne(transactions.entryId, survivorId)));
 
 	if (absorbed.tagIds.length > 0) {
 		await tx
@@ -383,4 +404,250 @@ export async function dismissDuplicate(deps: ServiceDeps, entryId: string): Prom
 	if (updated.length === 0) {
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
 	}
+}
+
+/** How many booked lines « Ouvrir la fusion » lists at a time, as Sure's `@limit = 10`. */
+const PENDING_MERGE_PAGE_SIZE = 10;
+
+/** A transaction as `DuplicateCandidate` names it, read in one join. */
+function candidateSelect(db: Pick<Transaction, "select">) {
+	return db
+		.select({
+			id: entries.id,
+			date: entries.date,
+			label: transactions.label,
+			amount: entries.amount,
+			currency: entries.currency,
+			accountId: entries.accountId,
+			accountName: accounts.name,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.$dynamic();
+}
+
+const asCandidate = (row: Omit<DuplicateCandidate, "amount"> & { amount: number }) => ({
+	...row,
+	amount: toMinorUnits(row.amount),
+});
+
+/** The pending side of a merge, `NOT_FOUND` for an unknown transaction. */
+async function pendingSource(db: Pick<Transaction, "select">, entryId: string) {
+	const source = await db
+		.select({
+			accountId: entries.accountId,
+			currency: entries.currency,
+			date: entries.date,
+			notes: transactions.notes,
+			categoryId: transactions.categoryId,
+			categoryOrigin: transactions.categoryOrigin,
+			pending: transactions.pending,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.where(eq(entries.id, entryId))
+		.get();
+
+	if (source === undefined) {
+		throw new AppError("NOT_FOUND", "No transaction has this id.");
+	}
+
+	return source;
+}
+
+/**
+ * The booked lines a pending entry may be merged into, as Sure's
+ * `pending_duplicate_candidates`: its account's, in its currency, not itself,
+ * and no part of a split, which the merge refuses (AD-20).
+ */
+function pendingMergeCondition(
+	entryId: string,
+	source: { accountId: string; currency: string },
+): SQL | undefined {
+	return and(
+		eq(entries.accountId, source.accountId),
+		eq(entries.currency, source.currency),
+		eq(transactions.pending, false),
+		ne(entries.id, entryId),
+		sql`not ${inSplit}`,
+	);
+}
+
+/**
+ * « Ouvrir la fusion »'s list: the booked lines a pending entry may be merged
+ * into, the latest date then the latest created first, ten from `offset`, as
+ * Sure's `PendingDuplicateMergesController#new`, with whether more follow.
+ * None for an entry no longer pending. Throws `NOT_FOUND` for an unknown
+ * transaction.
+ */
+export async function pendingMergeCandidates(
+	deps: ServiceDeps,
+	entryId: string,
+	offset: number,
+): Promise<{ candidates: DuplicateCandidate[]; hasMore: boolean }> {
+	const source = await pendingSource(deps.db, entryId);
+
+	if (!source.pending) {
+		return { candidates: [], hasMore: false };
+	}
+
+	// One more than a page, as Sure's, to tell whether another follows.
+	const rows = await candidateSelect(deps.db)
+		.where(pendingMergeCondition(entryId, source))
+		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
+		.limit(PENDING_MERGE_PAGE_SIZE + 1)
+		.offset(offset);
+
+	return {
+		candidates: rows.slice(0, PENDING_MERGE_PAGE_SIZE).map(asCandidate),
+		hasMore: rows.length > PENDING_MERGE_PAGE_SIZE,
+	};
+}
+
+/**
+ * The booked line a sync suggests a pending entry repeats, as Sure's
+ * `potential_duplicate_entry`: `null` once the entry is booked, the
+ * suggestion dismissed, its line deleted, or split since, which the merge
+ * refuses. Throws `NOT_FOUND` for an
+ * unknown transaction.
+ */
+export async function postedMatchOf(
+	deps: ServiceDeps,
+	entryId: string,
+): Promise<DuplicateCandidate | null> {
+	const source = await pendingSource(deps.db, entryId);
+
+	// Only a line the merge takes: one split since is no candidate (AD-20).
+	const rows = await candidateSelect(deps.db).where(
+		and(
+			eq(
+				entries.id,
+				deps.db
+					.select({ id: transactions.postedMatchId })
+					.from(transactions)
+					.where(
+						and(
+							eq(transactions.entryId, entryId),
+							eq(transactions.pending, true),
+							eq(transactions.postedMatchDismissed, false),
+						),
+					),
+			),
+			pendingMergeCondition(entryId, source),
+		),
+	);
+
+	return rows.map(asCandidate).at(0) ?? null;
+}
+
+/**
+ * Merges the pending entry `entryId` into the booked line `intoId`, as Sure's
+ * `merge_with_duplicate!`: `absorbEntry` moves what points at it and deletes
+ * it. The survivor keeps its label and merchant, the bank's booked ones; unless
+ * it is excluded, as Sure's `protected_from_sync?`, it takes the pending
+ * category with its origin and the pending date, the moment of the purchase,
+ * each unless locked. The pending notes join its own after a blank line, a fix
+ * over Sure's loss (we-promise/sure#4220). Its date and amount are locked as a
+ * user's write, as Sure's `mark_user_modified!`. Balances recompute from the
+ * earliest date touched. Throws `NOT_FOUND` for an unknown `entryId`,
+ * `TRANSACTION_SPLIT` when either side is in a split (AD-20),
+ * `DUPLICATE_RESOLVED` when it is no longer pending, as Sure's
+ * `pending_only`, and `VALIDATION_ERROR` on `into` when `intoId` is none of
+ * its candidates.
+ */
+export async function mergePending(
+	deps: ServiceDeps,
+	entryId: string,
+	intoId: string,
+): Promise<void> {
+	await deps.db.transaction(
+		async (tx) => {
+			const source = await pendingSource(tx, entryId);
+
+			await refuseSplit(tx, [entryId, intoId]);
+
+			if (!source.pending) {
+				throw new AppError("DUPLICATE_RESOLVED", "This transaction is no longer pending.");
+			}
+
+			const eligible = await tx
+				.select({ id: entries.id })
+				.from(entries)
+				.innerJoin(transactions, eq(transactions.entryId, entries.id))
+				.where(and(eq(entries.id, intoId), pendingMergeCondition(entryId, source)))
+				.get();
+
+			if (eligible === undefined) {
+				throw invalidField("into", "not_a_candidate");
+			}
+
+			const survivor = await transactionRow(tx, intoId);
+			const account = await accountWithOpeningDate(tx, source.accountId);
+			const absorbedOn = await absorbEntry(tx, intoId, entryId);
+			const now = Date.now();
+			const locked = new Set(Object.keys(survivor.lockedFields));
+			const date = !survivor.excluded && !locked.has("date") ? source.date : survivor.date;
+			const category =
+				!survivor.excluded && source.categoryId !== null && !locked.has("category")
+					? { categoryId: source.categoryId, categoryOrigin: source.categoryOrigin }
+					: {};
+			const notes = joinedNotes(survivor.notes, source.notes);
+
+			await tx.update(entries).set({ date, updatedAt: now }).where(eq(entries.id, intoId));
+			await tx
+				.update(transactions)
+				.set({
+					...category,
+					...(notes === survivor.notes ? {} : { notes }),
+					lockedFields: stampedLocks(["date", "amount"], now),
+				})
+				.where(eq(transactions.entryId, intoId));
+			await recomputeBalances(
+				tx,
+				account,
+				minDate(absorbedOn, minDate(survivor.date, date)),
+				deps.timeZone,
+			);
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * The survivor's notes once the pending ones join them: after a blank line
+ * when both differ, cut to `NOTES_MAX_LENGTH`, alone when the survivor has none.
+ */
+function joinedNotes(own: string | null, absorbed: string | null): string | null {
+	if (absorbed === null || absorbed === own) {
+		return own;
+	}
+
+	if (own === null) {
+		return absorbed;
+	}
+
+	// Within the sheet's limit, the survivor's text first, or every later save
+	// of its notes would fail; by code points, never cutting an emoji in half,
+	// counted in UTF-16 units as the schema's `max` counts.
+	let length = 0;
+
+	return Array.from(`${own}\n\n${absorbed}`)
+		.filter((character) => (length += character.length) <= NOTES_MAX_LENGTH)
+		.join("");
+}
+
+/**
+ * « Non, gardez les deux »: the suggestion never shows again on this entry,
+ * and no later sync stores another, as Sure's `dismiss_duplicate_suggestion!`.
+ * Idempotent. Throws `NOT_FOUND` for an unknown transaction.
+ */
+export async function dismissPostedMatch(deps: ServiceDeps, entryId: string): Promise<void> {
+	await pendingSource(deps.db, entryId);
+	// Without a suggestion, nothing, as Sure's `return false unless
+	// potential_posted_match_data.present?`: a later one may still come.
+	await deps.db
+		.update(transactions)
+		.set({ postedMatchDismissed: true })
+		.where(and(eq(transactions.entryId, entryId), isNotNull(transactions.postedMatchId)));
 }

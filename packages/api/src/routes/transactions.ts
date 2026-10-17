@@ -11,6 +11,7 @@ import {
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
 	mergeDuplicateBodySchema,
+	pendingMergeCandidatesSchema,
 	splitBodySchema,
 	transactionFilterSchema,
 	transactionPatchBodySchema,
@@ -22,12 +23,16 @@ import {
 	convertTransaction,
 	deleteTransaction,
 	dismissDuplicate,
+	dismissPostedMatch,
 	editSplit,
+	getPostedMatch,
 	getSplit,
 	getTransaction,
 	listAllTransactions,
 	listDuplicateCandidates,
+	listPendingMergeCandidates,
 	mergeDuplicate,
+	mergePending,
 	splitTransaction,
 	transactionTotals,
 	unlockTransaction,
@@ -83,6 +88,28 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.post("/:id/dismiss-duplicate", async (c) =>
 				c.json({ data: await dismissDuplicate(deps, c.req.param("id")) }, 200),
+			)
+			// A pending line booked at another amount, as Sure's
+			// `merge_duplicate`, `dismiss_duplicate` and `PendingDuplicateMergesController`.
+			.get("/:id/posted-match", async (c) =>
+				c.json({ data: await getPostedMatch(deps, c.req.param("id")) }, 200),
+			)
+			.get(
+				"/:id/pending-merge-candidates",
+				validated("query", pendingMergeCandidatesSchema),
+				async (c) =>
+					c.json(
+						{
+							data: await listPendingMergeCandidates(deps, c.req.param("id"), c.req.valid("query")),
+						},
+						200,
+					),
+			)
+			.post("/:id/merge-pending", validated("json", mergeDuplicateBodySchema), async (c) =>
+				c.json({ data: await mergePending(deps, c.req.param("id"), c.req.valid("json")) }, 200),
+			)
+			.post("/:id/dismiss-posted-match", async (c) =>
+				c.json({ data: await dismissPostedMatch(deps, c.req.param("id")) }, 200),
 			)
 			// Sure's `unlock_for_sync!`: every lock at once, none per field.
 			.post("/:id/unlock", async (c) =>

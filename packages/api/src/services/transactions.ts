@@ -8,6 +8,7 @@ import type {
 	BulkSelectionRequest,
 	BulkUpdateRequest,
 	MergeDuplicateRequest,
+	PendingMergeCandidatesQuery,
 	SplitInput,
 	TransactionFilterRequest,
 	TransactionInput,
@@ -49,8 +50,12 @@ import { currencyOf, getAccount } from "./accounts.ts";
 import { withChildren } from "./categories.ts";
 import {
 	dismissDuplicate as dismissLedgerDuplicate,
+	dismissPostedMatch as dismissLedgerPostedMatch,
 	duplicateCandidates,
 	mergeDuplicate as mergeLedgerDuplicate,
+	mergePending as mergeLedgerPending,
+	pendingMergeCandidates,
+	postedMatchOf,
 } from "./ledger/duplicates.ts";
 import {
 	bulkDeleteTransactions as bulkDeleteLedgerTransactions,
@@ -709,6 +714,44 @@ export async function mergeDuplicate(
 /** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
 export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
 	await dismissLedgerDuplicate(deps, id);
+
+	return getTransaction(deps, id);
+}
+
+/** « Ouvrir la fusion »'s booked lines, ten from `offset`, the latest first. */
+export async function listPendingMergeCandidates(
+	deps: ServiceDeps,
+	id: string,
+	query: PendingMergeCandidatesQuery,
+): Promise<{ candidates: DuplicateCandidate[]; hasMore: boolean }> {
+	return pendingMergeCandidates(deps, id, query.offset);
+}
+
+/** The booked line « Doublon possible détecté » names, `null` for none. */
+export async function getPostedMatch(
+	deps: ServiceDeps,
+	id: string,
+): Promise<DuplicateCandidate | null> {
+	return postedMatchOf(deps, id);
+}
+
+/**
+ * « Oui, fusionnez-les » or « Fusionner les opérations »: merges a pending
+ * transaction into the booked line, and returns that line as it now stands.
+ */
+export async function mergePending(
+	deps: ServiceDeps,
+	id: string,
+	body: MergeDuplicateRequest,
+): Promise<TransactionItem> {
+	await mergeLedgerPending(deps, id, body.into);
+
+	return getTransaction(deps, body.into);
+}
+
+/** « Non, gardez les deux »: the suggestion never shows again. */
+export async function dismissPostedMatch(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await dismissLedgerPostedMatch(deps, id);
 
 	return getTransaction(deps, id);
 }

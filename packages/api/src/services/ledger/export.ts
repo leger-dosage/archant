@@ -335,6 +335,10 @@ export const EXPORTED_COLUMNS = {
 
 const SECRETS = "Credentials, sessions or keys: nothing in the archive may let anyone sign in.";
 
+/** Why the three columns of a sync's pending suggestion stay out. */
+const POSTED_MATCH_LEFT_OUT =
+	"A sync's suggestion that a pending line repeats a booked one, which Sure keeps in `extra`, a column its exporter never writes.";
+
 /**
  * What the archive leaves out, and why: a reason per column under its
  * TypeScript key, or one for a whole table under its SQL name.
@@ -416,6 +420,9 @@ export const LEFT_OUT = {
 	transactions: {
 		expectedTransferAccountId:
 			"A rule's « Virement avec » waiting for its other side, read once by the next matching.",
+		postedMatchId: POSTED_MATCH_LEFT_OUT,
+		postedMatchConfidence: POSTED_MATCH_LEFT_OUT,
+		postedMatchDismissed: POSTED_MATCH_LEFT_OUT,
 	},
 	transaction_attachments: {
 		content:

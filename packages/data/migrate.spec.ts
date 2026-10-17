@@ -2547,6 +2547,78 @@ describe("pending transactions", () => {
 			database.get(sql`select pending, pending_missed_syncs as missed from transactions`),
 		).resolves.toEqual({ pending: 0, missed: 0 });
 	});
+
+	it("keeps every transaction, with no suggestion, and its taggings when 0087 adds the posted match", async () => {
+		const before = await migratedBefore("0087");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertAccount(before, "a2", "depository", "savings");
+		await insertEntry(before, "e1", "transaction", null);
+		await insertCategory(before, "c1", "Courses");
+		await insertMerchant(before, "m1", "Carrefour");
+		await before.run(
+			sql`insert into transactions (entry_id, label, notes, reference, excluded, one_time, possible_duplicate, pending, locked_fields, category_id, category_origin, merchant_id, expected_transfer_account_id, investment_activity_label) values ('e1', 'Carrefour', 'Courses', '123', 1, 1, 1, 1, '{"label":1789984800000}', 'c1', 'user', 'm1', 'a2', 'Fee')`,
+		);
+		await insertTag(before, "t1", "Pain");
+		await before.run(sql`insert into taggings (transaction_id, tag_id) values ('e1', 't1')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select entry_id as entryId, label, notes, reference, excluded, one_time as oneTime, possible_duplicate as possibleDuplicate, pending, posted_match_id as matchId, posted_match_confidence as confidence, posted_match_dismissed as dismissed, locked_fields as locked, category_id as categoryId, category_origin as categoryOrigin, merchant_id as merchantId, expected_transfer_account_id as expected, investment_activity_label as activityLabel from transactions`,
+			),
+		).resolves.toEqual([
+			{
+				entryId: "e1",
+				label: "Carrefour",
+				notes: "Courses",
+				reference: "123",
+				excluded: 1,
+				oneTime: 1,
+				possibleDuplicate: 1,
+				pending: 1,
+				matchId: null,
+				confidence: null,
+				dismissed: 0,
+				locked: '{"label":1789984800000}',
+				categoryId: "c1",
+				categoryOrigin: "user",
+				merchantId: "m1",
+				expected: "a2",
+				activityLabel: "Fee",
+			},
+		]);
+		await expect(database.all(sql`select transaction_id as id from taggings`)).resolves.toEqual([
+			{ id: "e1" },
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds a medium or low suggestion, gone with the booked entry it names", async () => {
+		const database = await migrated();
+		await insertAccount(database, "a1", "depository", "checking");
+		await insertEntry(database, "e1", "transaction", null);
+		await insertEntry(database, "e2", "transaction", null);
+		await database.run(sql`insert into transactions (entry_id, label) values ('e2', 'B')`);
+		const suggest = (confidence: string) =>
+			database.run(
+				sql`insert or replace into transactions (entry_id, label, pending, posted_match_id, posted_match_confidence) values ('e1', 'A', 1, 'e2', ${confidence})`,
+			);
+
+		await expect(suggest("high")).rejects.toThrow();
+		await expect(suggest("low")).resolves.toBeDefined();
+		await expect(suggest("medium")).resolves.toBeDefined();
+
+		await database.run(sql`delete from transactions where entry_id = 'e2'`);
+		await database.run(sql`delete from entries where id = 'e2'`);
+
+		await expect(
+			database.get(
+				sql`select posted_match_id as matchId, posted_match_confidence as confidence, posted_match_dismissed as dismissed from transactions`,
+			),
+		).resolves.toEqual({ matchId: null, confidence: "medium", dismissed: 0 });
+	});
 });
 
 describe("consent renewal", () => {
