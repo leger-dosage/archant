@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type {
 	CsvImportConfigurationInput,
+	CsvImportEditsInput,
 	CsvImportMappingsInput,
 	CsvImportType,
 } from "@archant/api/schemas/csv-imports";
@@ -15,11 +16,12 @@ export type CsvImportPreviewData = InferResponseType<
 	200
 >["data"];
 
-/** What the page keeps between the steps and posts at each: the file and its choices. */
+/** What the page keeps between the steps and posts at each: the file, its choices and its edits. */
 export type CsvImportDraft = {
 	type: CsvImportType;
 	file: File;
 	configuration?: CsvImportConfigurationInput | undefined;
+	edits?: CsvImportEditsInput | undefined;
 	mappings?: CsvImportMappingsInput | undefined;
 };
 
@@ -31,11 +33,14 @@ function formOf(draft: CsvImportDraft) {
 		...(draft.configuration === undefined
 			? {}
 			: { configuration: JSON.stringify(draft.configuration) }),
+		...(draft.edits === undefined || draft.edits.length === 0
+			? {}
+			: { edits: JSON.stringify(draft.edits) }),
 		...(draft.mappings === undefined ? {} : { mappings: JSON.stringify(draft.mappings) }),
 	};
 }
 
-/** Reads the file with its choices: headers, suggestions, values to map, counts, errors; nothing is written. */
+/** Reads the file with its choices and edits: headers, suggestions, rows, values to map, counts, errors; nothing is written. */
 export function useCsvImportPreview() {
 	return useMutation({
 		mutationFn: async (draft: CsvImportDraft) =>

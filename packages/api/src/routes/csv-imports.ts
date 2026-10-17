@@ -18,6 +18,7 @@ async function requestOf(form: z.output<typeof csvImportUploadSchema>): Promise<
 		type: form.type,
 		file: { name: form.file.name, bytes: new Uint8Array(await form.file.arrayBuffer()) },
 		configuration: form.configuration,
+		edits: form.edits,
 		mappings: form.mappings,
 	};
 }

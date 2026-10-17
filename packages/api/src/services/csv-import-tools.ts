@@ -4,7 +4,7 @@ import type { Sheet } from "./csv-import-sheet.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
 
 import { columnOf, csvIssue, csvValue, plainDecimal, sanitizeNumber } from "./csv-import-format.ts";
-import { cellOf, lineOf, numberOf } from "./csv-import-sheet.ts";
+import { cellOf, editOf, lineOf, numberOf } from "./csv-import-sheet.ts";
 
 // Sure's `MintImport`, `YnabImport` and `ActualImport` at 00dd977fb: a
 // transactions CSV whose columns `DEFAULT_COLUMN_MAPPINGS` already maps, each
@@ -174,9 +174,16 @@ export function amountTermsOf(sheet: Sheet, row: CsvRow, errors: SureIssue[]): A
 
 /**
  * A row's label before it is cleaned: its name, else for YNAB and Actual
- * its notes, as their `row_name`; blank leaves Sure's default row name.
+ * its notes, as their `row_name`; blank leaves Sure's default row name. A
+ * name edited in « Nettoyer » is the label.
  */
 export function rawLabelOf(sheet: Sheet, row: CsvRow): string {
+	const edited = editOf(sheet, row, "name");
+
+	if (edited !== undefined) {
+		return edited;
+	}
+
 	const name = (cellOf(sheet, row, "name") ?? "").trim();
 
 	return name === "" && (sheet.type === "ynab" || sheet.type === "actual")
@@ -197,10 +204,15 @@ function joinCategory(group: string, category: string): string {
  * A row's category key, which « Attribuez vos catégories » maps: the
  * category column's cell; YNAB's `combined_category` across its export
  * shapes; Actual's group joined to its category. A joined key reads as
- * `Parent:Child` and files the category under its group.
+ * `Parent:Child` and files the category under its group. A category edited
+ * in « Nettoyer » is the key, as Sure saves the row's combined category.
  */
 export function categoryOf(sheet: Sheet, row: CsvRow): string {
 	const cell = cellOf(sheet, row, "category") ?? "";
+
+	if (editOf(sheet, row, "category") !== undefined) {
+		return cell;
+	}
 
 	if (sheet.type === "actual") {
 		return joinCategory(literal(sheet, row, ACTUAL_CATEGORY_GROUP_COLUMN), cell.trim());

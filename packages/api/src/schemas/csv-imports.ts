@@ -141,6 +141,46 @@ export const COLUMN_KEY_LIST = [
 ];
 
 /**
+ * Sure's `column_keys` of each import, in its order: the cells « Nettoyer »
+ * shows and the user may edit, Sure's `Import::Row` fields. A transaction or
+ * trade import names its account first, multi-account only.
+ */
+const CLEAN_COLUMNS = {
+	transactions: ["account", "date", "amount", "name", "currency", "category", "tags", "notes"],
+	trades: [
+		"account",
+		"date",
+		"ticker",
+		"exchange_operating_mic",
+		"currency",
+		"qty",
+		"price",
+		"name",
+	],
+	accounts: ["entity_type", "name", "amount", "currency", "date"],
+	categories: ["name", "category_color", "category_parent", "category_icon"],
+	merchants: ["name", "merchant_color", "merchant_website"],
+	rules: ["name", "resource_type", "active", "effective_date", "conditions", "actions"],
+	mint: ["date", "amount", "name", "currency", "category", "tags", "account", "notes"],
+	ynab: ["date", "name", "category", "account", "notes"],
+	actual: ["date", "amount", "name", "category", "account", "notes"],
+} as const satisfies Record<CsvImportType, readonly string[]>;
+
+export type CleanKey = (typeof CLEAN_COLUMNS)[keyof typeof CLEAN_COLUMNS][number];
+
+/** Every key « Nettoyer » shows, whatever the import. */
+export const CLEAN_KEYS = [...new Set<CleanKey>(Object.values(CLEAN_COLUMNS).flat())];
+
+/** The columns « Nettoyer » shows for an import of `type`, Sure's `column_keys`. */
+export function cleanColumnsOf(type: CsvImportType, accountId: string | null): readonly CleanKey[] {
+	const columns: readonly CleanKey[] = CLEAN_COLUMNS[type];
+
+	return (type === "transactions" || type === "trades") && accountId !== null
+		? columns.filter((key) => key !== "account")
+		: columns;
+}
+
+/**
  * Every refusal the raw-data imports report on a line or a mapping, closed so
  * the page that translates them cannot fall out of step with the server.
  */
@@ -266,13 +306,37 @@ export const csvImportMappingsSchema = z.object({
 
 export type CsvImportMappingsInput = z.input<typeof csvImportMappingsSchema>;
 
+/** A rows' edit count stays far below this: 10,000 rows of nine cells. */
+const MAX_EDITS = 100_000;
+
+/** A cell's text: a rule's conditions and actions are the longest Sure writes. */
+const MAX_EDIT_LENGTH = 10_000;
+
+/**
+ * « Nettoyer »: each cell the user changed, by its line in the file and its
+ * key, Sure's saved `Import::Row` field. The last edit of a cell wins.
+ */
+export const csvImportEditsSchema = z
+	.array(
+		z.object({
+			line: z.number().int().min(1),
+			key: z.enum(CLEAN_KEYS),
+			value: z.string().max(MAX_EDIT_LENGTH),
+		}),
+	)
+	.max(MAX_EDITS);
+
+export type CsvImportEditsInput = z.input<typeof csvImportEditsSchema>;
+
 /**
  * `multipart/form-data`: the import's `type`, its `file`, and the choices of
- * « Configurer » and « Mapper » as JSON text, absent before they are made.
+ * « Configurer », the edits of « Nettoyer » and the choices of « Mapper » as
+ * JSON text, absent before they are made.
  */
 export const csvImportUploadSchema = z.object({
 	type: z.enum(CSV_IMPORT_TYPES),
 	file: z.instanceof(File),
 	configuration: jsonText(csvImportConfigurationSchema).optional(),
 	mappings: jsonText(csvImportMappingsSchema).optional(),
+	edits: jsonText(csvImportEditsSchema).optional(),
 });

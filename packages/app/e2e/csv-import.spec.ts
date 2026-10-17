@@ -7,10 +7,18 @@ import { expect, test, uniqueName } from "./fixtures.ts";
 // « Confirmer » before its categories land. Story 30.4: a transactions file
 // skips its preamble, signs its lines from a type column and maps its
 // categories before its lines land. Story 30.2: a YNAB file, its columns
-// preset, lands in a new account under a new category.
+// preset, lands in a new account under a new category. Story 30.5: every
+// file goes through « Nettoyer », where an invalid cell is fixed in place.
 
 function csv(lines: readonly string[]): { name: string; mimeType: string; buffer: Buffer } {
 	return { name: "categories.csv", mimeType: "text/csv", buffer: Buffer.from(lines.join("\n")) };
+}
+
+/** « Nettoyer » with every row valid: on to the next step. */
+async function passClean(page: Page) {
+	await expect(page.getByRole("heading", { level: 1, name: "Nettoyez vos données" })).toBeVisible();
+	await expect(page.getByText("Vos données ont été nettoyées")).toBeVisible();
+	await page.getByRole("button", { name: "Étape suivante" }).click();
 }
 
 async function openCategoriesImport(page: Page) {
@@ -53,6 +61,7 @@ test("imports a categories file and finds the category under its parent", async 
 	).toBeVisible();
 	await expect(page.getByRole("cell", { name: child })).toBeVisible();
 	await page.getByRole("button", { name: "Continuer" }).click();
+	await passClean(page);
 
 	await expect(
 		page.getByRole("heading", { level: 1, name: "Confirmez vos données d'importation" }),
@@ -66,7 +75,7 @@ test("imports a categories file and finds the category under its parent", async 
 	await expect(page.getByText(parent, { exact: true })).toBeVisible();
 });
 
-test("names the line of a category its own parent and leaves nothing to publish", async ({
+test("names the line of a category its own parent in « Nettoyer » and goes no further", async ({
 	page,
 }) => {
 	const name = uniqueName("Boucle");
@@ -78,10 +87,11 @@ test("names the line of a category its own parent and leaves nothing to publish"
 	await page.getByRole("button", { name: "Téléverser le CSV" }).click();
 	await page.getByRole("button", { name: "Continuer" }).click();
 
-	await expect(page.getByRole("alert")).toContainText(
+	await expect(page.getByRole("heading", { level: 1, name: "Nettoyez vos données" })).toBeVisible();
+	await expect(page.getByLabel("Catégorie parente, ligne 2")).toHaveAccessibleDescription(
 		`Ligne 2 : la catégorie « ${name} » ne peut pas être son propre parent.`,
 	);
-	await expect(page.getByRole("button", { name: "Publier l'importation" })).toBeDisabled();
+	await expect(page.getByRole("button", { name: "Étape suivante" })).toBeDisabled();
 });
 
 test("imports a transactions file into an account, its category mapped to a new one", async ({
@@ -139,6 +149,7 @@ test("imports a transactions file into an account, its category mapped to a new 
 
 	await expect(page.getByLabel("Format de date")).toHaveText("DD/MM/YYYY");
 	await page.getByRole("button", { name: "Appliquer la configuration" }).click();
+	await passClean(page);
 
 	await expect(
 		page.getByRole("heading", { level: 1, name: "Attribuez vos catégories" }),
@@ -208,6 +219,7 @@ test("imports a YNAB file with its columns preset, into a new account and catego
 	await expect(page.getByLabel("Bénéficiaire (facultatif)")).toHaveText("Payee");
 	await expect(page.getByLabel("Format de date")).toHaveText("MM/DD/YYYY");
 	await page.getByRole("button", { name: "Appliquer la configuration" }).click();
+	await passClean(page);
 
 	await expect(
 		page.getByRole("heading", { level: 1, name: "Attribuez vos catégories" }),
@@ -236,4 +248,76 @@ test("imports a YNAB file with its columns preset, into a new account and catego
 	await expect(row).toContainText(category);
 	await expect(row).toContainText(accountName);
 	await expect(row).toContainText("−4,20");
+});
+
+test("fixes an invalid date in « Nettoyer », then publishes the line", async ({ page, api }) => {
+	const { name: accountName } = await api.openAccount();
+	const label = uniqueName("Cinéma");
+
+	await page.goto("/settings/imports/transactions");
+	await page.getByLabel("Compte (facultatif)").click();
+	await page.getByRole("option", { name: accountName }).click();
+	await page.locator("#csv-import-file").setInputFiles({
+		name: "releve.csv",
+		mimeType: "text/csv",
+		buffer: Buffer.from(
+			["Date,Montant,Libellé", "02/09/2026,-4.20,Boulangerie", `31/02/2026,-12.00,${label}`].join(
+				"\n",
+			),
+		),
+	});
+	await page.getByRole("button", { name: "Téléverser le CSV" }).click();
+
+	const choose = async (field: string, column: string) => {
+		await page.getByLabel(field, { exact: true }).click();
+		await page.getByRole("option", { name: column, exact: true }).click();
+	};
+
+	await choose("Date", "Date");
+	await choose("Montant", "Montant");
+	await choose("Nom", "Libellé");
+	await expect(page.getByLabel("Format de date")).toHaveText("DD/MM/YYYY");
+	await page.getByRole("button", { name: "Appliquer la configuration" }).click();
+
+	await expect(page.getByRole("heading", { level: 1, name: "Nettoyez vos données" })).toBeVisible();
+	const date = page.getByLabel("Date, ligne 3");
+
+	await expect(date).toHaveAttribute("aria-invalid", "true");
+	await expect(date).toHaveAccessibleDescription(
+		"Ligne 3 : la date doit suivre exactement le format DD/MM/YYYY.",
+	);
+	await expect(page.getByRole("button", { name: "Étape suivante" })).toBeDisabled();
+
+	await page.getByRole("button", { name: "Lignes d'erreur" }).click();
+	await expect(page.getByLabel(/^Date, ligne/u)).toHaveCount(1);
+
+	await date.fill("28/02/2026");
+	await date.press("Tab");
+	await expect(page.getByText("Vos données ont été nettoyées")).toBeVisible();
+	await expect(page.getByLabel("Date, ligne 3")).toHaveValue("28/02/2026");
+	await expect(page.getByLabel("Date, ligne 3")).toHaveAttribute("aria-invalid", "false");
+	await page.getByRole("button", { name: "Étape suivante" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Attribuez vos catégories" }),
+	).toBeVisible();
+	await page.getByRole("button", { name: "Suivant" }).click();
+	await page.getByRole("button", { name: "Suivant" }).click();
+
+	await expect(
+		page.getByRole("heading", { level: 1, name: "Confirmez vos données d'importation" }),
+	).toBeVisible();
+	await expect(page.getByRole("row", { name: "Opérations 2" })).toBeVisible();
+	await page.getByRole("button", { name: "Publier l'importation" }).click();
+	await expect(page.getByRole("heading", { level: 1, name: "Importation réussie" })).toBeVisible();
+
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: label });
+
+	await expect(row).toContainText("−12,00");
+
+	// The line is published on the corrected day, read back through the API.
+	const listed = await page.request.get(`/api/transactions?q=${encodeURIComponent(label)}`);
+
+	expect(JSON.stringify(await listed.json())).toContain('"2026-02-28"');
 });

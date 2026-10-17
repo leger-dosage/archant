@@ -533,7 +533,7 @@ describe("rules", () => {
 
 		expect(read.errors).toEqual([
 			{ code: "unsupported_resource_type", params: { line: "2", resource_type: "account" } },
-			{ code: "invalid_json", params: { line: "3" } },
+			{ code: "invalid_json", params: { line: "3", field: "conditions" } },
 			{ code: "min_actions", params: { line: "4" } },
 			{ code: "unsupported_rule", params: { line: "5" } },
 			{ code: "required", params: { line: "6", field: "resource_type" } },
