@@ -1152,6 +1152,10 @@ test("« Solde d'ouverture » on a linked account moves the opening day, the ban
 	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(20)));
 	await sheet.getByLabel("Valeur du compte à ce jour").fill("500,00");
 	await sheet.getByRole("button", { name: "Mettre à jour la valeur" }).click();
+	// Sure's `confirm_update`, a dialog over the sheet.
+	const step = page.getByRole("dialog", { name: "Mettre à jour le solde" });
+	await step.getByRole("button", { name: "Mettre à jour", exact: true }).click();
+	await expect(step).toBeHidden();
 
 	await expect(sheet).toBeHidden();
 	await expect(page.getByRole("row", { name: "Solde d'ouverture" }).getByRole("cell")).toHaveText([

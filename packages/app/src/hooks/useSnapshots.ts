@@ -44,6 +44,24 @@ export function useCreateSnapshot(accountId: string) {
 	});
 }
 
+/**
+ * What saving a balance would set, written nowhere: Sure's `confirm_create`
+ * and `confirm_update`, shown before the save. Nothing to invalidate.
+ */
+export function useSnapshotDryRun(accountId: string) {
+	return useMutation({
+		mutationFn: async (input: SnapshotInput) =>
+			(
+				await unwrap(
+					api.accounts[":id"].snapshots["dry-run"].$post({
+						param: { id: accountId },
+						json: input,
+					}),
+				)
+			).data,
+	});
+}
+
 export function useUpdateSnapshot(accountId: string) {
 	const invalidate = useInvalidateAccount(accountId);
 

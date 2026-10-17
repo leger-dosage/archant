@@ -817,6 +817,34 @@
 			"balance": "Valeur du compte à ce jour",
 			"notes": "Notes",
 			"save": "Mettre à jour la valeur"
+		},
+		"confirm": {
+			"createTitle": "Confirmer le nouveau solde",
+			"updateTitle": "Mettre à jour le solde",
+			"confirm": "Confirmer",
+			"updateAction": "Mettre à jour",
+			"set": "Définir",
+			"update": "Mettre à jour",
+			"on": "au",
+			"to": "à",
+			"thisWillSet": "Cela définira la valeur du compte au",
+			"thisWillUpdate": "Cela mettra à jour la valeur du compte au",
+			"toColon": "à :",
+			"totalValue": "Valeur totale du compte",
+			"holdingsValue": "Valeur des positions",
+			"brokerageCash": "Trésorerie de courtage",
+			"noticeSet": "Toutes les transactions et soldes futurs seront recalculés sur la base de cette mise à jour.",
+			"noticeUpdate": "Toutes les transactions et soldes futurs seront recalculés sur la base de ce changement.",
+			"nouns": {
+				"depository": "le solde du compte",
+				"credit_card": "le solde de la carte de crédit",
+				"loan": "le solde du prêt",
+				"property": "la valeur du bien",
+				"vehicle": "la valeur du véhicule",
+				"crypto": "le solde en cryptomonnaies",
+				"other_asset": "la valeur de l'actif",
+				"other_liability": "le solde du passif"
+			}
 		}
 	},
 	"trades": {
@@ -2623,6 +2651,7 @@
 			"split_sum_mismatch": "Les lignes doivent totaliser le montant de l'opération.",
 			"not_a_child": "Cette ligne n'appartient pas à cette division.",
 			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
+			"amount_required": "Le montant est requis.",
 			"negative_amount": "Le montant ne peut pas être négatif.",
 			"invalid_currency": "Devise inconnue.",
 			"invalid_subtype": "Type de compte invalide.",

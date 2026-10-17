@@ -38,7 +38,7 @@ import {
 import { createImport, listImports } from "../services/imports.ts";
 import { loanPayoffChart, loanSchedule } from "../services/loans.ts";
 import { getPreferences } from "../services/preferences.ts";
-import { createSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
+import { createSnapshot, dryRunSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
 import { signedInUser } from "./middleware/roles.ts";
@@ -107,6 +107,9 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		)
 		.post("/:id/snapshots", validated("json", snapshotBodySchema), async (c) =>
 			c.json({ data: await createSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+		)
+		.post("/:id/snapshots/dry-run", validated("json", snapshotBodySchema), async (c) =>
+			c.json({ data: await dryRunSnapshot(deps, c.req.param("id"), c.req.valid("json")) }, 200),
 		)
 		.patch("/:id/opening-balance", validated("json", snapshotBodySchema), async (c) =>
 			c.json(

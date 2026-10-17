@@ -34,7 +34,15 @@ function notesOf(value: string | null | undefined): { notes?: string | null } {
 
 function balanceIn(currency: CurrencyCode) {
 	return (value: { balance?: unknown }, context: z.core.$RefinementCtx) => {
-		if (typeof value.balance === "string" && parseAmount(value.balance, currency) === null) {
+		if (typeof value.balance !== "string") {
+			return;
+		}
+
+		// Sure's `valuations.errors.amount_required`: a blank amount is missing,
+		// not malformed, and the form says so before any request.
+		if (value.balance.trim() === "") {
+			context.addIssue({ code: "custom", path: ["balance"], message: "amount_required" });
+		} else if (parseAmount(value.balance, currency) === null) {
 			context.addIssue({ code: "custom", path: ["balance"], message: "invalid_amount" });
 		}
 	};

@@ -1,3 +1,5 @@
+import type { BalanceDryRun } from "@/components/BalanceConfirmation";
+
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo, useRef, useState } from "react";
 import { useController, useForm } from "react-hook-form";
@@ -5,11 +7,22 @@ import { useTranslation } from "react-i18next";
 
 import type { SnapshotFormInput } from "@archant/api/schemas/snapshots";
 import { openingBalanceSchema } from "@archant/api/schemas/snapshots";
+import type { AccountType } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import { parseAmount } from "@archant/data/money";
 
+import { BalanceConfirmation } from "@/components/BalanceConfirmation";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -21,7 +34,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { useSetOpeningBalance } from "@/hooks/useSnapshots";
+import { useSetOpeningBalance, useSnapshotDryRun } from "@/hooks/useSnapshots";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
@@ -35,6 +48,8 @@ const FIELD_NAMES = ["date", "balance", "notes"] as const;
 export type OpeningAccount = {
 	id: string;
 	currency: CurrencyCode;
+	/** Names what the confirmation step sets, as Sure's `_confirmation_contents`. */
+	type: AccountType;
 	openingDate: string;
 	openingBalance: { balance: MinorUnits; notes: string | null };
 };
@@ -48,6 +63,18 @@ type OpeningBalanceFormProps = {
 function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 	const { t } = useTranslation();
 	const setOpeningBalance = useSetOpeningBalance(account.id);
+	const dryRun = useSnapshotDryRun(account.id);
+	// Sure's `confirm_update`, posted from its drawer into the modal frame: a
+	// dialog over the sheet until confirmed.
+	const [pending, setPending] = useState<{
+		values: SnapshotFormInput;
+		result: BalanceDryRun;
+	} | null>(null);
+	// A save from the step in flight: cancelling then would not undo it.
+	const [confirming, setConfirming] = useState(false);
+	const confirmButton = useRef<HTMLButtonElement>(null);
+	// Set when a save from the step is refused, so the sheet's field takes focus back.
+	const refused = useRef(false);
 	// The oldest entry's date the API names when the date is not before it.
 	const [oldestEntryDate, setOldestEntryDate] = useState<string | null>(null);
 	const schema = useMemo(() => openingBalanceSchema(account.currency), [account.currency]);
@@ -64,25 +91,74 @@ function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 	const { errors, isSubmitting } = form.formState;
 	const date = useController({ control: form.control, name: "date" });
 
+	// The refused field, found by id: the date is a controlled field, whose
+	// input react-hook-form holds no ref to.
+	const focusRefusedField = () => {
+		const name =
+			FIELD_NAMES.find((field) => form.getFieldState(field).error !== undefined) ?? "date";
+
+		document.getElementById(`opening-balance-${name}`)?.focus();
+	};
+
+	const showError = (error: unknown) => {
+		const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
+		setOldestEntryDate(apiError.params["date"] ?? null);
+		const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
+
+		if (
+			apiError.code !== "VALIDATION_ERROR" ||
+			unplaced.length > 0 ||
+			apiError.fields.length === 0
+		) {
+			showErrorToast(apiError.code);
+		}
+	};
+
+	const save = async (values: SnapshotFormInput) => {
+		await setOpeningBalance.mutateAsync(values);
+		// No success toast: the row and the balance changing say it.
+		onClose();
+	};
+
 	const submit = form.handleSubmit(async (values) => {
 		try {
-			await setOpeningBalance.mutateAsync(values);
-			// No success toast: the row and the balance changing say it.
-			onClose();
-		} catch (error) {
-			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
-			setOldestEntryDate(apiError.params["date"] ?? null);
-			const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
-
+			// Sure's drawer saves notes apart from the reconciliation: with the
+			// date and the amount as they were, nothing needs confirming.
 			if (
-				apiError.code !== "VALIDATION_ERROR" ||
-				unplaced.length > 0 ||
-				apiError.fields.length === 0
+				values.date === account.openingDate &&
+				parseAmount(values.balance, account.currency) === account.openingBalance.balance
 			) {
-				showErrorToast(apiError.code);
+				await save(values);
+
+				return;
 			}
+
+			const result = await dryRun.mutateAsync({ date: values.date, balance: values.balance });
+			setPending({ values, result });
+		} catch (error) {
+			showError(error);
 		}
 	});
+
+	const confirm = async () => {
+		if (pending === null) {
+			return;
+		}
+
+		setConfirming(true);
+
+		try {
+			await save(pending.values);
+		} catch (error) {
+			// Back to the sheet with the error on its field, as Sure re-renders
+			// `show` with its message.
+			refused.current = true;
+			setPending(null);
+			showError(error);
+		} finally {
+			setConfirming(false);
+		}
+	};
 
 	return (
 		<>
@@ -151,6 +227,68 @@ function OpeningBalanceForm({ account, onClose }: OpeningBalanceFormProps) {
 					{t("snapshots.opening.save")}
 				</Button>
 			</SheetFooter>
+
+			<Dialog
+				open={pending !== null}
+				onOpenChange={(open) => {
+					// Escape and the overlay wait for the save, as « Annuler » does.
+					if (!open && !confirming) {
+						setPending(null);
+					}
+				}}
+			>
+				<DialogContent
+					showCloseButton={false}
+					onOpenAutoFocus={(event) => {
+						// The action, as the snapshot dialog's step.
+						event.preventDefault();
+						confirmButton.current?.focus();
+					}}
+					onCloseAutoFocus={(event) => {
+						// After a refusal, the refused field rather than the sheet's button.
+						if (refused.current) {
+							refused.current = false;
+							event.preventDefault();
+							focusRefusedField();
+						}
+					}}
+				>
+					<DialogHeader>
+						<DialogTitle>{t("snapshots.confirm.updateTitle")}</DialogTitle>
+					</DialogHeader>
+					{/* Mounted while the step closes, so the dialog keeps its description. */}
+					<DialogDescription asChild>
+						<div>
+							{pending !== null && (
+								<BalanceConfirmation
+									type={account.type}
+									currency={account.currency}
+									result={pending.result}
+									update
+								/>
+							)}
+						</div>
+					</DialogDescription>
+					<DialogFooter className="flex-row justify-end gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							disabled={confirming}
+							onClick={() => setPending(null)}
+						>
+							{t("common.cancel")}
+						</Button>
+						<Button
+							ref={confirmButton}
+							type="button"
+							disabled={confirming}
+							onClick={() => void confirm()}
+						>
+							{t("snapshots.confirm.updateAction")}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 		</>
 	);
 }
@@ -163,7 +301,7 @@ type OpeningBalanceSheetProps = {
 
 /**
  * Sure's valuation drawer on an opening balance: its date and the account's
- * value that day, saved without a confirmation step, as Archant's snapshots.
+ * value that day, saved after Sure's confirmation step when either changes.
  * Focus goes back to the « Solde d'ouverture » row, even after a refetch
  * remounted it.
  */
