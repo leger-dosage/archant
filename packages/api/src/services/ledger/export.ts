@@ -3,6 +3,7 @@ import type { ServiceDeps } from "../deps.ts";
 
 import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
+import { createHash } from "node:crypto";
 
 import { accounts } from "@archant/data/schema/accounts";
 import { balances } from "@archant/data/schema/balances";
@@ -33,9 +34,16 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
 import { today } from "../../domain/dates.ts";
-import { balanceOn } from "./balances.ts";
+import { balanceWithCashOn } from "./balances.ts";
 import { liveCostBasisLocks } from "./holdings.ts";
-import { KEYS_PER_LOOKUP, asInflow, asOutflow, inSequence, notSplitParent } from "./shared.ts";
+import {
+	KEYS_PER_LOOKUP,
+	asInflow,
+	asOutflow,
+	inSequence,
+	notSplitParent,
+	oneByOne,
+} from "./shared.ts";
 
 /**
  * Every column the archive reads, by table, under its TypeScript key (AD-23).
@@ -426,7 +434,7 @@ export const LEFT_OUT = {
 	},
 	transaction_attachments: {
 		content:
-			"The file itself: the archive lists each attachment, as Sure's manifest does, without its bytes.",
+			"The file itself: the archive lists each attachment, as Sure's manifest does, without its bytes; only their checksum leaves.",
 	},
 	two_factors: SECRETS,
 	users: SECRETS,
@@ -439,9 +447,11 @@ type Reader = Pick<ServiceDeps["db"], "select">;
 const PAGE_ROWS = 2000;
 
 /**
- * Every account, oldest first, with its balance today, `null` before its
- * opening date, and its linked bank connection's name, which Sure's
- * `Account#institution_name` falls back to; null for a manual account.
+ * Every account, oldest first, with its balance today and that balance's cash
+ * part, `null` before its opening date, and its linked bank connection's
+ * name, which Sure's `Account#institution_name` falls back to; null for a
+ * manual account. Both figures come from one row, as Sure's
+ * `update_account_info` takes them, so their difference is the holdings' value.
  */
 export async function exportedAccounts(deps: ServiceDeps) {
 	const rows = await deps.db
@@ -453,7 +463,10 @@ export async function exportedAccounts(deps: ServiceDeps) {
 	const date = today(deps.timeZone);
 
 	return Promise.all(
-		rows.map(async (row) => ({ ...row, balance: await balanceOn(deps, row.id, date) })),
+		rows.map(async (row) => ({
+			...row,
+			balance: await balanceWithCashOn(deps.db, row.id, date),
+		})),
 	);
 }
 
@@ -859,11 +872,11 @@ export async function exportedRules(db: Reader) {
 }
 
 /**
- * Every attachment, without its bytes, with its transaction's account, by
- * transaction, name and id, as Sure's manifest sorts them.
+ * Every attachment, without its bytes, with its transaction's account and
+ * its checksum, by transaction, name and id, as Sure's manifest sorts them.
  */
-export function exportedAttachments(db: Reader) {
-	return db
+export async function exportedAttachments(db: Reader) {
+	const rows = await db
 		.select({ ...EXPORTED_COLUMNS.transaction_attachments, accountId: entries.accountId })
 		.from(transactionAttachments)
 		.innerJoin(entries, eq(entries.id, transactionAttachments.transactionId))
@@ -872,4 +885,34 @@ export function exportedAttachments(db: Reader) {
 			asc(transactionAttachments.filename),
 			asc(transactionAttachments.id),
 		);
+	const listed: ((typeof rows)[number] & { checksum: string })[] = [];
+
+	// One file at a time: a household's receipts together may not fit in memory.
+	await oneByOne(rows, async (row) => {
+		listed.push({ ...row, checksum: await checksumOf(db, row.id) });
+	});
+
+	return listed;
+}
+
+/**
+ * Sure's `blob.checksum`: the Base64 MD5 digest of the file's bytes, which
+ * Active Storage keeps from the upload. Computed here from the stored bytes,
+ * so a file saved before Story 30.7 has the same as one saved after, with no
+ * migration: SQLite cannot compute MD5 to backfill a column. The bytes never
+ * leave.
+ */
+async function checksumOf(db: Reader, id: string): Promise<string> {
+	const row = await db
+		.select({ content: transactionAttachments.content })
+		.from(transactionAttachments)
+		.where(eq(transactionAttachments.id, id))
+		.get();
+
+	// Never the digest of nothing: a reader outside one snapshot can lose the row.
+	if (row === undefined) {
+		throw new Error("An attachment listed for the export is gone.");
+	}
+
+	return createHash("md5").update(row.content).digest("base64");
 }

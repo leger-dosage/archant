@@ -679,6 +679,11 @@ describe("exportArchive", () => {
 				balance: "85.10",
 			}),
 		);
+		// Today's Balance line, as Sure's `update_account_info` takes both from one.
+		expect(archive.of("Account").find((row) => row["id"] === ids.other)).toMatchObject({
+			balance: "85.10",
+			cash_balance: "-339.90",
+		});
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
@@ -879,6 +884,28 @@ describe("exportArchive", () => {
 			notes: null,
 		});
 		expect(archive.csv("accounts.csv")[0]).toHaveLength(7);
+		expect(surePreflight(archive.ndjson)).toEqual([]);
+	});
+
+	it("writes each account's cash balance beside its balance, zero before its opening date", async () => {
+		await ownDatabase();
+		const checking = await openOwn({
+			name: "Compte joint",
+			openingBalance: "1 500,00",
+			openingDate: "2026-04-01",
+		});
+		await postOwn(checking.id, { date: "2026-09-10", label: "Garage", amount: "-300,00" });
+		const later = await openOwn({ name: "Livret à venir", openingDate: "2026-12-01" });
+
+		const archive = await exported();
+		const accounts = new Map(archive.of("Account").map((row) => [row["id"], row]));
+
+		expect(accounts.get(checking.id)).toMatchObject({
+			balance: "1200.00",
+			cash_balance: "1200.00",
+		});
+		// Sure's fallback when the account has no balance yet.
+		expect(accounts.get(later.id)).toMatchObject({ balance: "0.00", cash_balance: "0.00" });
 		expect(surePreflight(archive.ndjson)).toEqual([]);
 	});
 
@@ -1333,7 +1360,8 @@ describe("exportArchive", () => {
 			filename,
 			content_type: "application/pdf",
 			byte_size: pdf.byteLength,
-			checksum: null,
+			// Ruby's `Digest::MD5.base64digest` of the bytes, Active Storage's `blob.checksum`.
+			checksum: "0baBgm6/mF8zDAFCXCV4sw==",
 			binary_included: false,
 			created_at: "2026-09-21T10:00:00.000Z",
 			entry_id: second,
@@ -1344,7 +1372,7 @@ describe("exportArchive", () => {
 		const manifest = archive.text["attachments.json"] ?? "";
 
 		expect(manifest).not.toContain("\n");
-		expect(manifest).not.toContain("SECRET");
+		expect(Object.values(archive.text).join("\n")).not.toContain("SECRET");
 		// By transaction, then by name.
 		const [before, after] = [first, second].toSorted();
 		const manifestOf = (transactionId: string | undefined) =>
@@ -1358,7 +1386,7 @@ describe("exportArchive", () => {
 							filename: "ordonnance.png",
 							content_type: "image/png",
 							byte_size: 8,
-							checksum: null,
+							checksum: "6d0nlwGMrXkYbgPoxa7I3A==",
 							binary_included: false,
 							created_at: "2026-09-21T10:00:01.000Z",
 							entry_id: first,
@@ -1372,6 +1400,41 @@ describe("exportArchive", () => {
 			binary_included: false,
 			attachments: [...manifestOf(before), ...manifestOf(after)],
 		});
+	});
+
+	it("gives an attachment saved before checksums existed the checksum of the same bytes uploaded now", async () => {
+		await ownDatabase();
+		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
+		const transaction = await postOwn(checking.id, {
+			date: "2026-09-10",
+			label: "Garage",
+			amount: "-300,00",
+		});
+		// The row a release before Story 30.7 wrote: the same columns, nothing else.
+		const bytes = Buffer.from("%PDF-1.7 SECRET-CONTENT");
+		await database().run(
+			sql`insert into transaction_attachments (id, transaction_id, filename, content_type, byte_size, created_at, content) values ('attachment-0', ${transaction}, 'avoir.pdf', 'application/pdf', ${bytes.byteLength}, 0, ${bytes})`,
+		);
+		// The same bytes uploaded now.
+		const form = new FormData();
+		form.append("file", new File([bytes], "facture.pdf"));
+		const response = await buildApp(database()).request(
+			`/api/transactions/${transaction}/attachments`,
+			{ method: "POST", body: form },
+		);
+
+		expect(response.status).toBe(201);
+
+		const manifest = z
+			.object({
+				attachments: z.array(z.object({ filename: z.string(), checksum: z.string() })),
+			})
+			.parse(JSON.parse((await exported()).text["attachments.json"] ?? ""));
+
+		expect(manifest.attachments).toEqual([
+			{ filename: "avoir.pdf", checksum: "0baBgm6/mF8zDAFCXCV4sw==" },
+			{ filename: "facture.pdf", checksum: "0baBgm6/mF8zDAFCXCV4sw==" },
+		]);
 	});
 
 	it("writes Sure's `one_time` kind on the split lines of a one-time parent", async () => {
