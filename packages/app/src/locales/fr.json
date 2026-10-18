@@ -3055,6 +3055,14 @@
 		"disable": "Désactiver la double authentification",
 		"disabled": "Double authentification désactivée."
 	},
+	"dangerZone": {
+		"title": "Zone dangereuse",
+		"reset": "Réinitialiser le compte",
+		"resetWarning": "La réinitialisation de votre compte supprimera tous vos comptes, catégories, marchands, étiquettes et autres données, mais gardera votre compte utilisateur intact.",
+		"confirmTitle": "Réinitialiser le compte ?",
+		"confirmBody": "Êtes-vous sûr(e) de vouloir réinitialiser votre compte ? Cela supprimera tous vos comptes, catégories, marchands, étiquettes et autres données. Cette action ne peut pas être annulée.",
+		"resetDone": "Votre compte a été réinitialisé."
+	},
 	"setup": {
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte administre Archant. Il n'existe pas d'inscription publique, vous inviterez ensuite les membres du foyer depuis les réglages.",

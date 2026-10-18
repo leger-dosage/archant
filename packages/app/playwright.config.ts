@@ -31,10 +31,11 @@ export default defineConfig({
 		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: DESKTOP },
 		{
 			name: "chromium",
-			// Everything but the password change, two-factor and the sign-in
-			// ceiling, which the projects below run once nothing needs a session
-			// any more.
+			// Everything but the reset, the password change, two-factor and the
+			// sign-in ceiling, which the projects below run once nothing needs
+			// a session or the shared data any more.
 			testIgnore: [
+				/reset\.spec\.ts$/u,
 				/password\.spec\.ts$/u,
 				/two-factor\.spec\.ts$/u,
 				/assistants\.spec\.ts$/u,
@@ -43,16 +44,27 @@ export default defineConfig({
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
-		// Last, because changing the password revokes every session of the single
+		// After every test that reads the shared data: a reset deletes every
+		// account and what goes with them, other tests' rows included. Before
+		// the password change, since it needs the saved session.
+		{
+			name: "reset",
+			testMatch: /reset\.spec\.ts$/u,
+			use: { ...DESKTOP, storageState: ADMIN_STATE },
+			dependencies: ["chromium"],
+		},
+		// After `reset`, because changing the password revokes every session of the single
 		// user, the saved administrator session included: run in the middle, it
 		// would sign every later test out. It is also the one project a retry
 		// cannot repeat: a second attempt would sign in with a password the
 		// first attempt has already replaced. Never give this suite `retries`.
+		// A failed `reset` test skips it and the projects after, as any
+		// dependency does.
 		{
 			name: "password",
 			testMatch: /password\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
-			dependencies: ["chromium"],
+			dependencies: ["reset"],
 		},
 		// After the password change, signed in with the password it sets: the
 		// saved session died with that change, and turning two-factor on

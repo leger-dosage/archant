@@ -191,6 +191,7 @@ describe("a viewer's writes", () => {
 				"PATCH /api/recurring/occurrences/x",
 				"DELETE /api/recurring/payments/x",
 				"POST /api/transfers/x/confirm",
+				"DELETE /api/financial-data",
 			]),
 		);
 

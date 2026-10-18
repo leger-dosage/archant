@@ -662,6 +662,9 @@ reader.describe("a viewer", () => {
 		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 		// Their own password, not an administrator's.
 		await expect(page.getByText("Le mot de passe de votre compte.")).toBeVisible();
+		// Story 30.8: no « Réinitialiser le compte », the server's 403 aside.
+		await expect(page.getByRole("region", { name: "Zone dangereuse" })).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Réinitialiser le compte" })).toHaveCount(0);
 		const sections = page.getByRole("navigation", { name: "Réglages" });
 		await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
 		await expectNone(
