@@ -290,10 +290,11 @@ export const updateTransactionInput = z
 const bulkPatch = bulkPatchSchema.shape;
 
 /**
- * `bulk_update_transactions`: the bulk bar's patch on up to 200 ids, or on
- * every transaction a filter matches. With a filter, the count the assistant
- * read and showed the owner is required: the ledger writes nothing if the
- * filter now selects another count.
+ * `bulk_update_transactions`: the bulk drawer's patch, without its date, on
+ * up to 200 ids, or on every transaction a filter matches: as with
+ * `update_transaction`, a label an assistant read never moves money. With a
+ * filter, the count the assistant read and showed the owner is required: the
+ * ledger writes nothing if the filter now selects another count.
  */
 export const bulkUpdateTransactionsInput = z
 	.strictObject({
@@ -320,21 +321,23 @@ export const bulkUpdateTransactionsInput = z
 			.strictObject({
 				category_id: bulkPatch.categoryId,
 				merchant_id: bulkPatch.merchantId,
-				add_tag_ids: bulkPatch.addTagIds,
-				excluded: bulkPatch.excluded,
+				tag_ids: bulkPatch.tagIds,
+				name: bulkPatch.name,
+				notes: bulkPatch.notes,
 			})
-			// The bulk bar's checks, under the same codes.
+			// The bulk drawer's checks, under the same codes.
 			.refine((patch) => Object.values(patch).some((value) => value !== undefined), {
 				message: "empty_patch",
 			})
 			.describe(
-				"At least one of: category_id (null leaves them uncategorised), merchant_id (null removes it), add_tag_ids (tag ids added beside those each carries, never removing one), excluded.",
+				"At least one of: category_id, merchant_id, tag_ids (the whole set of tag ids, replacing the tags each carries; [] removes them all), name (the new label, replacing the whole label), notes (replacing them). A blank text changes nothing; nothing clears a category or a merchant.",
 			)
-			.transform(({ category_id, merchant_id, add_tag_ids, excluded }) => ({
+			.transform(({ category_id, merchant_id, tag_ids, name, notes }) => ({
 				...(category_id === undefined ? {} : { categoryId: category_id }),
 				...(merchant_id === undefined ? {} : { merchantId: merchant_id }),
-				...(add_tag_ids === undefined ? {} : { addTagIds: add_tag_ids }),
-				...(excluded === undefined ? {} : { excluded }),
+				...(tag_ids === undefined ? {} : { tagIds: tag_ids }),
+				...(name === undefined ? {} : { name }),
+				...(notes === undefined ? {} : { notes }),
 			})),
 	})
 	.superRefine((value, context) => {

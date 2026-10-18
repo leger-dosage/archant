@@ -150,7 +150,7 @@ describe("transfer sides and categories", () => {
 			bulkUpdateTransactions(
 				deps(),
 				{ filter: { accountIds: [joint.id, livret.id] } },
-				{ categoryId: groceries, excluded: true },
+				{ categoryId: groceries, notes: "Revue" },
 				{ origin: "user" },
 			),
 		).resolves.toEqual({ matched: 3, changed: 3 });
@@ -159,8 +159,8 @@ describe("transfer sides and categories", () => {
 		await expect(categoryOf(outflow)).resolves.toBeNull();
 		await expect(categoryOf(inflow)).resolves.toBeNull();
 		await expect(categoryOriginOf(outflow)).resolves.toBeNull();
-		await expect(lockedFields(outflow)).resolves.toEqual([...(outflowLocks ?? []), "excluded"]);
-		await expect(findTransaction(deps(), outflow)).resolves.toMatchObject({ excluded: true });
+		await expect(lockedFields(outflow)).resolves.toEqual([...(outflowLocks ?? []), "notes"]);
+		await expect(findTransaction(deps(), outflow)).resolves.toMatchObject({ notes: "Revue" });
 	});
 
 	it("selects for a bulk edit as many rows as the totals count, transfer sides included", async () => {
@@ -184,7 +184,7 @@ describe("transfer sides and categories", () => {
 				const { matched } = await bulkUpdateTransactions(
 					deps(),
 					{ filter },
-					{ excluded: true },
+					{ notes: "Revue" },
 					{ origin: "user", expectedCount: counted },
 				);
 

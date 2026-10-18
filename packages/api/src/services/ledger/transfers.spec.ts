@@ -666,13 +666,25 @@ describe("automatic transfer matching", () => {
 		await bulkUpdateTransactions(
 			deps(),
 			{ ids: [outflow, inflow] },
-			{ excluded: true },
-			{
-				origin: "user",
-			},
+			{ notes: "Revue" },
+			{ origin: "user" },
 		);
 
 		await expect(transferRows(outflow)).resolves.toEqual([]);
+	});
+
+	it("keeps a pair whose sides a bulk edit moves to another date, as Sure", async () => {
+		const { outflow, inflow, transfer } = await matchedPair();
+
+		await bulkUpdateTransactions(
+			deps(),
+			{ ids: [outflow, inflow] },
+			{ date: "2026-09-12" },
+			{ origin: "user" },
+		);
+
+		await expect(transferRows(outflow)).resolves.toEqual([transfer]);
+		await expect(findTransaction(deps(), inflow)).resolves.toMatchObject({ date: "2026-09-12" });
 	});
 });
 

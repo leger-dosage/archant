@@ -38,6 +38,8 @@ type MerchantComboboxProps = {
 	onSelect: (merchantId: string | null) => void;
 	/** Offers « Sans marchand » first; a merge target or a rule's value has no such choice. */
 	allowNone?: boolean;
+	/** Names the first choice, which still picks `null`, as `CategoryCombobox`'s. */
+	noneLabel?: string;
 	/** Offers « Créer "…" » last; a merge target must already exist. */
 	allowCreate?: boolean;
 	/** Left out of the list: the merged merchant itself. */
@@ -55,13 +57,14 @@ export function MerchantCombobox({
 	value,
 	onSelect,
 	allowNone = true,
+	noneLabel,
 	allowCreate = true,
 	exclude,
 }: MerchantComboboxProps) {
 	const { t } = useTranslation();
 	const createMerchant = useCreateMerchant();
 	const [search, setSearch] = useState("");
-	const none = t("transactions.merchant.none");
+	const none = noneLabel ?? t("transactions.merchant.none");
 	const offered = merchants.filter((merchant) => merchant.id !== exclude);
 	const typed = search.trim();
 	const canCreate =

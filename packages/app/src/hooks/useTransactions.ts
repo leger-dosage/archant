@@ -266,9 +266,10 @@ export function useInvalidateBulk() {
 		]);
 }
 
-export type BulkPatch = BulkUpdateInput["patch"];
+/** The rows a bulk action targets: the ticked ids, or the filters for « every result ». */
+export type BulkSelectionInput = Omit<BulkUpdateInput, "patch">;
 
-/** Sets a category or a merchant, adds tags or changes the exclusion on a selection. */
+/** Sets the date, the label, the notes, the category, the merchant or the tags of a selection. */
 export function useBulkUpdateTransactions() {
 	const invalidate = useInvalidateBulk();
 	const queryClient = useQueryClient();
@@ -276,10 +277,10 @@ export function useBulkUpdateTransactions() {
 	return useMutation({
 		mutationFn: async (input: BulkUpdateInput) =>
 			(await unwrap(api.transactions["bulk-update"].$post({ json: input }))).data,
-		// A new merchant changes the series the sheet names.
-		onSuccess: () =>
+		// Only a new date moves the balances; a new merchant changes the series the sheet names.
+		onSuccess: (_data, input) =>
 			Promise.all([
-				invalidate({ balances: false }),
+				invalidate({ balances: input.patch.date !== undefined }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
 			]),
 		onError: (error) => showErrorToast(errorCodeOf(error)),

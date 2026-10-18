@@ -1180,7 +1180,7 @@ describe("get_transactions by Sure's names", () => {
 		const bulk = await tools.write("bulk_update_transactions", {
 			filter: { accounts: ["Compte courant"] },
 			expected_count: 2,
-			patch: { excluded: true },
+			patch: { notes: "Note" },
 		});
 
 		expect(grouped.structuredContent).toMatchObject({
