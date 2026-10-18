@@ -40,7 +40,10 @@ const chip = (page: Page, label: string) =>
 	page.getByRole("button", { name: `Retirer le filtre ${label}` });
 
 /** Opens the « Filtrer » menu on one filter's editor. */
-async function openFilter(page: Page, kind: "Compte" | "Catégorie" | "Période" | "Montant") {
+async function openFilter(
+	page: Page,
+	kind: "Compte" | "Catégorie" | "Période" | "Statut" | "Montant",
+) {
 	await page.getByRole("button", { name: "Filtrer" }).click();
 	const menu = page.getByRole("dialog");
 	await menu.getByRole("button", { name: kind, exact: true }).click();
@@ -167,27 +170,22 @@ test("a period ending before it starts is refused in the menu", async ({ page })
 	await expect(page).not.toHaveURL(/[?&]to=/u);
 });
 
-test("an amount range the API would refuse is refused in the menu", async ({ page }) => {
-	await page.goto("/transactions");
-	let menu = await openFilter(page, "Montant");
-	await menu.getByLabel("Minimum").fill("60");
-	await menu.getByLabel("Maximum").fill("50");
+test("a malformed amount is refused in the menu, and an old range link loads without it", async ({
+	page,
+}) => {
+	await page.goto("/transactions?amountMin=40&amountMax=50");
+	await expect(page.getByRole("button", { name: /^Retirer le filtre/u })).toHaveCount(0);
+
+	const menu = await openFilter(page, "Montant");
+	await expect(menu.getByRole("combobox", { name: "Comparaison" })).toHaveText("Égal à");
+	await expect(menu.getByLabel("Montant", { exact: true })).toHaveAttribute("placeholder", "0");
+	await menu.getByLabel("Montant", { exact: true }).fill("abc");
 	await menu.getByRole("button", { name: "Appliquer" }).click();
 
-	await expect(menu.getByLabel("Maximum")).toHaveAccessibleDescription(
-		"Le maximum doit être supérieur ou égal au minimum.",
-	);
-	await expect(page).not.toHaveURL(/[?&]amountMin=/u);
-
-	await page.keyboard.press("Escape");
-	menu = await openFilter(page, "Montant");
-	await menu.getByLabel("Minimum").fill("abc");
-	await menu.getByRole("button", { name: "Appliquer" }).click();
-
-	await expect(menu.getByLabel("Minimum")).toHaveAccessibleDescription(
+	await expect(menu.getByLabel("Montant", { exact: true })).toHaveAccessibleDescription(
 		"Montant invalide. Exemple : 1 234,56.",
 	);
-	await expect(page).not.toHaveURL(/[?&]amountMin=/u);
+	await expect(page).not.toHaveURL(/[?&]amount=/u);
 });
 
 test("the amount filter compares absolute values, expenses and income alike", async ({
@@ -196,7 +194,7 @@ test("the amount filter compares absolute values, expenses and income alike", as
 }) => {
 	const account = await api.openAccount();
 	const prefix = uniqueName("Montant");
-	// Inside the 40 to 50 bounds, in cents no other test uses: a row of the
+	// Above 40, in cents no other test uses: a row of the
 	// opposite amount on another account would link this income to it as a
 	// transfer, which counts as neither income nor expense.
 	const earned = randomInt(4300, 5000);
@@ -220,11 +218,13 @@ test("the amount filter compares absolute values, expenses and income alike", as
 	await expect(rows(page)).toHaveCount(3);
 
 	const menu = await openFilter(page, "Montant");
-	await menu.getByLabel("Minimum").fill("40");
-	await menu.getByLabel("Maximum").fill("50");
+	await menu.getByRole("combobox", { name: "Comparaison" }).click();
+	await page.getByRole("option", { name: "Supérieur à" }).click();
+	await menu.getByLabel("Montant", { exact: true }).fill("40");
 	await menu.getByRole("button", { name: "Appliquer" }).click();
 
-	await expect(chip(page, "Montant de 40 à 50")).toBeVisible();
+	await expect(chip(page, "Montant supérieur à 40")).toBeVisible();
+	await expect(page).toHaveURL(/[?&]amountOperator=greater/u);
 	await expect(rows(page)).toHaveText([
 		new RegExp(`${prefix} B`, "u"),
 		new RegExp(`${prefix} A`, "u"),
@@ -278,7 +278,7 @@ test("filters matching nothing say so, and « Effacer les filtres » clears ever
 	});
 
 	await page.goto(
-		`/transactions?q=${encodeURIComponent(uniqueName("Introuvable"))}&amountMin=%221%22&from=${daysAgo(5)}`,
+		`/transactions?q=${encodeURIComponent(uniqueName("Introuvable"))}&amount=%221%22&from=${daysAgo(5)}`,
 	);
 
 	await expect(page.getByText("Aucune opération ne correspond à ces filtres.")).toBeVisible();

@@ -2,9 +2,10 @@ import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { MAX_MINOR_UNITS, minorUnitsOf, toMinorUnits } from "@archant/data/money";
 
 /**
- * A non-negative decimal read exactly from the query, `units / 10^scale`:
- * `42,9` is `{ units: 429n, scale: 1 }`. Parsed once, before any currency is
- * known, then scaled per currency by `amountBoundsFor`.
+ * A decimal read exactly from the query, `units / 10^scale`: `42,9` is
+ * `{ units: 429n, scale: 1 }`. Parsed once, before any currency is known,
+ * then scaled per currency by `amountBoundsFor`. Only `less 0`'s upper bound
+ * is below zero.
  */
 export type DecimalAmount = { units: bigint; scale: number };
 
@@ -30,16 +31,21 @@ function toMinor(value: DecimalAmount, decimals: number, up: boolean): bigint {
 
 /**
  * The absolute-value bounds `min` and `max` in minor units of `currency`, as
- * Sure's `EntrySearch` compares them: `20` to `50` finds `-42,90` and
- * `+42,90`. A bound finer than the currency's minor unit rounds inward, so
+ * Sure's `EntrySearch` compares them: `equal 42,90`, 42,89 to 42,91, finds
+ * `-42,90` and `+42,91`. A bound finer than the currency's minor unit rounds inward, so
  * `0,005` to `0,009` in euros holds no cent at all and gives `null`: nothing in
- * that currency can match.
+ * that currency can match. So does an upper bound below zero, Sure's `less 0`:
+ * no absolute value is below it.
  */
 export function amountBoundsFor(
 	min: DecimalAmount | undefined,
 	max: DecimalAmount | undefined,
 	currency: CurrencyCode,
 ): AmountRange | null {
+	if (max !== undefined && max.units < 0n) {
+		return null;
+	}
+
 	const decimals = minorUnitsOf(currency);
 	const low = min === undefined ? null : toMinor(min, decimals, true);
 	const high = max === undefined ? null : toMinor(max, decimals, false);

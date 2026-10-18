@@ -1,15 +1,17 @@
 import { z } from "zod";
 
+import type { AmountOperator, TransactionStatus } from "@archant/api/schemas/transactions";
 import {
+	AMOUNT_OPERATORS,
+	STATUSES,
 	UNCATEGORISED,
-	compareAmountBounds,
 	directionSchema,
 	parseAmountBound,
 } from "@archant/api/schemas/transactions";
 
 import { isoToFrench } from "@/lib/dates";
 
-// The router reads `?amountMin=40` or `?q=2024` as JSON, so a number, while a
+// The router reads `?amount=40` or `?q=2024` as JSON, so a number, while a
 // value set by the page is a string: both mean the same text.
 const text = z.union([z.string(), z.number()]).transform(String);
 
@@ -56,33 +58,39 @@ export const operationsSearchSchema = z
 			.transform((values) => [...new Set(values)])
 			.optional()
 			.catch(undefined),
+		// Sure's « Statut »; both, as none, is no filter, so the URL drops them.
+		status: z
+			.union([z.string().transform((value) => [value]), z.array(z.string())])
+			.pipe(z.array(z.enum(STATUSES)).min(1))
+			.transform((values) => [...new Set(values)])
+			.transform((values) => (values.length === STATUSES.length ? undefined : values))
+			.optional()
+			.catch(undefined),
 		from: isoDate.optional().catch(undefined),
 		to: isoDate.optional().catch(undefined),
-		amountMin: text
+		amount: text
 			.refine((value) => parseAmountBound(value) !== null)
 			.optional()
 			.catch(undefined),
-		amountMax: text
-			.refine((value) => parseAmountBound(value) !== null)
-			.optional()
-			.catch(undefined),
+		amountOperator: z.enum(AMOUNT_OPERATORS).optional().catch(undefined),
 		q: text
 			.transform((value) => value.trim())
 			.pipe(z.string().min(1))
 			.optional()
 			.catch(undefined),
 	})
-	.transform((search) => {
-		const min = search.amountMin === undefined ? null : parseAmountBound(search.amountMin);
-		const max = search.amountMax === undefined ? null : parseAmountBound(search.amountMax);
+	.transform((search): typeof search => {
 		const toBeforeFrom =
 			search.from !== undefined && search.to !== undefined && search.to < search.from;
-		const maxBelowMin = min !== null && max !== null && compareAmountBounds(min, max) > 0;
 
 		return {
 			...search,
 			...(toBeforeFrom ? { to: undefined } : {}),
-			...(maxBelowMin ? { amountMax: undefined } : {}),
+			// An operator alone filters nothing, so it leaves the URL; an amount
+			// alone from a hand-written link takes Sure's first option, as its select.
+			...(search.amount === undefined
+				? { amountOperator: undefined }
+				: { amountOperator: search.amountOperator ?? "equal" }),
 		};
 	});
 
@@ -97,6 +105,7 @@ export const FILTER_KINDS = [
 	"tag",
 	"merchant",
 	"period",
+	"status",
 	"amount",
 	"direction",
 ] as const;
@@ -106,6 +115,19 @@ export const DIRECTIONS = directionSchema.options;
 
 export type Direction = (typeof DIRECTIONS)[number];
 
+/** The « Statut » values, in the order Sure's editor lists them. */
+export const STATUS_OPTIONS = [
+	"confirmed",
+	"pending",
+] as const satisfies readonly TransactionStatus[];
+
+/** The « Montant » operators, in the order Sure's select lists them. */
+export const OPERATOR_OPTIONS = [
+	"equal",
+	"greater",
+	"less",
+] as const satisfies readonly AmountOperator[];
+
 export type FilterKind = (typeof FILTER_KINDS)[number];
 
 const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]> = {
@@ -114,7 +136,8 @@ const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]>
 	tag: ["tag"],
 	merchant: ["merchant"],
 	period: ["from", "to"],
-	amount: ["amountMin", "amountMax"],
+	status: ["status"],
+	amount: ["amount", "amountOperator"],
 	direction: ["direction"],
 	q: ["q"],
 };
@@ -152,8 +175,9 @@ export function toTotalsQuery(filters: TransactionFilters) {
 		...(filters.tag === undefined ? {} : { tag: filters.tag }),
 		...(filters.from === undefined ? {} : { from: filters.from }),
 		...(filters.to === undefined ? {} : { to: filters.to }),
-		...(filters.amountMin === undefined ? {} : { amountMin: filters.amountMin }),
-		...(filters.amountMax === undefined ? {} : { amountMax: filters.amountMax }),
+		...(filters.status === undefined ? {} : { status: filters.status }),
+		...(filters.amount === undefined ? {} : { amount: filters.amount }),
+		...(filters.amountOperator === undefined ? {} : { amountOperator: filters.amountOperator }),
 		...(filters.q === undefined ? {} : { q: filters.q }),
 		...(filters.direction === undefined ? {} : { direction: filters.direction }),
 	};
@@ -168,9 +192,11 @@ type ChipKey = `operations.chips.${
 	| "periodBetween"
 	| "periodSince"
 	| "periodUntil"
-	| "amountBetween"
-	| "amountAtLeast"
-	| "amountAtMost"
+	| "statuses.confirmed"
+	| "statuses.pending"
+	| "amountEqual"
+	| "amountGreater"
+	| "amountLess"
 	| "directions.income"
 	| "directions.expense"
 	| "directions.transfer"}`;
@@ -224,14 +250,19 @@ function directionLabel(values: readonly Direction[], t: Translate) {
 	return values.map((value) => t(`operations.chips.directions.${value}`)).join(", ");
 }
 
-function amountLabel(min: string | undefined, max: string | undefined, t: Translate) {
-	if (min !== undefined && max !== undefined) {
-		return t("operations.chips.amountBetween", { min, max });
-	}
+function statusLabel(values: readonly TransactionStatus[], t: Translate) {
+	return values.map((value) => t(`operations.chips.statuses.${value}`)).join(", ");
+}
 
-	return min === undefined
-		? t("operations.chips.amountAtMost", { max: max ?? "" })
-		: t("operations.chips.amountAtLeast", { min });
+const AMOUNT_CHIP = {
+	equal: "operations.chips.amountEqual",
+	greater: "operations.chips.amountGreater",
+	less: "operations.chips.amountLess",
+} as const satisfies Record<AmountOperator, ChipKey>;
+
+/** Sure's badge, « égal à 42,90 », prefixed by the filter's name as the other chips are. */
+function amountLabel(amount: string, operator: AmountOperator | undefined, t: Translate) {
+	return t(AMOUNT_CHIP[operator ?? "equal"], { amount });
 }
 
 /**
@@ -265,8 +296,12 @@ export function filterChips(
 		chips.push({ kind: "period", label: periodLabel(filters.from, filters.to, t) });
 	}
 
-	if (filters.amountMin !== undefined || filters.amountMax !== undefined) {
-		chips.push({ kind: "amount", label: amountLabel(filters.amountMin, filters.amountMax, t) });
+	if (filters.status !== undefined) {
+		chips.push({ kind: "status", label: statusLabel(filters.status, t) });
+	}
+
+	if (filters.amount !== undefined) {
+		chips.push({ kind: "amount", label: amountLabel(filters.amount, filters.amountOperator, t) });
 	}
 
 	if (filters.direction !== undefined) {

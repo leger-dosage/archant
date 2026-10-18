@@ -345,20 +345,16 @@ async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<T
  * `accounts` and `account_ids` narrow each other; a name nothing holds
  * matches nothing, as in Sure, rather than leaving the filter open.
  */
-type FilterNames = Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[]>>;
+type FilterNames = Partial<
+	Record<"accounts" | "categories" | "merchants" | "tags", string[] | undefined>
+>;
 
-/**
- * What an assistant's filter adds to the list's: Sure's names, and Sure's
- * `statuses`, pending or booked lines alone, which the list does not offer.
- */
-type NamedFilterRequest = BulkFilterRequest & {
-	names?: FilterNames | undefined;
-	pending?: boolean | undefined;
-};
+/** What an assistant's filter adds to the list's: Sure's names. */
+type NamedFilterRequest = BulkFilterRequest & { names?: FilterNames | undefined };
 
 /** The list's query, with an assistant's additions and Sure's sort, oldest or largest first. */
 type AssistantListRequest = TransactionFilterRequest &
-	Pick<NamedFilterRequest, "names" | "pending"> & { sort?: ListSort | undefined };
+	Pick<NamedFilterRequest, "names"> & { sort?: ListSort | undefined };
 
 /** The ids both narrow to; `undefined` when neither was given. */
 function both(ids: string[] | undefined, named: string[] | undefined): string[] | undefined {
@@ -388,7 +384,7 @@ export async function listAllTransactions(
 /** The count and the signed total of every transaction matching the filter. */
 export async function transactionTotals(
 	deps: ServiceDeps,
-	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names" | "pending">,
+	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<TransactionTotals> {
 	const currency = getReportingCurrency();
 	const sums = await sumTransactions(deps, await filterOf(deps, query));

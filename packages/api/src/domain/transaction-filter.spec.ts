@@ -47,8 +47,23 @@ describe("amountBoundsFor", () => {
 		});
 	});
 
+	it("leaves a yen amount `equal` to itself alone, its one-cent margin finer than a yen", () => {
+		// `operatorBounds("equal", 42)`: 41,99 to 42,01.
+		expect(amountBoundsFor(decimal(4199n, 2), decimal(4201n, 2), "JPY")).toEqual({
+			min: 42,
+			max: 42,
+		});
+	});
+
 	it("is null when no minor unit fits between the bounds", () => {
 		expect(amountBoundsFor(decimal(5n, 3), decimal(9n, 3), "EUR")).toBeNull();
+	});
+
+	it("is null for an upper bound below zero, as `less 0` gives: no absolute amount is below it", () => {
+		expect(amountBoundsFor(undefined, decimal(-1n, 5), "EUR")).toBeNull();
+		expect(amountBoundsFor(undefined, decimal(-1n, 5), "JPY")).toBeNull();
+		// `less 0,001` in euros, 0,00099 once strict: only a zero amount.
+		expect(amountBoundsFor(undefined, decimal(99n, 5), "EUR")).toEqual({ min: null, max: 0 });
 	});
 
 	it("is null when the lower bound is past every storable amount", () => {

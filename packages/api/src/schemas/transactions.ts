@@ -240,21 +240,24 @@ export const pageQuerySchema = z.object({
 });
 
 /**
- * A non-negative decimal read exactly, `units / 10^scale`. Structurally the
- * domain's `DecimalAmount`, which this file may not import.
+ * A decimal read exactly, `units / 10^scale`, negative only as `less 0`'s upper
+ * bound. Structurally the domain's `DecimalAmount`, which this file may not
+ * import.
  */
 export type AmountBound = { units: bigint; scale: number };
 
-// The unsigned shapes `parseAmount` reads: `1 234,56`, `42.90`, `20`. Fifteen
-// integer digits is already past any stored amount; ten decimals, past any
-// currency's minor unit.
-const BOUND_PATTERN = /^(\d{1,3}(?:[ \u00A0\u202F]\d{3})+|\d{1,15})(?:[.,](\d{1,10}))?$/u;
+// The shapes `parseAmount` reads, `1 234,56`, `42.90`, `20`, with an optional
+// sign. Fifteen integer digits is already past any stored amount; ten
+// decimals, past any currency's minor unit.
+const BOUND_PATTERN =
+	/^[+\-\u2212]?\s*(\d{1,3}(?:[ \u00A0\u202F]\d{3})+|\d{1,15})(?:[.,](\d{1,10}))?$/u;
 
 /**
  * Reads an amount filter bound, before any currency is known: the list spans
  * accounts in several currencies, and each scales the bound its own way.
- * `null` for anything else, a sign included: the bound is on the absolute
- * value, and the sign is the direction filter's (Epic 5).
+ * The sign is dropped, as Sure's `amount.to_f.abs`: the amount is compared
+ * with the absolute value, `-42,90` finding an expense and an income alike.
+ * `null` for anything else, letters included, which Sure reads as 0.
  */
 export function parseAmountBound(text: string): AmountBound | null {
 	const match = BOUND_PATTERN.exec(text.trim());
@@ -266,18 +269,6 @@ export function parseAmountBound(text: string): AmountBound | null {
 	const [, integerPart = "", fraction = ""] = match;
 
 	return { units: BigInt(integerPart.replace(/\D/gu, "") + fraction), scale: fraction.length };
-}
-
-const isBound = (value: AmountBound | null | undefined): value is AmountBound =>
-	value !== null && value !== undefined;
-
-/** Negative, zero or positive as `a` is below, equal to or above `b`. */
-export function compareAmountBounds(a: AmountBound, b: AmountBound): number {
-	const scale = Math.max(a.scale, b.scale);
-	const left = a.units * 10n ** BigInt(scale - a.scale);
-	const right = b.units * 10n ** BigInt(scale - b.scale);
-
-	return left === right ? 0 : left < right ? -1 : 1;
 }
 
 const MAX_ACCOUNT_FILTER = 100;
@@ -307,6 +298,67 @@ function repeated(max: number) {
 /** One value of the `direction` filter, as `direction` in `domain/cash-flow.ts` returns it. */
 export const directionSchema = z.enum(DIRECTIONS);
 
+/** Sure's `amount_operator`, on the absolute amount. */
+export const AMOUNT_OPERATORS = ["equal", "less", "greater"] as const;
+
+export type AmountOperator = (typeof AMOUNT_OPERATORS)[number];
+
+/** Sure's statuses: booked lines are `confirmed`. */
+export const STATUSES = ["pending", "confirmed"] as const;
+
+export type TransactionStatus = (typeof STATUSES)[number];
+
+/**
+ * Sure's `apply_status_filter` as the ledger's `pending`: both statuses, or
+ * none, is no filter.
+ */
+export function pendingOf(statuses: readonly TransactionStatus[] | undefined): boolean | undefined {
+	if (statuses === undefined || new Set(statuses).size !== 1) {
+		return undefined;
+	}
+
+	return statuses[0] === "pending";
+}
+
+/** Past any currency's minor unit: `less` and `greater` are strict at every scale. */
+const STRICT_SCALE = 5;
+
+/** `bound` at `scale`, at least its own. */
+function rescaled(bound: AmountBound, scale: number): AmountBound {
+	return { units: bound.units * 10n ** BigInt(scale - bound.scale), scale };
+}
+
+/**
+ * Sure's `amount` and `amount_operator` as the list's inclusive bounds on the
+ * absolute amount: `equal` within 0.01, as Sure's `ABS(ABS(amount) - ?) <=
+ * 0.01`; `less` and `greater` strict, one unit below any currency's minor
+ * unit away from the amount, which each currency then rounds inward. `less 0`
+ * gives an upper bound below zero, which matches nothing.
+ */
+export function operatorBounds(
+	operator: AmountOperator,
+	amount: AmountBound,
+): { min?: AmountBound; max?: AmountBound } {
+	if (operator === "equal") {
+		const exact = rescaled(amount, Math.max(amount.scale, 2));
+		const cent = 10n ** BigInt(exact.scale - 2);
+		const low = exact.units - cent;
+
+		return {
+			min: { units: low < 0n ? 0n : low, scale: exact.scale },
+			max: { units: exact.units + cent, scale: exact.scale },
+		};
+	}
+
+	const fine = rescaled(amount, Math.max(amount.scale, STRICT_SCALE));
+
+	return operator === "less"
+		? { max: { units: fine.units - 1n, scale: fine.scale } }
+		: { min: { units: fine.units + 1n, scale: fine.scale } };
+}
+
+const statusSchema = z.enum(STATUSES);
+
 export const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
 	// Repeats are dropped rather than refused: « Revenus » twice is still « Revenus ».
@@ -314,25 +366,34 @@ export const filterFields = {
 		.union([directionSchema, z.array(directionSchema)])
 		.transform((value) => (typeof value === "string" ? [value] : [...new Set(value)]))
 		.optional(),
+	// Sure's « Statut »: `confirmed`, `pending`, or both, which is no filter.
+	status: z
+		.union([statusSchema, z.array(statusSchema)])
+		.transform((value) => (typeof value === "string" ? [value] : [...new Set(value)]))
+		.optional(),
 	category: repeated(MAX_CATEGORY_FILTER),
 	merchant: repeated(MAX_MERCHANT_FILTER),
 	tag: repeated(MAX_TAG_FILTER),
 	from: z.iso.date().optional(),
 	to: z.iso.date().optional(),
-	amountMin: optionalText,
-	amountMax: optionalText,
+	// Sure's one amount and its operator; either alone filters nothing, as
+	// Sure's `apply_amount_filter`, whose form always sends both.
+	amount: optionalText,
+	amountOperator: z.enum(AMOUNT_OPERATORS).optional(),
 	q: optionalText.pipe(z.string().max(SEARCH_MAX_LENGTH).optional()),
 };
 
 type FilterFields = {
 	from?: string | undefined;
 	to?: string | undefined;
-	amountMin?: string | undefined;
-	amountMax?: string | undefined;
+	amount?: string | undefined;
 };
 
-/** Where a refused bound is reported: the query's key, or an assistant tool's. */
-export type FilterPaths = Record<"to" | "amountMin" | "amountMax", string>;
+/**
+ * Where a refused field is reported: the query's key, or an assistant tool's.
+ * A tool reads its amount as Sure's `to_f` does and checks none.
+ */
+export type FilterPaths = { to: string; amount?: string };
 
 /** The filter's checks, each refusal under `paths`' name for its field. */
 export function filterCheck(paths: FilterPaths) {
@@ -341,46 +402,58 @@ export function filterCheck(paths: FilterPaths) {
 			context.addIssue({ code: "custom", path: [paths.to], message: "before_from" });
 		}
 
-		const min = value.amountMin === undefined ? undefined : parseAmountBound(value.amountMin);
-		const max = value.amountMax === undefined ? undefined : parseAmountBound(value.amountMax);
-
-		if (min === null) {
-			context.addIssue({ code: "custom", path: [paths.amountMin], message: "invalid_amount" });
-		}
-
-		if (max === null) {
-			context.addIssue({ code: "custom", path: [paths.amountMax], message: "invalid_amount" });
-		}
-
-		if (isBound(min) && isBound(max) && compareAmountBounds(min, max) > 0) {
-			context.addIssue({ code: "custom", path: [paths.amountMax], message: "below_min" });
+		if (
+			paths.amount !== undefined &&
+			value.amount !== undefined &&
+			parseAmountBound(value.amount) === null
+		) {
+			context.addIssue({ code: "custom", path: [paths.amount], message: "invalid_amount" });
 		}
 	};
 }
 
-const checkFilter = filterCheck({ to: "to", amountMin: "amountMin", amountMax: "amountMax" });
+const checkFilter = filterCheck({ to: "to", amount: "amount" });
 
-export function parseBounds<Value extends FilterFields>({ amountMin, amountMax, ...rest }: Value) {
-	const min = amountMin === undefined ? null : parseAmountBound(amountMin);
-	const max = amountMax === undefined ? null : parseAmountBound(amountMax);
+type FilterParams = {
+	status?: TransactionStatus[] | undefined;
+	amount?: string | undefined;
+	amountOperator?: AmountOperator | undefined;
+};
+
+/**
+ * The status and the amount as the services read them: `pending`, and the
+ * inclusive `amountMin` and `amountMax` bounds the operator gives.
+ */
+export function toLedgerFilter<Value extends FilterParams>({
+	status,
+	amount,
+	amountOperator,
+	...rest
+}: Value) {
+	const parsed = amount === undefined ? null : parseAmountBound(amount);
+	const { min, max } =
+		parsed === null || amountOperator === undefined ? {} : operatorBounds(amountOperator, parsed);
+	const pending = pendingOf(status);
 
 	return {
 		...rest,
-		...(min === null ? {} : { amountMin: min }),
-		...(max === null ? {} : { amountMax: max }),
+		...(min === undefined ? {} : { amountMin: min }),
+		...(max === undefined ? {} : { amountMax: max }),
+		...(pending === undefined ? {} : { pending }),
 	};
 }
 
 /**
  * The query of the cross-account list. `account`, `category`, `merchant` and
  * `tag` repeat, one id each, `none` standing for « Sans catégorie »; `direction`
- * repeats `income`, `expense` or `transfer`. Dates are inclusive,
- * amounts bound the absolute value, `q` searches the label and the notes.
+ * repeats `income`, `expense` or `transfer`, `status` `confirmed` or
+ * `pending`. Dates are inclusive, `amount` is compared with the absolute value
+ * by `amountOperator`, `q` searches the label and the notes.
  */
 export const transactionFilterSchema = pageQuerySchema
 	.extend(filterFields)
 	.superRefine(checkFilter)
-	.transform(parseBounds);
+	.transform(toLedgerFilter);
 
 /**
  * The query of `GET /api/transactions/totals`: the list's, without its page,
@@ -389,7 +462,7 @@ export const transactionFilterSchema = pageQuerySchema
 export const transactionTotalsSchema = z
 	.object(filterFields)
 	.superRefine(checkFilter)
-	.transform(parseBounds);
+	.transform(toLedgerFilter);
 
 /**
  * The list's filter without its page, as a bulk action sends it for « Tout
@@ -400,7 +473,7 @@ export const transactionTotalsSchema = z
 export const bulkFilterSchema = z
 	.strictObject(filterFields)
 	.superRefine(checkFilter)
-	.transform(parseBounds);
+	.transform(toLedgerFilter);
 
 export type TransactionFilterQuery = z.input<typeof transactionFilterSchema>;
 export type TransactionFilterRequest = z.output<typeof transactionFilterSchema>;
