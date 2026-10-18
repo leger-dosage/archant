@@ -169,7 +169,8 @@ describe("DELETE /api/financial-data", () => {
 	});
 });
 
-describe("DELETE /api/financial-data?sampleData=true", () => {
+// A load writes about 8,100 entries: past Vitest's 5 s on CI under coverage.
+describe("DELETE /api/financial-data?sampleData=true", { timeout: 30_000 }, () => {
 	it("replaces the household with Sure's sample for an administrator", async () => {
 		const { db } = await ownDatabase();
 		const account = await openOwn({ name: "Compte à effacer" });

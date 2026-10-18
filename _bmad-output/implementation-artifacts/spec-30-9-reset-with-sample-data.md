@@ -91,6 +91,7 @@ Decisions taken alone, the owner unavailable:
 - Route: `requireRole("admin")` before the query's Zod check, so a viewer is refused `FORBIDDEN` whatever the query; `sampleData=false` is the plain reset. The log line adds `sampleData`, a boolean.
 - Interface: `DangerZoneSection` renders both rows from one table, `DANGER_ACTIONS`, with one `ConfirmDialog` each; the toast reads « Votre compte a été réinitialisé et les données d'exemple sont chargées. », Sure's `users.reset_with_sample_data.success` for a load already finished.
 - A load writes about 8 100 entries and runs in about half a second in the tests; Marcus savings ends negative, as in Sure, whose transfers out of it exceed what it receives.
+- CI follow-up: the load tests run under a 30 s timeout per `describe`; two loads took 8 s on CI under coverage, past Vitest's 5 s default.
 
 ## Spec Change Log
 

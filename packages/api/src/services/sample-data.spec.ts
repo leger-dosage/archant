@@ -179,7 +179,9 @@ describe("samplePlan", () => {
 	});
 });
 
-describe("resetWithSampleData", () => {
+// A load writes about 8,100 entries and recomputes every balance: about a
+// second here, eight for two loads on CI under coverage, past Vitest's 5 s.
+describe("resetWithSampleData", { timeout: 30_000 }, () => {
 	it("replaces the household with the sample, then loads the same rows again", async () => {
 		const { db } = await ownDatabase();
 		const own = await openOwn({ name: "Compte à effacer" });
