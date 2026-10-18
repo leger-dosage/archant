@@ -23,16 +23,21 @@ import {
 	newMerchant,
 	newTag,
 	openChecking,
+	openHousehold,
+	rejectedRows,
 	splitInTwo,
 	tagsOf,
 	temp,
 	transactionCount,
 	transferAmount,
+	transferRows,
+	unpair,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
-import { updateTransaction } from "./edits.ts";
+import { deleteTransaction, updateTransaction } from "./edits.ts";
 import { cashFlowByCategory, listTransactions, sumTransactions } from "./queries.ts";
 import { editSplit, splitOf, splitTransaction, unsplitTransaction } from "./splits.ts";
+import { matchTransfer, rejectTransfer } from "./transfers.ts";
 
 useLedgerDatabase();
 
@@ -155,10 +160,18 @@ describe("splitTransaction", () => {
 
 	it("counts the children and never the parent in the list, its totals and the cash flow", async () => {
 		const account = await openChecking({ name: "Lecteurs" });
-		const { parent, food, home, amount } = await splitInTwo(account.id);
+		const { id: parent, amount } = await expense(account.id);
 		const [groceries, household] = [await newCategory("Épicerie"), await newCategory("Foyer")];
-		await updateTransaction(deps(), food, { categoryId: groceries }, asUser);
-		await updateTransaction(deps(), home, { categoryId: household }, asUser);
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: groceries },
+				{ label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: household },
+			],
+			asUser,
+		);
+		const [food] = split.childIds;
 
 		const { items, total } = await listTransactions(
 			deps(),
@@ -172,7 +185,7 @@ describe("splitTransaction", () => {
 			accountIds: [account.id],
 		});
 
-		expect(items.map((item) => item.id).toSorted()).toEqual([food, home].toSorted());
+		expect(items.map((item) => item.id).toSorted()).toEqual(split.childIds.toSorted());
 		expect(items.find((item) => item.id === food)?.parentEntryId).toBe(parent);
 		expect(total).toBe(2);
 		expect(sums).toMatchObject({ amount, expense: amount, count: 2 });
@@ -575,5 +588,174 @@ describe("unsplitTransaction", () => {
 		await expect(unsplitTransaction(deps(), id, asUser)).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
+	});
+});
+
+/**
+ * A split whose line `food` the matcher paired with `inflow` on another
+ * account; with `rejected`, the owner rejected that proposal then paired
+ * it by hand, so the line holds a transfer and a rejected pair.
+ */
+async function lineInTransfer(options: { rejected?: boolean } = {}) {
+	const { checking, livret } = await openHousehold();
+	const amount = transferAmount();
+	const split = await splitInTwo(checking.id, { date: "2026-09-10" }, -amount);
+	const inflow = await add(livret.id, { date: "2026-09-12", amount: toMinorUnits(amount) });
+	const [proposed] = await transferRows(split.food);
+
+	expect(proposed).toMatchObject({ inflowTransactionId: inflow, status: "pending" });
+
+	if (options.rejected === true && proposed !== undefined) {
+		await rejectTransfer(deps(), proposed.id, asUser);
+		await matchTransfer(deps(), inflow, split.food, asUser);
+	}
+
+	return { ...split, checking, livret, inflow, lineAmount: -amount };
+}
+
+async function oneTimeOf(id: string) {
+	const row = await temp.db
+		.select({ oneTime: transactions.oneTime })
+		.from(transactions)
+		.where(eq(transactions.entryId, id))
+		.get();
+
+	return row?.oneTime;
+}
+
+describe("a split line in a transfer", () => {
+	it("unsplit deletes the line's transfer and rejected pairs, the other side standard again", async () => {
+		const { food, inflow } = await lineInTransfer({ rejected: true });
+		await expect(rejectedRows(inflow)).resolves.toHaveLength(1);
+
+		await unsplitTransaction(deps(), food, asUser);
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(rejectedRows(inflow)).resolves.toEqual([]);
+	});
+
+	it("an edit that leaves the line out deletes its transfer", async () => {
+		const { home, inflow, amount } = await lineInTransfer();
+
+		await editSplit(
+			deps(),
+			home,
+			[{ id: home, label: "Tout", amount: toMinorUnits(amount), categoryId: null }],
+			asUser,
+		);
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+	});
+
+	it("an edit that changes the line's amount deletes its transfer; one that keeps it keeps the transfer", async () => {
+		const kept = await lineInTransfer();
+		const changed = await lineInTransfer();
+		const linesOf = (split: typeof kept, foodAmount: number) => [
+			{ id: split.food, label: "Virement", amount: toMinorUnits(foodAmount), categoryId: null },
+			{
+				id: split.home,
+				label: "Maison",
+				amount: toMinorUnits(split.amount - foodAmount),
+				categoryId: null,
+			},
+		];
+
+		await editSplit(deps(), kept.parent, linesOf(kept, kept.lineAmount), asUser);
+		await editSplit(deps(), changed.parent, linesOf(changed, changed.lineAmount + 100), asUser);
+
+		await expect(transferRows(kept.inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: kept.food },
+		]);
+		await expect(transferRows(changed.inflow)).resolves.toEqual([]);
+		await expect(transferRows(changed.food)).resolves.toEqual([]);
+	});
+
+	it("an edit that changes the line's amount clears the one-time flag of both former sides", async () => {
+		const split = await lineInTransfer();
+		await temp.db
+			.update(transactions)
+			.set({ oneTime: true })
+			.where(eq(transactions.entryId, split.inflow));
+		await temp.db
+			.update(transactions)
+			.set({ oneTime: true })
+			.where(eq(transactions.entryId, split.food));
+
+		await editSplit(
+			deps(),
+			split.parent,
+			[
+				{
+					id: split.food,
+					label: "Virement",
+					amount: toMinorUnits(split.lineAmount + 100),
+					categoryId: null,
+				},
+				{
+					id: split.home,
+					label: "Maison",
+					amount: toMinorUnits(split.amount - split.lineAmount - 100),
+					categoryId: null,
+				},
+			],
+			asUser,
+		);
+
+		await expect(oneTimeOf(split.inflow)).resolves.toBe(false);
+		await expect(oneTimeOf(split.food)).resolves.toBe(false);
+	});
+
+	it("deleting the parent deletes its line's transfer and rejected pairs", async () => {
+		const { parent, inflow } = await lineInTransfer({ rejected: true });
+
+		await deleteTransaction(deps(), parent, asUser);
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(rejectedRows(inflow)).resolves.toEqual([]);
+	});
+
+	it("deleting the parent deletes its line's transfer, the other side kept", async () => {
+		const { parent, inflow } = await lineInTransfer();
+
+		await deleteTransaction(deps(), parent, asUser);
+
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(childRow(inflow)).resolves.toBeDefined();
+	});
+
+	it("matches after an edit, a new line meeting its other side", async () => {
+		const { checking, livret } = await openHousehold();
+		const { parent, food, amount } = await splitInTwo(checking.id, { date: "2026-09-10" });
+		const moved = transferAmount();
+		const inflow = await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(moved) });
+		await unpair(inflow);
+
+		const split = await editSplit(
+			deps(),
+			parent,
+			[
+				{ id: food, label: "Courses", amount: toMinorUnits(amount + moved), categoryId: null },
+				{ label: "Épargne", amount: toMinorUnits(-moved), categoryId: null },
+			],
+			asUser,
+		);
+		const created = split.childIds.find((id) => id !== food);
+
+		await expect(transferRows(inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: created, status: "pending" },
+		]);
+	});
+
+	it("matches after an unsplit, the parent counted again meeting its other side", async () => {
+		const { checking, livret } = await openHousehold();
+		const { parent, food, amount } = await splitInTwo(checking.id, { date: "2026-09-10" });
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		await expect(transferRows(inflow)).resolves.toEqual([]);
+
+		await unsplitTransaction(deps(), food, asUser);
+
+		await expect(transferRows(inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: parent, status: "pending" },
+		]);
 	});
 });

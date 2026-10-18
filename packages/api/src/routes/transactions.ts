@@ -1,4 +1,5 @@
 import type { ServiceDeps } from "../services/deps.ts";
+import type { SessionEnv } from "./middleware/auth.ts";
 
 import { Hono } from "hono";
 
@@ -17,6 +18,7 @@ import {
 	transactionPatchBodySchema,
 	transactionTotalsSchema,
 } from "../schemas/transactions.ts";
+import { getPreferences } from "../services/preferences.ts";
 import {
 	bulkDeleteTransactions,
 	bulkUpdateTransactions,
@@ -40,6 +42,7 @@ import {
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
+import { signedInUser } from "./middleware/roles.ts";
 
 /**
  * Refuses a category on the inflow of a loan payment or a contribution, as
@@ -60,10 +63,19 @@ async function refuseCategoryOnInflow(deps: ServiceDeps, id: string): Promise<vo
 
 export function transactionsRoutes(deps: ServiceDeps) {
 	return (
-		new Hono()
-			.get("/", validated("query", transactionFilterSchema), async (c) =>
-				c.json({ data: await listAllTransactions(deps, c.req.valid("query")) }, 200),
-			)
+		new Hono<SessionEnv>()
+			.get("/", validated("query", transactionFilterSchema), async (c) => {
+				const { showSplitGrouped } = await getPreferences(deps, signedInUser(c).id);
+
+				return c.json(
+					{
+						data: await listAllTransactions(deps, c.req.valid("query"), {
+							splitGrouped: showSplitGrouped,
+						}),
+					},
+					200,
+				);
+			})
 			// Before `/:id`. Apart from the page, so turning a page reruns
 			// neither the count nor the sums.
 			.get("/totals", validated("query", transactionTotalsSchema), async (c) =>

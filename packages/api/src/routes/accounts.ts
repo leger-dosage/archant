@@ -92,14 +92,18 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 				200,
 			),
 		)
-		.get("/:id/transactions", validated("query", pageQuerySchema), async (c) =>
-			c.json(
+		.get("/:id/transactions", validated("query", pageQuerySchema), async (c) => {
+			const { showSplitGrouped } = await getPreferences(deps, signedInUser(c).id);
+
+			return c.json(
 				{
-					data: await listAccountTransactions(deps, c.req.param("id"), c.req.valid("query")),
+					data: await listAccountTransactions(deps, c.req.param("id"), c.req.valid("query"), {
+						splitGrouped: showSplitGrouped,
+					}),
 				},
 				200,
-			),
-		)
+			);
+		})
 		.post("/:id/transactions", validated("json", transactionBodySchema), async (c) =>
 			c.json({ data: await createTransaction(deps, c.req.param("id"), c.req.valid("json")) }, 201),
 		)

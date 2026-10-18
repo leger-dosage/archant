@@ -60,6 +60,10 @@ export const users = sqliteTable(
 			.$type<AccountOrder>()
 			.notNull()
 			.default(DEFAULT_ACCOUNT_ORDER),
+		// Sure's `preferences.show_split_grouped`: whether this user's
+		// transaction lists show a split's lines under their parent. Absent in
+		// Sure means on, so every existing user keeps the grouping.
+		showSplitGrouped: integer("show_split_grouped", { mode: "boolean" }).notNull().default(true),
 	},
 	(table) => [
 		check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`),

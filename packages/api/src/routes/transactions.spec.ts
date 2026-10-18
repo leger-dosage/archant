@@ -826,6 +826,37 @@ describe("GET /api/transactions", () => {
 		expect(unsplit.splitParents).toEqual([]);
 	});
 
+	it("lists a split's lines as plain rows, no parent, when the user turns the grouping off, as Sure", async () => {
+		const account = await openOwn();
+		const parent = await postOwn(account.id, { ...expense, label: "HYPER", amount: "-100,00" });
+		await ownRequest("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{ label: "Fruits", amount: "-60,00", categoryId: null },
+				{ label: "Savon", amount: "-40,00", categoryId: null },
+			],
+		});
+
+		await ownRequest("PATCH", "/api/preferences", { showSplitGrouped: false });
+		// The file's user is shared: grouping comes back even when the read fails.
+		let flat: Awaited<ReturnType<typeof listed>>;
+
+		try {
+			flat = await listed("");
+		} finally {
+			await ownRequest("PATCH", "/api/preferences", { showSplitGrouped: true });
+		}
+
+		const grouped = await listed("");
+
+		expect(flat.items.map((item) => [item.label, item.parentEntryId])).toEqual([
+			["Savon", parent],
+			["Fruits", parent],
+		]);
+		expect(flat.splitParents).toEqual([]);
+		expect(flat).toMatchObject({ total: 2, sum: { amount: -10000 } });
+		expect(grouped.splitParents.map((item) => item.id)).toEqual([parent]);
+	});
+
 	it("types its query for the interface's client", async () => {
 		const account = await openOwn();
 		await postOwn(account.id, expense);
@@ -1821,13 +1852,38 @@ describe("/api/transactions/:id/split", () => {
 		});
 		const patched = await request("PATCH", `/api/transactions/${childId}`, { amount: "-1,00" });
 		const deleted = await request("DELETE", `/api/transactions/${childId}`);
-		const relabelled = await request("PATCH", `/api/transactions/${childId}`, { label: "Courses" });
 
 		expect([again.status, patched.status, deleted.status]).toEqual([409, 409, 409]);
 		expect(errorBody.parse(again.body).error.code).toBe("NOT_SPLITTABLE");
 		expect(errorBody.parse(patched.body).error.code).toBe("TRANSACTION_SPLIT");
 		expect(errorBody.parse(deleted.body).error.code).toBe("TRANSACTION_SPLIT");
-		expect(relabelled.body).toMatchObject({ data: { label: "Courses", parentEntryId: id } });
+	});
+
+	it("refuses a line's label or category TRANSACTION_SPLIT, as Sure's drawer disables them, and saves its tags and notes", async () => {
+		const { id } = await newExpense();
+		const created = await request("POST", `/api/transactions/${id}/split`, {
+			lines: [{ label: "Tout", amount: "-100,00", categoryId: null }],
+		});
+		const [child] = splitBody.parse(created.body).data.children;
+		const childId = child?.id ?? "";
+		const groceries = (await createCategory(uniqueCategory("Courses"))).id;
+		const tag = (await createTag(`Ligne ${crypto.randomUUID().slice(0, 8)}`)).id;
+
+		const relabelled = await request("PATCH", `/api/transactions/${childId}`, { label: "Courses" });
+		const categorised = await request("PATCH", `/api/transactions/${childId}`, {
+			categoryId: groceries,
+		});
+		const tagged = await request("PATCH", `/api/transactions/${childId}`, {
+			tagIds: [tag],
+			notes: "Partagé",
+		});
+
+		expect([relabelled.status, categorised.status]).toEqual([409, 409]);
+		expect(errorBody.parse(relabelled.body).error.code).toBe("TRANSACTION_SPLIT");
+		expect(errorBody.parse(categorised.body).error.code).toBe("TRANSACTION_SPLIT");
+		expect(tagged.body).toMatchObject({
+			data: { label: "Tout", categoryId: null, tagIds: [tag], notes: "Partagé", parentEntryId: id },
+		});
 	});
 
 	it("answers NOT_FOUND for an unknown transaction", async () => {

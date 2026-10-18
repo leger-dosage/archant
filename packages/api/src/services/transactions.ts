@@ -197,13 +197,27 @@ async function listItemsOf(
 	}));
 }
 
-/** A page's items, and the parents of its split children, read by id. */
+/**
+ * How a list shows a split: under its parent, or each line a plain row, as
+ * Sure's `User#show_split_grouped?`. The assistant's tools read it grouped.
+ */
+type ListOptions = { splitGrouped: boolean };
+
+const GROUPED: ListOptions = { splitGrouped: true };
+
+/**
+ * A page's items, and the parents of its split children, read by id; none
+ * when the user lists lines flat, as Sure's controllers skip `@split_parents`.
+ */
 async function pageItemsOf(
 	deps: ServiceDeps,
 	records: readonly TransactionListRecord[],
+	{ splitGrouped }: ListOptions,
 ): Promise<Pick<TransactionPage, "items" | "splitParents">> {
 	const parentIds = new Set(
-		records.flatMap((record) => (record.parentEntryId === null ? [] : [record.parentEntryId])),
+		splitGrouped
+			? records.flatMap((record) => (record.parentEntryId === null ? [] : [record.parentEntryId]))
+			: [],
 	);
 
 	const [items, splitParents] = await Promise.all([
@@ -255,6 +269,7 @@ export async function listAccountTransactions(
 	deps: ServiceDeps,
 	accountId: string,
 	page: { page: number; pageSize: number },
+	options: ListOptions = GROUPED,
 ): Promise<TransactionPage> {
 	await getAccount(deps, accountId);
 	const { items, total } = await listTransactions(
@@ -264,7 +279,7 @@ export async function listAccountTransactions(
 	);
 
 	return {
-		...(await pageItemsOf(deps, items)),
+		...(await pageItemsOf(deps, items, options)),
 		page: page.page,
 		pageSize: page.pageSize,
 		total,
@@ -373,12 +388,13 @@ function both(ids: string[] | undefined, named: string[] | undefined): string[] 
 export async function listAllTransactions(
 	deps: ServiceDeps,
 	query: AssistantListRequest,
+	options: ListOptions = GROUPED,
 ): Promise<FilteredTransactionPage> {
 	const filter = await filterOf(deps, query);
 	const page = { page: query.page, pageSize: query.pageSize };
 	const items = await listTransactionPage(deps, filter, { ...page, sort: query.sort });
 
-	return { ...(await pageItemsOf(deps, items)), ...page };
+	return { ...(await pageItemsOf(deps, items, options)), ...page };
 }
 
 /** The count and the signed total of every transaction matching the filter. */

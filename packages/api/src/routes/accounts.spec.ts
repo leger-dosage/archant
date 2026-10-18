@@ -1491,6 +1491,28 @@ describe("GET /api/accounts/:id/transactions", () => {
 		expect(page.total).toBe(2);
 	});
 
+	it("adds no parent when the user lists split lines flat, as Sure's `show_split_grouped?`", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, { ...expense, amount: "-100,00" });
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		await request("POST", `/api/transactions/${data.id}/split`, {
+			lines: [
+				{ label: "Fruits", amount: "-60,00", categoryId: null },
+				{ label: "Savon", amount: "-40,00", categoryId: null },
+			],
+		});
+
+		await request("PATCH", "/api/preferences", { showSplitGrouped: false });
+		try {
+			const page = await transactionsOf(account.id);
+
+			expect(page.items.map((item) => item.parentEntryId)).toEqual([data.id, data.id]);
+			expect(page.splitParents).toEqual([]);
+		} finally {
+			await request("PATCH", "/api/preferences", { showSplitGrouped: true });
+		}
+	});
+
 	it.each([
 		["page=0", "page"],
 		["pageSize=201", "pageSize"],

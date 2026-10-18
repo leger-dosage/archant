@@ -704,7 +704,7 @@
 			"ofLine": "de la ligne {{index}}",
 			"categoryOf": "Catégorie de la ligne {{index}} : {{name}}",
 			"categoryOfLine": "Catégorie de la ligne {{index}}",
-			"natureOf": "Sens de la ligne {{index}}",
+			"amountPlaceholder": "0,00",
 			"remove": "Retirer la ligne {{index}}",
 			"add": "Ajouter une ligne",
 			"remaining": "Reste à répartir",
@@ -2830,6 +2830,12 @@
 			"title": "Général",
 			"subtitle": "Configurez vos préférences",
 			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut"
+		},
+		"transactions": {
+			"title": "Opérations",
+			"subtitle": "Personnalisez l'affichage des opérations",
+			"splitGrouped": "Grouper les opérations divisées",
+			"splitGroupedDescription": "Affiche les lignes d'une opération divisée groupées sous l'opération dans la liste des opérations. Lorsque cette option est désactivée, chaque ligne apparaît comme une opération à part."
 		},
 		"accountOrders": {
 			"name_asc": "Nom (A-Z)",

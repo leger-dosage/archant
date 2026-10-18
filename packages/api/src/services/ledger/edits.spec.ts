@@ -652,25 +652,66 @@ describe("updateTransaction on a split", () => {
 		},
 	);
 
-	it("classifies a child or the parent, and leaves a value it already holds alone", async () => {
+	it.each([
+		["label", async () => ({ label: "Fruits" })],
+		["category", async () => ({ categoryId: await newCategory("Courses") })],
+		["merchant", async () => ({ merchantId: await newMerchant("Primeur") })],
+	])(
+		"refuses a change of a child's %s with TRANSACTION_SPLIT, as Sure's drawer disables it",
+		async (_name, patchOf) => {
+			const account = await openChecking();
+			const { food } = await splitInTwo(account.id);
+			const patch = await patchOf();
+			const before = await findTransaction(deps(), food);
+
+			await expect(updateTransaction(deps(), food, patch, asUser)).rejects.toMatchObject({
+				code: "TRANSACTION_SPLIT",
+			});
+			await expect(findTransaction(deps(), food)).resolves.toEqual(before);
+		},
+	);
+
+	it("saves a child's tags and notes, and leaves a label, category or amount it already holds alone", async () => {
 		const account = await openChecking();
 		const { parent, food } = await splitInTwo(account.id);
-		const groceries = await newCategory("Courses");
+		const tag = await newTag("Partagé");
 
 		await updateTransaction(
 			deps(),
 			food,
-			{ label: "Fruits", categoryId: groceries, amount: toMinorUnits(-6_000), excluded: false },
+			{
+				label: "Courses",
+				categoryId: null,
+				amount: toMinorUnits(-6_000),
+				excluded: false,
+				tagIds: [tag],
+				notes: "Fruits",
+			},
 			asUser,
 		);
 		await updateTransaction(deps(), parent, { notes: "Ticket", excluded: true }, asUser);
 
 		await expect(findTransaction(deps(), food)).resolves.toMatchObject({
-			label: "Fruits",
-			categoryId: groceries,
+			label: "Courses",
+			categoryId: null,
 			amount: -6_000,
+			notes: "Fruits",
+			tagIds: [tag],
 		});
 		await expect(findTransaction(deps(), parent)).resolves.toMatchObject({ notes: "Ticket" });
+	});
+
+	it("classifies the parent, whose label, category and merchant no line reads", async () => {
+		const account = await openChecking();
+		const { parent } = await splitInTwo(account.id);
+		const groceries = await newCategory("Courses");
+
+		await updateTransaction(deps(), parent, { label: "HYPER", categoryId: groceries }, asUser);
+
+		await expect(findTransaction(deps(), parent)).resolves.toMatchObject({
+			label: "HYPER",
+			categoryId: groceries,
+		});
 	});
 });
 

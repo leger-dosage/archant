@@ -171,10 +171,12 @@ export const tradedSecurityId = sql<string>`${trades.securityId}`;
 
 /**
  * Deletes the split lines of `parentIds`, before the parents themselves:
- * `parent_entry_id` restricts. A child carries no key, transfer or rejected
- * pair (AD-20), only its taggings, its attachments and its detail row; or
- * it is the trade a transaction was converted into (AD-22), whose row goes
- * first.
+ * `parent_entry_id` restricts. A child carries no key (AD-20), only its
+ * transfer and rejected pairs, as any transfer side (AD-11), its taggings,
+ * its attachments and its detail row; or it is the trade a transaction was
+ * converted into (AD-22), whose row goes first. Without its transfer, the
+ * other side is a standard transaction again, as Sure's `unsplit!`
+ * destroying the child destroys its transfer.
  */
 export async function deleteSplitChildren(
 	tx: Transaction,
@@ -186,6 +188,8 @@ export async function deleteSplitChildren(
 			.from(entries)
 			.where(inArray(entries.parentEntryId, [...parentIds]));
 	await tx.delete(trades).where(inArray(trades.entryId, children()));
+	await tx.delete(transfers).where(transferOf(children()));
+	await tx.delete(rejectedTransfers).where(rejectedOf(children()));
 	await tx.delete(taggings).where(inArray(taggings.transactionId, children()));
 	await deleteAttachmentsOf(tx, children());
 	await tx.delete(transactions).where(inArray(transactions.entryId, children()));

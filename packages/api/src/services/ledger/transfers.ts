@@ -5,7 +5,7 @@ import type { Origin, Transaction } from "./shared.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { and, between, eq, inArray, isNotNull, isNull, lt, ne, not, sql } from "drizzle-orm";
+import { and, between, eq, inArray, lt, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -36,7 +36,6 @@ import {
 	inSequence,
 	inTransferSql,
 	invalidField,
-	isSplitChild,
 } from "./shared.ts";
 
 /** A transaction that can be the other side of a transfer, as the picker lists it. */
@@ -110,21 +109,16 @@ function candidateOf(
 }
 
 /**
- * The SQL of `isTransferCandidate`'s `excluded`, `accountActive` and
- * `splitChild`: neither an excluded row, a row of a deactivated account nor a
- * split line is ever a side, as Sure's `Family::AutoTransferMatchable`; a
- * split parent is excluded (AD-20).
+ * The SQL of `isTransferCandidate`'s `excluded` and `accountActive`: neither
+ * an excluded row nor a row of a deactivated account is ever a side, as
+ * Sure's `Family::AutoTransferMatchable`. A split line is a side as any
+ * transaction; its parent is excluded (AD-20).
  */
 function matchableSide(
-	entry: Record<"parentEntryId", SQLiteColumn>,
 	transaction: Record<"excluded", SQLiteColumn>,
 	account: Record<"active", SQLiteColumn>,
 ): SQL | undefined {
-	return and(
-		isNull(entry.parentEntryId),
-		eq(transaction.excluded, false),
-		eq(account.active, true),
-	);
+	return and(eq(transaction.excluded, false), eq(account.active, true));
 }
 
 const sideColumns = {
@@ -138,7 +132,6 @@ const sideColumns = {
 	inTransfer: inAnyTransfer.mapWith(Boolean),
 	excluded: transactions.excluded,
 	accountActive: accounts.active,
-	splitChild: isSplitChild.mapWith(Boolean),
 };
 
 /** One transaction as the matching rule reads it, `undefined` when the id names none. */
@@ -191,7 +184,6 @@ function candidatePairQuery(
 				inTransfer: inTransferSql(sourceEntry.id).mapWith(Boolean),
 				excluded: sourceTransaction.excluded,
 				accountActive: sourceAccount.active,
-				splitChild: isNotNull(sourceEntry.parentEntryId).mapWith(Boolean),
 				expectedAccountId: sourceTransaction.expectedTransferAccountId,
 			},
 			candidate: {
@@ -216,8 +208,8 @@ function candidatePairQuery(
 				candidateOf(sourceEntry, entries, search),
 				eq(transactions.entryId, entries.id),
 				eq(accounts.id, entries.accountId),
-				matchableSide(sourceEntry, sourceTransaction, sourceAccount),
-				matchableSide(entries, transactions, accounts),
+				matchableSide(sourceTransaction, sourceAccount),
+				matchableSide(transactions, accounts),
 			),
 		)
 		.orderBy(entries.date, entries.createdAt, entries.id);
@@ -319,15 +311,15 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
 });
 
 /**
- * Step 6 of `ingest`, and the end of `applyRulePlanToHistory`: proposes a
- * `pending` transfer for the pairs Sure's `auto_match_transfers!` would
- * make, over every unmatched transaction of the household, so a line left
- * free before is weighed again (AD-11). A rule's expected counterpart
- * account narrows each line's candidates first, from both sides, through
- * `narrowToExpected`; `greedyMatches` then takes the closest pairs. Every
- * candidate is read before the first transfer is written, so the result
- * depends neither on line order nor on which account synced first. No
- * balance, category, lock or tag moves.
+ * Step 6 of `ingest`, the end of `applyRulePlanToHistory` and of each split
+ * write in `splits.ts`: proposes a `pending` transfer for the pairs Sure's
+ * `auto_match_transfers!` would make, over every unmatched transaction of
+ * the household, so a line left free before is weighed again (AD-11). A
+ * rule's expected counterpart account narrows each line's candidates first,
+ * from both sides, through `narrowToExpected`; `greedyMatches` then takes
+ * the closest pairs. Every candidate is read before the first transfer is
+ * written, so the result depends neither on line order nor on which account
+ * synced first. No balance, category, lock or tag moves.
  */
 export async function matchTransfers(
 	tx: Pick<Transaction, "select" | "insert" | "update">,

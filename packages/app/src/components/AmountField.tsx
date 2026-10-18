@@ -16,10 +16,6 @@ type AmountFieldProps = {
 	invalid?: boolean;
 	describedBy?: string;
 	disabled?: boolean;
-	/** The toggle's position for an empty field: a split's new line takes its parent's. */
-	defaultNature?: Nature;
-	/** The toggle's name, when a form holds several amounts. */
-	natureLabel?: string;
 };
 
 const NATURES: readonly Nature[] = ["expense", "income"];
@@ -37,20 +33,16 @@ export function AmountField({
 	invalid = false,
 	describedBy,
 	disabled = false,
-	defaultNature = "expense",
-	natureLabel,
 }: AmountFieldProps) {
 	const { t } = useTranslation();
-	const [nature, setNature] = useState<Nature>(() =>
-		value.trim() === "" ? defaultNature : initialNature(value),
-	);
+	const [nature, setNature] = useState<Nature>(() => initialNature(value));
 	const { magnitude } = splitAmount(value, nature);
 
 	return (
 		<div className="flex gap-2">
 			<div
 				role="group"
-				aria-label={natureLabel ?? t("transactions.form.nature")}
+				aria-label={t("transactions.form.nature")}
 				className="flex shrink-0 rounded-md border p-0.5"
 			>
 				{NATURES.map((option) => (

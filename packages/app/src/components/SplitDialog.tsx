@@ -1,5 +1,4 @@
 import type { SplitData } from "@/hooks/useTransactions";
-import type { Nature } from "@/lib/amount-sign";
 import type { FieldErrorCode } from "@/lib/form-errors";
 import type { Path } from "react-hook-form";
 
@@ -15,7 +14,6 @@ import { MAX_SPLIT_LINES, splitTransactionSchema } from "@archant/api/schemas/tr
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { formatMoney, parseAmount, toMinorUnits } from "@archant/data/money";
 
-import { AmountField } from "@/components/AmountField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Money } from "@/components/Money";
 import { CategoryField } from "@/components/TransactionFields";
@@ -111,18 +109,19 @@ function LineCategory({
 	);
 }
 
-/** One line's amount, its Dépense / Revenu toggle starting on the parent's for a new line. */
+/**
+ * One line's amount, signed as Sure's `splits/new`: `-60,00` is an expense,
+ * so the lines can mix signs. Plain text, not `inputMode="decimal"`: a
+ * phone's decimal pad has no minus.
+ */
 function LineAmount({
 	form,
 	index,
-	nature,
 }: {
 	form: ReturnType<typeof useForm<SplitFormInput>>;
 	index: number;
-	nature: Nature;
 }) {
 	const { t } = useTranslation();
-	const amount = useController({ control: form.control, name: `lines.${index}.amount` });
 	const error = form.formState.errors.lines?.[index]?.amount;
 
 	return (
@@ -131,15 +130,14 @@ function LineAmount({
 				{t("transactions.form.amount")}
 				<span className="sr-only"> {t("transactions.split.ofLine", { index: index + 1 })}</span>
 			</Label>
-			<AmountField
+			<Input
 				id={fieldId(index, "amount")}
-				value={amount.field.value}
-				onChange={amount.field.onChange}
-				onBlur={amount.field.onBlur}
-				invalid={error !== undefined}
-				defaultNature={nature}
-				natureLabel={t("transactions.split.natureOf", { index: index + 1 })}
-				{...(error === undefined ? {} : { describedBy: errorId(index, "amount") })}
+				autoComplete="off"
+				placeholder={t("transactions.split.amountPlaceholder")}
+				className="text-right tabular-nums"
+				aria-invalid={error !== undefined}
+				{...(error === undefined ? {} : { "aria-describedby": errorId(index, "amount") })}
+				{...form.register(`lines.${index}.amount`)}
 			/>
 			<FieldMessage id={errorId(index, "amount")} error={error} />
 		</div>
@@ -181,8 +179,6 @@ function SplitForm({
 	// An error the API reports on the lines as a whole, under the counter.
 	const [linesError, setLinesError] = useState<FieldErrorCode | null>(null);
 	const { errors, isSubmitting } = form.formState;
-	// A zero parent starts its lines on Dépense, as an empty amount field does.
-	const nature: Nature = parent.amount > 0 ? "income" : "expense";
 
 	const linesMessage = (code: FieldErrorCode) =>
 		code === "too_small"
@@ -289,7 +285,7 @@ function SplitForm({
 								<FieldMessage id={errorId(index, "label")} error={labelError} />
 							</div>
 							<div className="grid gap-3 sm:grid-cols-2">
-								<LineAmount form={form} index={index} nature={nature} />
+								<LineAmount form={form} index={index} />
 								<LineCategory form={form} index={index} />
 							</div>
 						</fieldset>

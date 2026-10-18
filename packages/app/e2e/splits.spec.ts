@@ -8,7 +8,9 @@ import { formatShortDate } from "../src/lib/balance-change.ts";
 import { daysAgo, euros, expect, sgml, test, uniqueName } from "./fixtures.ts";
 
 // Story 19.2: a transaction is split from its sheet, and the list shows each
-// split's lines under their parent, which nothing counts.
+// split's lines under their parent, which nothing counts. Story 31.3: each
+// line's amount is signed, as Sure's, a line's label and category are read
+// only, and « Préférences » lists lines flat.
 
 const rowButton = (page: Page, label: string) =>
 	page.getByRole("main").locator("button[data-transaction-id]").filter({ hasText: label });
@@ -112,19 +114,17 @@ test("« Diviser » lists lines, counts what is left to split, and turns on at z
 	await expect(dialog.getByRole("button", { name: "Diviser" })).toBeDisabled();
 
 	await first.getByRole("textbox", { name: "Libellé de la ligne 1" }).fill(`${prefix} courses`);
+	// Signed as Sure's: an expense is typed with its minus, and no toggle stands beside it.
+	await expect(first.getByRole("group", { name: /^Sens/u })).toHaveCount(0);
 	await first.getByRole("textbox", { name: "Montant de la ligne 1" }).fill("60");
+	await expect(remaining(dialog).getByText(euros(-16_000))).toHaveClass(/text-destructive/u);
+	await first.getByRole("textbox", { name: "Montant de la ligne 1" }).fill("-60");
 	await expect(remaining(dialog).getByText(euros(-4000))).toHaveClass(/text-destructive/u);
 
 	await dialog.getByRole("button", { name: "Ajouter une ligne" }).click();
 	const second = line(dialog, 2);
-	// A new line starts on the parent's side: an expense.
-	await expect(
-		second.getByRole("group", { name: "Sens de la ligne 2" }).getByRole("button", {
-			name: "Dépense",
-		}),
-	).toHaveAttribute("aria-pressed", "true");
 	await second.getByRole("textbox", { name: "Libellé de la ligne 2" }).fill(`${prefix} maison`);
-	await second.getByRole("textbox", { name: "Montant de la ligne 2" }).fill("40");
+	await second.getByRole("textbox", { name: "Montant de la ligne 2" }).fill("-40");
 	await second.getByRole("button", { name: "Catégorie de la ligne 2 : Sans catégorie" }).click();
 	await page.getByRole("option", { name: home.name }).click();
 	await expect(
@@ -204,7 +204,7 @@ test("a removed line leaves the counter, and only a splittable transaction offer
 	await sheet(page).getByRole("button", { name: "Diviser", exact: true }).click();
 	const dialog = splitDialog(page);
 	await dialog.getByRole("button", { name: "Ajouter une ligne" }).click();
-	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("3");
+	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("-3");
 	await expect(remaining(dialog)).toContainText(euros(-500));
 	await line(dialog, 2).getByRole("button", { name: "Retirer la ligne 2" }).click();
 	await expect(line(dialog, 2)).toHaveCount(0);
@@ -212,9 +212,9 @@ test("a removed line leaves the counter, and only a splittable transaction offer
 
 	// A line left without a label stops the split before it is sent.
 	const posts = recorded(page, "POST");
-	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("5");
+	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("-5");
 	await dialog.getByRole("button", { name: "Ajouter une ligne" }).click();
-	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("3");
+	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("-3");
 	await expect(remaining(dialog).getByText(euros(0))).toBeVisible();
 	await dialog.getByRole("button", { name: "Diviser" }).click();
 
@@ -279,7 +279,7 @@ test("a refusal from the API keeps the dialog open behind a toast", async ({ pag
 	await rowButton(page, prefix).click();
 	await sheet(page).getByRole("button", { name: "Diviser" }).click();
 	const dialog = splitDialog(page);
-	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("100");
+	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("-100");
 	// Excluded meanwhile, as from another tab: no longer splittable.
 	await api.excludeTransaction(id);
 	await dialog.getByRole("button", { name: "Diviser" }).click();
@@ -288,7 +288,7 @@ test("a refusal from the API keeps the dialog open behind a toast", async ({ pag
 	expect(patches).toEqual([]);
 	await expect(dialog).toBeVisible();
 	await expect(line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" })).toHaveValue(
-		"100",
+		"-100",
 	);
 	// The sheet behind it stayed open: nothing saved it and closed it.
 	await dialog.getByRole("button", { name: "Annuler" }).click();
@@ -411,9 +411,12 @@ test("a parent's sheet lists its lines, and « Modifier la division » keeps eac
 	await expect(line(dialog, 1).getByRole("textbox", { name: "Libellé de la ligne 1" })).toHaveValue(
 		labels.food,
 	);
-	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("70");
+	await expect(line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" })).toHaveValue(
+		"-60,00",
+	);
+	await line(dialog, 1).getByRole("textbox", { name: "Montant de la ligne 1" }).fill("-70");
 	await expect(dialog.getByRole("button", { name: "Enregistrer" })).toBeDisabled();
-	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("30");
+	await line(dialog, 2).getByRole("textbox", { name: "Montant de la ligne 2" }).fill("-30");
 	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(toast(page, "Division modifiée")).toBeVisible();
@@ -424,7 +427,7 @@ test("a parent's sheet lists its lines, and « Modifier la division » keeps eac
 	await expect(page.locator(":focus")).toContainText("Divisée");
 });
 
-test("a line's sheet names its parent, edits its own fields only, and « Annuler la division » brings one row back", async ({
+test("a line's sheet names its parent, keeps its label and category, and « Annuler la division » brings one row back", async ({
 	page,
 	api,
 }) => {
@@ -443,18 +446,23 @@ test("a line's sheet names its parent, edits its own fields only, and « Annuler
 	await expect(sheet(page).getByLabel("Marchand")).toBeDisabled();
 	await expect(sheet(page).getByLabel("Exclure des rapports")).toHaveCount(0);
 	await expect(sheet(page).getByRole("button", { name: "Supprimer" })).toHaveCount(0);
-	await expect(sheet(page).getByLabel("Catégorie")).toBeEnabled();
+	// Sure's drawer disables a line's name and category: the split sets them.
+	await expect(sheet(page).getByLabel("Libellé")).toBeDisabled();
+	await expect(sheet(page).getByLabel("Catégorie")).toBeDisabled();
 	await expect(sheet(page).getByLabel("Étiquettes")).toBeEnabled();
 	await expect(sheet(page).getByLabel("Notes")).toBeEnabled();
+	// A line offers no « Rapprocher un virement », as Sure's.
+	await expect(sheet(page).getByRole("region", { name: "Virement" })).toHaveCount(0);
 
 	// While the form holds an edit, the split's actions wait.
-	await sheet(page).getByLabel("Libellé").fill(`${prefix} fruits`);
+	await sheet(page).getByLabel("Notes").fill("Fruits et légumes");
 	await expect(division.getByRole("button", { name: "Annuler la division" })).toBeDisabled();
 	await sheet(page).getByRole("button", { name: "Enregistrer" }).click();
 	await expect(sheet(page)).toBeHidden();
-	await expect(rowButton(page, `${prefix} fruits`)).toContainText(euros(-6000));
+	await expect(rowButton(page, labels.food)).toContainText(euros(-6000));
 
-	await rowButton(page, `${prefix} fruits`).click();
+	await rowButton(page, labels.food).click();
+	await expect(sheet(page).getByLabel("Notes")).toHaveValue("Fruits et légumes");
 	await division.getByRole("button", { name: "Annuler la division" }).click();
 	const confirm = page.getByRole("alertdialog", { name: "Annuler la division ?" });
 	await expect(confirm.getByRole("button", { name: "Garder la division" })).toBeFocused();
@@ -466,4 +474,133 @@ test("a line's sheet names its parent, edits its own fields only, and « Annuler
 	await expect(rowButton(page, prefix)).not.toContainText("Divisée");
 	await expect(rowButton(page, prefix)).toContainText(euros(-10_000));
 	await expect(rowButton(page, prefix)).toBeFocused();
+});
+
+test("a split's lines may mix signs, as Sure's, when they sum to the transaction", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Remise");
+	const { account } = await hundred(api, prefix);
+	// A refund of its own, so no other test's row is its transfer candidate.
+	const refund = randomInt(11, 99);
+
+	await page.goto(`/accounts/${account.id}`);
+	await rowButton(page, prefix).click();
+	await sheet(page).getByRole("button", { name: "Diviser" }).click();
+	const dialog = splitDialog(page);
+	await line(dialog, 1)
+		.getByRole("textbox", { name: "Montant de la ligne 1" })
+		.fill(`-${String(100 + refund)}`);
+	await dialog.getByRole("button", { name: "Ajouter une ligne" }).click();
+	await line(dialog, 2)
+		.getByRole("textbox", { name: "Libellé de la ligne 2" })
+		.fill(`${prefix} bon`);
+	await line(dialog, 2)
+		.getByRole("textbox", { name: "Montant de la ligne 2" })
+		.fill(String(refund));
+	await expect(remaining(dialog).getByText(euros(0))).toBeVisible();
+	await dialog.getByRole("button", { name: "Diviser" }).click();
+
+	await expect(toast(page, "Opération divisée")).toBeVisible();
+	await expect(linesOf(page, prefix).getByRole("listitem")).toHaveCount(2);
+	await expect(linesOf(page, prefix).getByRole("listitem").nth(0)).toContainText(
+		euros(-(100 + refund) * 100),
+	);
+	await expect(rowButton(page, `${prefix} bon`)).toContainText(euros(refund * 100));
+});
+
+test("« Grouper les opérations divisées » turned off lists each line as its own row, and back on groups them", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Groupe");
+	const { labels } = await splitHundred(api, prefix);
+	// The administrator's preference is shared by the whole run: set back after.
+	await api.setSplitGrouped(true);
+
+	try {
+		await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
+		await expect(rowButton(page, prefix).first()).toContainText("Divisée");
+		await expect(linesOf(page, prefix).getByRole("listitem")).toHaveCount(2);
+
+		await page.goto("/settings/preferences");
+		const section = page.getByRole("region", { name: "Opérations" });
+		await expect(section.getByText("Personnalisez l'affichage des opérations")).toBeVisible();
+		const toggle = section.getByRole("switch", { name: "Grouper les opérations divisées" });
+		await expect(toggle).toBeChecked();
+		await toggle.click();
+		await expect(page.getByText("Votre profil a été mis à jour.")).toBeVisible();
+		await expect(toggle).not.toBeChecked();
+
+		// Back through the app's history, not a reload: the saved preference
+		// must refresh the list held in the cache.
+		await page.goBack();
+		await expect(rowButton(page, labels.food)).toBeVisible();
+		await expect(rowButton(page, labels.home)).toBeVisible();
+		await expect(page.getByRole("main").getByText("Divisée")).toHaveCount(0);
+		await expect(linesOf(page, prefix)).toHaveCount(0);
+
+		await page.goto("/settings/preferences");
+		await toggle.click();
+		await expect(toggle).toBeChecked();
+
+		await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
+		await expect(rowButton(page, prefix).first()).toContainText("Divisée");
+		await expect(linesOf(page, prefix).getByRole("listitem")).toHaveCount(2);
+	} finally {
+		await api.setSplitGrouped(true);
+	}
+});
+
+/** Minor units as the forms read them, `1234` as `12,34`. */
+const amountText = (minor: number) =>
+	`${String(Math.floor(minor / 100))},${String(minor % 100).padStart(2, "0")}`;
+
+test("a split's line is matched as a transfer side, shown on its sheet, and offered to the other side's picker", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Épargne");
+	const account = await api.openAccount({ name: uniqueName("Compte joint") });
+	const savings = await api.openAccount({ name: uniqueName("Livret"), kind: "savings" });
+	// An amount of its own, so no other test's row is a candidate.
+	const moved = randomInt(10_000, 90_000);
+	const parent = await api.addTransaction(account.id, {
+		date: daysAgo(2),
+		label: prefix,
+		amount: "-1000,00",
+	});
+	const into = `${prefix} reçu`;
+	await api.addTransaction(savings.id, {
+		date: daysAgo(0),
+		label: into,
+		amount: amountText(moved),
+	});
+	const moving = `${prefix} virement`;
+	await api.splitTransaction(parent, [
+		{ label: moving, amount: `-${amountText(moved)}` },
+		{ label: `${prefix} reste`, amount: `-${amountText(100_000 - moved)}` },
+	]);
+
+	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
+	await expect(rowButton(page, moving)).toContainText("Correspondance automatique");
+	await rowButton(page, moving).click();
+	const transfer = sheet(page).getByRole("region", { name: "Virement" });
+	await expect(transfer).toContainText(savings.name);
+	// A line offers no picker, as Sure's: only its matched transfer.
+	await expect(transfer.getByRole("button", { name: "Rapprocher un virement" })).toHaveCount(0);
+	await transfer.getByRole("button", { name: "Dissocier" }).click();
+	await expect(toast(page, "Virement dissocié")).toBeVisible();
+	await expect(transfer).toHaveCount(0);
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
+
+	await rowButton(page, into).click();
+	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
+	const candidates = page
+		.getByRole("dialog", { name: "Rapprocher un virement" })
+		.getByRole("list", { name: "Opérations candidates" });
+	await expect(candidates.getByRole("listitem")).toHaveCount(1);
+	await expect(candidates.getByRole("listitem")).toContainText(moving);
 });
