@@ -241,59 +241,91 @@ function PasswordSection() {
 /**
  * Sure's « Zone dangereuse », at the foot of its profile page: « Réinitialiser
  * le compte » deletes every account and what goes with them, and keeps the
- * users. An administrator's only, as Sure's `ensure_admin`; Archant has no
+ * users; « Réinitialiser et précharger » then loads Sure's sample household.
+ * An administrator's only, as Sure's `ensure_admin`; Archant has no
  * « Supprimer le compte », so a viewer sees no section at all.
  */
 function DangerZoneSection() {
 	const { t } = useTranslation();
 	const reset = useResetFinancialData();
-	const [confirming, setConfirming] = useState(false);
+	const [confirming, setConfirming] = useState<DangerAction | null>(null);
 
-	const confirm = async () => {
+	const confirm = async (action: DangerAction) => {
 		try {
-			await reset.mutateAsync();
-			toast.success(t("dangerZone.resetDone"));
+			await reset.mutateAsync({ sampleData: action === "sampleData" });
+			toast.success(t(DANGER_ACTIONS[action].done));
 		} catch (error) {
 			showErrorToast(errorCodeOf(error));
 		} finally {
-			setConfirming(false);
+			setConfirming(null);
 		}
 	};
 
 	return (
 		<Section title={t("dangerZone.title")}>
-			<div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-				<div className="flex flex-col gap-1 md:w-2/3">
-					<h3 className="text-sm font-medium">{t("dangerZone.reset")}</h3>
-					<p className="text-sm text-muted-foreground">{t("dangerZone.resetWarning")}</p>
-				</div>
-				<Button
-					type="button"
-					variant="destructive"
-					className="self-start md:self-center"
-					onClick={() => setConfirming(true)}
-				>
-					{t("dangerZone.reset")}
-				</Button>
-			</div>
-			<ConfirmDialog
-				open={confirming}
-				// Annuler or Escape mid-request would read as cancelled, then the reset lands anyway.
-				onOpenChange={(open) => {
-					if (!reset.isPending) {
-						setConfirming(open);
-					}
-				}}
-				title={t("dangerZone.confirmTitle")}
-				description={t("dangerZone.confirmBody")}
-				confirmLabel={t("dangerZone.reset")}
-				destructive
-				pending={reset.isPending}
-				onConfirm={() => void confirm()}
-			/>
+			{DANGER_ACTION_IDS.map((action) => {
+				const texts = DANGER_ACTIONS[action];
+
+				return (
+					<div
+						key={action}
+						className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between"
+					>
+						<div className="flex flex-col gap-1 md:w-2/3">
+							<h3 className="text-sm font-medium">{t(texts.label)}</h3>
+							<p className="text-sm text-muted-foreground">{t(texts.warning)}</p>
+						</div>
+						<Button
+							type="button"
+							variant="destructive"
+							className="self-start md:self-center"
+							onClick={() => setConfirming(action)}
+						>
+							{t(texts.label)}
+						</Button>
+						<ConfirmDialog
+							open={confirming === action}
+							// Annuler or Escape mid-request would read as cancelled, then the reset lands anyway.
+							onOpenChange={(open) => {
+								if (!reset.isPending) {
+									setConfirming(open ? action : null);
+								}
+							}}
+							title={t(texts.confirmTitle)}
+							description={t(texts.confirmBody)}
+							confirmLabel={t(texts.label)}
+							destructive
+							pending={reset.isPending}
+							onConfirm={() => void confirm(action)}
+						/>
+					</div>
+				);
+			})}
 		</Section>
 	);
 }
+
+/** The two rows of Sure's « Zone dangereuse », in its order. */
+const DANGER_ACTION_IDS = ["reset", "sampleData"] as const;
+
+type DangerAction = (typeof DANGER_ACTION_IDS)[number];
+
+const DANGER_ACTIONS = {
+	reset: {
+		label: "dangerZone.reset",
+		warning: "dangerZone.resetWarning",
+		confirmTitle: "dangerZone.confirmTitle",
+		confirmBody: "dangerZone.confirmBody",
+		done: "dangerZone.resetDone",
+	},
+	sampleData: {
+		label: "dangerZone.resetWithSampleData",
+		warning: "dangerZone.resetWithSampleDataWarning",
+		confirmTitle: "dangerZone.confirmSampleDataTitle",
+		confirmBody: "dangerZone.confirmSampleDataBody",
+		done: "dangerZone.resetWithSampleDataDone",
+	},
+} as const satisfies Record<DangerAction, Record<string, string>>;
 
 const passwordSchema = z.object({ password: z.string().min(1) });
 

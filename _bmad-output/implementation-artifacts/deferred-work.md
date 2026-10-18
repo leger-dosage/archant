@@ -426,3 +426,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-8-reset-all-financial-data.md`
   summary: After a reset the household has no category and no way to bring back the defaults until Story 32.2 adds Sure's « Utiliser les valeurs par défaut (recommandé) ».
   evidence: The reset deletes every category as Sure's does, and `seedDefaults` runs once per instance through `defaults_seeded_at`; Sure restores them with `categories#bootstrap`, which Story 32.2 plans.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-9-reset-with-sample-data.md`
+  summary: Test a sample load at an hour when the UTC day and the `APP_TIMEZONE` day differ.
+  evidence: Every test loads at 10:00 UTC, noon in Paris, so swapping `today(deps.timeZone)` for UTC would pass; a load between midnight and 2 a.m. in Paris would date the sample a day early if that slipped.
