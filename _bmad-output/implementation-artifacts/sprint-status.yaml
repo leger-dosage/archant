@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-18-2026 10:35
+last_updated: 10-21-2026 09:00
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -315,7 +315,7 @@ development_status:
   31-1-filter-transactions-by-status-and-amount: done
   31-2-edit-several-transactions-at-once-as-sure: done
   31-3-split-lines-as-sure-shows-and-edits-them: done
-  31-4-download-an-attachment: backlog
+  31-4-download-an-attachment: done
   31-5-create-a-transfer-between-two-accounts: backlog
   31-6-open-a-transfer-in-its-own-drawer: backlog
   31-7-categorise-investment-contributions: backlog

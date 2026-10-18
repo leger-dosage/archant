@@ -1,9 +1,12 @@
+import type { Auth } from "../services/auth.ts";
+
 import { testClient } from "hono/testing";
 import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { MAX_ATTACHMENTS_PER_TRANSACTION, MAX_ATTACHMENT_BYTES } from "@archant/data/attachments";
 
+import { createLogger } from "../lib/logger.ts";
 import { MAX_ATTACHMENT_BODY_BYTES } from "../schemas/attachments.ts";
 import {
 	buildApp,
@@ -13,8 +16,10 @@ import {
 	openAccount,
 	postTransaction,
 	request,
+	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -76,6 +81,17 @@ async function listOf(id: string) {
 
 	return listBody.parse(body).data;
 }
+
+/** The headers a file carries whatever its disposition. */
+const sharedHeaders = (response: Response) =>
+	[
+		"content-type",
+		"content-length",
+		"x-content-type-options",
+		"x-frame-options",
+		"cache-control",
+		"content-security-policy",
+	].map((name) => response.headers.get(name));
 
 const refused = (code: string) => ({
 	error: { code: "VALIDATION_ERROR", fields: [{ path: "file", code }] },
@@ -271,6 +287,96 @@ describe("GET /api/transactions/:id/attachments/:attachmentId", () => {
 			"default-src 'self'; script-src 'self' 'sha256-rAeCpAn2Kteerk13PeCDOI8kvlaCDjXxkwzZgMe0DQU='; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://enablebanking.com https://api.enablebanking.com; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-src 'none'; frame-ancestors 'none'; sandbox",
 		);
 		expect(new Uint8Array(await response.arrayBuffer())).toEqual(PDF);
+	});
+
+	it("serves the same bytes and headers as a download with ?disposition=attachment", async () => {
+		const id = await transaction();
+		const { id: attachmentId } = await uploaded(id, PDF, "Reçu café.pdf");
+		const path = `/api/transactions/${id}/attachments/${attachmentId}`;
+		const app = buildApp();
+
+		const inline = await app.request(path);
+		const explicit = await app.request(`${path}?disposition=inline`);
+		const download = await app.request(`${path}?disposition=attachment`);
+
+		expect([inline.status, explicit.status, download.status]).toEqual([200, 200, 200]);
+		expect(explicit.headers.get("content-disposition")).toBe(
+			inline.headers.get("content-disposition"),
+		);
+		expect(download.headers.get("content-disposition")).toBe(
+			"attachment; filename=\"Re_u caf_.pdf\"; filename*=UTF-8''Re%C3%A7u%20caf%C3%A9.pdf",
+		);
+		expect(sharedHeaders(explicit)).toEqual(sharedHeaders(inline));
+		expect(sharedHeaders(download)).toEqual(sharedHeaders(inline));
+		expect(sharedHeaders(download)).toEqual([
+			"application/pdf",
+			String(PDF.byteLength),
+			"nosniff",
+			"DENY",
+			"private, no-store",
+			expect.stringMatching(/; sandbox$/u),
+		]);
+		expect(new Uint8Array(await download.arrayBuffer())).toEqual(PDF);
+	});
+
+	it("names the cleaned file, quotes and accents escaped, in the download's header", async () => {
+		const id = await transaction();
+		const { id: attachmentId, filename } = await uploaded(id, PDF, 'l\'été "2026".pdf');
+
+		const response = await buildApp().request(
+			`/api/transactions/${id}/attachments/${attachmentId}?disposition=attachment`,
+		);
+
+		expect(filename).toBe("l'été -2026-.pdf");
+		expect(response.headers.get("content-disposition")).toBe(
+			"attachment; filename=\"l'_t_ -2026-.pdf\"; filename*=UTF-8''l%27%C3%A9t%C3%A9%20-2026-.pdf",
+		);
+	});
+
+	it("refuses an unknown disposition with VALIDATION_ERROR, serving nothing", async () => {
+		const id = await transaction();
+		const { id: attachmentId } = await uploaded(id);
+
+		const response = await buildApp().request(
+			`/api/transactions/${id}/attachments/${attachmentId}?disposition=download`,
+		);
+
+		expect(response.status).toBe(400);
+		expect(response.headers.get("content-disposition")).toBeNull();
+		expect(errorBody.parse(await response.json()).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "disposition" }],
+		});
+	});
+
+	it("answers NOT_FOUND for a download of another transaction's file", async () => {
+		const id = await transaction();
+		const other = await transaction();
+		const { id: attachmentId } = await uploaded(other);
+
+		const response = await buildApp().request(
+			`/api/transactions/${id}/attachments/${attachmentId}?disposition=attachment`,
+		);
+
+		expect(response.status).toBe(404);
+		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
+	});
+
+	it("lets a viewer download a file, a read", async () => {
+		const silent = createLogger("silent");
+		const auth: Auth = createTestAuth(temp.db, silent);
+		const cookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		const id = await transaction();
+		const { id: attachmentId } = await uploaded(id);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), cookie);
+
+		const response = await viewer.request(
+			`/api/transactions/${id}/attachments/${attachmentId}?disposition=attachment`,
+		);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-disposition")).toMatch(/^attachment; /u);
+		expect(new Uint8Array(await response.arrayBuffer())).toEqual(PNG);
 	});
 
 	it("leaves the policy of every other route unsandboxed", async () => {

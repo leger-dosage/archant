@@ -10,3 +10,13 @@ export const MAX_ATTACHMENT_BODY_BYTES = MAX_ATTACHMENT_BYTES + 64 * 1024;
 
 /** `multipart/form-data` with one `file` field; the interface sends several one after the other. */
 export const attachmentUploadSchema = z.object({ file: z.instanceof(File) });
+
+/**
+ * How the file is served, as Sure's `disposition` parameter: `inline` (the
+ * default) for the open button's new tab, `attachment` for the download
+ * button. Any other value is refused rather than served inline, as every
+ * input crossing the boundary is parsed.
+ */
+export const attachmentFileQuerySchema = z.object({
+	disposition: z.enum(["inline", "attachment"]).optional(),
+});

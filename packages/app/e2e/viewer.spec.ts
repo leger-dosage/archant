@@ -1,6 +1,7 @@
 import type { APIRequestContext, Page, Request } from "@playwright/test";
 
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 import {
@@ -416,7 +417,16 @@ reader.describe("a viewer", () => {
 			await sheet.getByText("Protégée contre la synchronisation").click();
 			await expect(sheet.getByText("Champs verrouillés :")).toBeVisible();
 			await expect(sheet.getByText("Cette opération fait partie de la récurrence")).toBeVisible();
-			await expect(sheet.getByRole("link", { name: "ticket.png" })).toBeVisible();
+			await expect(sheet.getByRole("link", { name: "Ouvrir « ticket.png »" })).toBeVisible();
+			// A download is a read: the viewer saves the file, the sheet stays open.
+			const downloading = page.waitForEvent("download");
+			const save = sheet.getByRole("link", { name: "Télécharger « ticket.png »" });
+			await expect(save).toHaveAttribute("href", /\?disposition=attachment$/u);
+			await save.click();
+			const download = await downloading;
+			expect(download.suggestedFilename()).toBe("ticket.png");
+			expect(await readFile(await download.path())).toEqual(PNG);
+			await expect(sheet).toBeVisible();
 			await expectNone(
 				sheet,
 				[

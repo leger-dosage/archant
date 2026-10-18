@@ -734,6 +734,8 @@
 			"uploading": "Envoi…",
 			"input": "Fichiers à joindre",
 			"full": "Supprimez une pièce jointe pour en ajouter une autre.",
+			"open": "Ouvrir « {{name}} »",
+			"download": "Télécharger « {{name}} »",
 			"remove": "Supprimer « {{name}} »",
 			"removeAction": "Supprimer",
 			"removeTitle": "Supprimer la pièce jointe ?",

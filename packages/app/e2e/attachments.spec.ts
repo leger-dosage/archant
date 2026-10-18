@@ -1,6 +1,8 @@
 import type { Api } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
+import { readFile } from "node:fs/promises";
+
 import { formatFileSize } from "../src/lib/file-size.ts";
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
@@ -48,7 +50,7 @@ async function openSheet(page: Page, accountId: string, label: string) {
 	await expect(sheet(page)).toBeVisible();
 }
 
-test("files chosen in the sheet are listed with their size, open in a new tab, and go with a confirmation", async ({
+test("files chosen in the sheet are listed with their size, open in a new tab, download, and go with a confirmation", async ({
 	page,
 	api,
 }) => {
@@ -69,7 +71,9 @@ test("files chosen in the sheet are listed with their size, open in a new tab, a
 	await expect(list.getByRole("listitem").nth(1)).toContainText("facture.pdf");
 	await expect(list.getByRole("listitem").nth(1)).toContainText(formatFileSize(PDF.byteLength));
 
-	const link = list.getByRole("link", { name: "ticket.png" });
+	// The name is text; the eye and the arrow, as Sure's, open and download it.
+	await expect(list.getByRole("link", { name: "ticket.png", exact: true })).toHaveCount(0);
+	const link = list.getByRole("link", { name: "Ouvrir « ticket.png »" });
 	await expect(link).toHaveAttribute("target", "_blank");
 	await expect(link).toHaveAttribute("rel", "noreferrer");
 	const opening = page.waitForEvent("popup");
@@ -80,6 +84,17 @@ test("files chosen in the sheet are listed with their size, open in a new tab, a
 	await expect(tab.locator("img")).toBeVisible();
 	expect(tab.url()).toMatch(/\/api\/transactions\/[^/]+\/attachments\/[^/]+$/u);
 	await tab.close();
+
+	const save = list.getByRole("link", { name: "Télécharger « facture.pdf »" });
+	await expect(save).toHaveAttribute("download", "");
+	// The server's `attachment` answer, not only the `download` attribute.
+	await expect(save).toHaveAttribute("href", /\?disposition=attachment$/u);
+	const downloading = page.waitForEvent("download");
+	await save.click();
+	const download = await downloading;
+	expect(download.suggestedFilename()).toBe("facture.pdf");
+	expect(await readFile(await download.path())).toEqual(PDF);
+	await expect(sheet(page)).toBeVisible();
 
 	await list.getByRole("button", { name: "Supprimer « ticket.png »" }).click();
 	const confirm = page.getByRole("alertdialog", { name: "Supprimer la pièce jointe ?" });
