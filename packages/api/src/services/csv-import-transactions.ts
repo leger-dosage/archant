@@ -131,7 +131,7 @@ function sumOf(terms: readonly AmountTerm[], currency: CurrencyCode): MinorUnits
 }
 
 /** Each row's cells read, an issue on its line for what does not. */
-function readRows(
+export function readRows(
 	sheet: Sheet,
 	accountCurrency: (key: string) => CurrencyCode | null,
 	errors: SureIssue[],
@@ -239,6 +239,117 @@ async function createCategory(
 const creating = (list: readonly ValueMapping[]) =>
 	list.filter((mapping) => mapping.value === CREATE_NEW_KEY).length;
 
+/** The ids `names` map to, once each, those mapped to none left out. */
+export const idsOf = (ids: ReadonlyMap<string, string | null>, names: readonly string[]) => [
+	...new Set(
+		names.flatMap((name) => {
+			const id = ids.get(name) ?? null;
+
+			return id === null ? [] : [id];
+		}),
+	),
+];
+
+/**
+ * « Attribuez vos catégories » and « Attribuez vos étiquettes » over the
+ * file's category and tag keys, preselected as Sure's `sync_mappings`: the
+ * category whose name is the key's leaf, the tag of that name, else a new
+ * one. `checkTags` refuses a row with more tags than a line holds; `write`
+ * creates what « Ajouter comme nouvelle … » asked for and gives each key its id.
+ */
+export async function classificationsOf(
+	db: Pick<Transaction, "select">,
+	categoryKeys: readonly string[],
+	tagKeys: readonly string[],
+	mappings: Mappings | undefined,
+) {
+	const storedCategories = await db
+		.select({
+			id: categories.id,
+			name: categories.name,
+			kind: categories.kind,
+			color: categories.color,
+			parentId: categories.parentId,
+		})
+		.from(categories);
+	const categoryByName = new Map(storedCategories.map((row) => [foldName(row.name), row]));
+	const categoriesMapped = valueMappings(
+		keysOf(categoryKeys),
+		mappings?.categories,
+		new Set(storedCategories.map((row) => row.id)),
+		(key) => (key.trim() === "" ? undefined : categoryByName.get(foldName(leafOf(key)))?.id),
+		(key) => categoryName(leafOf(key)) !== "",
+	);
+	const storedTags = await db.select({ id: tags.id, name: tags.name }).from(tags);
+	const tagByName = new Map(storedTags.map((row) => [foldName(row.name), row.id]));
+	const tagsMapped = valueMappings(
+		keysOf(tagKeys),
+		mappings?.tags,
+		new Set(storedTags.map((row) => row.id)),
+		(key) => (key.trim() === "" ? undefined : tagByName.get(foldName(tagName(key)))),
+	);
+	const tagOf = new Map(tagsMapped.map((mapping) => [mapping.key, mapping.value]));
+	// A new tag is one per folded name, however many keys spell it.
+	const tagTarget = (key: string) => {
+		const value = tagOf.get(key) ?? null;
+
+		return value === CREATE_NEW_KEY ? `new ${foldName(tagName(key))}` : value;
+	};
+
+	return {
+		categories: categoriesMapped,
+		tags: tagsMapped,
+		checkTags: (item: { row: CsvRow; tags: readonly string[] }, errors: SureIssue[]) => {
+			const targets = new Set(item.tags.map(tagTarget).filter((target) => target !== null));
+
+			if (targets.size > MAX_TAGS_PER_TRANSACTION) {
+				errors.push(
+					csvIssue("too_many_tags", {
+						line: lineOf(item.row),
+						max: String(MAX_TAGS_PER_TRANSACTION),
+					}),
+				);
+			}
+		},
+		write: async (tx: Transaction) => {
+			const now = Date.now();
+			const categoryIds = new Map<string, string | null>();
+			const byName = new Map(categoryByName);
+
+			await oneByOne(categoriesMapped, async ({ key, value }) => {
+				categoryIds.set(
+					key,
+					value === CREATE_NEW_KEY ? await createCategory(tx, byName, key, now) : value,
+				);
+			});
+
+			const tagIds = new Map<string, string | null>();
+			const tagsByName = new Map(tagByName);
+
+			await oneByOne(tagsMapped, async ({ key, value }) => {
+				if (value !== CREATE_NEW_KEY) {
+					tagIds.set(key, value);
+
+					return;
+				}
+
+				const name = tagName(key);
+				let id = tagsByName.get(foldName(name));
+
+				if (id === undefined) {
+					id = crypto.randomUUID();
+					await tx.insert(tags).values({ id, name, createdAt: now, updatedAt: now });
+					tagsByName.set(foldName(name), id);
+				}
+
+				tagIds.set(key, id);
+			});
+
+			return { categoryIds, tagIds };
+		},
+	};
+}
+
 /**
  * Sure's `TransactionImport`: reads every row, maps its account, category
  * and tags, and counts what publishing creates, Sure's `dry_run`. A row in
@@ -299,50 +410,17 @@ export async function analyseTransactions(
 	};
 	const read = readRows(sheet, currencyFor, errors);
 
-	const storedCategories = await db
-		.select({
-			id: categories.id,
-			name: categories.name,
-			kind: categories.kind,
-			color: categories.color,
-			parentId: categories.parentId,
-		})
-		.from(categories);
-	const categoryByName = new Map(storedCategories.map((row) => [foldName(row.name), row]));
-	const categoriesMapped = valueMappings(
-		keysOf(sheet.table.rows.map((row) => categoryOf(sheet, row))),
-		mappings?.categories,
-		new Set(storedCategories.map((row) => row.id)),
-		(key) => (key.trim() === "" ? undefined : categoryByName.get(foldName(leafOf(key)))?.id),
-		(key) => categoryName(leafOf(key)) !== "",
+	const classes = await classificationsOf(
+		db,
+		sheet.table.rows.map((row) => categoryOf(sheet, row)),
+		sheet.table.rows.flatMap((row) => splitTags(cellOf(sheet, row, "tags") ?? "")),
+		mappings,
 	);
-	const storedTags = await db.select({ id: tags.id, name: tags.name }).from(tags);
-	const tagByName = new Map(storedTags.map((row) => [foldName(row.name), row.id]));
-	const tagsMapped = valueMappings(
-		keysOf(sheet.table.rows.flatMap((row) => splitTags(cellOf(sheet, row, "tags") ?? ""))),
-		mappings?.tags,
-		new Set(storedTags.map((row) => row.id)),
-		(key) => (key.trim() === "" ? undefined : tagByName.get(foldName(tagName(key)))),
-	);
-	const tagOf = new Map(tagsMapped.map((mapping) => [mapping.key, mapping.value]));
-	// A new tag is one per folded name, however many keys spell it.
-	const tagTarget = (key: string) => {
-		const value = tagOf.get(key) ?? null;
-
-		return value === CREATE_NEW_KEY ? `new ${foldName(tagName(key))}` : value;
-	};
+	const categoriesMapped = classes.categories;
+	const tagsMapped = classes.tags;
 
 	for (const item of read) {
-		const targets = new Set(item.tags.map(tagTarget).filter((target) => target !== null));
-
-		if (targets.size > MAX_TAGS_PER_TRANSACTION) {
-			errors.push(
-				csvIssue("too_many_tags", {
-					line: lineOf(item.row),
-					max: String(MAX_TAGS_PER_TRANSACTION),
-				}),
-			);
-		}
+		classes.checkTags(item, errors);
 	}
 
 	for (const mapping of accountsMapped) {
@@ -364,38 +442,7 @@ export async function analyseTransactions(
 		errors,
 		mappings: { accounts: accountsMapped, categories: categoriesMapped, tags: tagsMapped },
 		write: async (tx, deps) => {
-			const now = Date.now();
-			const categoryIds = new Map<string, string | null>();
-			const byName = new Map(categoryByName);
-
-			await oneByOne(categoriesMapped, async ({ key, value }) => {
-				categoryIds.set(
-					key,
-					value === CREATE_NEW_KEY ? await createCategory(tx, byName, key, now) : value,
-				);
-			});
-
-			const tagIds = new Map<string, string | null>();
-			const tagsByName = new Map(tagByName);
-
-			await oneByOne(tagsMapped, async ({ key, value }) => {
-				if (value !== CREATE_NEW_KEY) {
-					tagIds.set(key, value);
-
-					return;
-				}
-
-				const name = tagName(key);
-				let id = tagsByName.get(foldName(name));
-
-				if (id === undefined) {
-					id = crypto.randomUUID();
-					await tx.insert(tags).values({ id, name, createdAt: now, updatedAt: now });
-					tagsByName.set(foldName(name), id);
-				}
-
-				tagIds.set(key, id);
-			});
+			const { categoryIds, tagIds } = await classes.write(tx);
 
 			// The lines of each account, in file order, the accounts in the order the file names them.
 			const statements = new Map<string, NormalizedTransaction[]>();
@@ -426,15 +473,7 @@ export async function analyseTransactions(
 					notes: item.notes,
 					pending: false,
 					categoryId: categoryIds.get(item.category) ?? null,
-					tagIds: [
-						...new Set(
-							item.tags.flatMap((name) => {
-								const id = tagIds.get(name) ?? null;
-
-								return id === null ? [] : [id];
-							}),
-						),
-					],
+					tagIds: idsOf(tagIds, item.tags),
 				};
 
 				const list = statements.get(key) ?? [];

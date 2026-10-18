@@ -201,12 +201,13 @@ const AMOUNT = /^([-+−]?)(\d+(?:[.,]\d+)*)$/u;
 const GROUPED = /^\d{1,3}(?<separator>[.,])\d{3}(?:\k<separator>\d{3})*$/u;
 
 /**
- * A `T` or `U` field in minor units. The last `.` or `,` followed by one or
- * two digits to the end is the decimal mark; any other separator must split
- * groups of three digits. Files say `12,50`, `1,234.56` or `1.234,56`
- * depending on who wrote them, and none of them says which it is.
+ * A `T`, `U` or `$` field as plain decimal text, `-1234.56`; `null` when it
+ * reads as no amount. The last `.` or `,` followed by one or two digits to
+ * the end is the decimal mark; any other separator must split groups of
+ * three digits. Files say `12,50`, `1,234.56` or `1.234,56` depending on who
+ * wrote them, and none of them says which it is.
  */
-export function amountOf(field: string, currency: CurrencyCode): MinorUnits | null {
+export function decimalAmountOf(field: string): string | null {
 	const match = AMOUNT.exec(field.replaceAll(/\s/gu, ""));
 
 	if (match === null) {
@@ -226,10 +227,14 @@ export function amountOf(field: string, currency: CurrencyCode): MinorUnits | nu
 	const fraction = decimal?.groups?.["fraction"];
 	const digits = integer.replaceAll(/[.,]/gu, "");
 
-	return parseAmount(
-		`${sign === "+" ? "" : sign}${digits}${fraction === undefined ? "" : `.${fraction}`}`,
-		currency,
-	);
+	return `${sign === "" || sign === "+" ? "" : "-"}${digits}${fraction === undefined ? "" : `.${fraction}`}`;
+}
+
+/** A `T` or `U` field in minor units, read as `decimalAmountOf` reads it. */
+export function amountOf(field: string, currency: CurrencyCode): MinorUnits | null {
+	const decimal = decimalAmountOf(field);
+
+	return decimal === null ? null : parseAmount(decimal, currency);
 }
 
 /** Spaces collapsed, cut at `limit` code points so an emoji is never halved. */

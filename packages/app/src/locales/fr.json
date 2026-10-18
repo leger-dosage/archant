@@ -1400,12 +1400,14 @@
 			"requiresAccount": "Importez d'abord des comptes pour débloquer cette option.",
 			"mint": "Importer depuis Mint",
 			"ynab": "Importer depuis YNAB",
-			"actual": "Importer depuis Actual"
+			"actual": "Importer depuis Actual",
+			"qif": "Importer depuis Quicken (QIF)"
 		},
 		"steps": {
 			"label": "Étapes de l'importation",
 			"upload": "Téléverser",
 			"configure": "Configurer",
+			"select": "Sélectionner",
 			"clean": "Nettoyer",
 			"map": "Mapper",
 			"confirm": "Confirmer"
@@ -1426,7 +1428,16 @@
 			"submit": "Téléverser le CSV",
 			"reading": "Lecture du fichier…",
 			"sample": "Téléchargez un exemple de fichier CSV",
-			"sampleHint": "pour voir le format CSV requis"
+			"sampleHint": "pour voir le format CSV requis",
+			"qif": {
+				"title": "Téléverser le fichier QIF",
+				"description": "Sélectionnez un compte pour un fichier d'un seul compte, ou laissez vide quand votre export QIF contient les noms des comptes.",
+				"account": "Compte",
+				"placeholder": "Sélectionner un compte…",
+				"browseHint": "pour ajouter votre fichier QIF ici",
+				"hint": "Fichiers .qif uniquement",
+				"submit": "Téléverser le QIF"
+			}
 		},
 		"configure": {
 			"title": "Configurez votre importation",
@@ -1679,12 +1690,43 @@
 			"unsupported_rule": "Ligne {{line}} : Archant ne peut pas garder cette règle, une de ses conditions ou de ses actions lui manque.",
 			"unmapped_account_type": "Le type de compte {{key}} n'est pas attribué.",
 			"unmapped_account": "Le compte {{key}} n'est pas attribué.",
+			"trades_not_supported": "Ligne {{line}} : ce compte ne prend pas en charge les ordres.",
 			"unknown": "Une ligne du fichier est refusée."
 		},
 		"success": {
 			"title": "Importation réussie",
 			"description": "Vos données importées ont été ajoutées avec succès à l'application et sont maintenant prêtes à être utilisées.",
 			"dashboard": "Retour au tableau de bord"
+		},
+		"qif": {
+			"title": "Configurer et sélectionner",
+			"description": "Vérifiez le format de date détecté, puis choisissez les catégories et étiquettes de votre fichier QIF à importer dans Archant.",
+			"dateFormat": {
+				"heading": "Format de date",
+				"description": "Le format de date a été détecté automatiquement depuis votre fichier. Modifiez-le si les dates semblent incorrectes.",
+				"preview": "Première date analysée : {{date}}",
+				"errorTitle": "Impossible de détecter le format de date",
+				"errorDescription": "Aucun des formats de date pris en charge n'a pu analyser les dates dans ce fichier. Veuillez vérifier que le fichier contient des entrées de date valides."
+			},
+			"splitWarningTitle": "Transactions scindées détectées",
+			"splitWarningDescription": "Ce fichier QIF contient des transactions scindées. Vérifiez les catégories et étiquettes scindées détectées ci-dessous avant l'importation.",
+			"splitBadge": "scindée",
+			"categoriesHeading": "Catégories",
+			"categoriesFound_one": "{{count}} catégorie trouvée",
+			"categoriesFound_other": "{{count}} catégories trouvées",
+			"categoryName": "Nom de la catégorie",
+			"tagsHeading": "Étiquettes",
+			"tagsFound_one": "{{count}} étiquette trouvée",
+			"tagsFound_other": "{{count}} étiquettes trouvées",
+			"tagName": "Nom de l'étiquette",
+			"transactions": "Transactions",
+			"count_one": "{{count}} opération",
+			"count_other": "{{count}} opérations",
+			"keep": "Importer {{name}}",
+			"emptyPrimary": "Aucune catégorie ou étiquette trouvée dans ce fichier QIF.",
+			"emptySecondary": "Toutes les transactions seront importées sans catégories ni étiquettes.",
+			"submit": "Continuer vers la revue",
+			"applying": "Lecture du fichier…"
 		}
 	},
 	"categories": {
@@ -3068,6 +3110,8 @@
 		"INVALID_IMPORT_FILE": "Ce fichier n'est pas un relevé bancaire lisible.",
 		"NDJSON_INVALID": "Le fichier doit être un NDJSON valide avec au moins un enregistrement",
 		"CSV_INVALID": "Doit être un CSV valide avec des en-têtes et au moins une ligne de données",
+		"QIF_INVALID": "Doit être un fichier QIF valide",
+		"QIF_ACCOUNT_REQUIRED": "Sélectionnez un compte pour l'import QIF",
 		"IMPORT_FILE_TOO_LARGE": "Le fichier dépasse {{maxSize}} Mo.",
 		"IMPORT_TOO_MANY_ROWS": "Le fichier compte plus de {{max}} enregistrements.",
 		"SURE_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",

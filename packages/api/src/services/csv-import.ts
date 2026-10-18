@@ -18,6 +18,7 @@ import type { ServiceDeps } from "./deps.ts";
 import type { CsvTrade } from "./ledger/csv-trades.ts";
 import type { Transaction } from "./ledger/shared.ts";
 import type { ImportedAccount } from "./ledger/sure-import.ts";
+import type { QifPreview, QifSheet } from "./qif-import.ts";
 import type { PlanAccount } from "./sure-import-plan.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
 
@@ -94,6 +95,7 @@ import { analyseTransactions } from "./csv-import-transactions.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { insertCsvTrades, listingOf, storedListing } from "./ledger/csv-trades.ts";
 import { oneByOne } from "./ledger/shared.ts";
+import { analyseQif, readQifSheet } from "./qif-import.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { cut } from "./sure-import-plan.ts";
 import { foldName, tooLarge } from "./sure-import-preflight.ts";
@@ -124,6 +126,8 @@ export type CsvImportPreview = {
 	 */
 	dates: { detected: boolean; first: IsoDate | null } | null;
 	mappings: PreviewMappings;
+	/** « Configurer et sélectionner » of a QIF file; `null` for a CSV. */
+	qif: QifPreview | null;
 	/**
 	 * The type column's distinct values, in file order, among which « Définir
 	 * … comme valeur d'identifiant » picks, Sure's `selectable_amount_type_values`.
@@ -163,20 +167,43 @@ const ACCOUNTABLE_TYPES: Record<string, AccountType> = {
 const rowsToSkipOf = (type: CsvImportType, given: Configuration | undefined) =>
 	type === "transactions" ? (given?.rowsToSkip ?? 0) : 0;
 
+/** What a request reads: a CSV file's table, or a QIF file's rows read whole. */
+type Source = { kind: "csv"; table: CsvTable } | { kind: "qif"; qif: QifSheet };
+
 /**
  * The file as text and rows, or refused: larger than Sure's `MAX_CSV_SIZE`
  * before it is read, no headers or data row with the chosen separator
- * (`CSV_INVALID`), more rows than Sure's `max_row_count`.
+ * (`CSV_INVALID`), more rows than Sure's `max_row_count`. A QIF file is read
+ * by Sure's `QifParser` into its rows instead.
  */
-function readTable(request: CsvImportRequest): CsvTable {
+function readSource(request: CsvImportRequest, day: IsoDate): Source {
 	const max = maxRowsOf(request.type);
 
 	if (request.file.bytes.length > MAX_CSV_BYTES) {
 		throw tooLarge({ maxBytes: MAX_CSV_BYTES, maxRows: max });
 	}
 
+	const text = decodeText(request.file.bytes);
+
+	if (request.type === "qif") {
+		return {
+			kind: "qif",
+			qif: readQifSheet(
+				{
+					text,
+					fileName: request.file.name,
+					configuration: request.configuration,
+					edits: request.edits,
+					maxRows: max,
+				},
+				day,
+				getReportingCurrency(),
+			),
+		};
+	}
+
 	const table = parseCsv(
-		decodeText(request.file.bytes),
+		text,
 		request.configuration?.separator ?? ",",
 		rowsToSkipOf(request.type, request.configuration),
 	);
@@ -194,7 +221,7 @@ function readTable(request: CsvImportRequest): CsvTable {
 		});
 	}
 
-	return table;
+	return { kind: "csv", table };
 }
 
 /** The header a key preselects: the first whose name is the key or one of its aliases. */
@@ -913,11 +940,18 @@ function datesOf(sheet: Sheet): CsvImportPreview["dates"] {
 async function analyse(
 	db: Pick<Transaction, "select">,
 	request: CsvImportRequest,
-	table: CsvTable,
-	timeZone: string,
+	source: Source,
+	day: IsoDate,
 ): Promise<{ sheet: Sheet; analysis: Analysis }> {
+	if (source.kind === "qif") {
+		return {
+			sheet: source.qif.sheet,
+			analysis: await analyseQif(db, source.qif, request.mappings),
+		};
+	}
+
+	const { table } = source;
 	const lookup = headerLookup(table.headers);
-	const day = today(timeZone);
 	const configuration = resolveConfiguration(
 		request.type,
 		request.configuration,
@@ -994,15 +1028,18 @@ export async function previewCsvImport(
 	deps: ServiceDeps,
 	request: CsvImportRequest,
 ): Promise<CsvImportPreview> {
-	const table = readTable(request);
-	const { sheet, analysis } = await analyse(deps.db, request, table, deps.timeZone);
+	const day = today(deps.timeZone);
+	const source = readSource(request, day);
+	const { sheet, analysis } = await analyse(deps.db, request, source, day);
+	const qif = source.kind === "qif" ? source.qif : null;
 
 	return {
-		headers: table.headers,
-		sample: sampleOf(table),
-		configuration: sheet.configuration,
-		dates: datesOf(sheet),
+		headers: sheet.table.headers,
+		sample: qif === null ? sampleOf(sheet.table) : [],
+		configuration: qif?.configuration ?? sheet.configuration,
+		dates: qif === null ? datesOf(sheet) : null,
 		typeValues: typeValuesOf(sheet),
+		qif: qif?.preview ?? null,
 		mappings: {
 			accountTypes: analysis.mappings?.accountTypes ?? [],
 			accounts: analysis.mappings?.accounts ?? [],
@@ -1030,10 +1067,11 @@ export async function importCsv(
 
 	try {
 		// Parsed before the write lock is taken: the table depends on no row.
-		const table = readTable(request);
+		const day = today(deps.timeZone);
+		const source = readSource(request, day);
 		const { counts, committed } = await deps.db.transaction(
 			async (tx) => {
-				const { analysis } = await analyse(tx, request, table, deps.timeZone);
+				const { analysis } = await analyse(tx, request, source, day);
 
 				if (analysis.errors.length > 0) {
 					throw new AppError("CSV_IMPORT_INVALID", "The file's preview found errors.");
@@ -1049,7 +1087,7 @@ export async function importCsv(
 
 		await committed?.(deps);
 
-		if (request.type === "trades") {
+		if (request.type === "trades" || (request.type === "qif" && (counts["trades"] ?? 0) > 0)) {
 			try {
 				await refreshStatistics(deps.db);
 			} catch (error) {

@@ -361,13 +361,14 @@ export function yearsFrom(date: IsoDate, years: number): IsoDate {
 /**
  * Sure's `Import.detect_date_format`: of the candidates, the one reading the
  * most of the first 50 distinct samples, then the most of them between 1970
- * and five years ahead, the earlier candidate on a tie; `%Y-%m-%d` when none
- * reads any.
+ * and five years ahead, the earlier candidate on a tie; `fallback` when none
+ * reads any, `%Y-%m-%d` unless a QIF file's `%m/%d/%Y`.
  */
 export function detectDateFormat(
 	samples: readonly string[],
 	candidates: readonly string[],
 	today: IsoDate,
+	fallback = DEFAULT_DATE_FORMAT,
 ): string {
 	const cleaned = [...new Set(samples.filter((sample) => sample.trim() !== ""))].slice(0, 50);
 	const latest = yearsFrom(today, 5);
@@ -387,7 +388,7 @@ export function detectDateFormat(
 		}
 	}
 
-	return best?.format ?? DEFAULT_DATE_FORMAT;
+	return best?.format ?? fallback;
 }
 
 /**

@@ -193,6 +193,7 @@ test("imports a YNAB file with its columns preset, into a new account and catego
 		/Importer depuis Sure/u,
 		/Importer depuis Mint/u,
 		/Importer depuis Actual/u,
+		/Importer depuis Quicken \(QIF\)/u,
 		/Importer depuis YNAB/u,
 	]);
 	await sources.getByRole("link", { name: "Importer depuis YNAB" }).click();

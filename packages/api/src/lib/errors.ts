@@ -55,6 +55,16 @@ export const ERROR_STATUSES = {
 	 */
 	CSV_INVALID: 400,
 	/**
+	 * « Importer depuis Quicken (QIF) » given a file without a `!Type:`
+	 * header, as Sure's `QifParser.valid?`. Nothing is read further.
+	 */
+	QIF_INVALID: 400,
+	/**
+	 * A QIF file naming no `!Account`, uploaded without choosing its account,
+	 * as Sure's `qif_account_required`. Nothing is read further.
+	 */
+	QIF_ACCOUNT_REQUIRED: 400,
+	/**
 	 * A Sure archive larger than `SURE_IMPORT_MAX_NDJSON_SIZE_MB`, or a CSV
 	 * file larger than Sure's `MAX_CSV_SIZE`, 10 MB, refused before it is
 	 * read; `params.maxSize` is the limit in megabytes.

@@ -1972,6 +1972,90 @@ describe("ingest and a split", () => {
 	});
 });
 
+/** A split record's two lines: one with notes, a category and a tag given twice, one bare. */
+const splitLines = (categoryId: string, tagId: string) => [
+	{
+		label: "Fruits",
+		amount: toMinorUnits(-3000),
+		notes: "Marché",
+		categoryId,
+		tagIds: [tagId, tagId],
+	},
+	{ label: "Pain", amount: toMinorUnits(-1290), notes: null, categoryId: null, tagIds: [] },
+];
+
+describe("ingest of a split record", () => {
+	it("writes its lines as children, the parent excluded and locked so, rules on the lines only", async () => {
+		const account = await openChecking();
+		const categoryId = await newCategory("Courses");
+		const tagId = await newTag("Marché");
+		const before = (await balanceOn(deps(), account.id, "2026-09-30"))?.amount ?? 0;
+
+		const bread = await newCategory("Pain");
+
+		await createRule(deps(), {
+			effectiveDate: null,
+			conditions: [labelLike("CB Café")],
+			actions: [{ actionType: "set_transaction_category", value: categoryId }],
+		});
+		await createRule(deps(), {
+			effectiveDate: null,
+			conditions: [labelLike("Pain")],
+			actions: [{ actionType: "set_transaction_category", value: bread }],
+		});
+		const { result } = await importStatement(
+			account.id,
+			statementOf({ ...cafe, splitLines: splitLines(categoryId, tagId) }),
+		);
+		const [parent = ""] = result.created;
+		const children = await temp.db
+			.select({ id: entries.id, amount: entries.amount, date: entries.date })
+			.from(entries)
+			.where(eq(entries.parentEntryId, parent));
+
+		expect(children.map(({ amount, date }) => ({ amount, date }))).toEqual([
+			{ amount: -3000, date: "2026-09-10" },
+			{ amount: -1290, date: "2026-09-10" },
+		]);
+		await expect(excludedOf(parent)).resolves.toBe(true);
+		await expect(lockedFields(parent)).resolves.toEqual(["excluded"]);
+		await expect(categoryOf(parent)).resolves.toBeNull();
+		const [fruits = "", pain = ""] = children.map(({ id }) => id);
+		await expect(categoryOf(fruits)).resolves.toBe(categoryId);
+		await expect(tagsOf(fruits)).resolves.toEqual([tagId]);
+		await expect(categoryOf(pain)).resolves.toBe(bread);
+		await expect(tagsOf(pain)).resolves.toEqual([]);
+		await expect(excludedOf(pain)).resolves.toBe(false);
+		await expect(balanceOn(deps(), account.id, "2026-09-30")).resolves.toMatchObject({
+			amount: before - 4290,
+		});
+	});
+
+	it("leaves a possible duplicate whole", async () => {
+		const account = await openChecking();
+		await add(account.id, { date: "2026-09-04", amount: toMinorUnits(-4290) });
+		await add(account.id, { date: "2026-09-06", amount: toMinorUnits(-4290) });
+
+		const { result } = await importStatement(
+			account.id,
+			statementOf(
+				line({
+					date: "2026-09-05",
+					amount: toMinorUnits(-4290),
+					label: "Courses",
+					splitLines: splitLines(await newCategory("Courses"), await newTag("Marché")),
+				}),
+			),
+		);
+		const [id = ""] = result.created;
+
+		await expect(excludedOf(id)).resolves.toBe(false);
+		await expect(
+			temp.db.select().from(entries).where(eq(entries.parentEntryId, id)),
+		).resolves.toEqual([]);
+	});
+});
+
 /** A line recorded by hand, with what an assistant adds to it. */
 const manual = (
 	accountId: string,

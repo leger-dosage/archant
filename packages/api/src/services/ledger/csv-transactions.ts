@@ -1,12 +1,13 @@
 import type { NormalizedTransaction } from "../../domain/statement.ts";
 import type { ServiceDeps } from "../deps.ts";
 
+import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 
 import { ingest } from "./ingest.ts";
 import { oneByOne } from "./shared.ts";
 
-/** One account's lines of a CSV transaction import, in file order. */
+/** One account's lines of a CSV or QIF transaction import, in file order. */
 export type CsvStatement = { accountId: string; lines: NormalizedTransaction[] };
 
 /**
@@ -15,13 +16,15 @@ export type CsvStatement = { accountId: string; lines: NormalizedTransaction[] }
  * lists it and a revert removes it. The file was read in this request and
  * is not kept (AD-14); the lines are written as a bank's file is, no field
  * locked (AD-10), and a line found already takes the file's category, tags
- * and notes, as Sure's `TransactionImport`. Runs inside the caller's
- * transaction.
+ * and notes, as Sure's `TransactionImport`. A QIF import moves the opening
+ * anchor before its earliest line, as `ingest` does for its source. Runs
+ * inside the caller's transaction.
  */
 export async function ingestCsvStatements(
 	deps: ServiceDeps,
 	statements: readonly CsvStatement[],
 	fileName: string,
+	source: Extract<FileSourceId, "csv" | "qif"> = "csv",
 ): Promise<{ created: number; importIds: string[] }> {
 	const now = Date.now();
 	const importIds: string[] = [];
@@ -33,7 +36,7 @@ export async function ingestCsvStatements(
 		await deps.db.insert(imports).values({
 			id: importId,
 			accountId,
-			source: "csv",
+			source,
 			fileName,
 			status: "previewed",
 			content: Buffer.alloc(0),

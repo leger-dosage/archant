@@ -44,6 +44,20 @@ export type NormalizedTransaction = {
 	categoryId?: string | null | undefined;
 	/** The line's tags, ids of the household's; only the CSV transaction import sets them. */
 	tagIds?: readonly string[] | undefined;
+	/**
+	 * The lines the line is split into, summing to its amount exactly
+	 * (AD-20). Only a QIF import sets them, from a split record.
+	 */
+	splitLines?: readonly ImportedSplitLine[] | undefined;
+};
+
+/** One line of an imported split: its own label, amount, notes, category and tags. */
+export type ImportedSplitLine = {
+	label: string;
+	amount: MinorUnits;
+	notes: string | null;
+	categoryId: string | null;
+	tagIds: readonly string[];
 };
 
 /**

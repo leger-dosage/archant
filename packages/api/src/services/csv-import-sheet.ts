@@ -7,6 +7,7 @@ import type {
 	CsvImportType,
 	CsvSeparator,
 	NumberFormat,
+	QifShape,
 	SignageConvention,
 	csvImportConfigurationSchema,
 	csvImportEditsSchema,
@@ -60,6 +61,9 @@ export type ResolvedConfiguration = {
 	accountId: string | null;
 	/** Each column « Configurer » maps, by Sure's key; `null` is « Laisser vide ». */
 	columns: Partial<Record<ColumnKey, string | null>>;
+	/** The categories and tags « Configurer et sélectionner » keeps of a QIF file. */
+	qifCategories?: string[] | undefined;
+	qifTags?: string[] | undefined;
 };
 
 /** One value of the file, how many rows hold it, and what it maps to; `null` is none yet. */
@@ -109,6 +113,8 @@ export type Sheet = {
 	currency: CurrencyCode;
 	/** « Nettoyer »'s edits, by `editKey`: what the row reads instead of the file. */
 	edits: ReadonlyMap<string, string>;
+	/** A QIF file's shape, which sets the columns « Nettoyer » shows. */
+	qif?: QifShape | undefined;
 };
 
 const editKey = (line: number, key: CleanKey) => `${line} ${key}`;
