@@ -36,7 +36,7 @@ import {
 } from "../../testing/ledger.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
 import { updateAccount } from "../accounts.ts";
-import { updateTransaction } from "./edits.ts";
+import { bulkUpdateTransactions, updateTransaction } from "./edits.ts";
 import {
 	cashFlowByCategory,
 	cashFlowByMonth,
@@ -625,7 +625,8 @@ describe("cashFlowByCategory", () => {
 		// A split: the list leaves its parent out, so it is read apart, and
 		// `countsInCashFlow` must leave it out on its own.
 		const split = await splitInTwo(joint.id, { date: "2026-09-12" });
-		await updateTransaction(deps(), split.food, { categoryId: groceries }, asUser);
+		// A line's category is read-only on its own (AD-20); a bulk edit sets it, as Sure's.
+		await bulkUpdateTransactions(deps(), { ids: [split.food] }, { categoryId: groceries }, asUser);
 		const parent = await findTransaction(deps(), split.parent);
 
 		const all = await listTransactions(deps(), { accountIds }, firstPage);

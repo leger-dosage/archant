@@ -53,6 +53,12 @@ import { clearOneTime, sidesOf } from "./transfers.ts";
 /** What only `services/ledger/splits.ts` changes on a split's rows (AD-20). */
 const SPLIT_FIELDS: ReadonlySet<LockableField> = new Set(["date", "amount", "excluded"]);
 
+/**
+ * What a split line takes from the form or its parent and never changes
+ * alone, as Sure's drawer disables them on a child (AD-20).
+ */
+const SPLIT_LINE_FIELDS: ReadonlySet<LockableField> = new Set(["label", "category", "merchant"]);
+
 /** What only classifies a row: written beside the entry, never on it. */
 const CLASSIFYING_FIELDS: ReadonlySet<LockableField> = new Set([
 	"category",
@@ -73,7 +79,9 @@ const CLASSIFYING_FIELDS: ReadonlySet<LockableField> = new Set([
  * or merchant, checked in the same transaction as the write so a concurrent
  * delete cannot slip between them, and `TRANSACTION_SPLIT` for a change of
  * the date, the amount or the exclusion of a split's parent or child, which
- * would break the split's sum or count its money twice (AD-20).
+ * would break the split's sum or count its money twice, and for a change of
+ * a child's label, category or merchant, which Sure's drawer disables
+ * (AD-20). A child's tags, notes and one-time flag stay editable.
  */
 export async function updateTransaction(
 	deps: ServiceDeps,
@@ -90,6 +98,10 @@ export async function updateTransaction(
 
 			if (changed.some((field) => SPLIT_FIELDS.has(field))) {
 				await refuseSplit(tx, [entryId]);
+			}
+
+			if (changed.some((field) => SPLIT_LINE_FIELDS.has(field))) {
+				await refuseSplit(tx, [entryId], isSplitChild);
 			}
 
 			if (

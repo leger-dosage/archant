@@ -15,7 +15,8 @@ export function usePreferences() {
 
 /**
  * Saves the preferences; the answer is the new state. Every account list
- * reads the order from the server, so they are read again.
+ * reads the order from the server, and every transaction list the split
+ * grouping, so they are read again.
  */
 export function useUpdatePreferences() {
 	const queryClient = useQueryClient();
@@ -25,7 +26,10 @@ export function useUpdatePreferences() {
 			(await unwrap(api.preferences.$patch({ json: input }))).data,
 		onSuccess: async (preferences) => {
 			queryClient.setQueryData(queryKeys.preferences.all, preferences);
-			await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			]);
 		},
 	});
 }

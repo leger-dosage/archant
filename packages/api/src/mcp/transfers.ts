@@ -22,7 +22,7 @@ import { itemOf, namesFor, transaction } from "./transactions.ts";
 export const getTransferCandidates = defineTool({
 	name: "get_transfer_candidates",
 	title: "Transfer candidates",
-	description: `The transactions a transaction can be paired with as one transfer, as « Rapprocher un virement » lists them in Archant, closest date first, a page at a time as Sure's get_categories, each as get_transactions lists it: the opposite amount in another active account of the same currency, within ${HAND_TRANSFER_WINDOW_DAYS} days, in no transfer, a pair the owner told the matcher never to propose included. A transaction already in a transfer, excluded, or a split's line has none. ${BANK_TEXT}`,
+	description: `The transactions a transaction can be paired with as one transfer, as « Rapprocher un virement » lists them in Archant, closest date first, a page at a time as Sure's get_categories, each as get_transactions lists it: the opposite amount in another active account of the same currency, within ${HAND_TRANSFER_WINDOW_DAYS} days, in no transfer, a pair the owner told the matcher never to propose included. A transaction already in a transfer or excluded, a split's parent included, has none. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: transferCandidatesInput,

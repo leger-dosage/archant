@@ -10,6 +10,7 @@ import { entries } from "@archant/data/schema/entries";
 import { taggings } from "@archant/data/schema/taggings";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
+import { transfers } from "@archant/data/schema/transfers";
 
 import { AppError } from "../../lib/errors.ts";
 import { MAX_SPLIT_LINES, MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
@@ -29,7 +30,9 @@ import {
 	isSplitParent,
 	lockedBy,
 	oneByOne,
+	transferOf,
 } from "./shared.ts";
+import { clearOneTime, matchTransfers, sidesOf } from "./transfers.ts";
 
 const convertedTrade = alias(entries, "converted_trade");
 
@@ -232,7 +235,11 @@ async function insertChildren(
 	});
 }
 
-/** Updates the kept child `current` to `line`, as `updateTransaction` would, the amount always. */
+/**
+ * Updates the kept child `current` to `line`, as `updateTransaction` would,
+ * the amount always. A new amount deletes the line's transfer, whose two
+ * sides no longer cancel out, as any transfer side's (AD-11).
+ */
 async function updateChild(
 	tx: Transaction,
 	current: EditableRow & { id: string },
@@ -258,6 +265,16 @@ async function updateChild(
 			.update(entries)
 			.set({ amount: line.amount, updatedAt: now })
 			.where(eq(entries.id, current.id));
+
+		const deleted = await tx
+			.delete(transfers)
+			.where(transferOf([current.id]))
+			.returning({
+				outflowTransactionId: transfers.outflowTransactionId,
+				inflowTransactionId: transfers.inflowTransactionId,
+			});
+		// Sure's `Transfer#destroy!` resets both kinds.
+		await clearOneTime(tx, deleted.flatMap(sidesOf));
 	}
 
 	const detail = detailOf(change, origin, now);
@@ -302,7 +319,9 @@ export async function splitOf(deps: ServiceDeps, id: string): Promise<Split> {
  * unknown transaction, `NOT_SPLITTABLE` for a transfer side, a pending,
  * excluded or possibly duplicated transaction, or a split's parent or child,
  * and `VALIDATION_ERROR` on `lines` as `checkLines` says. Balances are
- * recomputed from the parent's date, and do not move.
+ * recomputed from the parent's date, and do not move; the matcher then
+ * weighs the lines, as Sure's `sync_account_later` runs
+ * `auto_match_transfers!`.
  */
 export async function splitTransaction(
 	deps: ServiceDeps,
@@ -337,6 +356,7 @@ export async function splitTransaction(
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);
+			await matchTransfers(tx, now);
 
 			return { parentId: parent.id, childIds: await childIdsOf(tx, parent.id) };
 		},
@@ -351,7 +371,9 @@ export async function splitTransaction(
  * child; a child no line names is deleted. Sure deletes and recreates every
  * child, losing their tags. Throws `NOT_FOUND` for an unknown or an unsplit
  * transaction, and `VALIDATION_ERROR` on `lines` as `checkLines` says, on
- * `lines.N.id` for an id that is not a child of this split.
+ * `lines.N.id` for an id that is not a child of this split. A deleted
+ * line's transfer goes with it, a kept line's when its amount changes; the
+ * matcher then weighs the lines, as after a split.
  */
 export async function editSplit(
 	deps: ServiceDeps,
@@ -389,6 +411,7 @@ export async function editSplit(
 				now,
 			);
 			await recompute(deps, tx, parent);
+			await matchTransfers(tx, now);
 
 			return { parentId: parent.id, childIds: await childIdsOf(tx, parent.id) };
 		},
@@ -399,8 +422,10 @@ export async function editSplit(
 /**
  * Deletes the children of the split `id` belongs to, from its parent or a
  * child, and counts the parent again, as Sure's `unsplit!`. Its `excluded`
- * stays locked, now `false`: the user set it. Throws `NOT_FOUND` for an
- * unknown or an unsplit transaction. Returns the parent's id.
+ * stays locked, now `false`: the user set it. A line's transfer goes with
+ * it, the other side standard again, and the matcher weighs the parent.
+ * Throws `NOT_FOUND` for an unknown or an unsplit transaction. Returns the
+ * parent's id.
  */
 export async function unsplitTransaction(
 	deps: ServiceDeps,
@@ -410,16 +435,18 @@ export async function unsplitTransaction(
 	return deps.db.transaction(
 		async (tx) => {
 			const parent = await parentOf(tx, id);
+			const now = Date.now();
 
 			await deleteTransactionRows(tx, await childIdsOf(tx, parent.id));
 			await tx
 				.update(transactions)
 				.set({
 					excluded: false,
-					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"], Date.now()),
+					lockedFields: lockedBy(options.origin, parent.lockedFields, ["excluded"], now),
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);
+			await matchTransfers(tx, now);
 
 			return parent.id;
 		},

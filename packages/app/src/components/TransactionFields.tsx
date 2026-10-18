@@ -29,6 +29,7 @@ export function CategoryField({
 	invalid,
 	describedBy,
 	setOnOutflow = false,
+	disabled = false,
 	placeholder,
 }: {
 	id?: string;
@@ -46,6 +47,8 @@ export function CategoryField({
 	 * category, shown disabled with the reason, as Sure's `7e1d93613`.
 	 */
 	setOnOutflow?: boolean;
+	/** A split's line keeps the category its split gave it, as Sure's drawer. */
+	disabled?: boolean;
 	/** Shown for `null`, which then means no choice yet rather than « Sans catégorie ». */
 	placeholder?: string;
 }) {
@@ -67,7 +70,7 @@ export function CategoryField({
 						id={id}
 						type="button"
 						variant="outline"
-						disabled={setOnOutflow}
+						disabled={setOnOutflow || disabled}
 						className="w-full justify-start font-normal"
 						aria-invalid={invalid}
 						{...(accessibleName === undefined ? {} : { "aria-label": accessibleName(name) })}

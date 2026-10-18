@@ -387,7 +387,7 @@ async function refsOf(deps: ServiceDeps, item: TransactionRecord) {
 export const updateTransactionTool = defineTool({
 	name: "update_transaction",
 	title: "Classify a transaction",
-	description: `Updates a transaction's name, notes, category, merchant, tags or exclusion, as its sheet in Archant and Sure's update_transaction do: use get_transactions first to find its id, and get_categories, get_merchants or get_tags for the ids it sets. Give at least one field, or it answers no_changes. Its date and amount come from the bank and never change here, and a split transaction or one of its lines keeps its exclusion: changing it answers transaction_split. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
+	description: `Updates a transaction's name, notes, category, merchant, tags or exclusion, as its sheet in Archant and Sure's update_transaction do: use get_transactions first to find its id, and get_categories, get_merchants or get_tags for the ids it sets. Give at least one field, or it answers no_changes. Its date and amount come from the bank and never change here, a split transaction or one of its lines keeps its exclusion, and a split's line keeps its name, category and merchant, as Sure's drawer disables them: changing one answers transaction_split; a line's notes and tags change. Each field it changes is locked: no rule changes it afterwards, so prefer a rule when the label repeats. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	fieldPaths: { label: "name" },

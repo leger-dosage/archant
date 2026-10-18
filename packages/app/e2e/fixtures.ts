@@ -385,6 +385,13 @@ export function apiHelpers(request: APIRequestContext) {
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
 
+		/** Saves whether the administrator's lists group split lines, one for the whole run: reset it after. */
+		async setSplitGrouped(showSplitGrouped: boolean) {
+			const response = await request.patch("/api/preferences", { data: { showSplitGrouped } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
 		async createMerchant(name: string = uniqueName("Marchand")): Promise<Created> {
 			return { id: await created(await request.post("/api/merchants", { data: { name } })), name };
 		},

@@ -879,18 +879,48 @@ describe("a rejected pair when a side goes", () => {
 });
 
 describe("transfer matching and a split", () => {
-	it("never takes a split's child or parent as a side, by hand or automatically", async () => {
+	it("proposes a split line as a side once split, never its excluded parent, as Sure", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const amount = transferAmount();
+		const inflow = await add(livret.id, { date: "2026-09-12", amount: toMinorUnits(amount) });
+		await unpair(inflow);
+
+		const { parent, food } = await splitInTwo(joint.id, { date: "2026-09-10" }, -amount);
+
+		await expect(transferRows(inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: food, inflowTransactionId: inflow, status: "pending" },
+		]);
+		await expect(transferRows(parent)).resolves.toEqual([]);
+	});
+
+	it("lists a split line in the picker, never its parent, and pairs it by hand", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
 		const { parent, food } = await splitInTwo(joint.id, { date: "2026-09-10" }, -amount);
-		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		const inflow = await add(livret.id, { date: "2026-09-12", amount: toMinorUnits(amount) });
+		await unpair(inflow);
+
+		const candidates = await transferCandidates(deps(), inflow);
+
+		expect(candidates.map((candidate) => candidate.id)).toEqual([food]);
+		await expect(transferCandidates(deps(), parent)).resolves.toEqual([]);
+		await expect(matchTransfer(deps(), inflow, parent, asUser)).rejects.toMatchObject({
+			fields: [{ path: "counterpartId", code: "not_a_candidate" }],
+		});
+		await expect(matchTransfer(deps(), inflow, food, asUser)).resolves.toMatchObject({
+			outflowTransactionId: food,
+			inflowTransactionId: inflow,
+			status: "confirmed",
+		});
+	});
+
+	it("never proposes a split's parent, excluded, against the whole amount", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const { parent, amount } = await splitInTwo(joint.id, { date: "2026-09-10" });
+		const inflow = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
 
 		await expect(transferRows(inflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
-		await expect(transferCandidates(deps(), food)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), parent)).resolves.toEqual([]);
-		await expect(matchTransfer(deps(), inflow, food, asUser)).rejects.toMatchObject({
-			fields: [{ path: "counterpartId", code: "not_a_candidate" }],
-		});
 	});
 });

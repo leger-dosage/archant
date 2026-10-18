@@ -164,8 +164,9 @@ export function TransactionForm({
 	const [unlocked, setUnlocked] = useState(false);
 	const locked = transaction !== null && protectedFromSync(transaction) && !unlocked;
 	// A split's parent and its lines keep their date, amount and exclusion,
-	// which only the split changes (AD-20); a line keeps its parent's merchant
-	// and goes only with its parent.
+	// which only the split changes (AD-20); a line keeps the label and the
+	// category the split gave it and its parent's merchant, as Sure's drawer
+	// disables them, and goes only with its parent.
 	const splitParent = transaction?.splitParent === true;
 	const splitChild = transaction !== null && transaction.parentEntryId !== null;
 	const inSplit = splitParent || splitChild;
@@ -425,7 +426,9 @@ export function TransactionForm({
 						onGone={onClose}
 					/>
 				)}
-				{transaction !== null && !inSplit && (
+				{/* A line offers no picker, as Sure's `unless @entry.split_child?`; one the
+				    matcher paired shows its transfer, to confirm or refuse it here. */}
+				{transaction !== null && !splitParent && (!splitChild || transfer !== null) && (
 					<TransferBlock transaction={transaction} transfer={transfer} onChange={setTransfer} />
 				)}
 				{/* A transfer side follows a series only through « Marquer comme récurrent », as Sure's. */}
@@ -456,6 +459,7 @@ export function TransactionForm({
 							aria-invalid={errors.label !== undefined}
 							{...describedBy("label")}
 							{...form.register("label")}
+							disabled={splitChild}
 						/>
 						<FieldMessage id="transaction-label-error" error={errors.label} />
 					</div>
@@ -528,6 +532,7 @@ export function TransactionForm({
 							<CategoryField
 								value={category.field.value}
 								onChange={category.field.onChange}
+								disabled={splitChild}
 								invalid={errors.categoryId !== undefined}
 								describedBy={
 									errors.categoryId === undefined ? undefined : "transaction-categoryId-error"

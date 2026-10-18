@@ -28,13 +28,15 @@ async function patchRaw(body: unknown, app = buildApp()) {
 }
 
 describe("GET /api/preferences", () => {
-	it("reads Sure's name order for a user who never chose one", async () => {
+	it("reads Sure's name order and grouped splits for a user who never chose", async () => {
 		const api = await preferencesApi();
 
 		const response = await api.$get();
 
 		expect(response.status).toBe(200);
-		await expect(response.json()).resolves.toEqual({ data: { defaultAccountOrder: "name_asc" } });
+		await expect(response.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "name_asc", showSplitGrouped: true },
+		});
 	});
 });
 
@@ -46,8 +48,55 @@ describe("PATCH /api/preferences", () => {
 		const read = await api.$get();
 
 		expect(saved.status).toBe(200);
-		await expect(saved.json()).resolves.toEqual({ data: { defaultAccountOrder: order } });
-		await expect(read.json()).resolves.toEqual({ data: { defaultAccountOrder: order } });
+		await expect(saved.json()).resolves.toEqual({
+			data: { defaultAccountOrder: order, showSplitGrouped: true },
+		});
+		await expect(read.json()).resolves.toEqual({
+			data: { defaultAccountOrder: order, showSplitGrouped: true },
+		});
+	});
+
+	it("writes nothing for an empty body and answers the preferences", async () => {
+		const api = await preferencesApi();
+		await api.$patch({ json: { defaultAccountOrder: "name_desc" } });
+
+		const saved = await api.$patch({ json: {} });
+
+		expect(saved.status).toBe(200);
+		await expect(saved.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "name_desc", showSplitGrouped: true },
+		});
+	});
+
+	it("turns the split grouping off then on, the order untouched, as Sure's toggle", async () => {
+		const api = await preferencesApi();
+		await api.$patch({ json: { defaultAccountOrder: "balance_desc" } });
+
+		const off = await api.$patch({ json: { showSplitGrouped: false } });
+		const readOff = await api.$get();
+		const on = await api.$patch({ json: { showSplitGrouped: true } });
+
+		await expect(off.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: false },
+		});
+		await expect(readOff.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: false },
+		});
+		await expect(on.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: true },
+		});
+	});
+
+	it("refuses a grouping that is not a boolean VALIDATION_ERROR", async () => {
+		const own = await ownDatabase();
+
+		const refused = await patchRaw({ showSplitGrouped: "no" }, buildApp(own.db));
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "showSplitGrouped", code: "invalid_type" }],
+		});
 	});
 
 	it("refuses an unknown order VALIDATION_ERROR, as Sure's inclusion, nothing saved", async () => {
@@ -62,7 +111,9 @@ describe("PATCH /api/preferences", () => {
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "defaultAccountOrder", code: "invalid_value" }],
 		});
-		await expect(read.json()).resolves.toEqual({ data: { defaultAccountOrder: "name_asc" } });
+		await expect(read.json()).resolves.toEqual({
+			data: { defaultAccountOrder: "name_asc", showSplitGrouped: true },
+		});
 	});
 
 	describe("as a viewer", () => {
@@ -85,7 +136,9 @@ describe("PATCH /api/preferences", () => {
 			expect(refused.status).toBe(403);
 			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");
 			expect(read.status).toBe(200);
-			await expect(read.json()).resolves.toEqual({ data: { defaultAccountOrder: "name_asc" } });
+			await expect(read.json()).resolves.toEqual({
+				data: { defaultAccountOrder: "name_asc", showSplitGrouped: true },
+			});
 		});
 	});
 });

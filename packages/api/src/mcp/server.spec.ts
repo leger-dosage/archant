@@ -2602,7 +2602,7 @@ describe("classifying transactions", () => {
 		).toMatchObject({ date: "2026-09-10", amount: "12.5", classification: "expense" });
 	});
 
-	it("get_transactions lists a split's lines and not its parent; update_transaction refuses their exclusion", async () => {
+	it("get_transactions lists a split's lines and not its parent; update_transaction refuses their exclusion and name", async () => {
 		const token = await writer();
 		const account = await openAccount({ name: "Divisé" });
 		// An amount of its own: step 6 would link a common one to another test's rows.
@@ -2645,7 +2645,7 @@ describe("classifying transactions", () => {
 		expect(onChild.isError).toBe(true);
 		expect(onChild.content[0]?.text).toContain('"error":"transaction_split"');
 		expect(onParent.content[0]?.text).toContain('"error":"transaction_split"');
-		expect(relabelled.structuredContent).toMatchObject({ transaction: { name: "SPLIT9 Fruits" } });
+		expect(relabelled.content[0]?.text).toContain('"error":"transaction_split"');
 		expect(
 			(await callTool(bare, token, "get_transaction", { id: child })).structuredContent,
 		).toMatchObject({ excluded: false });
