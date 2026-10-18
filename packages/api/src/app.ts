@@ -38,6 +38,7 @@ import { budgetsRoutes } from "./routes/budgets.ts";
 import { categoriesRoutes } from "./routes/categories.ts";
 import { csvImportsRoutes } from "./routes/csv-imports.ts";
 import { exportRoutes } from "./routes/export.ts";
+import { financialDataRoutes } from "./routes/financial-data.ts";
 import { goalsRoutes } from "./routes/goals.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { importsRoutes } from "./routes/imports.ts";
@@ -286,6 +287,7 @@ function createApi(deps: AppDeps) {
 		.route("/recurring", recurringRoutes(deps))
 		.route("/reports", reportsRoutes(deps))
 		.route("/export", exportRoutes(deps))
+		.route("/financial-data", financialDataRoutes(deps))
 		.route("/bank-connections", bankConnectionsRoutes(deps))
 		.route("/prices", pricesRoutes(deps))
 		.route("/securities", securitiesRoutes(deps))

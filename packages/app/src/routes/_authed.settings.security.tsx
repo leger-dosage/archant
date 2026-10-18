@@ -10,6 +10,7 @@ import { z } from "zod";
 
 import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
@@ -17,6 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/hooks/useAuthActions";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useResetFinancialData } from "@/hooks/useResetFinancialData";
+import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -117,6 +121,7 @@ function ProfileSection() {
 
 function SecurityPage() {
 	const { t } = useTranslation();
+	const isAdmin = useIsAdmin();
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("security.title"), app: t("app.name") });
@@ -127,6 +132,7 @@ function SecurityPage() {
 			<ProfileSection />
 			<PasswordSection />
 			<TwoFactorSection />
+			{isAdmin && <DangerZoneSection />}
 		</Page>
 	);
 }
@@ -228,6 +234,63 @@ function PasswordSection() {
 					</Button>
 				</form>
 			</div>
+		</Section>
+	);
+}
+
+/**
+ * Sure's « Zone dangereuse », at the foot of its profile page: « Réinitialiser
+ * le compte » deletes every account and what goes with them, and keeps the
+ * users. An administrator's only, as Sure's `ensure_admin`; Archant has no
+ * « Supprimer le compte », so a viewer sees no section at all.
+ */
+function DangerZoneSection() {
+	const { t } = useTranslation();
+	const reset = useResetFinancialData();
+	const [confirming, setConfirming] = useState(false);
+
+	const confirm = async () => {
+		try {
+			await reset.mutateAsync();
+			toast.success(t("dangerZone.resetDone"));
+		} catch (error) {
+			showErrorToast(errorCodeOf(error));
+		} finally {
+			setConfirming(false);
+		}
+	};
+
+	return (
+		<Section title={t("dangerZone.title")}>
+			<div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+				<div className="flex flex-col gap-1 md:w-2/3">
+					<h3 className="text-sm font-medium">{t("dangerZone.reset")}</h3>
+					<p className="text-sm text-muted-foreground">{t("dangerZone.resetWarning")}</p>
+				</div>
+				<Button
+					type="button"
+					variant="destructive"
+					className="self-start md:self-center"
+					onClick={() => setConfirming(true)}
+				>
+					{t("dangerZone.reset")}
+				</Button>
+			</div>
+			<ConfirmDialog
+				open={confirming}
+				// Annuler or Escape mid-request would read as cancelled, then the reset lands anyway.
+				onOpenChange={(open) => {
+					if (!reset.isPending) {
+						setConfirming(open);
+					}
+				}}
+				title={t("dangerZone.confirmTitle")}
+				description={t("dangerZone.confirmBody")}
+				confirmLabel={t("dangerZone.reset")}
+				destructive
+				pending={reset.isPending}
+				onConfirm={() => void confirm()}
+			/>
 		</Section>
 	);
 }

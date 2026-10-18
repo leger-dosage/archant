@@ -307,7 +307,7 @@ development_status:
   30-5-fix-rows-before-publishing-and-sures-confirm-step: done
   30-6-read-qif-categories-tags-splits-investments-and-several-accounts: done
   30-7-export-each-accounts-institution-and-cash-balance-and-each-attachments-checksum: done
-  30-8-reset-all-financial-data: backlog
+  30-8-reset-all-financial-data: done
   30-9-reset-with-sample-data: backlog
   epic-30-retrospective: optional
 

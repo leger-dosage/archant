@@ -420,3 +420,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-6-read-qif-categories-tags-splits-investments-and-several-accounts.md`
   summary: An account's own « Importer » still reads a QIF bank statement with its own parser, beside « Importer depuis Quicken (QIF) ».
   evidence: The dialog and the assistant's `import_statement_file` read QIF through `connectors/qif/qif.ts` into the grouped preview; moving them onto Sure's steps would take the assistant's QIF import away.
+
+## Deferred from: review of spec-30-8-reset-all-financial-data (2026-10-18)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-8-reset-all-financial-data.md`
+  summary: After a reset the household has no category and no way to bring back the defaults until Story 32.2 adds Sure's « Utiliser les valeurs par défaut (recommandé) ».
+  evidence: The reset deletes every category as Sure's does, and `seedDefaults` runs once per instance through `defaults_seeded_at`; Sure restores them with `categories#bootstrap`, which Story 32.2 plans.
