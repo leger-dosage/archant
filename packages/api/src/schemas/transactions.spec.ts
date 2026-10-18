@@ -312,19 +312,52 @@ describe("bulk selection", () => {
 describe("bulk patch", () => {
 	const ids = ["t1"];
 
-	it("keeps a cleared merchant apart from an untouched one", () => {
-		expect(bulkUpdateBodySchema.parse({ ids, patch: { merchantId: null } }).patch).toEqual({
-			merchantId: null,
+	it("takes Sure's drawer fields, trimmed", () => {
+		expect(
+			bulkUpdateBodySchema.parse({
+				ids,
+				patch: {
+					date: "2026-09-10",
+					name: "  Boulangerie ",
+					notes: " Pain ",
+					categoryId: "c1",
+					merchantId: "m1",
+					tagIds: ["g1"],
+				},
+			}).patch,
+		).toEqual({
+			date: "2026-09-10",
+			name: "Boulangerie",
+			notes: "Pain",
+			categoryId: "c1",
+			merchantId: "m1",
+			tagIds: ["g1"],
 		});
 	});
 
-	it("drops repeated tags, then refuses none or more than the cap", () => {
-		expect(bulkUpdateBodySchema.parse({ ids, patch: { addTagIds: ["g1", "g1"] } }).patch).toEqual({
-			addTagIds: ["g1"],
+	it("reads a blank field as absent, as Sure's `compact_blank`", () => {
+		expect(
+			bulkUpdateBodySchema.parse({ ids, patch: { name: "  ", date: "", tagIds: ["g1"] } }).patch,
+		).toEqual({ name: undefined, date: undefined, tagIds: ["g1"] });
+		const blank = bulkUpdateBodySchema.safeParse({
+			ids,
+			patch: { name: "  ", notes: "", categoryId: " " },
 		});
-		expect(bulkUpdateBodySchema.safeParse({ ids, patch: { addTagIds: [] } }).success).toBe(false);
+
+		expect(blank.error && toFieldErrors(blank.error)).toEqual([
+			{ path: "patch", code: "empty_patch" },
+		]);
+	});
+
+	it("keeps an emptied tag set apart from an untouched one, and drops repeats", () => {
+		expect(bulkUpdateBodySchema.parse({ ids, patch: { tagIds: [] } }).patch).toEqual({
+			tagIds: [],
+		});
+		expect(bulkUpdateBodySchema.parse({ ids, patch: { tagIds: ["g1", "g1"] } }).patch).toEqual({
+			tagIds: ["g1"],
+		});
 		const tags = Array.from({ length: MAX_TAGS_PER_TRANSACTION + 1 }, (_, index) => `g${index}`);
-		expect(bulkUpdateBodySchema.safeParse({ ids, patch: { addTagIds: tags } }).success).toBe(false);
+		expect(bulkUpdateBodySchema.safeParse({ ids, patch: { tagIds: tags } }).success).toBe(false);
 	});
 
 	it("refuses a patch that changes nothing", () => {
@@ -335,13 +368,23 @@ describe("bulk patch", () => {
 		]);
 	});
 
-	it("drops the date, the amount, the label and the notes", () => {
-		expect(
-			bulkUpdateBodySchema.parse({
-				ids,
-				patch: { excluded: true, date: "2026-09-10", amount: "1", label: "Autre", notes: "x" },
-			}).patch,
-		).toEqual({ excluded: true });
-		expect(bulkUpdateBodySchema.safeParse({ ids, patch: { label: "Autre" } }).success).toBe(false);
+	it("refuses an exclusion, an amount, added tags or a cleared category", () => {
+		for (const patch of [
+			{ excluded: true },
+			{ amount: "1", name: "Autre" },
+			{ addTagIds: ["g1"] },
+			{ categoryId: null },
+			{ merchantId: null },
+		]) {
+			expect(bulkUpdateBodySchema.safeParse({ ids, patch }).success).toBe(false);
+		}
+	});
+
+	it("refuses a malformed date on patch.date", () => {
+		const result = bulkUpdateBodySchema.safeParse({ ids, patch: { date: "10/09/2026" } });
+
+		expect(result.error && toFieldErrors(result.error).map((field) => field.path)).toEqual([
+			"patch.date",
+		]);
 	});
 });

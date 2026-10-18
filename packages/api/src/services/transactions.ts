@@ -770,21 +770,23 @@ async function selectionOf(
 }
 
 /**
- * Sets a category or a merchant, adds tags or changes the exclusion on the
- * selected transactions, on the user's behalf, and counts the rows selected
- * and the rows changed. With `expectedCount`, which an assistant passes and
- * the bulk bar never does, a selection of another size writes nothing and
- * throws `BULK_COUNT_STALE`.
+ * Sets the date, the label, the notes, the category, the merchant or the tags
+ * of the selected transactions, on the user's behalf, as Sure's bulk drawer,
+ * and counts the rows selected, split parents left out, and the rows changed.
+ * With `expectedCount`, which an assistant passes and the bulk drawer never
+ * does, a selection of another size writes nothing and throws
+ * `BULK_COUNT_STALE`.
  */
 export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
 	body: BulkUpdateRequest,
 	options: { expectedCount?: number | undefined } = {},
 ): Promise<{ updated: number; changed: number }> {
+	const { name, ...rest } = body.patch;
 	const { matched, changed } = await bulkUpdateLedgerTransactions(
 		deps,
 		await selectionOf(deps, body.selection),
-		body.patch,
+		{ ...rest, label: name },
 		{ origin: "user", expectedCount: options.expectedCount },
 	);
 

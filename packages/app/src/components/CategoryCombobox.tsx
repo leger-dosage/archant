@@ -50,6 +50,11 @@ type CategoryComboboxProps = {
 	/** Offers « Sans catégorie » first; a rule's action has no such choice. */
 	allowNone?: boolean;
 	/**
+	 * Names the first choice, which still picks `null`, in place of « Sans
+	 * catégorie »: the bulk edit drawer's « unchanged », as Sure's select prompt.
+	 */
+	noneLabel?: string;
+	/**
 	 * Offers « Créer « … » » and « Ajouter comme sous-catégorie… » last, as
 	 * Sure's `DS::CategorySelect` and quick picker: a top-level expense, or a
 	 * child of the parent picked next, which takes that parent's kind and
@@ -81,6 +86,7 @@ export function CategoryCombobox({
 	value,
 	onSelect,
 	allowNone = true,
+	noneLabel,
 	allowCreate = false,
 	createColor = () => CATEGORY_COLORS[0],
 	onCreate = onSelect,
@@ -91,7 +97,7 @@ export function CategoryCombobox({
 	const [search, setSearch] = useState("");
 	const [choosingParent, setChoosingParent] = useState(false);
 	const [created, setCreated] = useState<Created | null>(null);
-	const none = t("transactions.category.none");
+	const none = noneLabel ?? t("transactions.category.none");
 	const typed = search.trim();
 	const remembered = created !== null && nameKey(created.name) === nameKey(typed);
 	const canCreate =
@@ -214,7 +220,9 @@ export function CategoryCombobox({
 								data-checked={value === null}
 								onSelect={() => onSelect(null)}
 							>
-								<TintedIcon subject={{ kind: "uncategorised" }} size="sm" />
+								{noneLabel === undefined && (
+									<TintedIcon subject={{ kind: "uncategorised" }} size="sm" />
+								)}
 								<span>{none}</span>
 							</CommandItem>
 						)}

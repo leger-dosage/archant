@@ -24,6 +24,7 @@ import { filterByName } from "@/lib/search-match";
 // cmdk matches on an item's value; ids keep two items apart whatever their
 // names, and the filter reads the name from the keywords instead.
 const CREATE = "create";
+const NONE = "none";
 
 const filterOptions = filterByName([CREATE]);
 
@@ -34,6 +35,12 @@ type TagComboboxProps = {
 	value: readonly string[];
 	/** Adds the tag when absent, removes it when present. */
 	onToggle: (tagId: string) => void;
+	/**
+	 * Offers « Aucune étiquette » first, as Sure's bulk select's blank option,
+	 * marked while `noneChecked`: the bulk edit drawer's only way to clear the tags.
+	 */
+	onNone?: () => void;
+	noneChecked?: boolean;
 };
 
 /**
@@ -42,7 +49,13 @@ type TagComboboxProps = {
  * « Créer » creates the tag, then selects it. The caller decides when the
  * choice is saved.
  */
-export function TagCombobox({ tags, value, onToggle }: TagComboboxProps) {
+export function TagCombobox({
+	tags,
+	value,
+	onToggle,
+	onNone,
+	noneChecked = false,
+}: TagComboboxProps) {
 	const { t } = useTranslation();
 	const createTag = useCreateTag();
 	const [search, setSearch] = useState("");
@@ -86,6 +99,17 @@ export function TagCombobox({ tags, value, onToggle }: TagComboboxProps) {
 			<CommandList>
 				<CommandEmpty>{t("transactions.tags.empty")}</CommandEmpty>
 				<CommandGroup>
+					{onNone !== undefined && (
+						<CommandItem
+							value={NONE}
+							keywords={[t("transactions.tags.none")]}
+							data-checked={noneChecked}
+							aria-checked={noneChecked}
+							onSelect={onNone}
+						>
+							<span>{t("transactions.tags.none")}</span>
+						</CommandItem>
+					)}
 					{tags.map((tag) => (
 						<CommandItem
 							key={tag.id}

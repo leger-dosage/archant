@@ -22,7 +22,6 @@ import {
 	errorBody,
 	expense,
 	importBody,
-	linkMerchant,
 	listBody,
 	listItem,
 	listOwn,
@@ -1023,34 +1022,66 @@ describe("POST /api/transactions/bulk-update", () => {
 		await expect(balanceOf(account.id)).resolves.toBe(123456 - 3 * 4290);
 	});
 
-	it("clears a merchant, adds a tag and excludes, locking each", async () => {
+	it("sets a merchant, replaces the tags and writes notes, locking each", async () => {
 		const { account, ids } = await openWith(2);
 		const merchant = await createMerchant(uniqueCategory("Carrefour"));
-		const kept = await createTag(uniqueCategory("Vacances"));
-		const added = await createTag(uniqueCategory("Travaux"));
-		await linkMerchant(account.id, merchant.id);
-		await tagAll(account.id, [kept.id]);
+		const dropped = await createTag(uniqueCategory("Vacances"));
+		const replacing = await createTag(uniqueCategory("Travaux"));
+		await tagAll(account.id, [dropped.id]);
 
-		await [{ merchantId: null }, { addTagIds: [added.id] }, { excluded: true }].reduce(
-			async (previous, patch) => {
-				await previous;
-				const { status } = await request("POST", "/api/transactions/bulk-update", { ids, patch });
+		const { status } = await request("POST", "/api/transactions/bulk-update", {
+			ids,
+			patch: { merchantId: merchant.id, tagIds: [replacing.id], notes: " Revue ", name: "" },
+		});
 
-				expect(status).toBe(200);
-			},
-			Promise.resolve(),
-		);
-
+		expect(status).toBe(200);
 		const rows = await rowsOf(account.id);
 		expect(rows).toEqual(
 			ids.map(() => ({
 				category: null,
 				origin: null,
-				merchant: null,
-				excluded: 1,
-				locked: `${manualLocks},"merchant","tags","excluded"]`,
-				tags: [kept.id, added.id].toSorted().join(","),
+				merchant: merchant.id,
+				excluded: 0,
+				locked: `${manualLocks},"tags","notes","merchant"]`,
+				tags: replacing.id,
 			})),
+		);
+	});
+
+	it("moves and renames the rows, which the list then shows", async () => {
+		const { account, ids } = await openWith(2);
+
+		await expect(
+			request("POST", "/api/transactions/bulk-update", {
+				ids,
+				patch: { date: "2026-09-05", name: "Courses" },
+			}),
+		).resolves.toEqual({ status: 200, body: { data: { updated: 2, changed: 2 } } });
+
+		expect((await listedOf(account.id)).map((item) => [item.date, item.label])).toEqual([
+			["2026-09-05", "Courses"],
+			["2026-09-05", "Courses"],
+		]);
+		await expect(balanceOf(account.id)).resolves.toBe(123456 - 2 * 4290);
+	});
+
+	it("clears every tag with an empty set and keeps them without one", async () => {
+		const { account, ids } = await openWith(2);
+		const tag = await createTag(uniqueCategory("Vacances"));
+		await tagAll(account.id, [tag.id]);
+		const [first = "", second = ""] = ids;
+
+		await request("POST", "/api/transactions/bulk-update", {
+			ids: [first],
+			patch: { tagIds: [], name: "Sans étiquette" },
+		});
+		await request("POST", "/api/transactions/bulk-update", {
+			ids: [second],
+			patch: { notes: "Gardées" },
+		});
+
+		expect((await rowsOf(account.id)).map((row) => row.tags)).toEqual(
+			ids.map((id) => (id === first ? null : tag.id)),
 		);
 	});
 
@@ -1089,7 +1120,7 @@ describe("POST /api/transactions/bulk-update", () => {
 		const update = (filter: Record<string, unknown>) =>
 			ownRequest("POST", "/api/transactions/bulk-update", {
 				filter: { account: account.id, ...filter },
-				patch: { excluded: true },
+				patch: { notes: "Revue" },
 			});
 
 		await expect(update({ status: "pending" })).resolves.toMatchObject({
@@ -1112,7 +1143,7 @@ describe("POST /api/transactions/bulk-update", () => {
 		await expect(
 			request("POST", "/api/transactions/bulk-update", {
 				filter: { account: [account.id], category: [parent.id] },
-				patch: { excluded: true },
+				patch: { notes: "Revue" },
 			}),
 		).resolves.toMatchObject({ body: { data: { updated: 2 } } });
 	});
@@ -1123,7 +1154,7 @@ describe("POST /api/transactions/bulk-update", () => {
 		await expect(
 			request("POST", "/api/transactions/bulk-update", {
 				filter: { account: account.id, q: "introuvable" },
-				patch: { excluded: true },
+				patch: { notes: "Revue" },
 			}),
 		).resolves.toEqual({ status: 200, body: { data: { updated: 0, changed: 0 } } });
 	});
@@ -1133,7 +1164,7 @@ describe("POST /api/transactions/bulk-update", () => {
 			"an unknown id",
 			"ids",
 			"invalid_value",
-			(ids: string[]) => ({ ids: [...ids, "nope"], patch: { excluded: true } }),
+			(ids: string[]) => ({ ids: [...ids, "nope"], patch: { notes: "Revue" } }),
 		],
 		[
 			"an unknown category",
@@ -1149,15 +1180,39 @@ describe("POST /api/transactions/bulk-update", () => {
 		],
 		[
 			"an unknown tag",
-			"patch.addTagIds",
+			"patch.tagIds",
 			"invalid_value",
-			(ids: string[]) => ({ ids, patch: { addTagIds: ["nope"] } }),
+			(ids: string[]) => ({ ids, patch: { tagIds: ["nope"] } }),
+		],
+		[
+			"a date more than a year ahead",
+			"patch.date",
+			"date_too_late",
+			(ids: string[]) => ({ ids, patch: { date: "2099-01-01", name: "Plus tard" } }),
+		],
+		[
+			"an exclusion",
+			"patch.excluded",
+			"unrecognized_keys",
+			(ids: string[]) => ({ ids, patch: { excluded: true, name: "Exclue" } }),
+		],
+		[
+			"a cleared category",
+			"patch.categoryId",
+			"invalid_type",
+			(ids: string[]) => ({ ids, patch: { categoryId: null } }),
+		],
+		[
+			"a blank name alone",
+			"patch",
+			"empty_patch",
+			(ids: string[]) => ({ ids, patch: { name: "  " } }),
 		],
 		[
 			"ids and a filter",
 			"selection",
 			"ids_or_filter",
-			(ids: string[]) => ({ ids, filter: {}, patch: { excluded: true } }),
+			(ids: string[]) => ({ ids, filter: {}, patch: { notes: "Revue" } }),
 		],
 		["an empty patch", "patch", "empty_patch", (ids: string[]) => ({ ids, patch: {} })],
 	])("writes nothing for %s", async (_label, path, code, bodyOf) => {
@@ -1180,7 +1235,7 @@ describe("POST /api/transactions/bulk-update", () => {
 
 	it("refuses a selection with neither ids nor a filter", async () => {
 		const { status, body } = await request("POST", "/api/transactions/bulk-update", {
-			patch: { excluded: true },
+			patch: { notes: "Revue" },
 		});
 
 		expect(status).toBe(400);

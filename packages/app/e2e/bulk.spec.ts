@@ -1,7 +1,7 @@
 import type { Api } from "./fixtures.ts";
 import type { Page } from "@playwright/test";
 
-import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 
 // Story 4.5: bulk edit. One database serves the whole run, so every test
 // narrows the list to its own rows by a unique label prefix.
@@ -20,8 +20,14 @@ const bar = (page: Page) => page.getByRole("toolbar", { name: "Actions sur la s�
 const toast = (page: Page, text: string) =>
 	page.locator("[data-sonner-toast]").filter({ hasText: text });
 
-const categorySearch = (page: Page) =>
-	page.getByRole("combobox", { name: "Rechercher une catégorie" });
+const drawer = (page: Page) => page.getByRole("dialog", { name: "Modifier les opérations" });
+
+/** Opens « Modifier » and picks the category whose name starts with `search`. */
+async function pickCategory(page: Page, search: string) {
+	await drawer(page).getByRole("button", { name: "Catégorie" }).click();
+	await page.keyboard.type(search);
+	await page.keyboard.press("Enter");
+}
 
 /** `<prefix> 01` (yesterday, listed first) to `<prefix> NN`. */
 const labelOf = (prefix: string, day: number) => `${prefix} ${String(day).padStart(2, "0")}`;
@@ -59,7 +65,7 @@ test("ticking two rows shows « 2 sélectionnées », over 36 px buttons", async
 	await expect(bar(page)).toContainText("2 sélectionnées");
 	await expect(checkbox(page, labelOf(prefix, 2))).not.toBeChecked();
 	await Promise.all(
-		["Catégorie", "Marchand", "Étiquettes", "Exclure", "Supprimer"].flatMap((name) => {
+		["Modifier", "Supprimer"].flatMap((name) => {
 			const button = bar(page).getByRole("button", { name, exact: true });
 
 			return [
@@ -73,17 +79,18 @@ test("ticking two rows shows « 2 sélectionnées », over 36 px buttons", async
 	).toHaveCSS("font-size", "14px");
 });
 
-test("Esc closing the bar's category list keeps the selection", async ({ page, api }) => {
+test("Esc closing the bulk edit drawer keeps the selection", async ({ page, api }) => {
 	const prefix = uniqueName("Fermer");
 	await withRows(api, prefix);
 
 	await visitOperations(page, prefix);
 	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 2)]);
-	await bar(page).getByRole("button", { name: "Catégorie" }).click();
-	await expect(categorySearch(page)).toBeFocused();
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	// Focus lands once the drawer listens for Escape.
+	await expect(drawer(page).getByLabel("Date", { exact: true })).toBeFocused();
 	await page.keyboard.press("Escape");
 
-	await expect(categorySearch(page)).toBeHidden();
+	await expect(drawer(page)).toBeHidden();
 	await expect(bar(page)).toContainText("2 sélectionnées");
 	await expect(checkbox(page, labelOf(prefix, 1))).toBeChecked();
 });
@@ -136,76 +143,155 @@ test("Shift+click on a checkbox two rows below the ticked one selects the three"
 	await expect(checkbox(page, labelOf(prefix, 4))).not.toBeChecked();
 });
 
-test("a category picked in the bar lands on every selected row and clears the selection", async ({
-	page,
-	api,
-}) => {
-	const prefix = uniqueName("Marché");
-	await withRows(api, prefix);
-
-	await visitOperations(page, prefix);
-	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 2)]);
-	await bar(page).getByRole("button", { name: "Catégorie" }).click();
-	await page.keyboard.type("cour");
-	await page.keyboard.press("Enter");
-
-	await expect(toast(page, "Catégorie modifiée sur 2 opérations")).toBeVisible();
-	await expect(bar(page)).toBeHidden();
-	await expect(checkbox(page, labelOf(prefix, 1))).not.toBeChecked();
-	await page.reload();
-	const chip = (day: number, name: string) =>
-		rowItem(page, labelOf(prefix, day)).getByRole("button", { name: `Catégorie : ${name}` });
-	await expect(chip(1, "Courses")).toBeVisible();
-	await expect(chip(2, "Courses")).toBeVisible();
-	await expect(chip(3, "Sans catégorie")).toBeVisible();
-});
-
-test("a merchant, a tag and the exclusion set in the bar show on every selected row", async ({
+test("a label and a tag saved in the drawer land on both ticked rows and clear the selection", async ({
 	page,
 	api,
 }) => {
 	const prefix = uniqueName("Voyage");
-	const merchant = await api.createMerchant(uniqueName("SNCF"));
 	const tag = await api.createTag(uniqueName("Vacances"));
+	const renamed = uniqueName("Billet");
 	await withRows(api, prefix);
+
+	await visitOperations(page, prefix);
+	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 2)]);
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	const sheet = drawer(page);
+	await expect(sheet.getByRole("heading", { name: "Aperçu", exact: true })).toBeVisible();
+	await expect(sheet.getByRole("heading", { name: "Opérations", exact: true })).toBeVisible();
+	await sheet.getByLabel("Libellé").fill(renamed);
+	await sheet.getByRole("button", { name: "Étiquettes" }).click();
+	await page.getByRole("combobox", { name: "Rechercher une étiquette" }).fill(tag.name);
+	await page.getByRole("option", { name: tag.name }).click();
+	await page.keyboard.press("Escape");
+	await expect(sheet.getByRole("button", { name: "Étiquettes" })).toContainText(tag.name);
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(toast(page, "2 opérations modifiées")).toBeVisible();
+	await expect(sheet).toBeHidden();
+	await expect(bar(page)).toBeHidden();
+	await page.goto(`/transactions?q=${encodeURIComponent(renamed)}`);
+	await expect(rowItem(page, renamed)).toHaveCount(2);
+	await Promise.all(
+		[0, 1].map((index) =>
+			expect(
+				rowItem(page, renamed).nth(index).locator("button[data-transaction-id]"),
+			).toContainText(tag.name),
+		),
+	);
+	await visitOperations(page, prefix);
+	await expect(rowItem(page, labelOf(prefix, 3))).toBeVisible();
+	await expect(rowButton(page, labelOf(prefix, 3))).not.toContainText(tag.name);
+});
+
+test("a date, notes and a merchant saved in the drawer move both rows, and the balance follows", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Date");
+	const merchant = await api.createMerchant(uniqueName("SNCF"));
+	const account = await withRows(api, prefix);
+	// The opening date: its valuation sets that day's balance, as Sure's, so
+	// the two rows moved onto it no longer count in the balance.
+	const opening = daysAgo(13);
 	const labels = [labelOf(prefix, 1), labelOf(prefix, 2)];
 
 	await visitOperations(page, prefix);
 	await tick(page, labels);
-	await bar(page).getByRole("button", { name: "Marchand" }).click();
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	const sheet = drawer(page);
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(opening));
+	await sheet.getByLabel("Notes").fill("Remboursé");
+	await sheet.getByRole("button", { name: "Marchand" }).click();
 	await page.getByRole("combobox", { name: "Rechercher un marchand" }).fill(merchant.name);
 	await page.getByRole("option", { name: merchant.name }).click();
-	await expect(toast(page, "Marchand modifié sur 2 opérations")).toBeVisible();
+	await expect(sheet.getByRole("button", { name: "Marchand" })).toContainText(merchant.name);
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
 
-	await tick(page, labels);
-	await bar(page).getByRole("button", { name: "Étiquettes" }).click();
-	await page.getByRole("combobox", { name: "Rechercher une étiquette" }).fill(tag.name);
+	await expect(toast(page, "2 opérations modifiées")).toBeVisible();
+	await expect(
+		page
+			.getByRole("complementary", { name: "Liste des comptes" })
+			.getByRole("link", { name: account.name }),
+	).toContainText(euros(100_000 - 100));
+	await Promise.all(
+		labels.map((label) => expect(rowButton(page, label)).toContainText(merchant.name)),
+	);
+	await rowButton(page, labels[0] ?? "").click();
+	const row = page.getByRole("dialog", { name: "Modifier l'opération" });
+	await expect(row.getByLabel("Date", { exact: true })).toHaveValue(typed(opening));
+	await expect(row.getByLabel("Notes")).toHaveValue("Remboursé");
+});
+
+test("« Aucune étiquette » clears the tags, and a tag unticked again leaves them unchanged", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Effacer");
+	const tag = await api.createTag(uniqueName("Vacances"));
+	const other = await api.createTag(uniqueName("Travaux"));
+	await withRows(api, prefix);
+	const [first, second] = [labelOf(prefix, 1), labelOf(prefix, 2)];
+	const tags = () => page.getByRole("combobox", { name: "Rechercher une étiquette" });
+
+	await visitOperations(page, prefix);
+	await tick(page, [first, second]);
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	await drawer(page).getByRole("button", { name: "Étiquettes" }).click();
+	await tags().fill(tag.name);
 	await page.getByRole("option", { name: tag.name }).click();
 	await page.keyboard.press("Escape");
-	await expect(toast(page, "Étiquettes ajoutées sur 2 opérations")).toBeVisible();
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(toast(page, "2 opérations modifiées")).toBeVisible();
+	await expect(rowButton(page, first)).toContainText(tag.name);
 
-	await tick(page, labels);
-	await bar(page).getByRole("button", { name: "Exclure" }).click();
-	await page.getByRole("menuitem", { name: "Exclure des rapports" }).click();
-	await expect(toast(page, "2 opérations exclues des rapports")).toBeVisible();
+	// Ticked then unticked: the field reads « unchanged » again, and saving keeps the tag.
+	await tick(page, [first]);
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	const field = drawer(page).getByRole("button", { name: "Étiquettes" });
+	await field.click();
+	await tags().fill(other.name);
+	await page.getByRole("option", { name: other.name }).click();
+	await page.getByRole("option", { name: other.name }).click();
+	await page.keyboard.press("Escape");
+	await expect(field).toHaveText("Sélectionnez des étiquettes");
+	await drawer(page).getByLabel("Notes").fill("Gardée");
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
+	await expect(toast(page, "1 opération modifiée")).toBeVisible();
+	await expect(rowButton(page, first)).toContainText(tag.name);
 
-	await page.reload();
-	await Promise.all(
-		labels.flatMap((label) => [
-			expect(rowButton(page, label)).toContainText(merchant.name),
-			expect(rowButton(page, label)).toContainText(tag.name),
-			expect(rowButton(page, label)).toContainText("Exclue des rapports"),
-		]),
-	);
-	await expect(rowButton(page, labelOf(prefix, 3))).not.toContainText(merchant.name);
+	await tick(page, [first, second]);
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	await field.click();
+	await page.getByRole("option", { name: "Aucune étiquette" }).click();
+	await page.keyboard.press("Escape");
+	await expect(field).toHaveText("Aucune étiquette");
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
 
-	await tick(page, labels);
-	await bar(page).getByRole("button", { name: "Exclure" }).click();
-	await page.getByRole("menuitem", { name: "Réintégrer dans les rapports" }).click();
-	await expect(toast(page, "2 opérations réintégrées dans les rapports")).toBeVisible();
-	await Promise.all(
-		labels.map((label) => expect(rowButton(page, label)).not.toContainText("Exclue des rapports")),
-	);
+	await expect(toast(page, "2 opérations modifiées")).toBeVisible();
+	await expect(rowButton(page, first)).not.toContainText(tag.name);
+	await expect(rowButton(page, second)).not.toContainText(tag.name);
+});
+
+test("« Enregistrer » with nothing filled closes the drawer without a request", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Vide");
+	await withRows(api, prefix);
+	let requests = 0;
+	await page.route("**/api/transactions/bulk-update", async (route) => {
+		requests += 1;
+		await route.continue();
+	});
+
+	await visitOperations(page, prefix);
+	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 2)]);
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(drawer(page)).toBeHidden();
+	await expect(bar(page)).toContainText("2 sélectionnées");
+	expect(requests).toBe(0);
 });
 
 test("« Tout sélectionner » categorises the 60 uncategorised rows of two pages", async ({
@@ -244,11 +330,12 @@ test("« Tout sélectionner » categorises the 60 uncategorised rows of two page
 
 	await bar(page).getByRole("button", { name: "Tout sélectionner (60 résultats)" }).click();
 	await expect(bar(page)).toContainText("60 sélectionnées");
-	await bar(page).getByRole("button", { name: "Catégorie" }).click();
-	await page.keyboard.type("cour");
-	await page.keyboard.press("Enter");
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	await pickCategory(page, "cour");
+	await expect(drawer(page).getByRole("button", { name: "Catégorie" })).toContainText("Courses");
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
 
-	await expect(toast(page, "Catégorie modifiée sur 60 opérations")).toBeVisible();
+	await expect(toast(page, "60 opérations modifiées")).toBeVisible();
 	await expect(page.getByText("Aucune opération ne correspond à ces filtres.")).toBeVisible();
 });
 
@@ -292,11 +379,13 @@ test("a rejected bulk request keeps the rows and the selection, with a destructi
 
 	await visitOperations(page, prefix);
 	await tick(page, [labelOf(prefix, 1), labelOf(prefix, 2)]);
-	await bar(page).getByRole("button", { name: "Catégorie" }).click();
-	await page.keyboard.type("cour");
-	await page.keyboard.press("Enter");
+	await bar(page).getByRole("button", { name: "Modifier" }).click();
+	await pickCategory(page, "cour");
+	await drawer(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(toast(page, "Une erreur inattendue s'est produite.")).toBeVisible();
+	await drawer(page).getByRole("button", { name: "Annuler" }).click();
+	await expect(drawer(page)).toBeHidden();
 	await expect(bar(page)).toContainText("2 sélectionnées");
 	await expect(checkbox(page, labelOf(prefix, 1))).toBeChecked();
 	await expect(

@@ -17,9 +17,8 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
 import { minDate, today } from "../../domain/dates.ts";
-import { rejectionFor } from "../../domain/statement.ts";
+import { isTooFarAhead, rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
-import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { correlatedTransferSide, filterCondition } from "./filter.ts";
@@ -259,15 +258,19 @@ export async function deleteTransaction(
  */
 export type BulkSelection = { ids: readonly string[] } | { filter: TransactionFilter };
 
-/** What a bulk edit may change; an absent field is left as it is. */
+/**
+ * What a bulk edit may change, as Sure's `Entry.bulk_update!`; an absent field
+ * is left as it is. Nothing clears a category or a merchant: Sure's
+ * `compact_blank` reads a blank as absent.
+ */
 export type BulkPatch = {
-	/** `null` leaves the rows « Sans catégorie ». */
-	categoryId?: string | null | undefined;
-	/** `null` leaves the rows « Sans marchand ». */
-	merchantId?: string | null | undefined;
-	/** Added to each row's tags; a bulk edit never removes one. */
-	addTagIds?: readonly string[] | undefined;
-	excluded?: boolean | undefined;
+	date?: IsoDate | undefined;
+	label?: string | undefined;
+	notes?: string | undefined;
+	categoryId?: string | undefined;
+	merchantId?: string | undefined;
+	/** The whole set, replacing each row's; `[]` removes every tag. */
+	tagIds?: readonly string[] | undefined;
 };
 
 /**
@@ -314,17 +317,20 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 export type BulkUpdateResult = { matched: number; changed: number };
 
 /**
- * Sets a category or a merchant, adds tags or changes the exclusion on every
- * selected row, all or nothing, and returns how many rows the selection
- * matched, unchanged ones included, and how many it changed. Each row follows
- * `updateTransaction`'s rules through `changeOf`. An unknown category,
- * merchant or tag, or a row the new tags would carry past
- * `MAX_TAGS_PER_TRANSACTION`, fails the call on its `patch` field. With
- * `expectedCount`, a selection matching another count throws
- * `BULK_COUNT_STALE` and writes nothing: an assistant read that count, and the
- * owner agreed to it, before the call. A split's rows keep their exclusion,
- * as a locked field: only the split sets it (AD-20). Classification and
- * exclusion move no balance, so nothing is recomputed.
+ * Sets the date, the label, the notes, the category, the merchant or the tags
+ * of every selected row, all or nothing, as Sure's `Entry.bulk_update!`, and
+ * returns how many rows the selection matched, unchanged ones included, and
+ * how many it changed. A selected split parent is skipped and not matched, as
+ * Sure's `excluding_split_parents`; a selected split line takes every field
+ * but the date, which stays its parent's (AD-20). Each row follows `updateTransaction`'s
+ * rules through `changeOf`, so a `user` edit locks every field it changes
+ * (AD-10). An unknown category, merchant or tag, or a date further ahead than
+ * any entry may be (`isTooFarAhead`), fails the call on its `patch` field.
+ * With `expectedCount`, a selection matching another count, split parents
+ * included, throws `BULK_COUNT_STALE` and writes nothing: an assistant read
+ * that count, and the owner agreed to it, before the call. A new date keeps
+ * every transfer, as `updateTransaction` does, and recomputes each account it
+ * touched once, from its earliest old or new date.
  */
 export async function bulkUpdateTransactions(
 	deps: ServiceDeps,
@@ -334,74 +340,71 @@ export async function bulkUpdateTransactions(
 ): Promise<BulkUpdateResult> {
 	return deps.db.transaction(
 		async (tx) => {
-			const { categoryId, merchantId, excluded } = patch;
-			const added = patch.addTagIds === undefined ? undefined : [...new Set(patch.addTagIds)];
+			const { date, label, notes, categoryId, merchantId } = patch;
+			const tagIds = patch.tagIds === undefined ? undefined : [...new Set(patch.tagIds)];
 
-			if (
-				categoryId !== undefined &&
-				categoryId !== null &&
-				!(await categoryExists(tx, categoryId))
-			) {
+			if (date !== undefined && isTooFarAhead(date, today(deps.timeZone))) {
+				throw invalidField("patch.date", "date_too_late");
+			}
+
+			if (categoryId !== undefined && !(await categoryExists(tx, categoryId))) {
 				throw invalidField("patch.categoryId");
 			}
 
-			if (
-				merchantId !== undefined &&
-				merchantId !== null &&
-				!(await merchantExists(tx, merchantId))
-			) {
+			if (merchantId !== undefined && !(await merchantExists(tx, merchantId))) {
 				throw invalidField("patch.merchantId");
 			}
 
-			if (added !== undefined && added.length > 0 && !(await tagsExist(tx, added))) {
-				throw invalidField("patch.addTagIds");
+			if (tagIds !== undefined && tagIds.length > 0 && !(await tagsExist(tx, tagIds))) {
+				throw invalidField("patch.tagIds");
 			}
 
-			const rows = await selectedRows(tx, selection);
+			const selected = await selectedRows(tx, selection);
 			// One time for every row, so rows locking the same fields share a write.
 			const now = Date.now();
 
-			if (options.expectedCount !== undefined && options.expectedCount !== rows.length) {
+			if (options.expectedCount !== undefined && options.expectedCount !== selected.length) {
 				throw new AppError(
 					"BULK_COUNT_STALE",
 					"The filter now matches another count of transactions than expected.",
 					undefined,
-					{ count: String(rows.length) },
+					{ count: String(selected.length) },
 				);
 			}
 
+			// Sure's `excluding_split_parents`: the parent stays as the split left it; only selected lines change.
+			const rows = selected.filter((row) => !(row.split && row.parentEntryId === null));
 			const tagsOf =
-				added === undefined
+				tagIds === undefined
 					? new Map<string, string[]>()
 					: await tagIdsByEntry(
 							tx,
 							rows.map((row) => row.id),
 						);
 			// Rows whose write is the same share one statement per chunk: the
-			// classification is the same for all, only the locks already held differ.
+			// fields are the same for all, only the locks already held differ.
 			const writes = new Map<string, { detail: TransactionDetail; ids: string[] }>();
+			const moved: string[] = [];
+			const earliest = new Map<string, IsoDate>();
+			const retagged: string[] = [];
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 			let changed = 0;
 
-			for (const { id, categoryHidden, parentEntryId: _parent, split, ...row } of rows) {
+			for (const { id, categoryHidden, parentEntryId, split: _split, ...row } of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
-				const tagIds =
-					added === undefined ? undefined : [...new Set([...current.tagIds, ...added])];
-
-				if (tagIds !== undefined && tagIds.length > MAX_TAGS_PER_TRANSACTION) {
-					throw invalidField("patch.addTagIds", "too_big");
-				}
-
 				const change = changeOf(
 					current,
-					// A transfer side the dashboard does not count has no category to
-					// set: it would stay hidden, and come back unasked when the transfer
-					// is dissociated. The spent outflow of a loan payment or an
-					// investment contribution is counted in its category, so it takes one.
 					{
+						// A split line keeps its parent's date, as Sure's `split_child?` (AD-20).
+						date: parentEntryId === null ? date : undefined,
+						label,
+						notes,
+						// A transfer side the dashboard does not count has no category to
+						// set: it would stay hidden, and come back unasked when the transfer
+						// is dissociated. The spent outflow of a loan payment or an
+						// investment contribution is counted in its category, so it takes one.
 						categoryId: categoryHidden ? undefined : categoryId,
 						merchantId,
-						excluded: split ? undefined : excluded,
 						tagIds,
 					},
 					options.origin,
@@ -422,12 +425,16 @@ export async function bulkUpdateTransactions(
 					group.ids.push(id);
 				}
 
+				if (change.changed.includes("date")) {
+					moved.push(id);
+					const from = minDate(current.date, change.next.date);
+					const known = earliest.get(current.accountId);
+					earliest.set(current.accountId, known === undefined ? from : minDate(known, from));
+				}
+
 				if (change.changed.includes("tags")) {
-					newTaggings.push(
-						...change.next.tagIds
-							.filter((tagId) => !current.tagIds.includes(tagId))
-							.map((tagId) => ({ transactionId: id, tagId })),
-					);
+					retagged.push(id);
+					newTaggings.push(...change.next.tagIds.map((tagId) => ({ transactionId: id, tagId })));
 				}
 			}
 
@@ -441,7 +448,22 @@ export async function bulkUpdateTransactions(
 			await oneByOne(statements, ({ detail, chunk }) =>
 				tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),
 			);
+
+			if (date !== undefined) {
+				// A new date keeps the transfer, as in Sure: the money still moved.
+				await inSequence(moved, ROWS_PER_INSERT, (chunk) =>
+					tx.update(entries).set({ date, updatedAt: now }).where(inArray(entries.id, chunk)),
+				);
+			}
+
+			await inSequence(retagged, ROWS_PER_INSERT, (chunk) =>
+				tx.delete(taggings).where(inArray(taggings.transactionId, chunk)),
+			);
 			await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
+			await oneByOne([...earliest], async ([accountId, from]) => {
+				const account = await accountWithOpeningDate(tx, accountId);
+				await recomputeBalances(tx, account, from, deps.timeZone);
+			});
 
 			return { matched: rows.length, changed };
 		},

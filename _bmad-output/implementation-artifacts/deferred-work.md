@@ -429,3 +429,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-9-reset-with-sample-data.md`
   summary: Test a sample load at an hour when the UTC day and the `APP_TIMEZONE` day differ.
   evidence: Every test loads at 10:00 UTC, noon in Paris, so swapping `today(deps.timeZone)` for UTC would pass; a load between midnight and 2 a.m. in Paris would date the sample a day early if that slipped.
+
+## Deferred from: code review of spec-31-2-edit-several-transactions-at-once-as-sure (2026-10-18)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-31-2-edit-several-transactions-at-once-as-sure.md`
+  summary: No end-to-end test shows a `patch.date`, `patch.name` or `patch.notes` refusal under its field in the bulk edit drawer.
+  evidence: `BulkEditSheet.tsx` maps those paths to `FieldMessage`; the API side is tested in `routes/transactions.spec.ts`, the drawer's display is not.

@@ -1,31 +1,16 @@
 import type { Selection, SelectionTarget } from "@/hooks/useSelection";
-import type { BulkPatch } from "@/hooks/useTransactions";
+import type { BulkSelectionInput } from "@/hooks/useTransactions";
 import type { TransactionFilters } from "@/lib/transaction-filters";
-import type { ReactNode } from "react";
 
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { CategoryCombobox } from "@/components/CategoryCombobox";
+import { BulkEditSheet } from "@/components/BulkEditSheet";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { MerchantCombobox } from "@/components/MerchantCombobox";
-import { TagCombobox } from "@/components/TagCombobox";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useCategories } from "@/hooks/useCategories";
-import { useMerchants } from "@/hooks/useMerchants";
-import { useTags } from "@/hooks/useTags";
-import { useBulkDeleteTransactions, useBulkUpdateTransactions } from "@/hooks/useTransactions";
-
-type BulkPicker = "category" | "merchant" | "tags";
+import { useBulkDeleteTransactions } from "@/hooks/useTransactions";
 
 // On the bar's dark background, as in the mockup.
 const barButton = "text-background hover:bg-background/15 hover:text-background";
@@ -39,90 +24,33 @@ type BulkBarProps = {
 };
 
 /** What the API receives: the ticked ids, or the filters for « every result ». */
-function selectionBody(target: SelectionTarget, filters: TransactionFilters) {
+function selectionBody(target: SelectionTarget, filters: TransactionFilters): BulkSelectionInput {
 	return target.kind === "all" ? { filter: filters } : { ids: [...target.ids] };
 }
 
-function PickerButton({
-	label,
-	open,
-	onOpenChange,
-	disabled,
-	children,
-}: {
-	label: string;
-	disabled: boolean;
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	children: ReactNode;
-}) {
-	return (
-		<Popover open={open} onOpenChange={onOpenChange}>
-			<PopoverTrigger asChild>
-				<Button variant="ghost" className={barButton} disabled={disabled}>
-					{label}
-				</Button>
-			</PopoverTrigger>
-			<PopoverContent align="start" side="top" className="w-72 p-0">
-				{children}
-			</PopoverContent>
-		</Popover>
-	);
-}
+/** The bar and its checkbox unmount once the selection clears; focus would fall to the page. */
+const focusFirstRow = () => document.querySelector<HTMLElement>("[data-transaction-id]")?.focus();
 
 /**
  * The actions on the ticked rows, shown at the bottom of `/transactions` while
- * one is ticked: a ticked checkbox that unticks every row, as Sure's
- * `bulk-select#deselectAll`, the count, « Tout sélectionner », then the category, the
- * merchant, tags to add, the exclusion and the delete. A success unticks
- * every row and states the count; a failure keeps them, with a destructive
- * toast. No « Annuler », as in Sure: a wrong bulk edit is fixed by another.
+ * one is ticked, as Sure's `_selection_bar`: a ticked checkbox that unticks
+ * every row, as Sure's `bulk-select#deselectAll`, the count, « Tout
+ * sélectionner », then « Modifier », which opens the bulk edit drawer, and
+ * « Supprimer ». A success unticks every row and states the count; a failure
+ * keeps them, with a destructive toast. No « Annuler », as in Sure: a wrong
+ * bulk edit is fixed by another.
  */
 export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 	const { t } = useTranslation();
-	const categories = useCategories();
-	const merchants = useMerchants();
-	const tags = useTags();
-	const update = useBulkUpdateTransactions();
 	const remove = useBulkDeleteTransactions();
-	// The tags picked so far, added once when the combobox closes.
-	const [tagDraft, setTagDraft] = useState<string[]>([]);
-	const [picker, setPicker] = useState<BulkPicker | null>(null);
+	const [editing, setEditing] = useState(false);
 	const [confirming, setConfirming] = useState(false);
 	const count = target.kind === "all" ? total : target.ids.length;
 	const body = selectionBody(target, filters);
-	// A second pick while one runs would send a second request on the same rows.
-	const busy = update.isPending || remove.isPending;
 
 	// `mutateAsync` rather than `mutate`'s callbacks: the refetch after a
 	// success can drop the ticked rows and unmount this bar, which would
 	// silently skip them. The hook shows the failure toast.
-	const apply = async (patch: BulkPatch, message: (updated: number) => string) => {
-		try {
-			const { updated } = await update.mutateAsync({ ...body, patch });
-			selection.clear();
-			toast.success(message(updated));
-		} catch {
-			// Shown by the hook; the selection stays for another try.
-		}
-	};
-
-	const openChange = (kind: BulkPicker) => (open: boolean) => {
-		if (open) {
-			setPicker(kind);
-
-			return;
-		}
-
-		if (kind === "tags" && tagDraft.length > 0) {
-			void apply({ addTagIds: tagDraft }, (updated) =>
-				t("operations.bulk.tagsAdded", { count: updated }),
-			);
-		}
-		setTagDraft([]);
-		setPicker(null);
-	};
-
 	const deleteAll = async () => {
 		try {
 			const { deleted } = await remove.mutateAsync(body);
@@ -151,8 +79,7 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 					onClick={(event) => {
 						event.preventDefault();
 						selection.clear();
-						// The bar and this checkbox unmount; focus would fall to the page.
-						document.querySelector<HTMLElement>("[data-transaction-id]")?.focus();
+						focusFirstRow();
 					}}
 				/>
 				<p aria-live="polite" className="text-sm font-semibold whitespace-nowrap">
@@ -169,94 +96,35 @@ export function BulkBar({ selection, target, total, filters }: BulkBarProps) {
 				</Button>
 			)}
 			<div className="flex flex-1 flex-wrap items-center justify-end gap-1">
-				<PickerButton
-					label={t("operations.bulk.category")}
-					open={picker === "category"}
-					onOpenChange={openChange("category")}
-					disabled={busy}
+				<Button
+					variant="ghost"
+					className={barButton}
+					disabled={remove.isPending}
+					onClick={() => setEditing(true)}
 				>
-					<CategoryCombobox
-						categories={categories.data ?? []}
-						value={undefined}
-						onSelect={(categoryId) => {
-							setPicker(null);
-							void apply({ categoryId }, (updated) =>
-								t("operations.bulk.categoryChanged", { count: updated }),
-							);
-						}}
-					/>
-				</PickerButton>
-				<PickerButton
-					label={t("operations.bulk.merchant")}
-					open={picker === "merchant"}
-					onOpenChange={openChange("merchant")}
-					disabled={busy}
-				>
-					<MerchantCombobox
-						merchants={merchants.data ?? []}
-						value={undefined}
-						onSelect={(merchantId) => {
-							setPicker(null);
-							void apply({ merchantId }, (updated) =>
-								t("operations.bulk.merchantChanged", { count: updated }),
-							);
-						}}
-					/>
-				</PickerButton>
-				<PickerButton
-					label={t("operations.bulk.tags")}
-					open={picker === "tags"}
-					onOpenChange={openChange("tags")}
-					disabled={busy}
-				>
-					<TagCombobox
-						tags={tags.data ?? []}
-						value={tagDraft}
-						onToggle={(tagId) =>
-							setTagDraft((draft) =>
-								draft.includes(tagId) ? draft.filter((id) => id !== tagId) : [...draft, tagId],
-							)
-						}
-					/>
-				</PickerButton>
-				<DropdownMenu>
-					<DropdownMenuTrigger asChild>
-						<Button variant="ghost" className={barButton} disabled={busy}>
-							{t("operations.bulk.exclude")}
-						</Button>
-					</DropdownMenuTrigger>
-					<DropdownMenuContent side="top" align="end" className="w-auto">
-						<DropdownMenuItem
-							onSelect={() =>
-								void apply({ excluded: true }, (updated) =>
-									t("operations.bulk.excluded", { count: updated }),
-								)
-							}
-						>
-							{t("operations.bulk.excludeAction")}
-						</DropdownMenuItem>
-						<DropdownMenuItem
-							onSelect={() =>
-								void apply({ excluded: false }, (updated) =>
-									t("operations.bulk.included", { count: updated }),
-								)
-							}
-						>
-							{t("operations.bulk.includeAction")}
-						</DropdownMenuItem>
-					</DropdownMenuContent>
-				</DropdownMenu>
+					{t("operations.bulk.edit")}
+				</Button>
 				<Button
 					variant="ghost"
 					// The bar inverts the theme, so the red darkens where the bar turns light.
 					// oxlint-disable-next-line shadcn/no-raw-colors
 					className="text-red-400 hover:bg-background/15 hover:text-red-300 dark:text-red-600 dark:hover:text-red-700"
-					disabled={busy}
+					disabled={remove.isPending}
 					onClick={() => setConfirming(true)}
 				>
 					{t("operations.bulk.delete")}
 				</Button>
 			</div>
+			<BulkEditSheet
+				open={editing}
+				onOpenChange={setEditing}
+				selection={body}
+				onSaved={(updated) => {
+					selection.clear();
+					toast.success(t("operations.bulk.updated", { count: updated }));
+					focusFirstRow();
+				}}
+			/>
 			<ConfirmDialog
 				open={confirming}
 				onOpenChange={setConfirming}

@@ -432,8 +432,8 @@ export const updateTransactionTool = defineTool({
 
 export const bulkUpdateTransactionsTool = defineTool({
 	name: "bulk_update_transactions",
-	title: "Classify transactions in bulk",
-	description: `Sets a category or a merchant, adds tags or changes the exclusion on many transactions at once, as the bulk bar in Archant does: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers bulk_count_stale with the count now. Each field it changes is locked against rules. Answers { success, matched, changed, message }: how many transactions were matched and how many changed.`,
+	title: "Edit transactions in bulk",
+	description: `Sets the category, the merchant, the tags, the label or the notes of many transactions at once, as the bulk edit drawer in Archant does, never their date: up to ${MAX_BULK_IDS} ids, or every transaction of an active account a filter matches. tag_ids replaces each transaction's tags. A selected split parent is skipped; a selected split line takes every field. With a filter, first call get_transactions with it, show the owner its total_results and pass it as expected_count: when the filter matches another count now, nothing is written and it answers bulk_count_stale with the count now. Each field it changes is locked against rules. Answers { success, matched, changed, message }: how many transactions were matched and how many changed.`,
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: bulkUpdateTransactionsInput,

@@ -9,7 +9,6 @@ import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../../domain/balances/forward.ts";
-import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import {
 	add,
 	asUser,
@@ -31,6 +30,7 @@ import {
 	newMerchant,
 	newTag,
 	openChecking,
+	openHousehold,
 	openPea,
 	setToday,
 	splitInTwo,
@@ -1064,19 +1064,110 @@ describe("bulkUpdateTransactions", () => {
 		await expect(history(account.id)).resolves.toEqual(days);
 	});
 
-	it("clears a merchant, locking it", async () => {
+	it("moves and renames every row, locking both, and recomputes each account once", async () => {
 		const account = await openChecking();
-		const merchant = await newMerchant("Fleuriste");
-		const id = await add(account.id, {}, "sync");
-		await updateTransaction(deps(), id, { merchantId: merchant }, { origin: "rule" });
+		const ids = [
+			await add(account.id, { date: "2026-09-10" }, "sync"),
+			await add(account.id, { date: "2026-09-12" }, "sync"),
+			await add(account.id, { date: "2026-09-15" }, "sync"),
+		];
+		const recompute = vi.spyOn(forward, "forwardBalances");
 
-		await bulkUpdateTransactions(deps(), { ids: [id] }, { merchantId: null }, asUser);
+		await expect(
+			bulkUpdateTransactions(deps(), { ids }, { date: "2026-09-05", label: "Pain" }, asUser),
+		).resolves.toEqual({ matched: 3, changed: 3 });
 
-		await expect(merchantOf(id)).resolves.toBeNull();
-		await expect(lockedFields(id)).resolves.toEqual(["merchant"]);
+		await expect(
+			Promise.all(ids.map(async (id) => findTransaction(deps(), id))),
+		).resolves.toMatchObject(ids.map(() => ({ date: "2026-09-05", label: "Pain" })));
+		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual(
+			ids.map(() => ["date", "label"]),
+		);
+		expect(recompute).toHaveBeenCalledTimes(1);
+		const days = await history(account.id);
+		expect(days.get("2026-09-04")).toBe(123456);
+		expect(days.get("2026-09-05")).toBe(123456 - 3 * 4290);
+		expect(days.get("2026-09-21")).toBe(123456 - 3 * 4290);
 	});
 
-	it("adds tags to those a row carries, never removing one", async () => {
+	it("moves rows of two accounts, recomputing each once from its own earliest date", async () => {
+		const { checking: joint, livret } = await openHousehold();
+		const spent = await add(joint.id, { date: "2026-09-10" });
+		const saved = await add(livret.id, { date: "2026-09-12", amount: toMinorUnits(2000) });
+		const recompute = vi.spyOn(forward, "forwardBalances");
+
+		await expect(
+			bulkUpdateTransactions(deps(), { ids: [spent, saved] }, { date: "2026-09-05" }, asUser),
+		).resolves.toEqual({ matched: 2, changed: 2 });
+
+		expect(recompute).toHaveBeenCalledTimes(2);
+		const jointDays = await history(joint.id);
+		expect(jointDays.get("2026-09-04")).toBe(123456);
+		expect(jointDays.get("2026-09-05")).toBe(123456 - 4290);
+		expect(jointDays.get("2026-09-10")).toBe(123456 - 4290);
+		const livretDays = await history(livret.id);
+		expect(livretDays.get("2026-09-04")).toBe(0);
+		expect(livretDays.get("2026-09-05")).toBe(2000);
+		expect(livretDays.get("2026-09-12")).toBe(2000);
+	});
+
+	it("moves rows later, restoring the days they left, from the earliest old date", async () => {
+		const account = await openChecking();
+		const ids = [
+			await add(account.id, { date: "2026-09-05" }),
+			await add(account.id, { date: "2026-09-08" }),
+		];
+
+		await bulkUpdateTransactions(deps(), { ids }, { date: "2026-09-15" }, asUser);
+
+		const days = await history(account.id);
+		expect(days.get("2026-09-05")).toBe(123456);
+		expect(days.get("2026-09-14")).toBe(123456);
+		expect(days.get("2026-09-15")).toBe(123456 - 2 * 4290);
+	});
+
+	it("skips a split parent and gives its lines every field but the date", async () => {
+		const account = await openChecking();
+		const { parent, food, home } = await splitInTwo(account.id);
+		const before = await findTransaction(deps(), parent);
+		const parentLocks = await lockedFields(parent);
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ ids: [parent, food, home] },
+				{ date: "2026-09-05", label: "Courses du mois" },
+				asUser,
+			),
+		).resolves.toEqual({ matched: 2, changed: 2 });
+
+		await expect(findTransaction(deps(), parent)).resolves.toEqual(before);
+		await expect(lockedFields(parent)).resolves.toEqual(parentLocks);
+		await expect(
+			Promise.all([food, home].map(async (id) => findTransaction(deps(), id))),
+		).resolves.toMatchObject([
+			{ date: "2026-09-10", label: "Courses du mois" },
+			{ date: "2026-09-10", label: "Courses du mois" },
+		]);
+	});
+
+	it("edits a split's lines through a filter, which never selects its parent", async () => {
+		const account = await openChecking();
+		await splitInTwo(account.id);
+		const other = await add(account.id, { label: "Pharmacie" });
+
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				{ filter: { accountIds: [account.id] } },
+				{ notes: "Revue" },
+				{ ...asUser, expectedCount: 3 },
+			),
+		).resolves.toEqual({ matched: 3, changed: 3 });
+		await expect(findTransaction(deps(), other)).resolves.toMatchObject({ notes: "Revue" });
+	});
+
+	it("replaces each row's tags, locking them", async () => {
 		const account = await openChecking();
 		const holidays = await newTag("Vacances");
 		const work = await newTag("Travaux");
@@ -1085,35 +1176,74 @@ describe("bulkUpdateTransactions", () => {
 		await updateTransaction(deps(), tagged, { tagIds: [holidays] }, { origin: "rule" });
 
 		await expect(
-			bulkUpdateTransactions(deps(), { ids: [tagged, bare] }, { addTagIds: [work] }, asUser),
+			bulkUpdateTransactions(deps(), { ids: [tagged, bare] }, { tagIds: [work] }, asUser),
 		).resolves.toEqual({ matched: 2, changed: 2 });
 
-		await expect(tagsOf(tagged)).resolves.toEqual([holidays, work].toSorted());
+		await expect(tagsOf(tagged)).resolves.toEqual([work]);
 		await expect(tagsOf(bare)).resolves.toEqual([work]);
 		await expect(lockedFields(tagged)).resolves.toEqual(["tags"]);
 	});
 
-	it("writes nothing when a row would carry more tags than the cap", async () => {
+	it("clears every tag with an empty set, locking the field", async () => {
 		const account = await openChecking();
-		const full = Array.from({ length: MAX_TAGS_PER_TRANSACTION }, () => crypto.randomUUID());
-		await temp.db
-			.insert(tags)
-			.values(full.map((id) => ({ id, name: `Tag ${id}`, createdAt: 0, updatedAt: 0 })));
-		const extra = await newTag("En trop");
-		const bare = await add(account.id, {}, "sync");
-		const crowded = await add(account.id, {}, "sync");
-		await updateTransaction(deps(), crowded, { tagIds: full }, { origin: "rule" });
+		const holidays = await newTag("Vacances");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "rule" });
+
+		await bulkUpdateTransactions(deps(), { ids: [id] }, { tagIds: [], label: "Divers" }, asUser);
+
+		await expect(tagsOf(id)).resolves.toEqual([]);
+		await expect(lockedFields(id)).resolves.toEqual(["label", "tags"]);
+	});
+
+	it("keeps the tags when the patch has none", async () => {
+		const account = await openChecking();
+		const holidays = await newTag("Vacances");
+		const id = await add(account.id, {}, "sync");
+		await updateTransaction(deps(), id, { tagIds: [holidays] }, { origin: "rule" });
+
+		await bulkUpdateTransactions(deps(), { ids: [id] }, { notes: "Pain" }, asUser);
+
+		await expect(tagsOf(id)).resolves.toEqual([holidays]);
+		await expect(lockedFields(id)).resolves.toEqual(["notes"]);
+	});
+
+	it("sets a merchant and notes, locking each", async () => {
+		const account = await openChecking();
+		const merchant = await newMerchant("Fleuriste");
+		const id = await add(account.id, {}, "sync");
+
+		await bulkUpdateTransactions(
+			deps(),
+			{ ids: [id] },
+			{ merchantId: merchant, notes: "Fleurs" },
+			asUser,
+		);
+
+		await expect(merchantOf(id)).resolves.toBe(merchant);
+		await expect(lockedFields(id)).resolves.toEqual(["notes", "merchant"]);
+	});
+
+	it("writes nothing for a date more than a year ahead", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
 
 		await expect(
-			bulkUpdateTransactions(deps(), { ids: [bare, crowded] }, { addTagIds: [extra] }, asUser),
+			bulkUpdateTransactions(
+				deps(),
+				{ ids: [id] },
+				{ date: "2028-09-21", label: "Plus tard" },
+				asUser,
+			),
 		).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
-			fields: [{ path: "patch.addTagIds", code: "too_big" }],
+			fields: [{ path: "patch.date", code: "date_too_late" }],
 		});
-
-		await expect(tagsOf(bare)).resolves.toEqual([]);
-		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
-		await expect(lockedFields(bare)).resolves.toEqual([]);
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			date: "2026-09-10",
+			label: "Boulangerie",
+		});
+		await expect(lockedFields(id)).resolves.toEqual([]);
 	});
 
 	it("counts a row already on the category without locking it again", async () => {
@@ -1169,12 +1299,12 @@ describe("bulkUpdateTransactions", () => {
 			bulkUpdateTransactions(
 				deps(),
 				{ filter: { accountIds: [account.id], q: "introuvable" } },
-				{ excluded: true },
+				{ notes: "Revue" },
 				asUser,
 			),
 		).resolves.toEqual({ matched: 0, changed: 0 });
 		await expect(
-			bulkUpdateTransactions(deps(), { filter: { merchantIds: [] } }, { excluded: true }, asUser),
+			bulkUpdateTransactions(deps(), { filter: { merchantIds: [] } }, { notes: "Revue" }, asUser),
 		).resolves.toEqual({ matched: 0, changed: 0 });
 	});
 
@@ -1205,14 +1335,14 @@ describe("bulkUpdateTransactions", () => {
 		const id = await add(account.id, {}, "sync");
 
 		await expect(
-			bulkUpdateTransactions(deps(), { ids: [id, id] }, { excluded: true }, asUser),
+			bulkUpdateTransactions(deps(), { ids: [id, id] }, { notes: "Revue" }, asUser),
 		).resolves.toEqual({ matched: 1, changed: 1 });
 	});
 
 	it.each([
 		["patch.categoryId", { categoryId: "nope" }],
 		["patch.merchantId", { merchantId: "nope" }],
-		["patch.addTagIds", { addTagIds: ["nope"] }],
+		["patch.tagIds", { tagIds: ["nope"] }],
 	])("writes nothing for an unknown reference, on %s", async (path, patch) => {
 		const account = await openChecking();
 		const id = await add(account.id, {}, "sync");
@@ -1224,57 +1354,6 @@ describe("bulkUpdateTransactions", () => {
 			fields: [{ path, code: "invalid_value" }],
 		});
 		await expect(lockedFields(id)).resolves.toEqual([]);
-	});
-
-	it("excludes the rows, locking the field, without rewriting a balance", async () => {
-		const account = await openChecking();
-		const ids = [await add(account.id, {}, "sync"), await add(account.id, {}, "sync")];
-		const days = await history(account.id);
-		const recompute = vi.spyOn(forward, "forwardBalances");
-
-		await bulkUpdateTransactions(deps(), { ids }, { excluded: true }, asUser);
-
-		await expect(Promise.all(ids.map(excludedOf))).resolves.toEqual([true, true]);
-		await expect(Promise.all(ids.map(lockedFields))).resolves.toEqual([["excluded"], ["excluded"]]);
-		expect(recompute).not.toHaveBeenCalled();
-		await expect(history(account.id)).resolves.toEqual(days);
-	});
-
-	it("classifies a split's rows and leaves their exclusion as it is", async () => {
-		const account = await openChecking();
-		const { parent, food, home } = await splitInTwo(account.id);
-		const other = await add(account.id, { label: "Pharmacie" });
-		const groceries = await newCategory("Courses divisées");
-
-		await expect(
-			bulkUpdateTransactions(
-				deps(),
-				{ ids: [parent, food, other] },
-				{ excluded: true, categoryId: groceries },
-				asUser,
-			),
-		).resolves.toEqual({ matched: 3, changed: 3 });
-		await expect(
-			bulkUpdateTransactions(
-				deps(),
-				{ filter: { accountIds: [account.id] } },
-				{ excluded: false },
-				asUser,
-			),
-		).resolves.toEqual({ matched: 3, changed: 1 });
-		// Named by id, the parent keeps its exclusion: only the split lifts it.
-		await expect(
-			bulkUpdateTransactions(deps(), { ids: [parent] }, { excluded: false }, asUser),
-		).resolves.toEqual({ matched: 1, changed: 0 });
-
-		await expect(Promise.all([parent, food, home, other].map(excludedOf))).resolves.toEqual([
-			true,
-			false,
-			false,
-			false,
-		]);
-		await expect(categoryOf(food)).resolves.toBe(groceries);
-		await expect(categoryOf(parent)).resolves.toBe(groceries);
 	});
 
 	it("keeps a locked field for any origin but the user's", async () => {
@@ -1406,7 +1485,7 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 				bulkUpdateTransactions(
 					bigDeps,
 					{ filter: { uncategorised: true } },
-					{ categoryId: category, addTagIds: [tag] },
+					{ categoryId: category, tagIds: [tag] },
 					asUser,
 				),
 			).resolves.toEqual({ matched: 5000, changed: 5000 });

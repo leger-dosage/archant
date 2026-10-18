@@ -521,20 +521,31 @@ function toSelection<Value extends SelectionFields>(
 	return { ...rest, selection };
 }
 
-/** What a bulk edit may change: at least one field, each as in the single edit. */
+/** Sure's `compact_blank`: a blank or whitespace field changes nothing. */
+const blankAsAbsent = (value: string) => (value === "" ? undefined : value);
+
+/**
+ * What a bulk edit may change, as Sure's `bulk_updates` drawer: at least one
+ * field, a blank one absent. Nothing clears a category or a merchant, as in
+ * Sure. Strict: a key the drawer no longer sends, such as `excluded`, is
+ * refused rather than dropped, so a caller never believes it changed.
+ */
 export const bulkPatchSchema = z
-	.object({
-		// `null` clears it; the ledger checks that the id names a category.
-		categoryId: z.string().min(1).nullable().optional(),
-		// `null` clears it; the ledger checks that the id names a merchant.
-		merchantId: z.string().min(1).nullable().optional(),
-		// Added to each row's tags, never replacing them; the ledger checks the ids and each row's cap.
-		addTagIds: z
+	.strictObject({
+		date: z.string().trim().transform(blankAsAbsent).pipe(entryDateSchema.optional()).optional(),
+		name: z.string().trim().max(LABEL_MAX_LENGTH).transform(blankAsAbsent).optional(),
+		notes: z.string().trim().max(NOTES_MAX_LENGTH).transform(blankAsAbsent).optional(),
+		// The ledger checks that the id names a category.
+		categoryId: z.string().trim().transform(blankAsAbsent).optional(),
+		// The ledger checks that the id names a merchant.
+		merchantId: z.string().trim().transform(blankAsAbsent).optional(),
+		// The whole set, replacing each row's, as Sure's `tags_provided?`; `[]`
+		// removes every tag. Repeats are dropped before the cap counts.
+		tagIds: z
 			.array(z.string().min(1))
 			.transform((ids) => [...new Set(ids)])
-			.pipe(z.array(z.string()).min(1).max(MAX_TAGS_PER_TRANSACTION))
+			.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
 			.optional(),
-		excluded: z.boolean().optional(),
 	})
 	.refine((patch) => Object.values(patch).some((value) => value !== undefined), {
 		message: "empty_patch",

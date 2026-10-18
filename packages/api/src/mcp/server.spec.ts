@@ -2651,7 +2651,7 @@ describe("classifying transactions", () => {
 		).toMatchObject({ excluded: false });
 	});
 
-	it("bulk_update_transactions by ids adds tags beside those each carries", async () => {
+	it("bulk_update_transactions by ids replaces each transaction's tags and renames it", async () => {
 		const token = await writer();
 		const account = await openAccount({ name: "Étiqueté" });
 		const holidays = await createTag(`Vacances ${crypto.randomUUID().slice(0, 8)}`);
@@ -2666,7 +2666,7 @@ describe("classifying transactions", () => {
 
 		const result = await callTool(bare, token, "bulk_update_transactions", {
 			ids,
-			patch: { add_tag_ids: [work.id] },
+			patch: { tag_ids: [work.id], name: "BULK3 Renommée" },
 		});
 
 		expect(Object.keys(result.structuredContent ?? {})).toEqual([
@@ -2683,10 +2683,9 @@ describe("classifying transactions", () => {
 		});
 		expect(
 			z
-				.object({ tags: z.array(z.string()) })
-				.parse((await callTool(bare, token, "get_transaction", { id: tagged })).structuredContent)
-				.tags.toSorted(),
-		).toEqual([holidays.name, work.name].toSorted());
+				.object({ name: z.string(), tags: z.array(z.string()) })
+				.parse((await callTool(bare, token, "get_transaction", { id: tagged })).structuredContent),
+		).toMatchObject({ name: "BULK3 Renommée", tags: [work.name] });
 		expect(outcomes(await callsRecorded())).toContainEqual({
 			tool: "bulk_update_transactions",
 			outcome: "OK",
@@ -2774,12 +2773,12 @@ describe("classifying transactions", () => {
 		const lone = await callTool(bare, token, "bulk_update_transactions", {
 			filter: { account_ids: [account.id], amount_operator: "less" },
 			expected_count: 2,
-			patch: { excluded: true },
+			patch: { notes: "Petit" },
 		});
 		const bounds = await callTool(bare, token, "bulk_update_transactions", {
 			filter: { account_ids: [account.id], amount_min: "10" },
 			expected_count: 2,
-			patch: { excluded: true },
+			patch: { notes: "Petit" },
 		});
 
 		expect(total).toBe(2);
@@ -2819,12 +2818,12 @@ describe("classifying transactions", () => {
 		});
 	});
 
-	it("bulk_update_transactions refuses a filter without its count, a count beside ids, and neither selection", async () => {
+	it("bulk_update_transactions refuses a filter without its count, a count beside ids, neither selection, a date and an exclusion", async () => {
 		const token = await writer();
 		const call = async (args: Record<string, unknown>) =>
 			(
 				await callTool(bare, token, "bulk_update_transactions", {
-					patch: { excluded: true },
+					patch: { notes: "Note" },
 					...args,
 				})
 			).content[0]?.text;
@@ -2837,8 +2836,14 @@ describe("classifying transactions", () => {
 		);
 		await expect(call({})).resolves.toContain("ids ids_or_filter");
 		await expect(
-			call({ ids: ["a"], patch: { excluded: true, tag_ids: ["b"] } }),
-		).resolves.toContain("patch.tag_ids unrecognized_keys");
+			call({ ids: ["a"], patch: { notes: "Note", date: "2026-09-10" } }),
+		).resolves.toContain("patch.date unrecognized_keys");
+		await expect(call({ ids: ["a"], patch: { excluded: true } })).resolves.toContain(
+			"patch.excluded unrecognized_keys",
+		);
+		await expect(call({ ids: ["a"], patch: { add_tag_ids: ["b"] } })).resolves.toContain(
+			"patch.add_tag_ids unrecognized_keys",
+		);
 	});
 
 	it("bulk_update_transactions writes nothing when an id names no transaction", async () => {
