@@ -37,6 +37,7 @@ import { ChoiceField } from "@/components/ChoiceField";
 import { CsvCleanStep, useIssueText } from "@/components/CsvCleanStep";
 import { CsvMapStep } from "@/components/CsvMapStep";
 import { Page } from "@/components/Page";
+import { QifSelectStep } from "@/components/QifSelectStep";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -150,6 +151,8 @@ const TEMPLATES: Record<CsvImportType, string> = {
 		"Checking,,01/01/2024,Employer,Income: Paycheck,Income,Paycheck,Monthly salary,$0.00,$2500.00,Cleared",
 		"Credit Card,,01/03/2024,Coffee Shop,Dining Out: Coffee,Dining Out,Coffee,Morning coffee,$4.25,$0.00,Uncleared",
 	].join("\n"),
+	// Sure offers no sample QIF file.
+	qif: "",
 	actual: [
 		"Account,Date,Payee,Notes,Category_Group,Category,Amount,Split_Amount,Cleared",
 		"Checking Account,2024-01-01,Employer,Monthly salary,Income,Paycheck,2500.00,0,Reconciled",
@@ -176,12 +179,19 @@ function configurationOf(resolved: Preview["configuration"]): CsvImportConfigura
  * Sure's `mapping_steps` of `type`: account types; the accounts of a
  * multi-account trade file; the categories and tags of a transaction file,
  * and its accounts when it names them; a Mint file's categories, tags and
- * accounts; a YNAB or Actual file's categories and accounts.
+ * accounts; a YNAB or Actual file's categories and accounts; a QIF file's
+ * categories and tags, and its accounts when it names them.
  */
-function mapStepsOf(type: CsvImportType, accountId: string | null | undefined): MapKind[] {
+function mapStepsOf(
+	type: CsvImportType,
+	accountId: string | null | undefined,
+	qifAccounts: boolean,
+): MapKind[] {
 	const multiAccount = (accountId ?? null) === null;
 
 	switch (type) {
+		case "qif":
+			return qifAccounts ? ["categories", "tags", "accounts"] : ["categories", "tags"];
 		case "accounts":
 			return ["accountTypes"];
 		case "trades":
@@ -199,7 +209,8 @@ function mapStepsOf(type: CsvImportType, accountId: string | null | undefined): 
 }
 
 /** Whether an import of `type` names its account at upload, « Compte (facultatif) ». */
-const choosesAccount = (type: CsvImportType) => type === "trades" || type === "transactions";
+const choosesAccount = (type: CsvImportType) =>
+	type === "trades" || type === "transactions" || type === "qif";
 
 /**
  * The accounts an import of `type` writes into: for trades those Sure's
@@ -259,7 +270,7 @@ function CsvImportPage() {
 		});
 	}, [t, type]);
 
-	const mapSteps = mapStepsOf(type, configuration.accountId);
+	const mapSteps = mapStepsOf(type, configuration.accountId, preview?.qif?.accounts ?? false);
 
 	const draft = (patch: Partial<CsvImportDraft> = {}): CsvImportDraft | null =>
 		file === null ? null : { type, file, configuration, edits, mappings, ...patch };
@@ -335,16 +346,17 @@ function CsvImportPage() {
 			? ["upload", "configure", "clean", "map", "confirm"]
 			: ["upload", "configure", "clean", "confirm"];
 	const error = read.error === null ? null : errorMessage(read.error);
+	const qif = type === "qif";
 	const stepTitles: Record<Step, string> = {
-		upload: t("csvImport.upload.title"),
-		configure: t("csvImport.configure.title"),
+		upload: qif ? t("csvImport.upload.qif.title") : t("csvImport.upload.title"),
+		configure: qif ? t("csvImport.qif.title") : t("csvImport.configure.title"),
 		clean: t("csvImport.clean.title"),
 		map: t(`csvImport.map.titles.${mapKind}`),
 		confirm: t("csvImport.confirm.title"),
 	};
 	const stepDescriptions: Record<Step, string> = {
-		upload: t("csvImport.upload.description"),
-		configure: t("csvImport.configure.description"),
+		upload: qif ? t("csvImport.upload.qif.description") : t("csvImport.upload.description"),
+		configure: qif ? t("csvImport.qif.description") : t("csvImport.configure.description"),
 		clean: t("csvImport.clean.description"),
 		map: t(`csvImport.map.descriptions.${mapKind}`),
 		confirm: t("csvImport.confirm.description"),
@@ -360,6 +372,8 @@ function CsvImportPage() {
 			>
 				<Steps
 					steps={steps}
+					// Sure's QIF nav names its second step « Sélectionner ».
+					labels={qif ? { configure: t("csvImport.steps.select") } : {}}
 					current={step}
 					onBack={(target) => {
 						read.reset();
@@ -399,7 +413,22 @@ function CsvImportPage() {
 						}}
 					/>
 				)}
-				{step === "configure" && preview !== null && (
+				{step === "configure" && preview !== null && preview.qif !== null && (
+					<QifSelectStep
+						preview={preview.qif}
+						configuration={configuration}
+						onChange={setConfiguration}
+						reading={read.isPending}
+						error={error}
+						onSubmit={() => {
+							// Sure's `generate_rows_from_csv` again with the date format and
+							// the selection: the edits go, and the values are mapped again.
+							setEdits([]);
+							advance("clean", { mappings: undefined, edits: [] });
+						}}
+					/>
+				)}
+				{step === "configure" && preview !== null && type !== "qif" && (
 					<ConfigureStep
 						type={type}
 						preview={preview}
@@ -505,10 +534,13 @@ function CsvImportPage() {
 /** Sure's `imports/_nav`: the steps in order, the current one marked, the done ones to go back to. */
 function Steps({
 	steps,
+	labels,
 	current,
 	onBack,
 }: {
 	steps: readonly Step[];
+	/** A step another import names otherwise. */
+	labels: Partial<Record<Step, string>>;
 	current: Step;
 	onBack: (step: Step) => void;
 }) {
@@ -530,7 +562,7 @@ function Steps({
 								{index + 1}
 							</span>
 							<span className={cn(index === currentIndex && "font-medium")}>
-								{t(`csvImport.steps.${step}`)}
+								{labels[step] ?? t(`csvImport.steps.${step}`)}
 							</span>
 						</>
 					);
@@ -601,6 +633,7 @@ function UploadStep({
 	const { t } = useTranslation();
 	const [dragging, setDragging] = useState(false);
 	const offered = useImportAccounts(type, "upload");
+	const qif = type === "qif";
 	// Sure's `csv_template` drops its account column once the account is chosen.
 	const lines = TEMPLATES[type].split("\n");
 	const accountColumn = (lines[0] ?? "").split(",").indexOf("account");
@@ -623,19 +656,24 @@ function UploadStep({
 				onSubmit();
 			}}
 		>
-			<ChoiceField
-				id="csv-import-separator"
-				label={t("csvImport.upload.separator")}
-				value={separator}
-				options={CSV_SEPARATORS.map((value) => ({
-					value,
-					label: t(`csvImport.upload.separators.${value === "," ? "comma" : "semicolon"}`),
-				}))}
-				onChange={(value) => onChoices({ separator: value, accountId })}
-			/>
+			{/* A QIF file has no columns to separate. */}
+			{!qif && (
+				<ChoiceField
+					id="csv-import-separator"
+					label={t("csvImport.upload.separator")}
+					value={separator}
+					options={CSV_SEPARATORS.map((value) => ({
+						value,
+						label: t(`csvImport.upload.separators.${value === "," ? "comma" : "semicolon"}`),
+					}))}
+					onChange={(value) => onChoices({ separator: value, accountId })}
+				/>
+			)}
 			{choosesAccount(type) && (
 				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="csv-import-account">{t("csvImport.upload.account")}</Label>
+					<Label htmlFor="csv-import-account">
+						{qif ? t("csvImport.upload.qif.account") : t("csvImport.upload.account")}
+					</Label>
 					<Select
 						value={accountId ?? NONE}
 						onValueChange={(value) =>
@@ -646,7 +684,9 @@ function UploadStep({
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
-							<SelectItem value={NONE}>{t("csvImport.upload.multiAccount")}</SelectItem>
+							<SelectItem value={NONE}>
+								{qif ? t("csvImport.upload.qif.placeholder") : t("csvImport.upload.multiAccount")}
+							</SelectItem>
 							{offered.map((account) => (
 								<SelectItem key={account.id} value={account.id}>
 									{account.name}
@@ -659,7 +699,7 @@ function UploadStep({
 			<input
 				id="csv-import-file"
 				type="file"
-				accept=".csv,text/csv,text/plain"
+				accept={qif ? ".qif" : ".csv,text/csv,text/plain"}
 				className="peer sr-only"
 				disabled={reading}
 				aria-invalid={error !== null}
@@ -686,26 +726,37 @@ function UploadStep({
 				<FileSpreadsheetIcon aria-hidden="true" className="size-6 text-muted-foreground" />
 				<span>
 					<span className="font-medium">{t("csvImport.upload.browse")}</span>{" "}
-					<span className="text-muted-foreground">{t("csvImport.upload.browseHint")}</span>
+					<span className="text-muted-foreground">
+						{qif ? t("csvImport.upload.qif.browseHint") : t("csvImport.upload.browseHint")}
+					</span>
 				</span>
+				{qif && (
+					<span className="text-xs text-muted-foreground">{t("csvImport.upload.qif.hint")}</span>
+				)}
 				{file !== null && (
 					<span className="font-medium">{t("csvImport.upload.chosen", { name: file.name })}</span>
 				)}
 			</label>
 			<Button type="submit" disabled={file === null || reading}>
-				{reading ? t("csvImport.upload.reading") : t("csvImport.upload.submit")}
+				{reading
+					? t("csvImport.upload.reading")
+					: qif
+						? t("csvImport.upload.qif.submit")
+						: t("csvImport.upload.submit")}
 			</Button>
 			<ErrorLine id="csv-import-error" error={error} />
-			<p className="text-center text-xs text-muted-foreground">
-				<a
-					className="text-foreground underline"
-					href={`data:text/csv;charset=utf-8,${encodeURIComponent(template)}`}
-					download={`${type}.csv`}
-				>
-					{t("csvImport.upload.sample")}
-				</a>{" "}
-				{t("csvImport.upload.sampleHint")}
-			</p>
+			{!qif && (
+				<p className="text-center text-xs text-muted-foreground">
+					<a
+						className="text-foreground underline"
+						href={`data:text/csv;charset=utf-8,${encodeURIComponent(template)}`}
+						download={`${type}.csv`}
+					>
+						{t("csvImport.upload.sample")}
+					</a>{" "}
+					{t("csvImport.upload.sampleHint")}
+				</p>
+			)}
 		</form>
 	);
 }
@@ -848,7 +899,7 @@ function ConfigureStep({
 	error,
 	onSubmit,
 }: {
-	type: CsvImportType;
+	type: Exclude<CsvImportType, "qif">;
 	preview: Preview;
 	configuration: CsvImportConfigurationInput;
 	onChange: (configuration: CsvImportConfigurationInput) => void;

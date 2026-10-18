@@ -82,7 +82,7 @@ function valuesOf(sheet: Sheet, row: CsvRow, columns: readonly CleanKey[]): stri
  * A refusal without a line belongs to the file or to « Mapper ».
  */
 export function cleanOf(sheet: Sheet, errors: readonly SureIssue[]): Clean {
-	const columns = [...cleanColumnsOf(sheet.type, sheet.configuration.accountId)];
+	const columns = [...cleanColumnsOf(sheet.type, sheet.configuration.accountId, sheet.qif)];
 	const byLine = new Map<string, SureIssue[]>();
 
 	for (const issue of errors) {

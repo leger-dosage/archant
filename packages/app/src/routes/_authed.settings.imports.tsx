@@ -5,6 +5,7 @@ import {
 	BuildingIcon,
 	ChevronRightIcon,
 	FileBracesIcon,
+	FileClockIcon,
 	FileSpreadsheetIcon,
 	LeafIcon,
 	PiggyBankIcon,
@@ -17,7 +18,7 @@ import {
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CsvImportType, ToolImportType } from "@archant/api/schemas/csv-imports";
+import type { CsvImportType } from "@archant/api/schemas/csv-imports";
 
 import { InsetGroup } from "@/components/InsetGroup";
 import { Page } from "@/components/Page";
@@ -38,13 +39,14 @@ const RAW_DATA: readonly { type: CsvImportType; icon: LucideIcon }[] = [
 ];
 
 /**
- * Sure's financial tools after its archive, in its order, QIF left to each
- * account's « Importer ». Sure shows Mint's and YNAB's logos; Archant ships
- * no third-party logo, so each takes an icon, Actual Sure's own.
+ * Sure's financial tools after its archive, in its order. Sure shows Mint's
+ * and YNAB's logos; Archant ships no third-party logo, so each takes an
+ * icon, Actual and QIF Sure's own.
  */
-const TOOLS: readonly { type: ToolImportType; icon: LucideIcon }[] = [
+const TOOLS: readonly { type: CsvImportType; icon: LucideIcon }[] = [
 	{ type: "mint", icon: LeafIcon },
 	{ type: "actual", icon: WalletIcon },
+	{ type: "qif", icon: FileClockIcon },
 	{ type: "ynab", icon: PiggyBankIcon },
 ];
 

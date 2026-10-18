@@ -607,6 +607,97 @@ async function groupLines(
 }
 
 /**
+ * Whether a written line is a split record's: a parent, excluded and locked
+ * so, with its lines as children (AD-20). A possible duplicate stays whole.
+ */
+const splitOf = (row: { line: NormalizedTransaction; duplicate: boolean }) =>
+	row.duplicate ? [] : (row.line.splitLines ?? []);
+
+const isSplit = (row: { line: NormalizedTransaction; duplicate: boolean }) =>
+	splitOf(row).length > 0;
+
+/**
+ * The children of each imported split (AD-20), as `services/ledger/splits.ts`
+ * inserts them: the parent's account, date, currency and merchant, one
+ * millisecond apart so they keep the file's order, never keyed, so no
+ * import, sync or revert takes one for a bank line. Their category, tags and
+ * notes lock as the import's origin locks them. Returns them, for the rules.
+ */
+async function insertImportedSplits(
+	tx: Transaction,
+	accountId: string,
+	rows: readonly {
+		id: string;
+		line: NormalizedTransaction;
+		duplicate: boolean;
+		merchantId: string | null;
+	}[],
+	options: { origin: Origin; now: number },
+) {
+	const children = rows.flatMap(({ id, line, duplicate, merchantId }) =>
+		splitOf({ line, duplicate }).map((split) => ({
+			id: crypto.randomUUID(),
+			parentId: id,
+			line,
+			merchantId,
+			split,
+			lockedFields: lockedBy(
+				options.origin,
+				{},
+				[
+					"date",
+					"amount",
+					"label",
+					"excluded",
+					...(split.notes === null ? [] : ["notes" as const]),
+					...(split.categoryId === null ? [] : ["category" as const]),
+					...(split.tagIds.length === 0 ? [] : ["tags" as const]),
+				],
+				options.now,
+			),
+		})),
+	);
+
+	await inSequence([...children.entries()], ROWS_PER_INSERT, (chunk) =>
+		tx.insert(entries).values(
+			chunk.map(([index, { id, parentId, line, split }]) => ({
+				id,
+				accountId,
+				kind: "transaction" as const,
+				date: line.date,
+				amount: split.amount,
+				currency: line.currency,
+				parentEntryId: parentId,
+				createdAt: options.now + index,
+				updatedAt: options.now + index,
+			})),
+		),
+	);
+	await inSequence(children, ROWS_PER_INSERT, (chunk) =>
+		tx.insert(transactions).values(
+			chunk.map(({ id, merchantId, split, lockedFields }) => ({
+				entryId: id,
+				label: split.label,
+				notes: split.notes,
+				merchantId,
+				categoryId: split.categoryId,
+				categoryOrigin: split.categoryId === null ? null : categoryOriginOf(options.origin),
+				lockedFields,
+			})),
+		),
+	);
+	await inSequence(
+		children.flatMap(({ id, split }) =>
+			[...new Set(split.tagIds)].map((tagId) => ({ transactionId: id, tagId })),
+		),
+		ROWS_PER_INSERT,
+		(chunk) => tx.insert(taggings).values(chunk),
+	);
+
+	return children;
+}
+
+/**
  * Where a QIF import moves the opening anchor: the day before its earliest
  * line, when that line precedes the anchor, as Sure's
  * `QifImport#adjust_opening_anchor_if_needed!`. No other source moves it.
@@ -1048,7 +1139,10 @@ export async function ingest(
 						reference: line.reference,
 						possibleDuplicate: duplicate,
 						pending: line.pending,
-						lockedFields: locksOf(line),
+						excluded: isSplit({ line, duplicate }),
+						lockedFields: isSplit({ line, duplicate })
+							? lockedBy("user", locksOf(line), ["excluded"], now)
+							: locksOf(line),
 						categoryId,
 						categoryOrigin: categoryId === null ? null : categoryOriginOf(options.origin),
 						merchantId,
@@ -1060,6 +1154,11 @@ export async function ingest(
 				ROWS_PER_INSERT,
 				(chunk) => tx.insert(taggings).values(chunk),
 			);
+
+			const children = await insertImportedSplits(tx, accountId, rows, {
+				origin: options.origin,
+				now,
+			});
 
 			if (assistantKey !== undefined) {
 				await attachKeys(
@@ -1141,23 +1240,43 @@ export async function ingest(
 			// locked; its merchant is the assistant's or the bank's, which a rule
 			// may still change.
 			if (rows.length > 0) {
+				// A split's parent counts in no rule, its lines do (AD-20).
 				const { plan } = planActions(
 					await loadEnabledRules(tx),
-					rows.map(({ id, line, merchantId, categoryId, tagIds }) => ({
-						id,
-						accountId,
-						date: line.date,
-						amount: line.amount,
-						currency: line.currency,
-						label: line.label,
-						notes: line.notes,
-						merchantId,
-						categoryId,
-						tagIds,
+					[
+						...rows
+							.filter((row) => !isSplit(row))
+							.map(({ id, line, merchantId, categoryId, tagIds }) => ({
+								id,
+								accountId,
+								date: line.date,
+								amount: line.amount,
+								currency: line.currency,
+								label: line.label,
+								notes: line.notes,
+								merchantId,
+								categoryId,
+								tagIds,
+								lockedFields: locksOf(line),
+							})),
+						...children.map(({ id, line, merchantId, split, lockedFields }) => ({
+							id,
+							accountId,
+							date: line.date,
+							amount: split.amount,
+							currency: line.currency,
+							label: split.label,
+							notes: split.notes,
+							merchantId,
+							categoryId: split.categoryId,
+							tagIds: [...new Set(split.tagIds)],
+							lockedFields,
+						})),
+					].map((row) => ({
+						...row,
 						excluded: false,
 						transfer: null,
 						expectedTransferAccountId: null,
-						lockedFields: locksOf(line),
 					})),
 					getReportingCurrency(),
 					MAX_TAGS_PER_TRANSACTION,

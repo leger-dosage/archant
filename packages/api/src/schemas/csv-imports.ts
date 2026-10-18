@@ -19,6 +19,7 @@ export const CSV_IMPORT_TYPES = [
 	"mint",
 	"ynab",
 	"actual",
+	"qif",
 ] as const;
 
 export type CsvImportType = (typeof CSV_IMPORT_TYPES)[number];
@@ -164,6 +165,19 @@ const CLEAN_COLUMNS = {
 	mint: ["date", "amount", "name", "currency", "category", "tags", "account", "notes"],
 	ynab: ["date", "name", "category", "account", "notes"],
 	actual: ["date", "amount", "name", "category", "account", "notes"],
+	qif: [
+		"date",
+		"account",
+		"amount",
+		"name",
+		"currency",
+		"category",
+		"tags",
+		"notes",
+		"ticker",
+		"qty",
+		"price",
+	],
 } as const satisfies Record<CsvImportType, readonly string[]>;
 
 export type CleanKey = (typeof CLEAN_COLUMNS)[keyof typeof CLEAN_COLUMNS][number];
@@ -171,8 +185,46 @@ export type CleanKey = (typeof CLEAN_COLUMNS)[keyof typeof CLEAN_COLUMNS][number
 /** Every key « Nettoyer » shows, whatever the import. */
 export const CLEAN_KEYS = [...new Set<CleanKey>(Object.values(CLEAN_COLUMNS).flat())];
 
+/**
+ * What a QIF file's columns depend on: its first section an investment one,
+ * its `!Account` blocks, and whether it holds trades.
+ */
+export type QifShape = { investment: boolean; accounts: boolean; trades: boolean };
+
+/**
+ * Sure's `QifImport#column_keys`: an investment file's trade columns, a
+ * file naming its accounts the account second. A file opening on a bank
+ * section with trades further down shows their columns last, where Sure
+ * hides them, so a refused trade can be corrected.
+ */
+function qifColumnsOf(shape: QifShape): readonly CleanKey[] {
+	const columns: readonly CleanKey[] = shape.investment
+		? ["date", "account", "ticker", "qty", "price", "amount", "currency", "name"]
+		: [
+				"date",
+				"account",
+				"amount",
+				"name",
+				"currency",
+				"category",
+				"tags",
+				"notes",
+				...(shape.trades ? (["ticker", "qty", "price"] as const) : []),
+			];
+
+	return shape.accounts ? columns : columns.filter((key) => key !== "account");
+}
+
 /** The columns « Nettoyer » shows for an import of `type`, Sure's `column_keys`. */
-export function cleanColumnsOf(type: CsvImportType, accountId: string | null): readonly CleanKey[] {
+export function cleanColumnsOf(
+	type: CsvImportType,
+	accountId: string | null,
+	qif: QifShape = { investment: false, accounts: false, trades: false },
+): readonly CleanKey[] {
+	if (type === "qif") {
+		return qifColumnsOf(qif);
+	}
+
 	const columns: readonly CleanKey[] = CLEAN_COLUMNS[type];
 
 	return (type === "transactions" || type === "trades") && accountId !== null
@@ -206,6 +258,7 @@ export const CSV_ISSUE_CODES = [
 	"unsupported_rule",
 	"unmapped_account_type",
 	"unmapped_account",
+	"trades_not_supported",
 ] as const;
 
 export type CsvIssueCode = (typeof CSV_ISSUE_CODES)[number];
@@ -229,6 +282,9 @@ export const MAX_ROWS_TO_SKIP = 1000;
 
 /** A file's distinct values to map stay far below this; a bound on what a request carries. */
 const MAX_MAPPINGS = 10_000;
+
+/** A category or tag of a file, as long as a cell may be. */
+const MAX_NAME_LENGTH = 10_000;
 
 /** A form field holding JSON text, parsed by `schema`; a text that is no JSON is `invalid_json`. */
 function jsonText<Schema extends z.ZodType>(schema: Schema) {
@@ -271,6 +327,14 @@ export const csvImportConfigurationSchema = z.object({
 	/** « Compte (facultatif) » of a transaction or trade import; `null` is « Importation multi-comptes ». */
 	accountId: z.string().min(1).nullable().optional(),
 	columns: z.partialRecord(z.enum(COLUMN_KEY_LIST), z.string().nullable()).optional(),
+	/**
+	 * The categories « Configurer et sélectionner » keeps of a QIF file,
+	 * Sure's `qif_selected_categories`; absent, every one, as Sure's boxes
+	 * start checked.
+	 */
+	qifCategories: z.array(z.string().max(MAX_NAME_LENGTH)).max(MAX_MAPPINGS).optional(),
+	/** The tags it keeps, Sure's `qif_selected_tags`. */
+	qifTags: z.array(z.string().max(MAX_NAME_LENGTH)).max(MAX_MAPPINGS).optional(),
 });
 
 export type CsvImportConfigurationInput = z.input<typeof csvImportConfigurationSchema>;

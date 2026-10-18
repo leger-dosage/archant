@@ -411,3 +411,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-30-5-fix-rows-before-publishing-and-sures-confirm-step.md`
   summary: No test drives « Confirmer » back to « Mapper » on a mapping refusal, nor the guard that drops an out-of-order preview answer.
   evidence: Both live in `advance` of `_authed.settings.imports_.$kind.tsx`; staging either needs a change between two requests or a delayed response in Playwright.
+
+## Deferred from: code review of spec-30-6-read-qif-categories-tags-splits-investments-and-several-accounts (2026-10-18)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-6-read-qif-categories-tags-splits-investments-and-several-accounts.md`
+  summary: A QIF file's « Opening Balance » sets a new account's opening only; an existing or chosen account keeps its amount, where Sure's `set_opening_balance` replaces it.
+  evidence: `analyseQif` reads `file.openings` only for « Ajouter comme nouveau compte »; existing accounts keep AD-4's date move, the amount kept.
+- source_spec: `_bmad-output/implementation-artifacts/spec-30-6-read-qif-categories-tags-splits-investments-and-several-accounts.md`
+  summary: An account's own « Importer » still reads a QIF bank statement with its own parser, beside « Importer depuis Quicken (QIF) ».
+  evidence: The dialog and the assistant's `import_statement_file` read QIF through `connectors/qif/qif.ts` into the grouped preview; moving them onto Sure's steps would take the assistant's QIF import away.

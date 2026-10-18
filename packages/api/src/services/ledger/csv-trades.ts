@@ -34,6 +34,8 @@ export type CsvTrade = {
 	quantity: Quantity;
 	price: TradePrice;
 	amount: MinorUnits;
+	/** What a QIF record's total adds to `quantity × price`; zero for a CSV row. */
+	fee?: MinorUnits | undefined;
 };
 
 /** A listing by its ticker and MIC, as Sure's `Security::Resolver` finds one. */
@@ -70,7 +72,7 @@ export async function storedListing(tx: Pick<Transaction, "select">, security: P
 
 /**
  * Creates the accounts « Ajouter comme nouveau compte » asked for, then
- * writes every trade, fee zero, its security found or created in its
+ * writes every trade, its fee zero unless given, its security found or created in its
  * account's currency, then recomputes each account's balances and holdings
  * once from its oldest new day. Inside the caller's immediate transaction,
  * so nothing is written unless everything is.
@@ -130,7 +132,7 @@ export async function insertCsvTrades(
 			incomeKind: null,
 			quantity: trade.quantity,
 			price: trade.price,
-			fee: toMinorUnits(0),
+			fee: trade.fee ?? toMinorUnits(0),
 		});
 	});
 
