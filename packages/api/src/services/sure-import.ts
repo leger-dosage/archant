@@ -397,8 +397,15 @@ async function importRules(
 	});
 }
 
-/** Every write of an archive, in Sure's order, inside the caller's transaction. */
-async function writeArchive(deps: ServiceDeps, tx: Transaction, plan: SurePlan): Promise<void> {
+/**
+ * Every write of an archive, in Sure's order, inside the caller's
+ * transaction. Returns each new account by its plan id.
+ */
+export async function writeArchive(
+	deps: ServiceDeps,
+	tx: Transaction,
+	plan: SurePlan,
+): Promise<ReadonlyMap<string, ImportedAccount>> {
 	const now = Date.now();
 	const accounts = await insertSureAccounts(tx, plan.accounts, now);
 	const taxonomy = await taxonomyOf(tx);
@@ -420,6 +427,8 @@ async function writeArchive(deps: ServiceDeps, tx: Transaction, plan: SurePlan):
 	await insertSureEntries(tx, plan, ids, { now, timeZone: deps.timeZone });
 	await importBudgets(tx, plan, taxonomy, now);
 	await importRules(tx, deps, plan, { taxonomy, accounts, now });
+
+	return accounts;
 }
 
 /**
@@ -476,7 +485,7 @@ export async function importSureArchive(
  * after a file import. The import stands by then: a failure is logged, its
  * code only, and never fails the request.
  */
-async function afterImport(deps: SureImportDeps): Promise<void> {
+export async function afterImport(deps: SureImportDeps): Promise<void> {
 	try {
 		await refreshStatistics(deps.db);
 	} catch (error) {

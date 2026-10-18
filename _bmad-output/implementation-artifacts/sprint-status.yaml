@@ -299,7 +299,7 @@ development_status:
   29-10-recompute-an-unlinked-accounts-history-forward: done
   epic-29-retrospective: optional
 
-  epic-30: in-progress
+  epic-30: done
   30-1-import-a-sure-archive: done
   30-2-import-mint-ynab-and-actual-files: done
   30-3-import-accounts-categories-merchants-rules-and-trades-from-csv: done
@@ -308,7 +308,7 @@ development_status:
   30-6-read-qif-categories-tags-splits-investments-and-several-accounts: done
   30-7-export-each-accounts-institution-and-cash-balance-and-each-attachments-checksum: done
   30-8-reset-all-financial-data: done
-  30-9-reset-with-sample-data: backlog
+  30-9-reset-with-sample-data: done
   epic-30-retrospective: optional
 
   epic-31: backlog

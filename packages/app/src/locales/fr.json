@@ -3061,7 +3061,12 @@
 		"resetWarning": "La réinitialisation de votre compte supprimera tous vos comptes, catégories, marchands, étiquettes et autres données, mais gardera votre compte utilisateur intact.",
 		"confirmTitle": "Réinitialiser le compte ?",
 		"confirmBody": "Êtes-vous sûr(e) de vouloir réinitialiser votre compte ? Cela supprimera tous vos comptes, catégories, marchands, étiquettes et autres données. Cette action ne peut pas être annulée.",
-		"resetDone": "Votre compte a été réinitialisé."
+		"resetDone": "Votre compte a été réinitialisé.",
+		"resetWithSampleData": "Réinitialiser et précharger",
+		"resetWithSampleDataWarning": "Supprime toutes vos données existantes puis charge des données d'exemple afin que vous puissiez explorer avec un environnement pré-rempli.",
+		"confirmSampleDataTitle": "Réinitialiser le compte et charger des données d'exemple ?",
+		"confirmSampleDataBody": "Êtes-vous sûr(e) de vouloir réinitialiser votre compte et charger des données d'exemple ? Cela supprimera vos données existantes et les remplacera par des données de démonstration afin que vous puissiez explorer Archant en toute sécurité.",
+		"resetWithSampleDataDone": "Votre compte a été réinitialisé et les données d'exemple sont chargées."
 	},
 	"setup": {
 		"title": "Créer le compte administrateur",
