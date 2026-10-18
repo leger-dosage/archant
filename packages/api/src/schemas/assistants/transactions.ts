@@ -1,9 +1,11 @@
-import type { AmountBound } from "../transactions.ts";
+import type { AmountBound, AmountOperator } from "../transactions.ts";
 
 import { z } from "zod";
 
 import {
+	AMOUNT_OPERATORS,
 	MAX_BULK_IDS,
+	STATUSES,
 	bulkPatchSchema,
 	MAX_TAGS_PER_TRANSACTION,
 	MAX_TAG_FILTER,
@@ -11,7 +13,8 @@ import {
 	directionSchema,
 	filterCheck,
 	filterFields,
-	parseBounds,
+	operatorBounds,
+	pendingOf,
 } from "../transactions.ts";
 import { accountId, clampedPageFields, merchantId, requiredLoose, sureAmount } from "./fields.ts";
 
@@ -50,16 +53,6 @@ const idFields = {
 	search: filterFields.q.describe("Text searched in the label and the notes, case aside."),
 };
 
-const idFilterFields = {
-	...idFields,
-	amount_min: filterFields.amountMin.describe(
-		'The smallest absolute amount, a decimal string such as "12.50".',
-	),
-	amount_max: filterFields.amountMax.describe(
-		'The largest absolute amount, a decimal string such as "120".',
-	),
-};
-
 /**
  * The filter a read takes: by id, and by exact name as Sure's
  * `get_transactions` takes them, names any assistant reads in the lists.
@@ -67,7 +60,7 @@ const idFilterFields = {
  * matches nothing.
  */
 const toolFilterFields = {
-	...idFilterFields,
+	...idFields,
 	accounts: namesOf("Exact account names, as get_accounts gives them; any of them."),
 	categories: namesOf(
 		'Exact category names, as get_categories gives them, "Uncategorized", « Non catégorisé » or « Sans catégorie » standing for uncategorised; any of them. A parent stands for its children too.',
@@ -77,7 +70,7 @@ const toolFilterFields = {
 };
 
 // Partial: the bulk filter and get_transactions take some of these fields only.
-type ToolFilter = Partial<z.output<z.ZodObject<typeof idFilterFields>>> &
+type ToolFilter = Partial<z.output<z.ZodObject<typeof idFields>>> &
 	Partial<Record<"accounts" | "categories" | "merchants" | "tags", string[] | undefined>>;
 
 /** The list's filter as the services read it, from the tool's names. */
@@ -89,73 +82,24 @@ function listFilterOf({
 	tag_ids: tag,
 	start_date: from,
 	end_date: to,
-	amount_min: amountMin,
-	amount_max: amountMax,
 	search: q,
 	accounts,
 	categories,
 	merchants,
 	tags,
 }: ToolFilter) {
-	const filter = { account, direction, category, merchant, tag, from, to, amountMin, amountMax, q };
+	const filter = { account, direction, category, merchant, tag, from, to, q };
 	const names = { accounts, categories, merchants, tags };
 
 	return Object.values(names).every((value) => value === undefined) ? filter : { ...filter, names };
 }
 
-const checkWithToolPaths = filterCheck({
-	to: "end_date",
-	amountMin: "amount_min",
-	amountMax: "amount_max",
-});
+// A tool's amount is Sure's, read leniently by `amountFilterOf`.
+const checkWithToolPaths = filterCheck({ to: "end_date" });
 
 /** The list's checks, on the tool's names, each refusal under the tool's name for the field. */
 function checkToolFilter(value: ToolFilter, context: z.core.$RefinementCtx) {
 	checkWithToolPaths(listFilterOf(value), context);
-}
-
-/** Sure's `amount_operator`, on the absolute amount. */
-const AMOUNT_OPERATORS = ["equal", "less", "greater"] as const;
-
-type AmountOperator = (typeof AMOUNT_OPERATORS)[number];
-
-/** Sure's `statuses`: booked lines are `confirmed`. */
-const STATUSES = ["pending", "confirmed"] as const;
-
-/** Past any currency's minor unit: `less` and `greater` are strict at every scale. */
-const STRICT_SCALE = 5;
-
-/** `bound` at `scale`, at least its own. */
-function rescaled(bound: AmountBound, scale: number): AmountBound {
-	return { units: bound.units * 10n ** BigInt(scale - bound.scale), scale };
-}
-
-/**
- * Sure's `amount` and `amount_operator` as the list's inclusive bounds on the
- * absolute amount: `equal` within 0.01, as Sure's `ABS(ABS(amount) - ?) <=
- * 0.01`; `less` and `greater` strict, one unit below any currency's minor
- * unit away from the amount, which each currency then rounds inward.
- */
-function operatorBounds(
-	operator: (typeof AMOUNT_OPERATORS)[number],
-	amount: AmountBound,
-): { min?: AmountBound; max?: AmountBound } {
-	if (operator === "equal") {
-		const exact = rescaled(amount, Math.max(amount.scale, 2));
-		const cent = 10n ** BigInt(exact.scale - 2);
-		const low = exact.units - cent;
-
-		return {
-			min: { units: low < 0n ? 0n : low, scale: exact.scale },
-			max: { units: exact.units + cent, scale: exact.scale },
-		};
-	}
-
-	const fine = rescaled(amount, Math.max(amount.scale, STRICT_SCALE));
-
-	return operator === "less"
-		? { max: { units: fine.units - 1n, scale: fine.scale } }
-		: { min: { units: fine.units + 1n, scale: fine.scale } };
 }
 
 /**
@@ -191,7 +135,10 @@ function amountFilterOf(
 	};
 }
 
-/** Sure's amount filter, which `get_transactions` and the bulk filter share so one counts what the other selects. */
+/**
+ * Sure's amount filter, which `get_transactions`, `group_transactions_by_label`
+ * and the bulk filter share so one counts what the other selects.
+ */
 const amountFields = {
 	amount: z
 		.union([z.string().max(40), z.number()])
@@ -249,13 +196,10 @@ export const getTransactionsInput = z
 			statuses,
 			...filter
 		}) => {
-			const pending =
-				statuses === undefined || new Set(statuses).size === 2
-					? undefined
-					: statuses[0] === "pending";
+			const pending = pendingOf(statuses);
 
 			return {
-				...parseBounds(listFilterOf(filter)),
+				...listFilterOf(filter),
 				...amountFilterOf(amount, operator),
 				...(pending === undefined ? {} : { pending }),
 				page,
@@ -270,10 +214,10 @@ export const getTransactionsInput = z
  * transaction grouped, the groups a page at a time as Sure's `get_categories`.
  */
 export const groupTransactionsInput = z
-	.strictObject({ ...toolFilterFields, ...clampedPageFields })
+	.strictObject({ ...toolFilterFields, ...amountFields, ...clampedPageFields })
 	.superRefine(checkToolFilter)
-	.transform(({ page, page_size: pageSize, ...filter }) => ({
-		filter: parseBounds(listFilterOf(filter)),
+	.transform(({ page, page_size: pageSize, amount, amount_operator: operator, ...filter }) => ({
+		filter: { ...listFilterOf(filter), ...amountFilterOf(amount, operator) },
 		page,
 		pageSize,
 	}));
@@ -287,7 +231,7 @@ const bulkFilterInput = z
 	.strictObject({ ...idFields, ...amountFields })
 	.superRefine(checkToolFilter)
 	.transform(({ amount, amount_operator: operator, ...filter }) => ({
-		...parseBounds(listFilterOf(filter)),
+		...listFilterOf(filter),
 		...amountFilterOf(amount, operator),
 	}));
 

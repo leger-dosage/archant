@@ -1153,6 +1153,28 @@ test("linking an account syncs the bank's lines, once, and the pages show the la
 	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toHaveCount(1);
 	await expect(page.getByRole("main")).toContainText("1 234,56 €");
 
+	// Story 31.1: Sure's « Statut » « En attente » keeps the pending line alone.
+	await page.goto(`/transactions?account=${accountId}`);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toBeVisible();
+	await page.getByRole("button", { name: "Filtrer" }).click();
+	const filters = page.getByRole("dialog");
+	await filters.getByRole("button", { name: "Statut", exact: true }).click();
+	await filters.getByLabel("En attente").check();
+	await filters.getByRole("button", { name: "Appliquer" }).click();
+	await expect(page.getByRole("button", { name: "Retirer le filtre En attente" })).toBeVisible();
+	await expect(page.getByRole("main").locator("[data-transaction-id]")).toHaveCount(1);
+	await expect(transactionRow(page, FAKE_LINES.pending.label)).toBeVisible();
+	// Both statuses checked is no filter, as Sure's `apply_status_filter`.
+	await page.getByRole("button", { name: "Filtrer" }).click();
+	await filters.getByRole("button", { name: "Statut", exact: true }).click();
+	await expect(filters.getByLabel("En attente")).toBeChecked();
+	await filters.getByLabel("Confirmée").check();
+	await filters.getByRole("button", { name: "Appliquer" }).click();
+	await expect(page.getByRole("button", { name: "Retirer le filtre En attente" })).toBeHidden();
+	await expect(page).not.toHaveURL(/[?&]status=/u);
+	await expect(transactionRow(page, FAKE_LINES.groceries.label)).toBeVisible();
+	await page.goto(`/accounts/${accountId}`);
+
 	await transactionRow(page, FAKE_LINES.groceries.label).click();
 	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
 	await expect(

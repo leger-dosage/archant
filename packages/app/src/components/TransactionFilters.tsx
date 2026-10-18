@@ -13,11 +13,8 @@ import { ListFilterIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-	UNCATEGORISED,
-	compareAmountBounds,
-	parseAmountBound,
-} from "@archant/api/schemas/transactions";
+import type { AmountOperator } from "@archant/api/schemas/transactions";
+import { UNCATEGORISED, parseAmountBound } from "@archant/api/schemas/transactions";
 
 import { DateField } from "@/components/DateField";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -26,9 +23,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { categoryTree } from "@/lib/category-tree";
 import { matchesSearch } from "@/lib/search-match";
-import { DIRECTIONS, FILTER_KINDS, filterChips } from "@/lib/transaction-filters";
+import {
+	DIRECTIONS,
+	FILTER_KINDS,
+	OPERATOR_OPTIONS,
+	STATUS_OPTIONS,
+	filterChips,
+} from "@/lib/transaction-filters";
 
 /**
  * An account as the filters know it. An inactive one is not offered in the
@@ -43,22 +53,6 @@ type EditorProps = {
 	filters: Filters;
 	onApply: (change: FilterChange) => void;
 };
-
-function FieldError({ id, code }: { id: string; code: string | null }) {
-	const { t } = useTranslation();
-
-	if (code === null) {
-		return null;
-	}
-
-	return (
-		<p id={id} className="text-xs text-destructive">
-			{t(
-				`errors.fields.${code === "before_from" || code === "below_min" ? code : "invalid_amount"}`,
-			)}
-		</p>
-	);
-}
 
 function EditorForm({ onSubmit, children }: { onSubmit: () => void; children: ReactNode }) {
 	const { t } = useTranslation();
@@ -353,6 +347,46 @@ function DirectionEditor({ filters, onApply }: EditorProps) {
 	);
 }
 
+/**
+ * Sure's « Statut »: « Confirmée » and « En attente ». Both checked, as none,
+ * is no filter.
+ */
+function StatusEditor({ filters, onApply }: EditorProps) {
+	const { t } = useTranslation();
+	const [selected, setSelected] = useState<ReadonlySet<string>>(
+		() => new Set(filters.status ?? []),
+	);
+	const picked = STATUS_OPTIONS.filter((value) => selected.has(value));
+
+	return (
+		<EditorForm
+			onSubmit={() =>
+				onApply({
+					status:
+						picked.length === 0 || picked.length === STATUS_OPTIONS.length ? undefined : picked,
+				})
+			}
+		>
+			<fieldset className="flex flex-col gap-2">
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">
+					{t("operations.editor.statuses")}
+				</legend>
+				{STATUS_OPTIONS.map((value) => (
+					<label key={value} className="flex min-h-6 items-center gap-2">
+						<input
+							type="checkbox"
+							className="size-4 accent-primary"
+							checked={selected.has(value)}
+							onChange={(event) => setSelected(toggled(selected, value, event.target.checked))}
+						/>
+						<span>{t(`operations.chips.statuses.${value}`)}</span>
+					</label>
+				))}
+			</fieldset>
+		</EditorForm>
+	);
+}
+
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
 
 function PeriodEditor({ filters, onApply }: EditorProps) {
@@ -420,72 +454,75 @@ function PeriodEditor({ filters, onApply }: EditorProps) {
 	);
 }
 
+/**
+ * Sure's « Montant »: an operator, « Égal à » first and by default, and one
+ * amount compared with the absolute value. A blank amount clears the filter.
+ */
 function AmountEditor({ filters, onApply }: EditorProps) {
 	const { t } = useTranslation();
-	const [min, setMin] = useState(filters.amountMin ?? "");
-	const [max, setMax] = useState(filters.amountMax ?? "");
-	const [errors, setErrors] = useState<{ min: string | null; max: string | null }>({
-		min: null,
-		max: null,
-	});
+	const [operator, setOperator] = useState<AmountOperator>(filters.amountOperator ?? "equal");
+	const [amount, setAmount] = useState(filters.amount ?? "");
+	const [invalid, setInvalid] = useState(false);
 
 	const apply = () => {
-		const low = min.trim() === "" ? undefined : parseAmountBound(min);
-		const high = max.trim() === "" ? undefined : parseAmountBound(max);
-		const minError = low === null ? "invalid_amount" : null;
-		const maxError =
-			high === null
-				? "invalid_amount"
-				: low !== null &&
-					  low !== undefined &&
-					  high !== undefined &&
-					  compareAmountBounds(low, high) > 0
-					? "below_min"
-					: null;
+		const text = amount.trim();
 
-		setErrors({ min: minError, max: maxError });
+		if (text !== "" && parseAmountBound(text) === null) {
+			setInvalid(true);
 
-		if (minError === null && maxError === null) {
-			onApply({
-				amountMin: low === undefined ? undefined : min.trim(),
-				amountMax: high === undefined ? undefined : max.trim(),
-			});
+			return;
 		}
+
+		setInvalid(false);
+		onApply(
+			text === ""
+				? { amount: undefined, amountOperator: undefined }
+				: { amount: text, amountOperator: operator },
+		);
 	};
 
 	return (
 		<EditorForm onSubmit={apply}>
 			<p className="text-xs text-muted-foreground">{t("operations.editor.amountHint")}</p>
-			<div className="grid grid-cols-2 gap-2">
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="filter-amount-min">{t("operations.editor.min")}</Label>
-					<Input
-						id="filter-amount-min"
-						value={min}
-						inputMode="decimal"
-						autoComplete="off"
-						className="text-right tabular-nums"
-						aria-invalid={errors.min !== null}
-						{...(errors.min === null ? {} : { "aria-describedby": "filter-amount-min-error" })}
-						onChange={(event) => setMin(event.target.value)}
-					/>
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="filter-amount-max">{t("operations.editor.max")}</Label>
-					<Input
-						id="filter-amount-max"
-						value={max}
-						inputMode="decimal"
-						autoComplete="off"
-						className="text-right tabular-nums"
-						aria-invalid={errors.max !== null}
-						{...(errors.max === null ? {} : { "aria-describedby": "filter-amount-max-error" })}
-						onChange={(event) => setMax(event.target.value)}
-					/>
-				</div>
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="filter-amount-operator">{t("operations.editor.operator")}</Label>
+				<Select
+					value={operator}
+					onValueChange={(value) =>
+						setOperator(OPERATOR_OPTIONS.find((option) => option === value) ?? "equal")
+					}
+				>
+					<SelectTrigger id="filter-amount-operator" className="w-full">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{OPERATOR_OPTIONS.map((option) => (
+							<SelectItem key={option} value={option}>
+								{t(`operations.editor.operators.${option}`)}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
 			</div>
-			<FieldError id="filter-amount-min-error" code={errors.min} />
-			<FieldError id="filter-amount-max-error" code={errors.max} />
+			<div className="flex flex-col gap-1.5">
+				<Label htmlFor="filter-amount">{t("operations.editor.amount")}</Label>
+				<Input
+					id="filter-amount"
+					value={amount}
+					inputMode="decimal"
+					autoComplete="off"
+					placeholder={t("operations.editor.amountPlaceholder")}
+					className="text-right tabular-nums"
+					aria-invalid={invalid}
+					{...(invalid ? { "aria-describedby": "filter-amount-error" } : {})}
+					onChange={(event) => setAmount(event.target.value)}
+				/>
+				{invalid && (
+					<p id="filter-amount-error" className="text-xs text-destructive">
+						{t("errors.fields.invalid_amount")}
+					</p>
+				)}
+			</div>
 		</EditorForm>
 	);
 }
@@ -595,6 +632,7 @@ export function TransactionFilters({
 								<MerchantEditor filters={filters} merchants={merchants} onApply={apply} />
 							)}
 							{pane === "period" && <PeriodEditor filters={filters} onApply={apply} />}
+							{pane === "status" && <StatusEditor filters={filters} onApply={apply} />}
 							{pane === "amount" && <AmountEditor filters={filters} onApply={apply} />}
 							{pane === "direction" && <DirectionEditor filters={filters} onApply={apply} />}
 						</div>

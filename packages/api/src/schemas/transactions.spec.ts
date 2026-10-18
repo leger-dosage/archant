@@ -8,9 +8,10 @@ import {
 	MAX_TAG_FILTER,
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
-	compareAmountBounds,
+	operatorBounds,
 	parseAmountBound,
 	transactionFilterSchema,
+	transactionTotalsSchema,
 	updateTransactionSchema,
 } from "./transactions.ts";
 
@@ -26,6 +27,10 @@ describe("parseAmountBound", () => {
 		["1 234 567.8", { units: 12345678n, scale: 1 }],
 		["999999999999999", { units: 999999999999999n, scale: 0 }],
 		["1,0123456789", { units: 10123456789n, scale: 10 }],
+		// The sign dropped, as Sure's `to_f.abs`.
+		["-42,90", { units: 4290n, scale: 2 }],
+		["+5", { units: 5n, scale: 0 }],
+		["− 5", { units: 5n, scale: 0 }],
 	])("reads %j exactly", (text, expected) => {
 		expect(parseAmountBound(text)).toEqual(expected);
 	});
@@ -33,9 +38,8 @@ describe("parseAmountBound", () => {
 	it.each([
 		["42,"],
 		[",5"],
-		["-5"],
-		["+5"],
-		["−5"],
+		["--5"],
+		["5-"],
 		["abc"],
 		[""],
 		["12 34"],
@@ -49,14 +53,37 @@ describe("parseAmountBound", () => {
 	});
 });
 
-describe("compareAmountBounds", () => {
-	it("compares values written with different numbers of decimals", () => {
-		expect(compareAmountBounds({ units: 429n, scale: 1 }, { units: 4290n, scale: 2 })).toBe(0);
-		expect(compareAmountBounds({ units: 429n, scale: 1 }, { units: 43n, scale: 0 })).toBe(-1);
-		expect(compareAmountBounds({ units: 43n, scale: 0 }, { units: 42999n, scale: 3 })).toBe(1);
-		expect(compareAmountBounds({ units: 60n, scale: 0 }, { units: 5000n, scale: 2 })).toBe(1);
+const bound = (units: bigint, scale: number) => ({ units, scale });
+
+describe("operatorBounds", () => {
+	it("keeps `equal` within one cent either side, inclusive", () => {
+		expect(operatorBounds("equal", bound(4290n, 2))).toEqual({
+			min: bound(4289n, 2),
+			max: bound(4291n, 2),
+		});
+		expect(operatorBounds("equal", bound(42n, 0))).toEqual({
+			min: bound(4199n, 2),
+			max: bound(4201n, 2),
+		});
+		expect(operatorBounds("equal", bound(0n, 0))).toEqual({
+			min: bound(0n, 2),
+			max: bound(1n, 2),
+		});
+	});
+
+	it("moves `greater` and `less` past any minor unit, so both are strict", () => {
+		expect(operatorBounds("greater", bound(4290n, 2))).toEqual({ min: bound(4290001n, 5) });
+		expect(operatorBounds("less", bound(4291n, 2))).toEqual({ max: bound(4290999n, 5) });
+		expect(operatorBounds("less", bound(0n, 0))).toEqual({ max: bound(-1n, 5) });
 	});
 });
+
+/** The bounds the list query reads for `query`. */
+const boundsOf = (query: Record<string, string>) => {
+	const { amountMin, amountMax } = transactionFilterSchema.parse(query);
+
+	return { amountMin, amountMax };
+};
 
 describe("transactionFilterSchema", () => {
 	it("reads a lone category as a list, and repeated ones in order", () => {
@@ -111,6 +138,66 @@ describe("transactionFilterSchema", () => {
 		expect(transactionFilterSchema.safeParse({ category: "" }).success).toBe(false);
 		expect(transactionFilterSchema.safeParse({ merchant: ["m1", ""] }).success).toBe(false);
 		expect(transactionFilterSchema.safeParse({ account: ["a1", ""] }).success).toBe(false);
+	});
+
+	it("reads one status as `pending`, both or none as no filter, and refuses an unknown one", () => {
+		expect(transactionFilterSchema.parse({ status: "pending" }).pending).toBe(true);
+		expect(transactionFilterSchema.parse({ status: ["confirmed"] }).pending).toBe(false);
+		expect(transactionFilterSchema.parse({ status: ["pending", "pending"] }).pending).toBe(true);
+		expect(transactionFilterSchema.parse({ status: ["confirmed", "pending"] })).not.toHaveProperty(
+			"pending",
+		);
+		expect(transactionFilterSchema.parse({})).not.toHaveProperty("pending");
+		expect(transactionFilterSchema.parse({})).not.toHaveProperty("status");
+
+		for (const schema of [transactionFilterSchema, transactionTotalsSchema]) {
+			const result = schema.safeParse({ status: "booked" });
+
+			expect(result.success).toBe(false);
+			expect(result.error && toFieldErrors(result.error)[0]?.path).toBe("status");
+		}
+	});
+
+	it("turns the amount and its operator into bounds, either alone filtering nothing", () => {
+		expect(boundsOf({ amount: "42,90" })).toEqual({ amountMin: undefined, amountMax: undefined });
+		expect(boundsOf({ amount: "42,90", amountOperator: "equal" })).toEqual({
+			amountMin: { units: 4289n, scale: 2 },
+			amountMax: { units: 4291n, scale: 2 },
+		});
+		expect(boundsOf({ amount: "42,90", amountOperator: "greater" })).toEqual({
+			amountMin: { units: 4290001n, scale: 5 },
+			amountMax: undefined,
+		});
+		expect(boundsOf({ amount: "42,91", amountOperator: "less" })).toEqual({
+			amountMin: undefined,
+			amountMax: { units: 4290999n, scale: 5 },
+		});
+		expect(boundsOf({ amountOperator: "less" })).toEqual({
+			amountMin: undefined,
+			amountMax: undefined,
+		});
+		expect(transactionFilterSchema.parse({ amount: "1" })).not.toHaveProperty("amount");
+	});
+
+	it.each([["abc"], ["5-"], ["1234567890123456"]])(
+		"refuses the amount %j on the list and the totals",
+		(amount) => {
+			for (const schema of [transactionFilterSchema, transactionTotalsSchema]) {
+				const result = schema.safeParse({ amount });
+
+				expect(result.success).toBe(false);
+				expect(result.error && toFieldErrors(result.error)).toEqual([
+					{ path: "amount", code: "invalid_amount" },
+				]);
+			}
+		},
+	);
+
+	it("refuses an unknown operator", () => {
+		const result = transactionFilterSchema.safeParse({ amount: "1", amountOperator: "between" });
+
+		expect(result.success).toBe(false);
+		expect(result.error && toFieldErrors(result.error)[0]?.path).toBe("amountOperator");
 	});
 });
 
@@ -184,11 +271,23 @@ describe("bulk selection", () => {
 	it("reads the filter as the list's query, a lone value as a list", () => {
 		expect(
 			bulkDeleteBodySchema.parse({
-				filter: { category: "none", tag: ["g1", "g2"], amountMin: "20" },
+				filter: {
+					category: "none",
+					tag: ["g1", "g2"],
+					amount: "20",
+					amountOperator: "equal",
+					status: "pending",
+				},
 			}),
 		).toEqual({
 			selection: {
-				filter: { category: ["none"], tag: ["g1", "g2"], amountMin: { units: 20n, scale: 0 } },
+				filter: {
+					category: ["none"],
+					tag: ["g1", "g2"],
+					amountMin: { units: 1999n, scale: 2 },
+					amountMax: { units: 2001n, scale: 2 },
+					pending: true,
+				},
 			},
 		});
 	});

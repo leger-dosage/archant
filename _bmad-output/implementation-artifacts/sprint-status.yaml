@@ -311,8 +311,8 @@ development_status:
   30-9-reset-with-sample-data: done
   epic-30-retrospective: optional
 
-  epic-31: backlog
-  31-1-filter-transactions-by-status-and-amount: backlog
+  epic-31: in-progress
+  31-1-filter-transactions-by-status-and-amount: done
   31-2-edit-several-transactions-at-once-as-sure: backlog
   31-3-split-lines-as-sure-shows-and-edits-them: backlog
   31-4-download-an-attachment: backlog

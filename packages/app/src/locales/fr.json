@@ -763,6 +763,7 @@
 			"tag": "Étiquette",
 			"merchant": "Marchand",
 			"period": "Période",
+			"status": "Statut",
 			"amount": "Montant",
 			"direction": "Sens"
 		},
@@ -786,9 +787,13 @@
 			"periodBetween": "Du {{from}} au {{to}}",
 			"periodSince": "Depuis le {{from}}",
 			"periodUntil": "Jusqu'au {{to}}",
-			"amountBetween": "Montant de {{min}} à {{max}}",
-			"amountAtLeast": "Montant d'au moins {{min}}",
-			"amountAtMost": "Montant d'au plus {{max}}",
+			"statuses": {
+				"confirmed": "Confirmée",
+				"pending": "En attente"
+			},
+			"amountEqual": "Montant égal à {{amount}}",
+			"amountGreater": "Montant supérieur à {{amount}}",
+			"amountLess": "Montant inférieur à {{amount}}",
 			"directions": {
 				"income": "Revenus",
 				"expense": "Dépenses",
@@ -803,9 +808,16 @@
 			"tags": "Étiquettes à afficher",
 			"from": "Du",
 			"to": "Au",
-			"min": "Minimum",
-			"max": "Maximum",
-			"amountHint": "Sans signe : les dépenses et les revenus de ce montant sont affichés.",
+			"statuses": "Statuts à afficher",
+			"operator": "Comparaison",
+			"operators": {
+				"equal": "Égal à",
+				"greater": "Supérieur à",
+				"less": "Inférieur à"
+			},
+			"amount": "Montant",
+			"amountPlaceholder": "0",
+			"amountHint": "Le signe est ignoré : les dépenses et les revenus sont comparés en valeur absolue.",
 			"directions": "Sens à afficher",
 			"apply": "Appliquer",
 			"back": "Retour"
@@ -3193,7 +3205,6 @@
 			"sync_start_too_early": "La date ne peut pas remonter à plus de deux ans.",
 			"snapshot_exists": "Un solde est déjà saisi à cette date. Modifiez-le ou supprimez-le d'abord.",
 			"before_from": "La date de fin doit suivre la date de début.",
-			"below_min": "Le maximum doit être supérieur ou égal au minimum.",
 			"invalid_email": "Adresse e-mail invalide.",
 			"user_exists": "Un compte existe déjà avec cette adresse.",
 			"invitation_pending": "Une invitation attend déjà cette adresse. Révoquez-la pour en créer une autre.",

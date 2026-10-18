@@ -429,6 +429,10 @@ describe("PATCH /api/transactions/:id", () => {
 	});
 });
 
+/** The labels the list holds for `query`, in label order. */
+const labels = async (query: string) =>
+	(await listed(query)).items.map((item) => item.label).toSorted();
+
 describe("GET /api/transactions", () => {
 	it("lists every account's transactions, most recent first, with the account's name", async () => {
 		const checking = await openOwn();
@@ -496,24 +500,52 @@ describe("GET /api/transactions", () => {
 		expect(data.items.map((item) => item.label).toSorted()).toEqual(["A", "B"]);
 	});
 
-	it("bounds the absolute amount", async () => {
+	it("filters on the status, both or none being no filter, the totals following", async () => {
 		const account = await openOwn();
-		await postOwn(account.id, { ...expense, label: "Dépense", amount: "-42,90" });
-		await postOwn(account.id, { ...expense, label: "Revenu", amount: "45,00" });
-		await postOwn(account.id, { ...expense, label: "Petite", amount: "-12,00" });
+		await syncOwn(account.id, [
+			bankLine(-320, { label: "En attente", pending: true }),
+			bankLine(-4290, { label: "Comptabilisée" }),
+		]);
+		await postOwn(account.id, { ...expense, label: "Saisie", amount: "-10,00" });
 
-		const data = await listed("?amountMin=40&amountMax=50");
+		const pending = await listed("?status=pending");
+		const confirmed = await listed("?status=confirmed");
 
-		expect(data.items.map((item) => item.label).toSorted()).toEqual(["Dépense", "Revenu"]);
+		expect(pending.items.map((item) => item.label)).toEqual(["En attente"]);
+		expect(pending).toMatchObject({ total: 1, sum: { amount: -320, expense: -320 } });
+		expect(confirmed.items.map((item) => item.label).toSorted()).toEqual([
+			"Comptabilisée",
+			"Saisie",
+		]);
+		expect(confirmed).toMatchObject({ total: 2, sum: { amount: -5290 } });
+		await expect(listed("?status=confirmed&status=pending")).resolves.toMatchObject({
+			total: 3,
+			sum: { amount: -5610 },
+		});
+		await expect(listed("")).resolves.toMatchObject({ total: 3 });
 	});
 
-	it("rounds a bound finer than the minor unit inward", async () => {
+	it("compares one amount with the absolute value, `equal` within a cent", async () => {
 		const account = await openOwn();
-		await postOwn(account.id, { ...expense, label: "Juste", amount: "-42,90" });
+		await postOwn(account.id, { ...expense, label: "A", amount: "-42,90" });
+		await postOwn(account.id, { ...expense, label: "B", amount: "42,91" });
+		await postOwn(account.id, { ...expense, label: "C", amount: "42,92" });
+		await postOwn(account.id, { ...expense, label: "D", amount: "-42,88" });
 
-		await expect(listed("?amountMin=42,895")).resolves.toMatchObject({ total: 1 });
-		await expect(listed("?amountMin=42,901")).resolves.toMatchObject({ total: 0 });
-		await expect(listed("?amountMax=42,899")).resolves.toMatchObject({ total: 0 });
+		await expect(labels("?amount=42,90&amountOperator=equal")).resolves.toEqual(["A", "B"]);
+		await expect(labels("?amount=42.9&amountOperator=equal")).resolves.toEqual(["A", "B"]);
+		await expect(labels("?amount=-42,90&amountOperator=equal")).resolves.toEqual(["A", "B"]);
+		await expect(labels("?amount=42,89&amountOperator=equal")).resolves.toEqual(["A", "D"]);
+		await expect(labels("?amount=42,90")).resolves.toEqual(["A", "B", "C", "D"]);
+		await expect(labels("?amount=42,90&amountOperator=greater")).resolves.toEqual(["B", "C"]);
+		await expect(labels("?amount=42,91&amountOperator=less")).resolves.toEqual(["A", "D"]);
+		await expect(labels("?amount=42,899&amountOperator=greater")).resolves.toEqual(["A", "B", "C"]);
+		await expect(labels("?amount=0&amountOperator=less")).resolves.toEqual([]);
+		await expect(labels("?amountOperator=greater")).resolves.toEqual(["A", "B", "C", "D"]);
+		await expect(listed("?amount=42,90&amountOperator=greater")).resolves.toMatchObject({
+			total: 2,
+			sum: { amount: 8583, income: 8583, expense: 0 },
+		});
 	});
 
 	it("matches a % in the text literally", async () => {
@@ -738,9 +770,11 @@ describe("GET /api/transactions", () => {
 
 	it.each([
 		["?from=2026-09-10&to=2026-09-01", "to", "before_from"],
-		["?amountMin=abc", "amountMin", "invalid_amount"],
-		["?amountMax=-5", "amountMax", "invalid_amount"],
-		["?amountMin=60&amountMax=50", "amountMax", "below_min"],
+		["?amount=abc", "amount", "invalid_amount"],
+		["?amount=5-", "amount", "invalid_amount"],
+		["?amount=1234567890123456", "amount", "invalid_amount"],
+		["?amount=5&amountOperator=between", "amountOperator", "invalid_value"],
+		["?status=booked", "status", "invalid_union"],
 		["?from=10/09/2026", "from", "invalid_format"],
 	])("refuses %s, on the page and on the totals alike", async (query, path, code) => {
 		await ownDatabase();
@@ -798,7 +832,14 @@ describe("GET /api/transactions", () => {
 		await postOwn(account.id, expense);
 
 		const response = await testClient(buildApp(own?.db)).api.transactions.$get({
-			query: { account: [account.id], category: ["none"], amountMin: "1", q: "boul" },
+			query: {
+				account: [account.id],
+				category: ["none"],
+				status: ["confirmed"],
+				amount: "1",
+				amountOperator: "greater",
+				q: "boul",
+			},
 		});
 
 		expect(response.status).toBe(200);
@@ -1035,6 +1076,31 @@ describe("POST /api/transactions/bulk-update", () => {
 		expect((await rowsOf(account.id)).map((row) => row.category)).toEqual(
 			ids.map(() => groceries.id),
 		);
+	});
+
+	it("selects by status and by amount the rows the list counts", async () => {
+		await ownDatabase();
+		const account = await openOwn();
+		await syncOwn(account.id, [
+			bankLine(-4290, { label: "En attente", pending: true }),
+			bankLine(-1200, { label: "Comptabilisée" }),
+		]);
+		await postOwn(account.id, { ...expense, label: "Saisie", amount: "42,91" });
+		const update = (filter: Record<string, unknown>) =>
+			ownRequest("POST", "/api/transactions/bulk-update", {
+				filter: { account: account.id, ...filter },
+				patch: { excluded: true },
+			});
+
+		await expect(update({ status: "pending" })).resolves.toMatchObject({
+			body: { data: { updated: 1 } },
+		});
+		await expect(update({ amount: "42,90", amountOperator: "equal" })).resolves.toMatchObject({
+			body: { data: { updated: 2 } },
+		});
+		await expect(update({ amount: "42,90", amountOperator: "less" })).resolves.toMatchObject({
+			body: { data: { updated: 1 } },
+		});
 	});
 
 	it("reads a parent category in the filter as its children too", async () => {

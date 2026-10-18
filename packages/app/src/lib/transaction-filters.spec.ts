@@ -35,8 +35,9 @@ describe("operationsSearchSchema", () => {
 				account: ["a", "b"],
 				from: "2026-09-01",
 				to: "2026-09-10",
-				amountMin: "20",
-				amountMax: "42,90",
+				status: ["pending"],
+				amount: "42,90",
+				amountOperator: "greater",
 				q: "  carre ",
 			}),
 		).toEqual({
@@ -44,15 +45,17 @@ describe("operationsSearchSchema", () => {
 			account: ["a", "b"],
 			from: "2026-09-01",
 			to: "2026-09-10",
-			amountMin: "20",
-			amountMax: "42,90",
+			status: ["pending"],
+			amount: "42,90",
+			amountOperator: "greater",
 			q: "carre",
 		});
 	});
 
 	it("reads numbers the router parsed as JSON back as text", () => {
-		expect(operationsSearchSchema.parse({ amountMin: 40, q: 2024 })).toEqual({
-			amountMin: "40",
+		expect(operationsSearchSchema.parse({ amount: 40, q: 2024 })).toEqual({
+			amount: "40",
+			amountOperator: "equal",
 			q: "2024",
 		});
 	});
@@ -64,11 +67,18 @@ describe("operationsSearchSchema", () => {
 				account: [],
 				from: "10/09/2026",
 				to: "2026-09-10",
-				amountMin: "abc",
-				amountMax: "-5",
+				status: "booked",
+				amount: "5-",
 				q: "   ",
 			}),
 		).toEqual({ to: "2026-09-10" });
+		expect(operationsSearchSchema.parse({ amount: "abc", amountOperator: "between" })).toEqual({});
+	});
+
+	it("drops the range of an old link, Sure's single amount having replaced it", () => {
+		expect(operationsSearchSchema.parse({ amountMin: "40", amountMax: "50", q: "a" })).toEqual({
+			q: "a",
+		});
 	});
 });
 
@@ -84,15 +94,28 @@ describe("operationsSearchSchema, across params", () => {
 		});
 	});
 
-	it("drops a maximum below the minimum, and keeps the minimum", () => {
-		expect(operationsSearchSchema.parse({ amountMin: "60", amountMax: "50" })).toEqual({
-			amountMin: "60",
-			amountMax: undefined,
+	it("drops an operator without an amount, which filters nothing", () => {
+		expect(operationsSearchSchema.parse({ amountOperator: "less" })).toEqual({
+			amountOperator: undefined,
 		});
-		expect(operationsSearchSchema.parse({ amountMin: "42,90", amountMax: "42.9" })).toEqual({
-			amountMin: "42,90",
-			amountMax: "42.9",
+		expect(operationsSearchSchema.parse({ amount: "12", amountOperator: "less" })).toEqual({
+			amount: "12",
+			amountOperator: "less",
 		});
+	});
+
+	it("reads a lone status as a list of one, and drops both, an empty list or an unknown one", () => {
+		expect(operationsSearchSchema.parse({ status: "confirmed" })).toEqual({
+			status: ["confirmed"],
+		});
+		expect(operationsSearchSchema.parse({ status: ["pending", "pending"] })).toEqual({
+			status: ["pending"],
+		});
+		expect(operationsSearchSchema.parse({ status: ["confirmed", "pending"] })).toEqual({
+			status: undefined,
+		});
+		expect(operationsSearchSchema.parse({ status: [] })).toEqual({});
+		expect(operationsSearchSchema.parse({ status: ["pending", "booked"] })).toEqual({});
 	});
 
 	it("reads a lone account id as a list of one", () => {
@@ -149,7 +172,8 @@ describe("withoutFilter", () => {
 			account: ["a"],
 			from: "2026-09-01",
 			to: "2026-09-10",
-			amountMin: "20",
+			amount: "20",
+			amountOperator: "greater" as const,
 			q: "carre",
 		};
 
@@ -158,12 +182,17 @@ describe("withoutFilter", () => {
 			account: ["a"],
 			from: undefined,
 			to: undefined,
-			amountMin: "20",
+			amount: "20",
+			amountOperator: "greater",
 			q: "carre",
 		});
 		expect(withoutFilter(search, "amount")).toMatchObject({
-			amountMin: undefined,
-			amountMax: undefined,
+			amount: undefined,
+			amountOperator: undefined,
+		});
+		expect(withoutFilter({ ...search, status: ["pending"] }, "status")).toMatchObject({
+			status: undefined,
+			amount: "20",
 		});
 		expect(withoutFilter(search, "account")).toMatchObject({ account: undefined });
 		expect(withoutFilter({ ...search, category: ["c"] }, "category")).toMatchObject({
@@ -208,8 +237,9 @@ describe("toApiQuery", () => {
 					tag: ["t"],
 					from: "2026-09-01",
 					to: "2026-09-10",
-					amountMin: "20",
-					amountMax: "50",
+					status: ["confirmed"],
+					amount: "20",
+					amountOperator: "less",
 					q: "carre",
 					direction: ["income", "transfer"],
 				},
@@ -223,8 +253,9 @@ describe("toApiQuery", () => {
 			tag: ["t"],
 			from: "2026-09-01",
 			to: "2026-09-10",
-			amountMin: "20",
-			amountMax: "50",
+			status: ["confirmed"],
+			amount: "20",
+			amountOperator: "less",
 			q: "carre",
 			direction: ["income", "transfer"],
 		});
@@ -278,16 +309,22 @@ describe("filterChips", () => {
 		);
 	});
 
-	it("labels an amount range by its bounds", () => {
-		expect(filterChips({ amountMin: "20", amountMax: "50" }, nameOf, t)[0]?.label).toBe(
-			'operations.chips.amountBetween {"min":"20","max":"50"}',
+	it("labels an amount by its operator, « égal à » when none is given", () => {
+		expect(filterChips({ amount: "42,90" }, nameOf, t)).toEqual([
+			{ kind: "amount", label: 'operations.chips.amountEqual {"amount":"42,90"}' },
+		]);
+		expect(filterChips({ amount: "20", amountOperator: "greater" }, nameOf, t)[0]?.label).toBe(
+			'operations.chips.amountGreater {"amount":"20"}',
 		);
-		expect(filterChips({ amountMin: "20" }, nameOf, t)[0]?.label).toBe(
-			'operations.chips.amountAtLeast {"min":"20"}',
+		expect(filterChips({ amount: "20", amountOperator: "less" }, nameOf, t)[0]?.label).toBe(
+			'operations.chips.amountLess {"amount":"20"}',
 		);
-		expect(filterChips({ amountMax: "50" }, nameOf, t)[0]?.label).toBe(
-			'operations.chips.amountAtMost {"max":"50"}',
-		);
+	});
+
+	it("names the status", () => {
+		expect(filterChips({ status: ["pending"] }, nameOf, t)).toEqual([
+			{ kind: "status", label: "operations.chips.statuses.pending" },
+		]);
 	});
 
 	it("names the directions", () => {
@@ -303,7 +340,8 @@ describe("filterChips", () => {
 		expect(
 			filterChips(
 				{
-					amountMin: "1",
+					amount: "1",
+					status: ["confirmed"],
 					from: "2026-09-01",
 					merchant: ["m"],
 					tag: ["t"],
@@ -314,6 +352,15 @@ describe("filterChips", () => {
 				nameOf,
 				t,
 			).map((chip) => chip.kind),
-		).toEqual(["account", "category", "tag", "merchant", "period", "amount", "direction"]);
+		).toEqual([
+			"account",
+			"category",
+			"tag",
+			"merchant",
+			"period",
+			"status",
+			"amount",
+			"direction",
+		]);
 	});
 });
