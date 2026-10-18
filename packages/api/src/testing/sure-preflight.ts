@@ -255,6 +255,8 @@ const SCHEMAS = {
 		id,
 		name: present,
 		balance: decimal,
+		// Sure's importer reads it, `balance` when absent.
+		cash_balance: decimal.optional(),
 		currency,
 		accountable_type: z.enum(Object.keys(SUBTYPES)),
 		subtype: z.string().nullable(),

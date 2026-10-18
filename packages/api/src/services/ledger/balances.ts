@@ -533,6 +533,22 @@ export async function balanceOn(
 }
 
 /**
+ * `balanceOn` with the cash part of the same row, Sure's `cash_balance`
+ * (AD-22), so the two never come from different days.
+ */
+export async function balanceWithCashOn(
+	db: Pick<ServiceDeps["db"], "select">,
+	accountId: string,
+	date: IsoDate,
+): Promise<(Money & { cash: MinorUnits }) | null> {
+	const row = await lastBalanceOnOrBefore(db, accountId, date);
+
+	return row === undefined
+		? null
+		: { amount: toMinorUnits(row.balance), cash: row.cash, currency: row.currency };
+}
+
+/**
  * The end-of-day balance of every day from `from` to `to`, both included,
  * oldest first, as `balanceOn` would read each one (AD-8). Stored rows stop at
  * the last write's end, so the days after it carry its balance. Days before

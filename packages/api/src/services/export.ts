@@ -877,6 +877,8 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 					id: account.id,
 					name: account.name,
 					balance: decimal(account.balance?.amount ?? toMinorUnits(0), account.currency),
+					// Sure's `Account#cash_balance`, the cash part of the same balance.
+					cash_balance: decimal(account.balance?.cash ?? toMinorUnits(0), account.currency),
 					currency: account.currency,
 					accountable_type: SURE_ACCOUNTABLE_TYPES[account.type],
 					subtype,
@@ -1455,8 +1457,6 @@ async function* pricesNdjson(deps: ServiceDeps, counts: Counts) {
  * `attachments.json`, Sure's `generate_attachments_manifest`: one line of
  * JSON listing every attachment without its bytes, which never leave. The
  * entry is the transaction, so `record_id` and `entry_id` are both its id.
- * `checksum` is `null`: Sure's is Active Storage's MD5, which Archant does
- * not keep.
  */
 async function* attachmentsJson(deps: ServiceDeps) {
 	const attachments = await exportedAttachments(deps.db);
@@ -1472,7 +1472,7 @@ async function* attachmentsJson(deps: ServiceDeps) {
 			filename: attachment.filename,
 			content_type: attachment.contentType,
 			byte_size: attachment.byteSize,
-			checksum: null,
+			checksum: attachment.checksum,
 			binary_included: false,
 			created_at: timestamp(attachment.createdAt),
 			entry_id: attachment.transactionId,

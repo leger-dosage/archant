@@ -38,6 +38,7 @@ import {
 	LEFT_OUT,
 	balancePages,
 	exportedAccounts,
+	exportedAttachments,
 	exportedBudgetCategories,
 	exportedBudgets,
 	exportedCategories,
@@ -433,9 +434,13 @@ describe("the other tables", () => {
 		expect(accounts.get(manual.id)).toMatchObject({
 			name: "Manuel",
 			type: "depository",
-			balance: { amount: 9_000, currency: "EUR" },
+			balance: { amount: 9_000, cash: 9_000, currency: "EUR" },
 		});
-		expect(accounts.get(linked.id)?.balance).toEqual({ amount: 50_000, currency: "EUR" });
+		expect(accounts.get(linked.id)?.balance).toEqual({
+			amount: 50_000,
+			cash: 50_000,
+			currency: "EUR",
+		});
 		const manualRows = [
 			[manual.id, "opening_anchor", 10_000],
 			[manual.id, "reconciliation", 9_000],
@@ -572,5 +577,61 @@ describe("the other tables", () => {
 			["exclude_transaction", null],
 		]);
 		expect(read[1]).toMatchObject({ name: "Autre", conditions: [], actions: [] });
+	});
+});
+
+/** A file attached to a new line, inserted as any release wrote one. */
+async function attached(id: string, bytes: Buffer) {
+	const account = await openChecking();
+	const transaction = await add(account.id, { date: "2026-09-10", label: "Garage" });
+	await temp.db.run(
+		sql`insert into transaction_attachments (id, transaction_id, filename, content_type, byte_size, created_at, content) values (${id}, ${transaction}, 'facture.pdf', 'application/pdf', ${bytes.byteLength}, 0, ${bytes})`,
+	);
+
+	return { account, transaction };
+}
+
+describe("the attachments", () => {
+	it("lists each one with Active Storage's checksum of its bytes, never the bytes", async () => {
+		const { account, transaction } = await attached(
+			"listed",
+			Buffer.from("%PDF-1.7 SECRET-CONTENT"),
+		);
+		const listed = await exportedAttachments(temp.db);
+
+		expect(listed.filter((row) => row.id === "listed")).toEqual([
+			{
+				id: "listed",
+				transactionId: transaction,
+				filename: "facture.pdf",
+				contentType: "application/pdf",
+				byteSize: 23,
+				createdAt: 0,
+				accountId: account.id,
+				// Ruby's `Digest::MD5.base64digest` of the same bytes.
+				checksum: "0baBgm6/mF8zDAFCXCV4sw==",
+			},
+		]);
+	});
+
+	it("fails rather than hash nothing when a listed one is gone", async () => {
+		const before = await readSnapshot(temp.db);
+		await attached("gone", Buffer.from("%PDF-1.7"));
+		let reads = 0;
+		// Lists from the live database, then reads the bytes from before the file existed.
+		const reader = {
+			get select() {
+				reads += 1;
+				const db = reads === 1 ? temp.db : before.db;
+
+				return db.select.bind(db);
+			},
+		};
+
+		try {
+			await expect(exportedAttachments(reader)).rejects.toThrow("gone");
+		} finally {
+			before.close();
+		}
 	});
 });
