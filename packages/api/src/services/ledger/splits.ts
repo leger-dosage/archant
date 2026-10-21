@@ -1,5 +1,4 @@
 import type { ServiceDeps } from "../deps.ts";
-import type { EditableRow } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
 import { and, asc, eq, inArray, isNotNull } from "drizzle-orm";
@@ -7,22 +6,13 @@ import { QueryBuilder, alias } from "drizzle-orm/sqlite-core";
 
 import type { MinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
-import { taggings } from "@archant/data/schema/taggings";
 import type { LockableField } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
-import { transfers } from "@archant/data/schema/transfers";
 
 import { AppError } from "../../lib/errors.ts";
-import { MAX_SPLIT_LINES, MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
+import { MAX_SPLIT_LINES } from "../../schemas/transactions.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
-import {
-	categoryExists,
-	categoryOriginOf,
-	changeOf,
-	detailOf,
-	tagsExist,
-	transactionRow,
-} from "./patch.ts";
+import { categoryExists, categoryOriginOf } from "./patch.ts";
 import {
 	deleteTransactionRows,
 	inAnyTransfer,
@@ -30,9 +20,8 @@ import {
 	isSplitParent,
 	lockedBy,
 	oneByOne,
-	transferOf,
 } from "./shared.ts";
-import { clearOneTime, matchTransfers, sidesOf } from "./transfers.ts";
+import { matchTransfers } from "./transfers.ts";
 
 const convertedTrade = alias(entries, "converted_trade");
 
@@ -42,18 +31,12 @@ const convertedIds = new QueryBuilder()
 	.from(convertedTrade)
 	.where(and(isNotNull(convertedTrade.parentEntryId), eq(convertedTrade.kind, "trade")));
 
-/** One line of a split, as the split's dialog sends it. */
+/** One line of a split, as Sure's `split_params`: a name, an amount and a category. */
 export type SplitLine = {
-	/** A child of this split, updated in place; absent for a new line. */
-	id?: string | undefined;
 	label: string;
 	amount: MinorUnits;
 	/** `null` leaves the line « Sans catégorie ». */
 	categoryId: string | null;
-	/** The whole set. Absent leaves a kept line's tags as they are, and a new line untagged. */
-	tagIds?: readonly string[] | undefined;
-	/** Absent leaves a kept line's notes as they are, and a new line without. */
-	notes?: string | null | undefined;
 };
 
 /** A split: its parent and its children, oldest first. */
@@ -129,15 +112,13 @@ async function childIdsOf(db: Pick<Transaction, "select">, parentId: string): Pr
 
 /**
  * Refuses `lines` for `parent`, before any write: 1 to `MAX_SPLIT_LINES`
- * lines summing exactly to the parent's amount, each id a distinct child of
- * this split, each category and tag known, `MAX_TAGS_PER_TRANSACTION` tags
- * at most. Zero and mixed signs pass, as Sure.
+ * lines summing exactly to the parent's amount, each category known. Zero
+ * and mixed signs pass, as Sure.
  */
 async function checkLines(
 	tx: Transaction,
 	parent: SplitRow,
 	lines: readonly SplitLine[],
-	childIds: readonly string[],
 ): Promise<void> {
 	if (lines.length === 0) {
 		throw invalidField("lines", "too_small");
@@ -151,26 +132,9 @@ async function checkLines(
 		throw invalidField("lines", "split_sum_mismatch");
 	}
 
-	const children = new Set(childIds);
-
 	await oneByOne([...lines.entries()], async ([index, line]) => {
-		// Deleted from the set once taken, so the same id twice fails too.
-		if (line.id !== undefined && !children.delete(line.id)) {
-			throw invalidField(`lines.${index}.id`, "not_a_child");
-		}
-
 		if (line.categoryId !== null && !(await categoryExists(tx, line.categoryId))) {
 			throw invalidField(`lines.${index}.categoryId`);
-		}
-
-		const tagIds = [...new Set(line.tagIds ?? [])];
-
-		if (tagIds.length > MAX_TAGS_PER_TRANSACTION) {
-			throw invalidField(`lines.${index}.tagIds`, "too_big");
-		}
-
-		if (tagIds.length > 0 && !(await tagsExist(tx, tagIds))) {
-			throw invalidField(`lines.${index}.tagIds`);
 		}
 	});
 }
@@ -180,7 +144,7 @@ async function checkLines(
  * merchant, never pending, excluded, flagged, imported or keyed, so no
  * import, sync or revert ever takes one for a bank line (AD-20). A user's
  * line locks what a manual entry locks: its date, amount and label, and its
- * notes, category and tags when set; and its exclusion, which only the split
+ * category when set; and its exclusion, which only the split
  * changes, so a rule never excludes a line the user could not include again.
  * One millisecond apart, so they keep the order they came in, as Sure orders
  * them by creation.
@@ -194,16 +158,12 @@ async function insertChildren(
 ): Promise<void> {
 	await oneByOne([...lines.entries()], async ([index, line]) => {
 		const id = crypto.randomUUID();
-		const tagIds = [...new Set(line.tagIds ?? [])];
-		const notes = line.notes ?? null;
 		const filled: LockableField[] = [
 			"date",
 			"amount",
 			"label",
 			"excluded",
-			...(notes === null ? [] : ["notes" as const]),
 			...(line.categoryId === null ? [] : ["category" as const]),
-			...(tagIds.length === 0 ? [] : ["tags" as const]),
 		];
 
 		await tx.insert(entries).values({
@@ -220,7 +180,6 @@ async function insertChildren(
 		await tx.insert(transactions).values({
 			entryId: id,
 			label: line.label,
-			notes,
 			// Sure's `Entry#split!` gives each child the parent's kind, `one_time` included.
 			oneTime: parent.oneTime,
 			merchantId: parent.merchantId,
@@ -228,71 +187,7 @@ async function insertChildren(
 			categoryOrigin: line.categoryId === null ? null : categoryOriginOf(origin),
 			lockedFields: lockedBy(origin, {}, filled, now),
 		});
-
-		if (tagIds.length > 0) {
-			await tx.insert(taggings).values(tagIds.map((tagId) => ({ transactionId: id, tagId })));
-		}
 	});
-}
-
-/**
- * Updates the kept child `current` to `line`, as `updateTransaction` would,
- * the amount always. A new amount deletes the line's transfer, whose two
- * sides no longer cancel out, as any transfer side's (AD-11).
- */
-async function updateChild(
-	tx: Transaction,
-	current: EditableRow & { id: string },
-	line: SplitLine,
-	origin: Origin,
-	now: number,
-): Promise<void> {
-	const change = changeOf(
-		current,
-		{
-			label: line.label,
-			amount: line.amount,
-			notes: line.notes,
-			categoryId: line.categoryId,
-			tagIds: line.tagIds,
-		},
-		origin,
-	);
-
-	// Written whatever the locks: the sum to the parent's depends on it.
-	if (line.amount !== current.amount) {
-		await tx
-			.update(entries)
-			.set({ amount: line.amount, updatedAt: now })
-			.where(eq(entries.id, current.id));
-
-		const deleted = await tx
-			.delete(transfers)
-			.where(transferOf([current.id]))
-			.returning({
-				outflowTransactionId: transfers.outflowTransactionId,
-				inflowTransactionId: transfers.inflowTransactionId,
-			});
-		// Sure's `Transfer#destroy!` resets both kinds.
-		await clearOneTime(tx, deleted.flatMap(sidesOf));
-	}
-
-	const detail = detailOf(change, origin, now);
-
-	// A kept line may change nothing here, and an empty `set` is no statement.
-	if (Object.keys(detail).length > 0) {
-		await tx.update(transactions).set(detail).where(eq(transactions.entryId, current.id));
-	}
-
-	if (change.changed.includes("tags")) {
-		await tx.delete(taggings).where(eq(taggings.transactionId, current.id));
-
-		if (change.next.tagIds.length > 0) {
-			await tx
-				.insert(taggings)
-				.values(change.next.tagIds.map((tagId) => ({ transactionId: current.id, tagId })));
-		}
-	}
 }
 
 /** Recomputes the parent's account from its date, as every ledger write does (AD-2). */
@@ -344,7 +239,7 @@ export async function splitTransaction(
 				throw new AppError("NOT_SPLITTABLE", "This transaction cannot be split.");
 			}
 
-			await checkLines(tx, parent, lines, []);
+			await checkLines(tx, parent, lines);
 			const now = Date.now();
 
 			await insertChildren(tx, parent, lines, options.origin, now);
@@ -366,14 +261,13 @@ export async function splitTransaction(
 
 /**
  * Replaces the lines of the split `id` belongs to, from its parent or a
- * child: a line with the id of a child updates it in place, keeping what it
- * does not send, as AD-17 keeps entry ids; a line without one is a new
- * child; a child no line names is deleted. Sure deletes and recreates every
- * child, losing their tags. Throws `NOT_FOUND` for an unknown or an unsplit
- * transaction, and `VALIDATION_ERROR` on `lines` as `checkLines` says, on
- * `lines.N.id` for an id that is not a child of this split. A deleted
- * line's transfer goes with it, a kept line's when its amount changes; the
- * matcher then weighs the lines, as after a split.
+ * child, as Sure's `splits_controller.rb#update` runs `unsplit!` then
+ * `split!` in one transaction (AD-20): every child is deleted, its tags,
+ * notes, attachments, locks and transfer with it, and `lines` become new
+ * children, as `splitTransaction` makes them. The parent stays excluded and
+ * locked, as it is. Throws `NOT_FOUND` for an unknown or an unsplit
+ * transaction, and `VALIDATION_ERROR` on `lines` as `checkLines` says,
+ * before any write. The matcher then weighs the new lines, as after a split.
  */
 export async function editSplit(
 	deps: ServiceDeps,
@@ -384,32 +278,11 @@ export async function editSplit(
 	return deps.db.transaction(
 		async (tx) => {
 			const parent = await parentOf(tx, id);
-			const childIds = await childIdsOf(tx, parent.id);
 			const now = Date.now();
 
-			await checkLines(tx, parent, lines, childIds);
-
-			const kept = lines.flatMap((line) =>
-				line.id === undefined ? [] : [{ ...line, id: line.id }],
-			);
-			const keptIds = new Set(kept.map((line) => line.id));
-
-			await deleteTransactionRows(
-				tx,
-				childIds.filter((childId) => !keptIds.has(childId)),
-			);
-			await oneByOne(kept, async (line) => {
-				const current = { ...(await transactionRow(tx, line.id)), id: line.id };
-
-				await updateChild(tx, current, line, options.origin, now);
-			});
-			await insertChildren(
-				tx,
-				parent,
-				lines.filter((line) => line.id === undefined),
-				options.origin,
-				now,
-			);
+			await checkLines(tx, parent, lines);
+			await deleteTransactionRows(tx, await childIdsOf(tx, parent.id));
+			await insertChildren(tx, parent, lines, options.origin, now);
 			await recompute(deps, tx, parent);
 			await matchTransfers(tx, now);
 

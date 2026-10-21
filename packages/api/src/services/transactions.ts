@@ -866,7 +866,7 @@ export async function splitTransaction(
 	return splitItemOf(deps, await splitLedgerTransaction(deps, id, lines, { origin: "user" }));
 }
 
-/** Replaces a split's lines on the user's behalf, keeping the children named by id. */
+/** Replaces a split's lines on the user's behalf, every child deleted and created again. */
 export async function editSplit(
 	deps: ServiceDeps,
 	id: string,

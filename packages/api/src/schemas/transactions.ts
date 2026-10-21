@@ -52,12 +52,9 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 export const splitBodySchema = z.object({
 	lines: z.array(
 		z.object({
-			id: z.string().optional(),
 			label: z.string(),
 			amount: z.string(),
 			categoryId: z.string().nullable(),
-			tagIds: z.array(z.string()).optional(),
-			notes: z.string().nullable().optional(),
 		}),
 	),
 });
@@ -163,30 +160,17 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 /**
  * The full check of a split's lines, with the same field codes as a
  * transaction's, under `lines.N`: one to `MAX_SPLIT_LINES` lines, each a
- * label, an amount in `currency` and a category or `null`. A line's id names
- * a child kept in place, and its absent tags or notes are left as they are;
- * a blank note is no note. That the lines sum to the parent is the ledger's
- * to check, on `lines`.
+ * label, an amount in `currency` and a category or `null`, Sure's
+ * `split_params`. Anything else a line carries, an id, tags or notes, is
+ * dropped: an edit recreates every line (AD-20). That the lines sum to the
+ * parent is the ledger's to check, on `lines`.
  */
 export function splitTransactionSchema(currency: CurrencyCode) {
 	const line = z
 		.object({
-			id: z.string().min(1).optional(),
 			label: fields.label,
 			amount: fields.amount,
 			categoryId: z.string().min(1).nullable(),
-			tagIds: z
-				.array(z.string().min(1))
-				.transform((ids) => [...new Set(ids)])
-				.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
-				.optional(),
-			notes: z
-				.string()
-				.trim()
-				.max(NOTES_MAX_LENGTH)
-				.nullable()
-				.optional()
-				.transform((value) => (value === "" ? null : value)),
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, ...rest }, context) => {

@@ -385,11 +385,12 @@ describe("transactionPages", () => {
 			deps(),
 			parent,
 			[
-				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: food, tagIds: [tag] },
+				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: food },
 				{ label: "Maison", amount: toMinorUnits(-4_000), categoryId: home },
 			],
 			{ origin: "user" },
 		);
+		await temp.db.insert(taggings).values({ transactionId: split.childIds[0] ?? "", tagId: tag });
 		const ofAccount = async (view: "lines" | "nested") =>
 			(await all(transactionPages(temp.db, view, 1)))
 				.flat()

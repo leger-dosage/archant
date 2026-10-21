@@ -368,7 +368,7 @@ export function useSplitTransaction() {
 	});
 }
 
-/** Replaces a split's lines, keeping those sent with their id. */
+/** Replaces a split's lines: every line is deleted and created again, as Sure. */
 export function useEditSplit() {
 	const invalidate = useInvalidateSplit();
 

@@ -1480,19 +1480,18 @@ describe("exportArchive", () => {
 		});
 		const body = await sendOwn("POST", `/api/transactions/${parent}/split`, {
 			lines: [
-				{
-					label: "Courses",
-					amount: "-60,00",
-					categoryId: food,
-					tagIds: [receipt],
-					notes: "Fruits",
-				},
+				{ label: "Courses", amount: "-60,00", categoryId: food },
 				{ label: "Maison", amount: "-40,00", categoryId: null },
 			],
 		});
 		const [first, second] = z
 			.object({ data: z.object({ children: z.array(z.object({ id: z.string() })) }) })
 			.parse(body).data.children;
+		// A line's tags and notes come from its own sheet, as Sure's drawer.
+		await sendOwn("PATCH", `/api/transactions/${first?.id ?? ""}`, {
+			tagIds: [receipt],
+			notes: "Fruits",
+		});
 
 		const archive = await exported();
 

@@ -50,7 +50,7 @@ type SplitDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	parent: SplitParent;
 	currency: CurrencyCode;
-	/** The split's lines to edit, by id so their tags and notes stay; `null` for a new split. */
+	/** The split's lines to edit, recreated on save; `null` for a new split. */
 	lines: SplitData["children"] | null;
 	/** After a save, with the parent's id: its row takes focus. */
 	onSaved: (parentId: string) => void;
@@ -59,8 +59,8 @@ type SplitDialogProps = {
 /** The fields of a line the API reports an error on by `lines.N.<field>`. */
 type LineField = "label" | "amount" | "categoryId";
 
-/** An error on the lines as a whole, or on a line's id, which no field shows. */
-const onLines = (path: string) => path === "lines" || /^lines\.\d+\.id$/u.test(path);
+/** An error on the lines as a whole, which no field shows. */
+const onLines = (path: string) => path === "lines";
 
 const fieldId = (index: number, field: LineField) => `split-line-${String(index)}-${field}`;
 const errorId = (index: number, field: LineField) => `${fieldId(index, field)}-error`;
@@ -70,7 +70,6 @@ function initialLines(parent: SplitParent, lines: SplitDialogProps["lines"]) {
 		? // Sure's first line: the parent's label, an amount to type, « Sans catégorie ».
 			[{ label: parent.label, amount: "", categoryId: null }]
 		: lines.map((line) => ({
-				id: line.id,
 				label: line.label,
 				amount: amountToText(line.amount, line.currency),
 				categoryId: line.categoryId,
@@ -166,8 +165,7 @@ function SplitForm({
 		resolver: zodResolver(schema, undefined, { raw: true }),
 		defaultValues: { lines: initialLines(parent, lines) },
 	});
-	// `key`, not `id`: a line's `id` names the child it keeps.
-	const rows = useFieldArray({ control: form.control, name: "lines", keyName: "key" });
+	const rows = useFieldArray({ control: form.control, name: "lines" });
 	const watched = useWatch({ control: form.control, name: "lines" });
 	// An empty or invalid amount counts for nothing until it reads as one.
 	const allocated = watched.reduce(
@@ -246,7 +244,7 @@ function SplitForm({
 					const labelError = errors.lines?.[index]?.label;
 
 					return (
-						<fieldset key={row.key} className="relative flex flex-col gap-3 rounded-lg border p-3">
+						<fieldset key={row.id} className="relative flex flex-col gap-3 rounded-lg border p-3">
 							{/* The fieldset's first child, so it names the group. */}
 							<legend className="float-left flex h-8 items-center text-sm font-medium">
 								{t("transactions.split.line", { index: index + 1 })}
@@ -344,7 +342,7 @@ function SplitForm({
  * Sure's split dialog: a line per part of the transaction, each with its
  * label, amount and category, and « Reste à répartir » until the lines sum
  * to the transaction, when « Diviser » turns on. An edit lists the split's
- * lines by id, so each keeps its tags and notes.
+ * lines, and saving recreates them, as Sure's `unsplit!` then `split!`.
  */
 export function SplitDialog({ open, onOpenChange, ...props }: SplitDialogProps) {
 	return (

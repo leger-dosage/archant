@@ -1747,6 +1747,7 @@ describe("/api/transactions/:id/split", () => {
 					amount: z.number(),
 					categoryId: z.string().nullable(),
 					tagIds: z.array(z.string()),
+					notes: z.string().nullable(),
 					parentEntryId: z.string(),
 				}),
 			),
@@ -1761,8 +1762,9 @@ describe("/api/transactions/:id/split", () => {
 
 		const created = await request("POST", `/api/transactions/${id}/split`, {
 			lines: [
+				// Sure's `split_params`: a line's tags and notes are ignored.
 				{ label: "Alimentation", amount: "-60,00", categoryId: food.id, tagIds: [tag.id] },
-				{ label: "Maison", amount: "-40", categoryId: null, notes: " " },
+				{ label: "Maison", amount: "-40", categoryId: null, notes: "Savon" },
 			],
 		});
 		const split = splitBody.parse(created.body).data;
@@ -1775,33 +1777,51 @@ describe("/api/transactions/:id/split", () => {
 				label: "Alimentation",
 				amount: -6000,
 				categoryId: food.id,
-				tagIds: [tag.id],
+				tagIds: [],
 				parentEntryId: id,
 			},
-			{ label: "Maison", amount: -4000, categoryId: null, tagIds: [], parentEntryId: id },
+			{
+				label: "Maison",
+				amount: -4000,
+				categoryId: null,
+				tagIds: [],
+				notes: null,
+				parentEntryId: id,
+			},
 		]);
 		await expect(balanceOf(account.id)).resolves.toBe(balance);
 
 		const read = await request("GET", `/api/transactions/${second?.id ?? ""}/split`);
 		expect(splitBody.parse(read.body).data).toEqual(split);
 
+		// Sure's `split_params`: an id, tags or notes on a line are ignored, and
+		// every line is recreated.
 		const edited = await request("PUT", `/api/transactions/${id}/split`, {
 			lines: [
-				{ id: first?.id, label: "Fruits", amount: "-70,00", categoryId: food.id },
-				{ label: "Savon", amount: "-30,00", categoryId: null },
+				{
+					id: first?.id,
+					label: "Fruits",
+					amount: "-70,00",
+					categoryId: food.id,
+					tagIds: [tag.id],
+					notes: "Marché",
+				},
+				{ id: second?.id, label: "Savon", amount: "-30,00", categoryId: null },
 			],
 		});
 		const after = splitBody.parse(edited.body).data;
+		const fruits = after.children.find((child) => child.label === "Fruits");
 
 		expect(edited.status).toBe(200);
 		// Sorted: the clock is frozen, so creation alone does not order them here.
 		expect(after.children.toSorted((a, b) => a.label.localeCompare(b.label))).toMatchObject([
-			{ id: first?.id, label: "Fruits", amount: -7000, tagIds: [tag.id] },
-			{ label: "Savon", amount: -3000 },
+			{ label: "Fruits", amount: -7000, categoryId: food.id, tagIds: [], notes: null },
+			{ label: "Savon", amount: -3000, tagIds: [] },
 		]);
+		expect(after.children.map((child) => child.id)).not.toContain(first?.id);
 		expect(after.children.map((child) => child.id)).not.toContain(second?.id);
 
-		const undone = await request("DELETE", `/api/transactions/${first?.id ?? ""}/split`);
+		const undone = await request("DELETE", `/api/transactions/${fruits?.id ?? ""}/split`);
 
 		expect(undone.status).toBe(200);
 		expect(undone.body).toMatchObject({ data: { id, excluded: false, parentEntryId: null } });
