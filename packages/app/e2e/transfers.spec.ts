@@ -20,17 +20,34 @@ const sheet = (page: Page) => page.getByRole("dialog", { name: "Modifier l'opér
 
 const picker = (page: Page) => page.getByRole("dialog", { name: "Rapprocher un virement" });
 
+/** The transfer's own drawer, named as Sure's `Transfer#name`. */
+const drawer = (page: Page) => page.getByRole("dialog", { name: /^(?:Virement|Paiement) vers /u });
+
+/** Opens the transfer row `label` in its drawer, with « Détails » unfolded. */
+async function openDrawer(page: Page, label: string) {
+	await rowButton(page, label).click();
+	await drawer(page).getByText("Détails", { exact: true }).click();
+}
+
+/** Closes the drawer by its button: `Escape` would first go to a picker that keeps the focus. */
+async function closeDrawer(page: Page) {
+	await drawer(page).getByRole("button", { name: "Fermer", exact: true }).click();
+	await expect(drawer(page)).toBeHidden();
+}
+
 const categoryButtons = (page: Page, label: string) =>
 	rowItem(page, label).getByRole("button", { name: /^Catégorie/u });
 
-/** Opens the row's sheet, checks it has no « Catégorie » field, and closes it. */
+/**
+ * Opens the row's transfer drawer, checks « Détails » has no « Catégorie »,
+ * as Sure's `categorizable?`, and closes it.
+ */
 async function expectNoCategoryField(page: Page, label: string) {
-	await rowButton(page, label).click();
-	// The transfer block first, so the absent field is not checked before the sheet opens.
-	await expect(sheet(page).getByRole("button", { name: "Dissocier" })).toBeVisible();
-	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveCount(0);
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	await openDrawer(page, label);
+	// « Étiquettes » first, so the absent field is not checked before « Détails » opens.
+	await expect(drawer(page).getByRole("button", { name: "Étiquettes", exact: true })).toBeVisible();
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveCount(0);
+	await closeDrawer(page);
 }
 
 /** The open sheet has neither « Marchand » nor « Étiquettes », as Sure's drawer on a transfer side. */
@@ -360,11 +377,9 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(dayHeader).toContainText(euros(-5000));
 	await expect(dayHeader).not.toContainText(euros(-125_000));
 
-	await rowButton(page, out).click();
-	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toBeEnabled();
-	await expectNoMerchantOrTags(page);
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	await openDrawer(page, out);
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toBeEnabled();
+	await closeDrawer(page);
 
 	await rowItem(page, out).getByRole("button", { name: "Catégorie : Sans catégorie" }).click();
 	await categorySearch(page).fill(housing.name);
@@ -374,8 +389,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	).toBeVisible();
 
 	// Its outflow on another page, the inflow shows: the outflow's category,
-	// muted, and in its sheet the same, disabled, with the reason; no merchant
-	// and no tags on a transfer side, as Sure's drawer.
+	// muted, and opens the same drawer, which sets it, as Sure's.
 	await visitOperations(page, into);
 	await expect(rowButton(page, into)).toContainText(
 		`Remboursement de prêt · Depuis ${checking.name}`,
@@ -395,16 +409,11 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	const day2 = page.getByRole("main").locator('[data-slot="inset-group"]');
 	await expect(day2.getByRole("heading", { level: 2 }).locator("../..")).not.toContainText("€");
 
-	await rowButton(page, into).click();
-	const field = sheet(page).getByRole("button", { name: "Catégorie", exact: true });
-	await expect(field).toHaveText(housing.name);
-	await expect(field).toBeDisabled();
-	await expect(field).toHaveAccessibleDescription(
-		"C'est le côté entrant d'un transfert. Sa catégorie appartient au côté sortant et ne se modifie que là, pour que les budgets la comptent une fois.",
+	await openDrawer(page, into);
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveText(
+		housing.name,
 	);
-	await expectNoMerchantOrTags(page);
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	await closeDrawer(page);
 
 	await page.goto(`/accounts/${loan.id}`);
 	await expect(page.getByRole("region", { name: loan.name, exact: true })).toContainText(
@@ -432,7 +441,7 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(rowButton(page, out)).not.toContainText("Vers");
 });
 
-test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses » under the category picked in its sheet", async ({
+test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses » under the category picked in its drawer", async ({
 	page,
 	api,
 }) => {
@@ -473,15 +482,15 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	// Shown once, as its outflow.
 	await expect(rowItem(page, into)).toHaveCount(0);
 
-	await rowButton(page, out).click();
-	const field = sheet(page).getByRole("button", { name: "Catégorie", exact: true });
+	await openDrawer(page, out);
+	const field = drawer(page).getByRole("button", { name: "Catégorie", exact: true });
 	await expect(field).toHaveText("Sans catégorie");
-	await expectNoMerchantOrTags(page);
 	await field.click();
 	await categorySearch(page).fill(savings.name);
 	await page.getByRole("option", { name: savings.name }).click();
-	await sheet(page).getByRole("button", { name: "Enregistrer" }).click();
-	await expect(sheet(page)).toBeHidden();
+	// Saved at once, as Sure's `auto-submit-form`.
+	await expect(field).toHaveText(savings.name);
+	await closeDrawer(page);
 	await expect(
 		rowItem(page, out).getByRole("button", { name: `Catégorie : ${savings.name}` }),
 	).toBeVisible();
@@ -491,10 +500,11 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	await expect(
 		rowItem(page, into).getByRole("button", { name: `Catégorie : ${savings.name}` }),
 	).toHaveAttribute("aria-disabled", "true");
-	await rowButton(page, into).click();
-	await expect(sheet(page).getByRole("button", { name: "Catégorie", exact: true })).toBeDisabled();
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	await openDrawer(page, into);
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveText(
+		savings.name,
+	);
+	await closeDrawer(page);
 
 	await page.goto(`/accounts/${pea.id}`);
 	await expect(page.getByRole("region", { name: pea.name, exact: true })).toContainText(
@@ -509,7 +519,7 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 	).toContainText(euros(-50_000));
 });
 
-test("« Dissocier » gives both rows their category chip back and drops the caption", async ({
+test("« Supprimer le virement » gives both rows their category chip back and drops the caption", async ({
 	page,
 	api,
 }) => {
@@ -527,11 +537,15 @@ test("« Dissocier » gives both rows their category chip back and drops the cap
 	await expectInflow(page, into, `Depuis ${checking.name}`);
 	await expect(categoryButtons(page, into)).toHaveCount(0);
 	await rowButton(page, into).click();
-	await expect(sheet(page).getByText(`Depuis ${checking.name}`)).toBeVisible();
-	await sheet(page).getByRole("button", { name: "Dissocier" }).click();
-	await expect(sheet(page).getByRole("button", { name: "Rapprocher un virement" })).toBeVisible();
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	await expect(drawer(page).getByRole("link", { name: checking.name })).toBeVisible();
+	await drawer(page).getByText("Paramètres", { exact: true }).click();
+	await drawer(page).getByRole("button", { name: "Supprimer le virement" }).click();
+	const confirmation = page.getByRole("alertdialog", {
+		name: "Voulez-vous vraiment supprimer ce virement ?",
+	});
+	await confirmation.getByRole("button", { name: "Supprimer le virement" }).click();
+	await expect(page.getByText("Virement supprimé")).toBeVisible();
+	await expect(drawer(page)).toBeHidden();
 
 	// Two standard rows again, both on the page.
 	await visitOperations(page, prefix);
@@ -743,7 +757,7 @@ test("a proposal is confirmed from the list, and another rejected, never propose
 	await expect(rowButton(page, kept.out)).toContainText(`Vers ${kept.livret.name}`);
 });
 
-test("« Ne plus proposer » undoes a proposal for good, and the picker still offers the pair", async ({
+test("« Rejeter la correspondance » undoes a proposal for good, and the picker still offers the pair", async ({
 	page,
 	api,
 }) => {
@@ -752,12 +766,8 @@ test("« Ne plus proposer » undoes a proposal for good, and the picker still of
 
 	await visitOperations(page, prefix);
 	await expect(rowButton(page, out)).toContainText(`Vers ${livret.name}`);
-	await rowButton(page, out).click();
-	await sheet(page).getByRole("button", { name: "Ne plus proposer" }).click();
+	await rowItem(page, out).getByRole("button", { name: "Rejeter la correspondance" }).click();
 	await expect(page.getByText("Virement dissocié, il ne sera plus proposé")).toBeVisible();
-	await expect(sheet(page).getByRole("button", { name: "Rapprocher un virement" })).toBeVisible();
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
 
 	// Any later line runs the matcher again; the refused pair stays apart.
 	await api.addTransaction(checking.id, {
@@ -840,4 +850,81 @@ test("« Virement » creates both sides of a transfer and its fee, as Sure's tra
 	await expect(row(`Frais de virement — Virement vers ${to.name}`)).toContainText(euros(-150));
 	await visitOperations(page, from.name);
 	await expect(row(`Virement depuis ${from.name}`)).toContainText(euros(cents));
+});
+
+test("a transfer row opens the transfer's drawer, which tags both sides, keeps a note and deletes the transfer, as Sure's", async ({
+	page,
+	api,
+}) => {
+	const from = await api.openAccount({ name: uniqueName("Courant"), openingBalance: "500,00" });
+	const to = await api.openAccount({
+		name: uniqueName("Livret"),
+		kind: "savings",
+		openingBalance: "0,00",
+	});
+	const tag = await api.createTag();
+	const outflow = `Virement vers ${to.name}`;
+	const inflow = `Virement depuis ${from.name}`;
+	const fee = `Frais de virement — ${outflow}`;
+	await api.createTransfer({
+		fromAccountId: from.id,
+		toAccountId: to.id,
+		date: daysAgo(3),
+		amount: "120,00",
+		sourceFee: "1,50",
+	});
+	const exact = (label: string) =>
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ has: page.getByText(label, { exact: true }) });
+
+	await visitOperations(page, to.name);
+	await exact(outflow).locator("button[data-transaction-id]").click();
+
+	// « Aperçu », open as Sure's: each side, the source fee and its total.
+	await expect(drawer(page)).toHaveAccessibleName(outflow);
+	await expect(drawer(page).getByRole("link", { name: from.name })).toBeVisible();
+	await expect(drawer(page).getByRole("link", { name: to.name })).toBeVisible();
+	await expect(drawer(page).getByText("Frais d'origine")).toBeVisible();
+	await expect(drawer(page).getByText(euros(-12_150))).toBeVisible();
+	await expect(drawer(page).getByText("Frais de destination")).toHaveCount(0);
+
+	await drawer(page).getByText("Détails", { exact: true }).click();
+	// An internal move takes no category, as Sure's `categorizable?`.
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveCount(0);
+	await drawer(page).getByRole("button", { name: "Étiquettes", exact: true }).click();
+	await page.getByRole("combobox", { name: "Rechercher une étiquette" }).fill(tag.name);
+	await page.getByRole("option", { name: tag.name }).click();
+	// Its own button folds the picker again, the choice saved.
+	await drawer(page).getByRole("button", { name: "Étiquettes", exact: true }).click();
+	await expect(page.getByRole("combobox", { name: "Rechercher une étiquette" })).toBeHidden();
+	await expect(drawer(page).getByRole("button", { name: "Étiquettes", exact: true })).toHaveText(
+		tag.name,
+	);
+	await drawer(page).getByLabel("Notes").fill("Épargne de précaution");
+	await drawer(page).getByLabel("Notes").blur();
+	await closeDrawer(page);
+
+	// Both sides carry the tag; the note is the transfer's, read again on opening.
+	await expect(exact(outflow)).toContainText(tag.name);
+	await visitOperations(page, from.name);
+	await expect(exact(inflow)).toContainText(tag.name);
+	await exact(inflow).locator("button[data-transaction-id]").click();
+	await drawer(page).getByText("Détails", { exact: true }).click();
+	await expect(drawer(page).getByLabel("Notes")).toHaveValue("Épargne de précaution");
+
+	await drawer(page).getByText("Paramètres", { exact: true }).click();
+	await drawer(page).getByRole("button", { name: "Supprimer le virement" }).click();
+	await page
+		.getByRole("alertdialog", { name: "Voulez-vous vraiment supprimer ce virement ?" })
+		.getByRole("button", { name: "Supprimer le virement" })
+		.click();
+	await expect(drawer(page)).toBeHidden();
+
+	// Both sides stay, standard; the fee line goes with the transfer.
+	await visitOperations(page, to.name);
+	await expect(exact(outflow)).toBeVisible();
+	await expect(exact(outflow)).not.toContainText(`Vers ${to.name}`);
+	await expect(exact(fee)).toHaveCount(0);
 });

@@ -420,6 +420,7 @@ export function samplePlan(options: {
 			inflowSourceId: transaction(to, -amount, label, null, date),
 			kind: null,
 			status: "pending",
+			notes: null,
 		});
 	};
 	const transfer = (from: string, to: string, major: number, label: string, date: IsoDate) =>

@@ -3,7 +3,7 @@ import type { TransactionData } from "@/hooks/useTransactions";
 import type { TransferCandidateData } from "@/hooks/useTransfers";
 
 import { Link } from "@tanstack/react-router";
-import { MergeIcon, Repeat, TriangleAlertIcon } from "lucide-react";
+import { MergeIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -27,12 +27,7 @@ import {
 } from "@/hooks/useDuplicates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
-import {
-	recurringName,
-	useAddRecurring,
-	useMarkTransferRecurring,
-	useRecurringOfEntry,
-} from "@/hooks/useRecurring";
+import { recurringName, useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
@@ -43,9 +38,9 @@ import { transferCaption } from "@/lib/transfers";
 export type TransferLink = TransactionData["transfer"];
 
 /**
- * The sheet's « Virement » block: the other side, « Ne plus proposer »,
- * « Dissocier » and Sure's « Marquer comme récurrent » for a transfer side,
- * « Rapprocher un virement » for a standard transaction. It saves at once,
+ * The sheet's « Virement » block: « Rapprocher un virement » for a standard
+ * transaction, then the other side, « Ne plus proposer » and « Dissocier »
+ * for the transfer just made; a transfer row opens the transfer's drawer. It saves at once,
  * apart from the form, so it keeps the link it last saved rather than the row
  * the sheet was opened with. A viewer reads the link without its actions.
  */
@@ -63,7 +58,6 @@ export function TransferBlock({
 	const matchTransfer = useMatchTransfer();
 	const unmatchTransfer = useUnmatchTransfer();
 	const rejectTransfer = useRejectTransfer();
-	const markRecurring = useMarkTransferRecurring();
 	const [picking, setPicking] = useState(false);
 	const caption = transferCaption({ amount: transaction.amount, transfer });
 
@@ -164,24 +158,6 @@ export function TransferBlock({
 						</div>
 					)}
 				</div>
-			)}
-			{/* Shown even once a series follows it, as Sure's: the API answers a second one. */}
-			{admin && transfer !== null && caption !== null && (
-				<Button
-					type="button"
-					variant="outline"
-					className="self-start"
-					disabled={pending || markRecurring.isPending}
-					onClick={() =>
-						markRecurring.mutate(transfer.id, {
-							onSuccess: () => toast.success(t("transactions.transfer.markedRecurring")),
-							onError: (error) => showErrorToast(errorCodeOf(error)),
-						})
-					}
-				>
-					<Repeat aria-hidden="true" />
-					{t("transactions.transfer.markRecurring")}
-				</Button>
 			)}
 		</section>
 	);

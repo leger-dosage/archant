@@ -814,9 +814,11 @@ test("« Marquer comme récurrent » follows a mortgage payment, which the next 
 	await api.addTransaction(checking.id, { date: previous, label, amount: `-${amount}` });
 	await api.addTransaction(loan.id, { date: previous, label: "ECHEANCE", amount });
 
-	const sheet = await openSheet(page, label);
-	// A transfer side follows a series through its transfer only.
+	await openSheet(page, label);
+	// A transfer row opens the transfer's drawer, which follows a series through « Paramètres ».
+	const sheet = page.getByRole("dialog", { name: /^Paiement vers / });
 	await expect(sheet.getByRole("button", { name: "Ajouter aux récurrences" })).toHaveCount(0);
+	await sheet.getByText("Paramètres", { exact: true }).click();
 	await sheet.getByRole("button", { name: "Marquer comme récurrent" }).click();
 	await expect(toast(page, "Virement marqué comme récurrent")).toBeVisible();
 	// Never hidden, as Sure's: a second one is refused.

@@ -265,6 +265,7 @@ export const EXPORTED_COLUMNS = {
 		inflowTransactionId: transfers.inflowTransactionId,
 		kind: transfers.kind,
 		status: transfers.status,
+		notes: transfers.notes,
 		createdAt: transfers.createdAt,
 	},
 	rejected_transfers: {

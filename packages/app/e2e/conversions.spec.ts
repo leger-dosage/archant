@@ -126,8 +126,10 @@ test("a contribution matched as a transfer stays a line of the PEA, with nothing
 	await page.goto(`/accounts/${account.id}`);
 	await rowButton(page, label).click();
 
-	await expect(sheet(page).getByText(`Depuis ${current.name}`).first()).toBeVisible();
-	await expect(sheet(page).getByRole("button", { name: "Convertir en ordre" })).toHaveCount(0);
+	// A transfer row opens the transfer's drawer, which converts nothing.
+	const drawer = page.getByRole("dialog", { name: `Virement vers ${account.name}` });
+	await expect(drawer.getByRole("link", { name: current.name })).toBeVisible();
+	await expect(drawer.getByRole("button", { name: "Convertir en ordre" })).toHaveCount(0);
 });
 
 // Story 28.11: only an account that takes trades converts a line, Sure's `supports_trades?`.

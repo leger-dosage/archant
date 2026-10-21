@@ -1117,7 +1117,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				inflow_transaction_id: transfer.inflowTransactionId,
 				outflow_transaction_id: transfer.outflowTransactionId,
 				status: transfer.status,
-				notes: null,
+				notes: transfer.notes,
 				created_at: timestamp(transfer.createdAt),
 				updated_at: timestamp(transfer.createdAt),
 				archant: { kind: transfer.kind },

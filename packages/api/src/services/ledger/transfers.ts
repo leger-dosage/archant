@@ -273,6 +273,7 @@ function transferBetween(a: PairSide, b: PairSide, status: TransferStatus, now: 
 		kind: transferKindOf(inflow.accountType, outflow.accountType),
 		status,
 		idempotencyKey: null,
+		notes: null,
 		createdAt: now,
 	};
 }
@@ -790,6 +791,7 @@ export async function createTransferBetween(
 				kind: transferKindOf(destination.type, source.type),
 				status: "confirmed",
 				idempotencyKey: input.idempotencyKey ?? null,
+				notes: null,
 				createdAt: now,
 			};
 			// Sure's `user_modified: true` on both legs; its fees carry none.

@@ -327,6 +327,7 @@ async function insertTransfers(
 			inflowTransactionId: inflow.id,
 			kind: transfer.kind ?? transferKindOf(inflow.type, outflow.type),
 			status: transfer.status,
+			notes: transfer.notes,
 			createdAt: stamp(),
 		});
 	}

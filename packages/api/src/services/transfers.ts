@@ -1,5 +1,6 @@
 import type { NewTransferInput, TransferRequest } from "../schemas/transfers.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { TransferDetails, TransferPatch } from "./ledger/transfer-details.ts";
 import type { CreatedTransfer, TransferCandidate, TransferSides } from "./ledger/transfers.ts";
 
 import type { CurrencyCode } from "@archant/data/money";
@@ -10,6 +11,11 @@ import { validationError } from "../lib/zod-error.ts";
 import { newTransferSchema } from "../schemas/transfers.ts";
 import { currencyOf } from "./accounts.ts";
 import { invalidField } from "./ledger/shared.ts";
+import {
+	setTransferTags as setLedgerTransferTags,
+	transferDetails,
+	updateTransferDetails,
+} from "./ledger/transfer-details.ts";
 import {
 	confirmTransfer as confirmLedgerTransfer,
 	createTransferBetween,
@@ -91,4 +97,31 @@ export async function rejectTransfer(deps: ServiceDeps, id: string): Promise<Tra
 /** Confirms a transfer the matcher proposed, on the user's behalf. */
 export async function confirmTransfer(deps: ServiceDeps, id: string): Promise<TransferOutcome> {
 	return { id, ...(await confirmLedgerTransfer(deps, id, { origin: "user" })) };
+}
+
+/** What the transfer's drawer shows. Reads only. */
+export async function getTransfer(deps: ServiceDeps, id: string): Promise<TransferDetails> {
+	return transferDetails(deps, id);
+}
+
+/** Saves the drawer's category and notes on the user's behalf, then reads the transfer again. */
+export async function updateTransfer(
+	deps: ServiceDeps,
+	id: string,
+	patch: TransferPatch,
+): Promise<TransferDetails> {
+	await updateTransferDetails(deps, id, patch, { origin: "user" });
+
+	return transferDetails(deps, id);
+}
+
+/** Sets the same tags on both sides on the user's behalf, then reads the transfer again. */
+export async function setTransferTags(
+	deps: ServiceDeps,
+	id: string,
+	tagIds: readonly string[],
+): Promise<TransferDetails> {
+	await setLedgerTransferTags(deps, id, tagIds, { origin: "user" });
+
+	return transferDetails(deps, id);
 }

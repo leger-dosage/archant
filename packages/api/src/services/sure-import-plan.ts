@@ -171,6 +171,7 @@ type PlanTransfer = {
 	inflowSourceId: string;
 	kind: TransferKind | null;
 	status: TransferStatus;
+	notes: string | null;
 };
 
 type PlanPair = { outflowSourceId: string; inflowSourceId: string };
@@ -833,6 +834,7 @@ function readTransfers(reader: Reader): { transfers: PlanTransfer[]; rejected: P
 				...sides,
 				kind: oneOf(TRANSFER_KINDS, archantOf(record.data).kind),
 				status: oneOf(TRANSFER_STATUSES, record.data.status) ?? "pending",
+				notes: textOf(record.data.notes),
 			})),
 		),
 		rejected: recordsOf(reader.parsed, "RejectedTransfer").flatMap(pairOf),

@@ -444,3 +444,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-31-5-create-a-transfer-between-two-accounts.md`
   summary: Sure hides « Dépense » and « Revenu » when the transfer form opens from an investment or crypto account, and converts between currencies with an exchange rate or a destination amount.
   evidence: `transfers/_form.html.erb` `show_type_tabs` and `shared/exchange_rate_tabs`; Archant refuses two currencies until exchange rates exist (AD-6).
+
+## Deferred from: spec-31-6-open-a-transfer-in-its-own-drawer (2026-10-21)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-31-6-open-a-transfer-in-its-own-drawer.md`
+  summary: A transfer side's own sheet, with its label, date, amount, notes and attachments, is no longer reachable from the lists, since a transfer row opens the transfer's drawer.
+  evidence: Sure's `transactions/_transaction.html.erb` opens `transfer_path` for a row with a `Transfer` and reaches the side's `entry_path` only through the protection lock icon; Archant has no such icon link. Deleting the transfer gives both sides their sheet back.
+- source_spec: `_bmad-output/implementation-artifacts/spec-31-6-open-a-transfer-in-its-own-drawer.md`
+  summary: A Sure archive's `Transfer.notes` is imported untrimmed and uncapped, as a transaction's notes are, so a note over `NOTES_MAX_LENGTH` is refused on its next save from the drawer.
+  evidence: `sure-import-plan.ts` reads notes with `textOf`; `transferPatchSchema` caps them at 2000 characters.

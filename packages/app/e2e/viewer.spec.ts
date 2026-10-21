@@ -460,16 +460,20 @@ reader.describe("a viewer", () => {
 				{ role: "button", name: "Confirmer la correspondance" },
 				{ role: "button", name: "Rejeter la correspondance" },
 			]);
+			// The transfer's own drawer, read without a control that writes (AD-21).
 			await page.locator(`[data-transaction-id="${transfer}"]`).click();
-			await expect(sheet).toBeVisible();
-			await expect(sheet.getByText(`Vers ${savings.name}`).first()).toBeVisible();
-			await expectNone(sheet, [
-				{ role: "button", name: "Dissocier" },
-				{ role: "button", name: "Ne plus proposer" },
-				{ role: "button", name: "Rapprocher un virement" },
+			const drawer = page.getByRole("dialog", { name: `Virement vers ${savings.name}` });
+			await expect(drawer).toBeVisible();
+			await drawer.getByText("Détails", { exact: true }).click();
+			await expect(drawer.getByRole("button", { name: "Étiquettes", exact: true })).toBeDisabled();
+			await expect(drawer.getByLabel("Notes")).toBeDisabled();
+			await expect(drawer.getByText("Paramètres", { exact: true })).toHaveCount(0);
+			await expectNone(drawer, [
+				{ role: "button", name: "Supprimer le virement" },
+				{ role: "button", name: "Marquer comme récurrent" },
 			]);
-			await sheet.getByRole("button", { name: "Fermer", exact: true }).first().click();
-			await expect(sheet).toBeHidden();
+			await drawer.getByRole("button", { name: "Fermer", exact: true }).first().click();
+			await expect(drawer).toBeHidden();
 
 			// A transaction no series holds: a viewer reads so, and creates none.
 			await page

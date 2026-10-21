@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { TRANSFER_KINDS, TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
 
+import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import {
 	car,
 	errorBody,
@@ -601,5 +602,141 @@ describe("transfers", () => {
 				filter: { direction: "expense" },
 			}),
 		).resolves.toEqual({ status: 200, body: { data: { deleted: 1 } } });
+	});
+});
+
+/** A transfer of 100 € from « Courant » to « Épargne », with both fees. */
+async function feeTransfer() {
+	const checking = await openOwn({ name: "Courant" });
+	const livret = await openOwn({ name: "Épargne", subtype: "savings", openingBalance: "0" });
+	const { body } = await ownRequest("POST", "/api/transfers/new", {
+		fromAccountId: checking.id,
+		toAccountId: livret.id,
+		date: "2026-09-15",
+		amount: "100,00",
+		sourceFee: "1,50",
+		destinationFee: "0,80",
+	});
+	const transfer = z
+		.object({ data: z.object({ id: z.string(), outflowTransactionId: z.string() }) })
+		.parse(body).data;
+
+	return { checking, livret, transfer };
+}
+
+describe("the transfer's drawer, Sure's `transfers#show`, `update` and `update_tags`", () => {
+	it("reads both sides with their fees, and answers `404` for an unknown transfer", async () => {
+		const { checking, livret, transfer } = await feeTransfer();
+
+		await expect(ownRequest("GET", `/api/transfers/${transfer.id}`)).resolves.toMatchObject({
+			status: 200,
+			body: {
+				data: {
+					categorizable: false,
+					outflow: { accountId: checking.id, amount: -10_000, fee: 150 },
+					inflow: { accountId: livret.id, amount: 10_000, fee: 80 },
+				},
+			},
+		});
+		expect((await ownRequest("GET", "/api/transfers/none")).status).toBe(404);
+	});
+
+	it("saves the notes, a blank one as none, and refuses notes too long or a category on a move", async () => {
+		const { transfer } = await feeTransfer();
+		const path = `/api/transfers/${transfer.id}`;
+
+		await expect(ownRequest("PATCH", path, { notes: "  Loyer  " })).resolves.toMatchObject({
+			status: 200,
+			body: { data: { notes: "Loyer" } },
+		});
+		await expect(ownRequest("PATCH", path, { notes: " " })).resolves.toMatchObject({
+			body: { data: { notes: null } },
+		});
+
+		const tooLong = await ownRequest("PATCH", path, { notes: "x".repeat(2001) });
+		const category = await ownRequest("PATCH", path, { categoryId: "any" });
+
+		expect(tooLong.status).toBe(400);
+		expect(errorBody.parse(tooLong.body).error.fields).toEqual([
+			{ path: "notes", code: "too_big" },
+		]);
+		expect(category.status).toBe(400);
+		expect(errorBody.parse(category.body).error.fields).toEqual([
+			{ path: "categoryId", code: "not_categorizable" },
+		]);
+	});
+
+	it("sets the same tags on both sides", async () => {
+		const { checking, livret, transfer } = await feeTransfer();
+		const tag = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse((await ownRequest("POST", "/api/tags", { name: "Vacances" })).body).data;
+
+		await expect(
+			ownRequest("PUT", `/api/transfers/${transfer.id}/tags`, { tagIds: [tag.id] }),
+		).resolves.toMatchObject({ status: 200, body: { data: { tagIds: [tag.id] } } });
+
+		const sides = await Promise.all(
+			[checking, livret].map(async (account) => (await listed(`?account=${account.id}`)).items),
+		);
+
+		expect(sides.map((items) => items.find((item) => item.transfer !== null)?.tagIds)).toEqual([
+			[tag.id],
+			[tag.id],
+		]);
+		const unknown = await ownRequest("PUT", `/api/transfers/${transfer.id}/tags`, {
+			tagIds: ["none"],
+		});
+
+		expect(unknown.status).toBe(400);
+		expect(errorBody.parse(unknown.body).error.fields).toEqual([
+			{ path: "tagIds", code: "invalid_value" },
+		]);
+	});
+
+	it("caps the tags after dropping repeats, and answers `404` for an unknown transfer", async () => {
+		const { transfer } = await feeTransfer();
+		const path = `/api/transfers/${transfer.id}/tags`;
+		const ids = Array.from({ length: MAX_TAGS_PER_TRANSACTION + 1 }, (_, index) => `t${index}`);
+		const tooMany = await ownRequest("PUT", path, { tagIds: ids });
+		const repeated = await ownRequest("PUT", path, {
+			tagIds: Array.from({ length: MAX_TAGS_PER_TRANSACTION + 1 }, () => "none"),
+		});
+
+		expect(errorBody.parse(tooMany.body).error.fields).toEqual([
+			{ path: "tagIds", code: "too_big" },
+		]);
+		// One tag once repeats are dropped: within the cap, refused only as unknown.
+		expect(errorBody.parse(repeated.body).error.fields).toEqual([
+			{ path: "tagIds", code: "invalid_value" },
+		]);
+		expect((await ownRequest("PUT", "/api/transfers/none/tags", { tagIds: [] })).status).toBe(404);
+		expect((await ownRequest("PATCH", "/api/transfers/none", { notes: "x" })).status).toBe(404);
+	});
+
+	it("deletes the transfer and its fee lines, never its two sides, as Sure's `destroy!`", async () => {
+		const { checking, livret, transfer } = await feeTransfer();
+		const balances = async () =>
+			Promise.all(
+				[checking, livret].map(
+					async (account) =>
+						z
+							.object({ data: z.object({ balance: z.number() }) })
+							.parse((await ownRequest("GET", `/api/accounts/${account.id}`)).body).data.balance,
+				),
+			);
+		const [checkingBefore = 0, livretBefore = 0] = await balances();
+
+		expect((await ownRequest("DELETE", `/api/transfers/${transfer.id}`)).status).toBe(200);
+		// Each account gets its fee back, the sides' amounts staying.
+		await expect(balances()).resolves.toEqual([checkingBefore + 150, livretBefore + 80]);
+		expect(
+			(await listed(`?account=${checking.id}`)).items.map(({ label, transfer: link }) => ({
+				label,
+				link,
+			})),
+		).toEqual([{ label: "Virement vers Épargne", link: null }]);
+		expect((await listed(`?account=${livret.id}`)).items).toHaveLength(1);
+		expect((await ownRequest("DELETE", `/api/transfers/${transfer.id}`)).status).toBe(404);
 	});
 });

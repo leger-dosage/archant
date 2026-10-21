@@ -27,6 +27,15 @@ export const EXPENSE_TRANSFER_KINDS = [
 const expenseKinds: ReadonlySet<TransferKind> = new Set(EXPENSE_TRANSFER_KINDS);
 
 /**
+ * Whether a transfer of this kind takes a category on its outflow, as Sure's
+ * `Transfer#categorizable?`: a loan payment or a contribution is spending, a
+ * move between one's own accounts or a card payment is not.
+ */
+export function takesCategory(kind: TransferKind): boolean {
+	return expenseKinds.has(kind);
+}
+
+/**
  * Whether a row is the inflow of a loan payment or an investment
  * contribution, whose category belongs to its outflow, as Sure's
  * `7e1d93613`: the interface shows the outflow's, disabled, and the API

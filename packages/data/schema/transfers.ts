@@ -32,6 +32,8 @@ export const transfers = sqliteTable(
 		// `idempotency_key`: a double submit finds the first transfer under it.
 		// On the transfer rather than on each leg, so it goes with it when undone.
 		idempotencyKey: text("idempotency_key"),
+		// Sure's `transfers.notes`: the transfer's own, apart from each side's.
+		notes: text("notes"),
 		createdAt: integer("created_at").notNull(),
 	},
 	(table) => [
