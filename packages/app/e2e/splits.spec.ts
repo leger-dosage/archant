@@ -374,7 +374,7 @@ test("a split cut by a page shows its parent on both pages", async ({ page, api 
 	await expect(rowButton(page, prefix).first()).toContainText("Divisée");
 });
 
-test("a parent's sheet lists its lines, and « Modifier la division » keeps each line's tags", async ({
+test("a parent's sheet lists its lines, and « Modifier la division » recreates them, a line's tag gone, as Sure", async ({
 	page,
 	api,
 }) => {
@@ -384,6 +384,7 @@ test("a parent's sheet lists its lines, and « Modifier la division » keeps eac
 	await api.setTags([food], [tag.id]);
 
 	await page.goto(`/accounts/${account.id}`);
+	await expect(rowButton(page, labels.food)).toContainText(tag.name);
 	await rowButton(page, prefix).first().click();
 
 	const division = sheet(page).getByRole("region", { name: "Division" });
@@ -422,7 +423,8 @@ test("a parent's sheet lists its lines, and « Modifier la division » keeps eac
 	await expect(toast(page, "Division modifiée")).toBeVisible();
 	await expect(sheet(page)).toBeHidden();
 	await expect(rowButton(page, labels.food)).toContainText(euros(-7000));
-	await expect(rowButton(page, labels.food)).toContainText(tag.name);
+	// Sure's `unsplit!` then `split!`: the recreated line has no tag.
+	await expect(rowButton(page, labels.food)).not.toContainText(tag.name);
 	await expect(rowButton(page, labels.home)).toContainText(euros(-3000));
 	await expect(page.locator(":focus")).toContainText("Divisée");
 });

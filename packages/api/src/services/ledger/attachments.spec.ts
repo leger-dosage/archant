@@ -240,20 +240,24 @@ describe("every ledger delete", () => {
 		await expect(rowsOf(elsewhere)).resolves.toHaveLength(1);
 	});
 
-	it("deletes the attachments of a line a split's edit drops, and keeps the others", async () => {
+	it("deletes the attachments of every line on a split's edit, which recreates them, and leaves the parent's", async () => {
 		const account = await openChecking();
 		const { parent, food, home, amount } = await splitInTwo(account.id);
 		await attachEach([parent, food, home]);
 
-		await editSplit(
+		const split = await editSplit(
 			deps(),
 			parent,
-			[{ id: food, label: "Tout", amount: toMinorUnits(amount), categoryId: null }],
+			[
+				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: null },
+				{ label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null },
+			],
 			asUser,
 		);
 
+		await expect(rowsOf(food)).resolves.toEqual([]);
 		await expect(rowsOf(home)).resolves.toEqual([]);
-		await expect(rowsOf(food)).resolves.toHaveLength(1);
+		await expect(Promise.all(split.childIds.map(rowsOf))).resolves.toEqual([[], []]);
 		await expect(rowsOf(parent)).resolves.toHaveLength(1);
 	});
 

@@ -5,7 +5,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { entries } from "@archant/data/schema/entries";
 import { transactions } from "@archant/data/schema/transactions";
 
-import { MAX_SPLIT_LINES, MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
+import { MAX_SPLIT_LINES } from "../../schemas/transactions.ts";
 import {
 	add,
 	asUser,
@@ -15,7 +15,6 @@ import {
 	excludedOf,
 	history,
 	keysOf,
-	lockTimes,
 	lockedFields,
 	matchedPair,
 	merchantOf,
@@ -85,20 +84,13 @@ describe("splitTransaction", () => {
 		const merchant = await newMerchant("Carrefour");
 		await updateTransaction(deps(), parent, { merchantId: merchant }, asUser);
 		const [food, home] = [await newCategory("Alimentation"), await newCategory("Maison")];
-		const tag = await newTag("Reçu");
 		const before = await history(account.id);
 
 		const split = await splitTransaction(
 			deps(),
 			parent,
 			[
-				{
-					label: "Alimentation",
-					amount: toMinorUnits(-6_000),
-					categoryId: food,
-					tagIds: [tag, tag],
-					notes: "Fruits",
-				},
+				{ label: "Alimentation", amount: toMinorUnits(-6_000), categoryId: food },
 				{ label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: home },
 			],
 			asUser,
@@ -123,7 +115,7 @@ describe("splitTransaction", () => {
 			importId: null,
 			parentEntryId: parent,
 			label: "Alimentation",
-			notes: "Fruits",
+			notes: null,
 			pending: false,
 			excluded: false,
 			possibleDuplicate: false,
@@ -136,16 +128,13 @@ describe("splitTransaction", () => {
 		await expect(merchantOf(second ?? "")).resolves.toBe(merchant);
 		await expect(categoryOf(first ?? "")).resolves.toBe(food);
 		await expect(categoryOriginOf(first ?? "")).resolves.toBe("user");
-		await expect(tagsOf(first ?? "")).resolves.toEqual([tag]);
-		await expect(tagsOf(second ?? "")).resolves.toEqual([]);
+		await expect(tagsOf(first ?? "")).resolves.toEqual([]);
 		await expect(lockedFields(first ?? "")).resolves.toEqual([
 			"date",
 			"amount",
 			"label",
 			"excluded",
-			"notes",
 			"category",
-			"tags",
 		]);
 		await expect(lockedFields(second ?? "")).resolves.toEqual([
 			"date",
@@ -291,14 +280,9 @@ describe("splitTransaction", () => {
 		).resolves.toMatchObject({ parentId: id });
 	});
 
-	it("refuses an unknown category or tag, too many tags, or an id, on its line", async () => {
+	it("refuses an unknown category on its line", async () => {
 		const account = await openChecking({ name: "Champs" });
 		const { id, amount } = await expense(account.id);
-		const tags = await Promise.all(
-			Array.from({ length: MAX_TAGS_PER_TRANSACTION + 1 }, async (_, index) =>
-				newTag(`Étiquette ${index}`),
-			),
-		);
 		const lines = (line: Record<string, unknown>) => [
 			{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: null },
 			{ label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null, ...line },
@@ -307,15 +291,6 @@ describe("splitTransaction", () => {
 		await expect(
 			splitTransaction(deps(), id, lines({ categoryId: "inconnue" }), asUser),
 		).rejects.toMatchObject(invalid("lines.1.categoryId"));
-		await expect(
-			splitTransaction(deps(), id, lines({ tagIds: ["inconnue"] }), asUser),
-		).rejects.toMatchObject(invalid("lines.1.tagIds"));
-		await expect(
-			splitTransaction(deps(), id, lines({ tagIds: tags }), asUser),
-		).rejects.toMatchObject(invalid("lines.1.tagIds", "too_big"));
-		await expect(splitTransaction(deps(), id, lines({ id }), asUser)).rejects.toMatchObject(
-			invalid("lines.1.id", "not_a_child"),
-		);
 		await expect(transactionCount(account.id)).resolves.toBe(1);
 	});
 
@@ -405,135 +380,94 @@ describe("splitOf", () => {
 });
 
 describe("editSplit", () => {
-	it("updates a kept child in place, creates a new one, and deletes the one left out", async () => {
+	it("deletes every line and creates new ones, as Sure's unsplit! then split!: new ids, the parent's merchant, no old tag, note or lock", async () => {
 		const account = await openChecking({ name: "Modifier" });
-		const { parent, food, home, amount } = await splitInTwo(account.id);
-		const tag = await newTag("Garder");
-		await updateTransaction(deps(), food, { tagIds: [tag], notes: "Marché" }, asUser);
+		const { id: parent, amount } = await expense(account.id);
+		const merchant = await newMerchant("Monoprix");
+		await updateTransaction(deps(), parent, { merchantId: merchant }, asUser);
+		const { childIds } = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Courses", amount: toMinorUnits(-6_000), categoryId: null },
+				{ label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null },
+			],
+			asUser,
+		);
+		const [food = "", home = ""] = childIds;
+		const category = await newCategory("Hygiène");
+		await updateTransaction(
+			deps(),
+			food,
+			{ tagIds: [await newTag("Garder")], notes: "Marché", oneTime: true },
+			asUser,
+		);
 		const before = await history(account.id);
 
 		const split = await editSplit(
 			deps(),
 			home,
 			[
-				{ id: food, label: "Alimentation", amount: toMinorUnits(-5_000), categoryId: null },
-				{ label: "Hygiène", amount: toMinorUnits(amount + 5_000), categoryId: null },
+				{ label: "Alimentation", amount: toMinorUnits(-5_000), categoryId: null },
+				{ label: "Hygiène", amount: toMinorUnits(amount + 5_000), categoryId: category },
 			],
 			asUser,
 		);
-		const created = split.childIds.find((id) => id !== food);
+		const [first = "", second = ""] = split.childIds;
 
 		expect(split.parentId).toBe(parent);
 		expect(split.childIds).toHaveLength(2);
-		expect(split.childIds).toContain(food);
-		expect(created).not.toBe(home);
+		expect(split.childIds).not.toContain(food);
+		expect(split.childIds).not.toContain(home);
+		await expect(childRow(food)).resolves.toBeUndefined();
 		await expect(childRow(home)).resolves.toBeUndefined();
-		await expect(childRow(food)).resolves.toMatchObject({
+		await expect(childRow(first)).resolves.toMatchObject({
 			amount: -5_000,
 			label: "Alimentation",
-			notes: "Marché",
-		});
-		await expect(tagsOf(food)).resolves.toEqual([tag]);
-		await expect(childRow(created ?? "")).resolves.toMatchObject({
-			amount: amount + 5_000,
-			label: "Hygiène",
+			notes: null,
 			parentEntryId: parent,
 		});
+		await expect(childRow(second)).resolves.toMatchObject({
+			amount: amount + 5_000,
+			label: "Hygiène",
+		});
+		await expect(tagsOf(first)).resolves.toEqual([]);
+		await expect(oneTimeOf(first)).resolves.toBe(false);
+		await expect(merchantOf(first)).resolves.toBe(merchant);
+		await expect(merchantOf(second)).resolves.toBe(merchant);
+		await expect(categoryOf(second)).resolves.toBe(category);
+		await expect(lockedFields(first)).resolves.toEqual(["date", "amount", "label", "excluded"]);
 		await expect(excludedOf(parent)).resolves.toBe(true);
 		await expect(history(account.id)).resolves.toEqual(before);
 	});
 
-	it("replaces or clears a kept child's tags, and keeps an amount it did not change", async () => {
-		const account = await openChecking({ name: "Étiquettes" });
-		const { food, home, amount } = await splitInTwo(account.id);
-		const [old, fresh] = [await newTag("Ancienne"), await newTag("Nouvelle")];
-		await updateTransaction(deps(), food, { tagIds: [old] }, asUser);
-		await updateTransaction(deps(), home, { tagIds: [old] }, asUser);
-
-		await editSplit(
-			deps(),
-			food,
-			[
-				{ id: food, label: "Courses", amount: toMinorUnits(-6_000), categoryId: null, tagIds: [] },
-				{
-					id: home,
-					label: "Maison",
-					amount: toMinorUnits(amount + 6_000),
-					categoryId: null,
-					tagIds: [fresh],
-					notes: null,
-				},
-			],
-			asUser,
-		);
-
-		await expect(tagsOf(food)).resolves.toEqual([]);
-		await expect(tagsOf(home)).resolves.toEqual([fresh]);
-		await expect(childRow(food)).resolves.toMatchObject({ amount: -6_000 });
-		await expect(lockedFields(food)).resolves.toContain("tags");
-	});
-
-	it("writes nothing on a kept child it did not change, whose locks keep their times", async () => {
-		const account = await openChecking({ name: "Inchangée" });
-		const { food, home, amount } = await splitInTwo(account.id);
-		const before = await lockTimes(home);
-
-		await editSplit(
-			deps(),
-			food,
-			[
-				{ id: food, label: "Primeurs", amount: toMinorUnits(-6_000), categoryId: null },
-				{ id: home, label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null },
-			],
-			asUser,
-		);
-
-		await expect(childRow(food)).resolves.toMatchObject({ label: "Primeurs" });
-		await expect(childRow(home)).resolves.toMatchObject({ label: "Maison" });
-		await expect(lockTimes(home)).resolves.toEqual(before);
-	});
-
-	it("refuses an id that is no child of this split, or the same child twice", async () => {
-		const account = await openChecking({ name: "Intrus" });
-		const { parent, food, amount } = await splitInTwo(account.id);
-		const other = await splitInTwo(account.id);
+	it("refuses lines that do not sum to the parent, writing nothing, the old lines and their tags kept", async () => {
+		const account = await openChecking({ name: "Refusée" });
+		const { parent, food, home, amount } = await splitInTwo(account.id);
+		const tag = await newTag("Intacte");
+		await updateTransaction(deps(), food, { tagIds: [tag] }, asUser);
 
 		await expect(
 			editSplit(
 				deps(),
 				parent,
-				[
-					{ id: food, label: "Courses", amount: toMinorUnits(-6_000), categoryId: null },
-					{
-						id: other.home,
-						label: "Maison",
-						amount: toMinorUnits(amount + 6_000),
-						categoryId: null,
-					},
-				],
-				asUser,
-			),
-		).rejects.toMatchObject(invalid("lines.1.id", "not_a_child"));
-		await expect(
-			editSplit(
-				deps(),
-				parent,
-				[
-					{ id: food, label: "Courses", amount: toMinorUnits(-6_000), categoryId: null },
-					{ id: food, label: "Maison", amount: toMinorUnits(amount + 6_000), categoryId: null },
-				],
-				asUser,
-			),
-		).rejects.toMatchObject(invalid("lines.1.id", "not_a_child"));
-		await expect(
-			editSplit(
-				deps(),
-				parent,
-				[{ id: food, label: "Courses", amount: toMinorUnits(amount - 1), categoryId: null }],
+				[{ label: "Courses", amount: toMinorUnits(amount - 1), categoryId: null }],
 				asUser,
 			),
 		).rejects.toMatchObject(invalid("lines", "split_sum_mismatch"));
-		expect((await splitOf(deps(), parent)).childIds).toContain(food);
+		await expect(
+			editSplit(
+				deps(),
+				parent,
+				[{ label: "Courses", amount: toMinorUnits(amount), categoryId: "inconnue" }],
+				asUser,
+			),
+		).rejects.toMatchObject(invalid("lines.0.categoryId"));
+		await expect(splitOf(deps(), parent)).resolves.toEqual({
+			parentId: parent,
+			childIds: [food, home],
+		});
+		await expect(tagsOf(food)).resolves.toEqual([tag]);
 	});
 
 	it("answers NOT_FOUND for an unsplit or unknown transaction", async () => {
@@ -634,75 +568,33 @@ describe("a split line in a transfer", () => {
 		await expect(rejectedRows(inflow)).resolves.toEqual([]);
 	});
 
-	it("an edit that leaves the line out deletes its transfer", async () => {
-		const { home, inflow, amount } = await lineInTransfer();
+	it("an edit deletes the line's transfer and rejected pairs, even with the same amount, as deleting a side", async () => {
+		const split = await lineInTransfer({ rejected: true });
+		const [transfer] = await transferRows(split.food);
+		expect(transfer).toMatchObject({ status: "confirmed" });
+		await expect(rejectedRows(split.inflow)).resolves.toHaveLength(1);
 
-		await editSplit(
-			deps(),
-			home,
-			[{ id: home, label: "Tout", amount: toMinorUnits(amount), categoryId: null }],
-			asUser,
-		);
-
-		await expect(transferRows(inflow)).resolves.toEqual([]);
-	});
-
-	it("an edit that changes the line's amount deletes its transfer; one that keeps it keeps the transfer", async () => {
-		const kept = await lineInTransfer();
-		const changed = await lineInTransfer();
-		const linesOf = (split: typeof kept, foodAmount: number) => [
-			{ id: split.food, label: "Virement", amount: toMinorUnits(foodAmount), categoryId: null },
-			{
-				id: split.home,
-				label: "Maison",
-				amount: toMinorUnits(split.amount - foodAmount),
-				categoryId: null,
-			},
-		];
-
-		await editSplit(deps(), kept.parent, linesOf(kept, kept.lineAmount), asUser);
-		await editSplit(deps(), changed.parent, linesOf(changed, changed.lineAmount + 100), asUser);
-
-		await expect(transferRows(kept.inflow)).resolves.toMatchObject([
-			{ outflowTransactionId: kept.food },
-		]);
-		await expect(transferRows(changed.inflow)).resolves.toEqual([]);
-		await expect(transferRows(changed.food)).resolves.toEqual([]);
-	});
-
-	it("an edit that changes the line's amount clears the one-time flag of both former sides", async () => {
-		const split = await lineInTransfer();
-		await temp.db
-			.update(transactions)
-			.set({ oneTime: true })
-			.where(eq(transactions.entryId, split.inflow));
-		await temp.db
-			.update(transactions)
-			.set({ oneTime: true })
-			.where(eq(transactions.entryId, split.food));
-
-		await editSplit(
+		const edited = await editSplit(
 			deps(),
 			split.parent,
 			[
+				{ label: "Virement", amount: toMinorUnits(split.lineAmount), categoryId: null },
 				{
-					id: split.food,
-					label: "Virement",
-					amount: toMinorUnits(split.lineAmount + 100),
-					categoryId: null,
-				},
-				{
-					id: split.home,
 					label: "Maison",
-					amount: toMinorUnits(split.amount - split.lineAmount - 100),
+					amount: toMinorUnits(split.amount - split.lineAmount),
 					categoryId: null,
 				},
 			],
 			asUser,
 		);
 
-		await expect(oneTimeOf(split.inflow)).resolves.toBe(false);
-		await expect(oneTimeOf(split.food)).resolves.toBe(false);
+		await expect(transferRows(split.food)).resolves.toEqual([]);
+		await expect(rejectedRows(split.inflow)).resolves.toEqual([]);
+		// The matcher weighs the new line, as Sure's `auto_match_transfers!`: a proposal, not the old transfer.
+		await expect(transferRows(split.inflow)).resolves.toMatchObject([
+			{ outflowTransactionId: edited.childIds[0], status: "pending" },
+		]);
+		expect((await transferRows(split.inflow))[0]?.id).not.toBe(transfer?.id);
 	});
 
 	it("deleting the parent deletes its line's transfer and rejected pairs", async () => {
@@ -725,7 +617,7 @@ describe("a split line in a transfer", () => {
 
 	it("matches after an edit, a new line meeting its other side", async () => {
 		const { checking, livret } = await openHousehold();
-		const { parent, food, amount } = await splitInTwo(checking.id, { date: "2026-09-10" });
+		const { parent, amount } = await splitInTwo(checking.id, { date: "2026-09-10" });
 		const moved = transferAmount();
 		const inflow = await add(livret.id, { date: "2026-09-11", amount: toMinorUnits(moved) });
 		await unpair(inflow);
@@ -734,12 +626,12 @@ describe("a split line in a transfer", () => {
 			deps(),
 			parent,
 			[
-				{ id: food, label: "Courses", amount: toMinorUnits(amount + moved), categoryId: null },
+				{ label: "Courses", amount: toMinorUnits(amount + moved), categoryId: null },
 				{ label: "Épargne", amount: toMinorUnits(-moved), categoryId: null },
 			],
 			asUser,
 		);
-		const created = split.childIds.find((id) => id !== food);
+		const created = split.childIds[1];
 
 		await expect(transferRows(inflow)).resolves.toMatchObject([
 			{ outflowTransactionId: created, status: "pending" },

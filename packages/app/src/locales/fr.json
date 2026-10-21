@@ -3189,7 +3189,6 @@
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
 			"split_sum_mismatch": "Les lignes doivent totaliser le montant de l'opération.",
-			"not_a_child": "Cette ligne n'appartient pas à cette division.",
 			"invalid_amount": "Montant invalide. Exemple : 1 234,56.",
 			"amount_required": "Le montant est requis.",
 			"negative_amount": "Le montant ne peut pas être négatif.",
