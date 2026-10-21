@@ -217,6 +217,13 @@
 		color-scheme: light;
 		/* Linear's own Inter feature settings (DESIGN.md, Typography). */
 		font-feature-settings: "cv01", "ss03";
+		/* Below 1024 px the fixed bottom navigation covers the window's foot, and
+		 * Tab scrolled a row only to the window's edge: the focused row sat behind
+		 * the navigation, and a tap on it opened « Plus ». The same room AppShell's
+		 * `main` keeps under the page. */
+		@variant max-lg {
+			scroll-padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+		}
 	}
 	html.dark {
 		color-scheme: dark;

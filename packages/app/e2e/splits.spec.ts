@@ -604,3 +604,70 @@ test("a split's line is matched as a transfer side, shown on its sheet, and offe
 	await expect(candidates.getByRole("listitem")).toHaveCount(1);
 	await expect(candidates.getByRole("listitem")).toContainText(moving);
 });
+
+test.describe("on a phone", () => {
+	test.use({ viewport: { width: 390, height: 844 } });
+
+	// The fixed bottom navigation once covered the row Tab had just scrolled
+	// to the window's foot: a tap there reached the navigation, not the row.
+	test("Tab keeps each row above the bottom navigation, and the sheet's « Diviser » takes a click", async ({
+		page,
+		api,
+	}) => {
+		const prefix = uniqueName("Marché");
+		const account = await api.openAccount({ name: uniqueName("Compte joint") });
+		const labels = ["a", "b", "c", "d", "e", "f", "g", "h"].map((suffix) => `${prefix} ${suffix}`);
+
+		await labels.reduce(async (previous, label, index) => {
+			await previous;
+			await api.addTransaction(account.id, { date: daysAgo(index + 2), label, amount: "-12,00" });
+		}, Promise.resolve());
+
+		await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
+		await expect(rowButton(page, labels.at(-1) ?? "")).toHaveCount(1);
+		await page.getByRole("searchbox", { name: "Rechercher" }).focus();
+
+		// The focused row, and whether the bottom navigation covers any of it.
+		const focusedRow = () =>
+			page.evaluate(() => {
+				const row = document.activeElement;
+				const nav = [...document.querySelectorAll('nav[aria-label="Navigation principale"]')].find(
+					(candidate) => candidate.getBoundingClientRect().height > 0,
+				);
+
+				if (
+					!(row instanceof HTMLElement) ||
+					!row.matches("button[data-transaction-id]") ||
+					nav === undefined
+				) {
+					return null;
+				}
+
+				return {
+					label: row.textContent,
+					covered: row.getBoundingClientRect().bottom > nav.getBoundingClientRect().top,
+				};
+			});
+
+		/** Tabs row by row up to the last one, naming each row the navigation covered. */
+		async function tabToLast(steps: number, covered: string[]): Promise<string[] | null> {
+			if (steps === 0) {
+				return null;
+			}
+
+			await page.keyboard.press("Tab");
+			const row = await focusedRow();
+			const now = row?.covered === true ? [...covered, row.label ?? ""] : covered;
+
+			return row?.label?.includes(labels.at(-1) ?? "") === true ? now : tabToLast(steps - 1, now);
+		}
+
+		const covered = await tabToLast(80, []);
+
+		expect(covered).toEqual([]);
+
+		await page.keyboard.press("Enter");
+		await sheet(page).getByRole("button", { name: "Diviser", exact: true }).click();
+		await expect(splitDialog(page)).toBeVisible();
+	});
+});
