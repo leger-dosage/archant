@@ -110,7 +110,7 @@ export const unpairTransferTool = defineTool({
 	name: "unpair_transfer",
 	title: "Unpair a transfer",
 	description:
-		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses. With never_propose, as « Ne plus proposer », the pair is also refused for good: no import, sync or rule proposes these two again, though pair_transfer still may, and the refusal cannot be undone. Answers { success, transfer, message }, the transfer as it was, the message saying whether the pair stays refused.",
+		"Undoes a transfer, as « Dissocier » does in Archant: both sides become standard transactions again, with their category, locks and tags, and count in income and expenses; the fee lines of a transfer created with fees are deleted, as Sure's `Transfer#destroy!`. With never_propose, as « Ne plus proposer », the pair is also refused for good: no import, sync or rule proposes these two again, though pair_transfer still may, and the refusal cannot be undone. Answers { success, transfer, message }, the transfer as it was, the message saying whether the pair stays refused.",
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: unpairTransferInput,

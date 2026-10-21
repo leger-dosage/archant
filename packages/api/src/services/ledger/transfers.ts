@@ -9,17 +9,22 @@ import { and, between, eq, inArray, lt, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
+import { classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
+import { taggings } from "@archant/data/schema/taggings";
 import { transactions } from "@archant/data/schema/transactions";
+import { transferFees } from "@archant/data/schema/transfer-fees";
 import { transfers } from "@archant/data/schema/transfers";
 import type { TransferStatus } from "@archant/data/transfer-kinds";
 import type { Transfer } from "@archant/data/types";
 
-import { daysBetween } from "../../domain/dates.ts";
+import { daysBetween, today } from "../../domain/dates.ts";
+import { isTooFarAhead } from "../../domain/statement.ts";
 import {
 	HAND_TRANSFER_WINDOW_DAYS,
 	TRANSFER_WINDOW_DAYS,
@@ -29,13 +34,18 @@ import {
 	transferKindOf,
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
+import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
+import { categoryOriginOf, tagsExist } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
+	deleteTransactionRows,
 	inAnyTransfer,
 	inSequence,
 	inTransferSql,
 	invalidField,
+	lockedBy,
+	oneByOne,
 } from "./shared.ts";
 
 /** A transaction that can be the other side of a transfer, as the picker lists it. */
@@ -262,6 +272,7 @@ function transferBetween(a: PairSide, b: PairSide, status: TransferStatus, now: 
 		inflowTransactionId: inflow.id,
 		kind: transferKindOf(inflow.accountType, outflow.accountType),
 		status,
+		idempotencyKey: null,
 		createdAt: now,
 	};
 }
@@ -505,18 +516,19 @@ export async function unmatchTransfer(
 ): Promise<TransferSides> {
 	return deps.db.transaction(
 		async (tx) => {
-			const [deleted] = await tx
-				.delete(transfers)
-				.where(eq(transfers.id, transferId))
-				.returning(sidesColumns);
+			const deleted = await deleteTransferRow(tx, transferId);
 
 			if (deleted === undefined) {
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
 			}
 
 			await clearOneTime(tx, sidesOf(deleted));
+			await deleteFees(tx, deleted.feeLines, deps.timeZone);
 
-			return deleted;
+			return {
+				outflowTransactionId: deleted.outflowTransactionId,
+				inflowTransactionId: deleted.inflowTransactionId,
+			};
 		},
 		{ behavior: "immediate" },
 	);
@@ -536,23 +548,339 @@ export async function rejectTransfer(
 ): Promise<TransferSides> {
 	return deps.db.transaction(
 		async (tx) => {
-			const [deleted] = await tx
-				.delete(transfers)
-				.where(eq(transfers.id, transferId))
-				.returning(sidesColumns);
+			const deleted = await deleteTransferRow(tx, transferId);
 
 			if (deleted === undefined) {
 				throw new AppError("NOT_FOUND", "No transfer has this id.");
 			}
 
-			await clearOneTime(tx, sidesOf(deleted));
+			const sides = {
+				outflowTransactionId: deleted.outflowTransactionId,
+				inflowTransactionId: deleted.inflowTransactionId,
+			};
+
+			await clearOneTime(tx, sidesOf(sides));
+			await deleteFees(tx, deleted.feeLines, deps.timeZone);
 			await tx.insert(rejectedTransfers).values({
 				id: crypto.randomUUID(),
-				...deleted,
+				...sides,
 				createdAt: Date.now(),
 			});
 
-			return deleted;
+			return sides;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/** A fee line of a transfer, with what deleting it must recompute. */
+type FeeLine = { id: string; accountId: string; date: IsoDate };
+
+/**
+ * Deletes a transfer row and returns its sides with its fee lines, read
+ * before the row goes, since their links go with it.
+ */
+async function deleteTransferRow(tx: Transaction, transferId: string) {
+	const feeLines = await tx
+		.select({ id: entries.id, accountId: entries.accountId, date: entries.date })
+		.from(transferFees)
+		.innerJoin(entries, eq(entries.id, transferFees.transactionId))
+		.where(eq(transferFees.transferId, transferId));
+	const [deleted] = await tx
+		.delete(transfers)
+		.where(eq(transfers.id, transferId))
+		.returning(sidesColumns);
+
+	return deleted === undefined ? undefined : { ...deleted, feeLines };
+}
+
+/**
+ * Deletes a transfer's fee lines, as Sure's `has_many :fee_transactions,
+ * dependent: :destroy`, and recomputes each account they were on.
+ */
+async function deleteFees(tx: Transaction, feeLines: readonly FeeLine[], timeZone: string) {
+	if (feeLines.length === 0) {
+		return;
+	}
+
+	await deleteTransactionRows(
+		tx,
+		feeLines.map((fee) => fee.id),
+	);
+	await oneByOne(feeLines, async (fee) =>
+		recomputeBalances(tx, await accountWithOpeningDate(tx, fee.accountId), fee.date, timeZone),
+	);
+}
+
+/** A transfer between two of the household's accounts, as the form gives it, in minor units. */
+export type TransferBetween = {
+	fromAccountId: string;
+	toAccountId: string;
+	date: IsoDate;
+	amount: MinorUnits;
+	sourceFee: MinorUnits;
+	destinationFee: MinorUnits;
+	tagIds: readonly string[];
+	idempotencyKey?: string | undefined;
+};
+
+/** A transfer created, or the one a double submit's key already created. */
+export type CreatedTransfer = { transfer: Transfer; created: boolean };
+
+/** Sure's `models.category.defaults.fees`, the category of every transfer fee. */
+const FEES_CATEGORY = {
+	name: "Frais",
+	kind: "expense",
+	color: "#6b7280",
+	icon: "receipt",
+} as const;
+
+/** The « Frais » category, case aside, else one created, as Sure's `find_or_create_by!`. */
+async function feesCategoryId(tx: Transaction, now: number): Promise<string> {
+	const found = await tx
+		.select({ id: categories.id })
+		.from(categories)
+		.where(eq(sql`lower(${categories.name})`, FEES_CATEGORY.name.toLowerCase()))
+		.get();
+
+	if (found !== undefined) {
+		return found.id;
+	}
+
+	const id = crypto.randomUUID();
+	await tx
+		.insert(categories)
+		.values({ id, ...FEES_CATEGORY, parentId: null, createdAt: now, updatedAt: now });
+
+	return id;
+}
+
+/** An account a transfer names, or `VALIDATION_ERROR` on `path`. */
+async function transferAccount(tx: Transaction, id: string, path: string) {
+	const row = await tx
+		.select({
+			id: accounts.id,
+			name: accounts.name,
+			type: accounts.type,
+			currency: accounts.currency,
+			active: accounts.active,
+		})
+		.from(accounts)
+		.where(eq(accounts.id, id))
+		.get();
+
+	// The form lists active accounts only, as Sure's `set_accounts`.
+	if (row === undefined || !row.active) {
+		throw invalidField(path);
+	}
+
+	return row;
+}
+
+/**
+ * The transfer `key` created, `undefined` for none, with what Sure's
+ * `matches_request?` compares: both accounts, the date, the amount and each fee.
+ */
+async function transferOfKey(tx: Transaction, key: string) {
+	const outflow = alias(entries, "key_outflow");
+	const inflow = alias(entries, "key_inflow");
+	const transfer = await tx
+		.select({ transfer: transfers, outflow, inflow })
+		.from(transfers)
+		.innerJoin(outflow, eq(outflow.id, transfers.outflowTransactionId))
+		.innerJoin(inflow, eq(inflow.id, transfers.inflowTransactionId))
+		.where(eq(transfers.idempotencyKey, key))
+		.get();
+
+	if (transfer === undefined) {
+		return undefined;
+	}
+
+	const fees = await tx
+		.select({ accountId: entries.accountId, amount: entries.amount })
+		.from(transferFees)
+		.innerJoin(entries, eq(entries.id, transferFees.transactionId))
+		.where(eq(transferFees.transferId, transfer.transfer.id));
+	const feeOn = (accountId: string) =>
+		fees.filter((fee) => fee.accountId === accountId).reduce((total, fee) => total - fee.amount, 0);
+
+	return {
+		transfer: transfer.transfer,
+		fromAccountId: transfer.outflow.accountId,
+		toAccountId: transfer.inflow.accountId,
+		date: transfer.outflow.date,
+		amount: -transfer.outflow.amount,
+		sourceFee: feeOn(transfer.outflow.accountId),
+		destinationFee: feeOn(transfer.inflow.accountId),
+	};
+}
+
+/**
+ * Creates a transfer between two of the household's accounts, as Sure's
+ * `Transfer::Creator`, in one transaction: the outflow on `fromAccountId`
+ * named « Virement vers » the destination, or « Paiement vers » for a
+ * liability, the inflow on `toAccountId` named « Virement depuis » or
+ * « Paiement depuis » the source, both locked as a line typed by hand and
+ * tagged with `tagIds`; the transfer `confirmed`, its kind from both
+ * accounts' types; each fee above zero a standard line on its account in
+ * « Frais », linked to the transfer. A key a transfer already holds returns
+ * that transfer when every field matches, else throws `TRANSFER_FORM_STALE`.
+ * Throws `VALIDATION_ERROR` for an unknown account, the same account twice,
+ * two currencies (AD-6) or an unknown tag.
+ */
+export async function createTransferBetween(
+	deps: ServiceDeps,
+	input: TransferBetween,
+	options: { origin: Origin },
+): Promise<CreatedTransfer> {
+	return deps.db.transaction(
+		async (tx): Promise<CreatedTransfer> => {
+			if (input.idempotencyKey !== undefined) {
+				const existing = await transferOfKey(tx, input.idempotencyKey);
+
+				if (existing !== undefined) {
+					const same =
+						existing.fromAccountId === input.fromAccountId &&
+						existing.toAccountId === input.toAccountId &&
+						existing.date === input.date &&
+						existing.amount === input.amount &&
+						existing.sourceFee === input.sourceFee &&
+						existing.destinationFee === input.destinationFee;
+
+					if (!same) {
+						throw new AppError(
+							"TRANSFER_FORM_STALE",
+							"This form was already sent with other values.",
+						);
+					}
+
+					return { transfer: existing.transfer, created: false };
+				}
+			}
+
+			const source = await transferAccount(tx, input.fromAccountId, "fromAccountId");
+			const destination = await transferAccount(tx, input.toAccountId, "toAccountId");
+
+			if (source.id === destination.id) {
+				throw invalidField("toAccountId", "same_account");
+			}
+
+			// No exchange rate yet (AD-6): Sure's `Money::ConversionError` message.
+			if (source.currency !== destination.currency) {
+				throw invalidField("toAccountId", "exchange_rate_unavailable");
+			}
+
+			// A typo such as 2062 would write a balance row for every day up to it.
+			if (isTooFarAhead(input.date, today(deps.timeZone))) {
+				throw invalidField("date", "date_too_late");
+			}
+
+			if (input.tagIds.length > 0 && !(await tagsExist(tx, input.tagIds))) {
+				throw invalidField("tagIds");
+			}
+
+			const now = Date.now();
+			const prefix = classificationOf(destination.type) === "liability" ? "Paiement" : "Virement";
+			const outflowLabel = `${prefix} vers ${destination.name}`;
+			const inflowLabel = `${prefix} depuis ${source.name}`;
+			const transfer: Transfer = {
+				id: crypto.randomUUID(),
+				outflowTransactionId: crypto.randomUUID(),
+				inflowTransactionId: crypto.randomUUID(),
+				kind: transferKindOf(destination.type, source.type),
+				status: "confirmed",
+				idempotencyKey: input.idempotencyKey ?? null,
+				createdAt: now,
+			};
+			// Sure's `user_modified: true` on both legs; its fees carry none.
+			const legLocks = lockedBy(
+				options.origin,
+				{},
+				input.tagIds.length > 0 ? ["date", "amount", "label", "tags"] : ["date", "amount", "label"],
+				now,
+			);
+			const legs = [
+				{
+					id: transfer.outflowTransactionId,
+					accountId: source.id,
+					amount: 0 - input.amount,
+					label: outflowLabel,
+				},
+				{
+					id: transfer.inflowTransactionId,
+					accountId: destination.id,
+					amount: input.amount,
+					label: inflowLabel,
+				},
+			];
+			const feeCategoryId =
+				input.sourceFee > 0 || input.destinationFee > 0 ? await feesCategoryId(tx, now) : null;
+			const fees = [
+				{
+					accountId: source.id,
+					amount: input.sourceFee,
+					label: `Frais de virement — ${outflowLabel}`,
+				},
+				{
+					accountId: destination.id,
+					amount: input.destinationFee,
+					label: `Frais de virement — ${inflowLabel}`,
+				},
+			]
+				.filter((fee) => fee.amount > 0)
+				.map((fee) => ({ ...fee, id: crypto.randomUUID(), amount: 0 - fee.amount }));
+
+			await tx.insert(entries).values(
+				[...legs, ...fees].map((row) => ({
+					id: row.id,
+					accountId: row.accountId,
+					kind: "transaction" as const,
+					date: input.date,
+					amount: row.amount,
+					currency: source.currency,
+					createdAt: now,
+					updatedAt: now,
+				})),
+			);
+			await tx
+				.insert(transactions)
+				.values(legs.map((leg) => ({ entryId: leg.id, label: leg.label, lockedFields: legLocks })));
+			await tx.insert(transfers).values(transfer);
+			if (input.tagIds.length > 0) {
+				await tx
+					.insert(taggings)
+					.values(
+						legs.flatMap((leg) => input.tagIds.map((tagId) => ({ transactionId: leg.id, tagId }))),
+					);
+			}
+
+			if (fees.length > 0) {
+				await tx.insert(transactions).values(
+					fees.map((fee) => ({
+						entryId: fee.id,
+						label: fee.label,
+						categoryId: feeCategoryId,
+						categoryOrigin: categoryOriginOf(options.origin),
+					})),
+				);
+				await tx
+					.insert(transferFees)
+					.values(fees.map((fee) => ({ transactionId: fee.id, transferId: transfer.id })));
+			}
+
+			await oneByOne([source, destination], async (account) =>
+				recomputeBalances(
+					tx,
+					await accountWithOpeningDate(tx, account.id),
+					input.date,
+					deps.timeZone,
+				),
+			);
+
+			// The fee lines are standard lines, weighed as any line typed by hand.
+			await matchTransfers(tx, now);
+
+			return { transfer, created: true };
 		},
 		{ behavior: "immediate" },
 	);

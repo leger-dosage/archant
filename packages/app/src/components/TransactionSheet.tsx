@@ -1,4 +1,5 @@
 import type { AccountChoice, SheetAccount } from "@/components/TransactionForm";
+import type { TransactionType } from "@/components/TransactionTypeTabs";
 import type { TransactionData } from "@/hooks/useTransactions";
 
 import { useCallback, useRef, useState } from "react";
@@ -6,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TransactionForm } from "@/components/TransactionForm";
+import { TransferForm } from "@/components/TransferForm";
 import {
 	Sheet,
 	SheetContent,
@@ -47,11 +49,14 @@ export function TransactionSheet({
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
 	const [wasOpen, setWasOpen] = useState(open);
+	// A new transaction's tab, as Sure's type tabs; each opening starts on « Dépense ».
+	const [type, setType] = useState<TransactionType>("expense");
 
 	if (open !== wasOpen) {
 		setWasOpen(open);
 		if (open) {
 			setSession((current) => current + 1);
+			setType("expense");
 		}
 	}
 
@@ -74,6 +79,13 @@ export function TransactionSheet({
 			onOpenChange(false);
 		}
 	};
+	const transfer = transaction === null && type === "transfer";
+	const close = () => {
+		dirty.current = false;
+		onOpenChange(false);
+	};
+	// The account the sheet adds to, « De » for a transfer.
+	const fromAccountId = "accounts" in account ? account.initialAccountId : account.id;
 
 	return (
 		<Sheet
@@ -113,11 +125,13 @@ export function TransactionSheet({
 				<SheetHeader className="border-b">
 					<SheetTitle>
 						{t(
-							transaction === null
-								? "transactions.form.addTitle"
-								: admin
-									? "transactions.form.editTitle"
-									: "transactions.form.viewTitle",
+							transfer
+								? "transfers.form.title"
+								: transaction === null
+									? "transactions.form.addTitle"
+									: admin
+										? "transactions.form.editTitle"
+										: "transactions.form.viewTitle",
 						)}
 					</SheetTitle>
 					<SheetDescription>
@@ -139,24 +153,34 @@ export function TransactionSheet({
 								: t("transactions.sources.manual")}
 					</SheetDescription>
 				</SheetHeader>
-				<TransactionForm
-					// A fresh form each time the sheet opens, with that transaction's
-					// values; kept mounted while the sheet slides out.
-					key={session}
-					account={account}
-					transaction={transaction}
-					onClose={() => {
-						dirty.current = false;
-						onOpenChange(false);
-					}}
-					onCloseFocusing={(rowId) => {
-						focusRowId.current = rowId;
-						dirty.current = false;
-						onOpenChange(false);
-					}}
-					onCancel={requestClose}
-					onDirtyChange={setDirty}
-				/>
+				{transfer ? (
+					<TransferForm
+						key={session}
+						fromAccountId={fromAccountId}
+						onTypeChange={setType}
+						onClose={close}
+						onCancel={requestClose}
+						onDirtyChange={setDirty}
+					/>
+				) : (
+					<TransactionForm
+						// A fresh form each time the sheet opens, with that transaction's
+						// values; kept mounted while the sheet slides out.
+						key={session}
+						account={account}
+						transaction={transaction}
+						onTypeChange={admin && transaction === null ? setType : undefined}
+						initialNature={type === "income" ? "income" : "expense"}
+						onClose={close}
+						onCloseFocusing={(rowId) => {
+							focusRowId.current = rowId;
+							dirty.current = false;
+							onOpenChange(false);
+						}}
+						onCancel={requestClose}
+						onDirtyChange={setDirty}
+					/>
+				)}
 				<ConfirmDialog
 					open={confirmingDiscard}
 					onOpenChange={setConfirmingDiscard}

@@ -432,6 +432,11 @@ export const LEFT_OUT = {
 		postedMatchConfidence: POSTED_MATCH_LEFT_OUT,
 		postedMatchDismissed: POSTED_MATCH_LEFT_OUT,
 	},
+	transfer_fees:
+		"Which lines are a transfer's fees, which Sure's `Family::DataExporter` leaves out of its Transfer lines: each fee leaves as the transaction it is.",
+	transfers: {
+		idempotencyKey: "The form's key against a double submit, meaningful to this instance only.",
+	},
 	transaction_attachments: {
 		content:
 			"The file itself: the archive lists each attachment, as Sure's manifest does, without its bytes; only their checksum leaves.",

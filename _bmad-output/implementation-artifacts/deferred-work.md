@@ -435,3 +435,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-31-2-edit-several-transactions-at-once-as-sure.md`
   summary: No end-to-end test shows a `patch.date`, `patch.name` or `patch.notes` refusal under its field in the bulk edit drawer.
   evidence: `BulkEditSheet.tsx` maps those paths to `FieldMessage`; the API side is tested in `routes/transactions.spec.ts`, the drawer's display is not.
+
+## Deferred from: spec-31-5-create-a-transfer-between-two-accounts (2026-10-21)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-31-5-create-a-transfer-between-two-accounts.md`
+  summary: A created transfer that loses a side by another path (a side deleted, its amount edited, an account deleted, an import reverted) leaves its fee lines as standard lines, where Sure's callbacks delete them.
+  evidence: Sure's `Transaction::Transferable` destroys the transfer with a side, and `has_many :fee_transactions, dependent: :destroy` its fees. Archant deletes fees in `unmatchTransfer` and `rejectTransfer` only; the other paths delete transfer rows in bulk in `shared.ts`, `edits.ts`, `accounts.ts`, `import-revert.ts` and `splits.ts`, and `transfer_fees` cascades.
+- source_spec: `_bmad-output/implementation-artifacts/spec-31-5-create-a-transfer-between-two-accounts.md`
+  summary: Sure hides « Dépense » and « Revenu » when the transfer form opens from an investment or crypto account, and converts between currencies with an exchange rate or a destination amount.
+  evidence: `transfers/_form.html.erb` `show_type_tabs` and `shared/exchange_rate_tabs`; Archant refuses two currencies until exchange rates exist (AD-6).

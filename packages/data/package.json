@@ -52,6 +52,7 @@
 		"./schema/transaction-attachments": "./schema/transaction-attachments.ts",
 		"./schema/trades": "./schema/trades.ts",
 		"./schema/transactions": "./schema/transactions.ts",
+		"./schema/transfer-fees": "./schema/transfer-fees.ts",
 		"./schema/transfers": "./schema/transfers.ts",
 		"./testing/migrations": "./testing/migrations.ts",
 		"./transfer-kinds": "./transfer-kinds.ts",

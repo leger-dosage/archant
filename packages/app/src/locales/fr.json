@@ -498,6 +498,7 @@
 			"nature": "Sens de l'opération",
 			"expense": "Dépense",
 			"income": "Revenu",
+			"transfer": "Virement",
 			"notes": "Notes",
 			"save": "Enregistrer",
 			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
@@ -3148,6 +3149,7 @@
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
 		"RULE_PREVIEW_STALE": "Les opérations ont changé depuis l'aperçu ({{changed}} à modifier maintenant). Relancez l'aperçu avant d'appliquer.",
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",
+		"TRANSFER_FORM_STALE": "Ce virement a déjà été créé avec d'autres informations. Vérifiez vos opérations avant d'en créer un autre.",
 		"IMPORT_NOT_REVERTABLE": "Cet import est déjà annulé, ou n'a jamais été confirmé.",
 		"DUPLICATE_RESOLVED": "Ce doublon possible a déjà été fusionné ou écarté.",
 		"NOT_SPLITTABLE": "Cette opération ne peut pas être divisée : un virement, une opération en attente, exclue, signalée comme doublon possible ou déjà divisée ne se divise pas.",
@@ -3260,7 +3262,9 @@
 			"invalid_number": "Indiquez un nombre entier.",
 			"invalid_year": "Année invalide.",
 			"invalid_area": "La surface ne peut pas être négative.",
-			"invalid_mileage": "Le kilométrage ne peut pas être négatif."
+			"invalid_mileage": "Le kilométrage ne peut pas être négatif.",
+			"same_account": "Choisissez un autre compte que le compte d'origine.",
+			"exchange_rate_unavailable": "Les virements entre deux devises ne sont pas encore pris en charge."
 		},
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"RECURRING_ALREADY_EXISTS": "Une récurrence suit déjà ce compte, ce marchand ou libellé et ce montant.",
@@ -3268,5 +3272,18 @@
 		"PAYMENT_EXCEEDS_TRANSACTION": "Le montant de cette opération paie déjà d'autres échéances.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
 		"TRADES_NOT_SUPPORTED": "Ce compte ne prend pas en charge les ordres : seuls un compte d'investissement et une plateforme d'échange crypto en reçoivent."
+	},
+	"transfers": {
+		"form": {
+			"title": "Nouveau virement",
+			"from": "De",
+			"to": "Vers",
+			"selectAccount": "Sélectionnez un compte",
+			"type": "Type d'opération",
+			"bankCharges": "Frais bancaires",
+			"outgoingFee": "Frais de transfert sortant",
+			"incomingFee": "Frais de transfert entrant",
+			"submit": "Créer le virement"
+		}
 	}
 }

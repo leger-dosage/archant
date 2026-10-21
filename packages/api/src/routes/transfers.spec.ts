@@ -498,6 +498,82 @@ describe("transfers", () => {
 		expect(marked.body).toMatchObject({ data: { name: "Virement vers Livret A", amount: -50000 } });
 	});
 
+	it("creates a transfer from « Virement », and the first one again for a form sent twice", async () => {
+		const checking = await openOwn({ name: "Courant" });
+		const livret = await openOwn({ name: "Épargne", subtype: "savings", openingBalance: "0" });
+		const body = {
+			fromAccountId: checking.id,
+			toAccountId: livret.id,
+			date: "2026-09-15",
+			amount: "100,10",
+			sourceFee: "1,50",
+			destinationFee: "",
+			tagIds: [],
+			idempotencyKey: crypto.randomUUID(),
+		};
+		const first = await ownRequest("POST", "/api/transfers/new", body);
+		const again = await ownRequest("POST", "/api/transfers/new", body);
+		const stale = await ownRequest("POST", "/api/transfers/new", { ...body, amount: "100" });
+
+		expect(first.status).toBe(201);
+		expect(first.body).toMatchObject({ data: { kind: "internal_move", status: "confirmed" } });
+		expect(again.status).toBe(200);
+		expect(again.body).toEqual(first.body);
+		expect(stale.status).toBe(409);
+		expect(errorBody.parse(stale.body).error.code).toBe("TRANSFER_FORM_STALE");
+		expect((await listed(`?account=${livret.id}`)).items).toMatchObject([
+			{ label: "Virement depuis Courant", amount: 10010 },
+		]);
+		expect(
+			(await listed(`?account=${checking.id}`)).items.map(({ label, amount }) => ({
+				label,
+				amount,
+			})),
+		).toEqual(
+			expect.arrayContaining([
+				{ label: "Virement vers Épargne", amount: -10010 },
+				{ label: "Frais de virement — Virement vers Épargne", amount: -150 },
+			]),
+		);
+	});
+
+	it("refuses an amount not above zero, a fee below zero and an unknown source account", async () => {
+		const checking = await openOwn({ name: "Courant" });
+		const livret = await openOwn({ name: "Épargne", subtype: "savings", openingBalance: "0" });
+		const send = (overrides: Record<string, unknown>) =>
+			ownRequest("POST", "/api/transfers/new", {
+				fromAccountId: checking.id,
+				toAccountId: livret.id,
+				date: "2026-09-15",
+				amount: "10",
+				...overrides,
+			});
+		const fieldsOf = async (overrides: Record<string, unknown>) => {
+			const { status, body } = await send(overrides);
+
+			expect(status).toBe(400);
+
+			return errorBody.parse(body).error.fields;
+		};
+
+		await expect(fieldsOf({ amount: "0" })).resolves.toEqual([
+			{ path: "amount", code: "not_positive" },
+		]);
+		await expect(fieldsOf({ amount: "-5" })).resolves.toEqual([
+			{ path: "amount", code: "not_positive" },
+		]);
+		await expect(fieldsOf({ amount: "abc", destinationFee: "-1" })).resolves.toEqual([
+			{ path: "amount", code: "invalid_amount" },
+			{ path: "destinationFee", code: "negative_amount" },
+		]);
+		await expect(fieldsOf({ fromAccountId: "none" })).resolves.toEqual([
+			{ path: "fromAccountId", code: "invalid_value" },
+		]);
+		await expect(fieldsOf({ idempotencyKey: "twice" })).resolves.toEqual([
+			{ path: "idempotencyKey", code: "invalid_format" },
+		]);
+	});
+
 	it("refuses a body without both ids", async () => {
 		const { status, body } = await request("POST", "/api/transfers", { transactionId: "t1" });
 
