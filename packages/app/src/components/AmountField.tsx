@@ -16,6 +16,12 @@ type AmountFieldProps = {
 	invalid?: boolean;
 	describedBy?: string;
 	disabled?: boolean;
+	/**
+	 * Set by the new-transaction sheet's type tabs, which then replace the
+	 * toggle; a typed sign still moves it, through `onNatureChange`.
+	 */
+	nature?: Nature;
+	onNatureChange?: (nature: Nature) => void;
 };
 
 const NATURES: readonly Nature[] = ["expense", "income"];
@@ -33,35 +39,44 @@ export function AmountField({
 	invalid = false,
 	describedBy,
 	disabled = false,
+	nature: controlled,
+	onNatureChange,
 }: AmountFieldProps) {
 	const { t } = useTranslation();
-	const [nature, setNature] = useState<Nature>(() => initialNature(value));
+	const [own, setOwn] = useState<Nature>(() => initialNature(value));
+	const nature = controlled ?? own;
+	const setNature = (next: Nature) => {
+		setOwn(next);
+		onNatureChange?.(next);
+	};
 	const { magnitude } = splitAmount(value, nature);
 
 	return (
 		<div className="flex gap-2">
-			<div
-				role="group"
-				aria-label={t("transactions.form.nature")}
-				className="flex shrink-0 rounded-md border p-0.5"
-			>
-				{NATURES.map((option) => (
-					<Button
-						key={option}
-						type="button"
-						size="sm"
-						variant={nature === option ? "secondary" : "ghost"}
-						aria-pressed={nature === option}
-						disabled={disabled}
-						onClick={() => {
-							setNature(option);
-							onChange(joinAmount({ nature: option, magnitude }));
-						}}
-					>
-						{t(`transactions.form.${option}`)}
-					</Button>
-				))}
-			</div>
+			{controlled === undefined && (
+				<div
+					role="group"
+					aria-label={t("transactions.form.nature")}
+					className="flex shrink-0 rounded-md border p-0.5"
+				>
+					{NATURES.map((option) => (
+						<Button
+							key={option}
+							type="button"
+							size="sm"
+							variant={nature === option ? "secondary" : "ghost"}
+							aria-pressed={nature === option}
+							disabled={disabled}
+							onClick={() => {
+								setNature(option);
+								onChange(joinAmount({ nature: option, magnitude }));
+							}}
+						>
+							{t(`transactions.form.${option}`)}
+						</Button>
+					))}
+				</div>
+			)}
 			<Input
 				id={id}
 				value={magnitude}

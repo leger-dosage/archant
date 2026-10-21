@@ -21,6 +21,7 @@ import { tags } from "@archant/data/schema/tags";
 import { trades } from "@archant/data/schema/trades";
 import { transactionAttachments } from "@archant/data/schema/transaction-attachments";
 import { transactions } from "@archant/data/schema/transactions";
+import { transferFees } from "@archant/data/schema/transfer-fees";
 import { transfers } from "@archant/data/schema/transfers";
 
 import { AppError } from "../../lib/errors.ts";
@@ -72,6 +73,7 @@ export async function resetFinancialData(
 			await tx.delete(entryKeys);
 			await tx.delete(taggings);
 			await tx.delete(transactionAttachments);
+			await tx.delete(transferFees);
 			await tx.delete(transfers);
 			await tx.delete(rejectedTransfers);
 			await tx.delete(trades);

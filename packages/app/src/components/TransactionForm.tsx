@@ -1,5 +1,7 @@
 import type { TransferLink } from "@/components/TransactionLinks";
+import type { TransactionType } from "@/components/TransactionTypeTabs";
 import type { TransactionData } from "@/hooks/useTransactions";
+import type { Nature } from "@/lib/amount-sign";
 import type { FormEvent } from "react";
 import type { FieldError } from "react-hook-form";
 
@@ -33,6 +35,7 @@ import {
 } from "@/components/TransactionLinks";
 import { ProtectionBlock } from "@/components/TransactionProtection";
 import { SplitBlock } from "@/components/TransactionSplit";
+import { TransactionTypeTabs } from "@/components/TransactionTypeTabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,6 +56,7 @@ import {
 	useSplit,
 	useUpdateTransaction,
 } from "@/hooks/useTransactions";
+import { joinAmount, splitAmount } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
@@ -130,6 +134,10 @@ type TransactionFormProps = {
 	/** Annuler: the sheet decides whether to ask first. */
 	onCancel: () => void;
 	onDirtyChange: (dirty: boolean) => void;
+	/** A new transaction only: the type tabs, whose « Virement » swaps in the transfer form. */
+	onTypeChange?: ((type: TransactionType) => void) | undefined;
+	/** The tab a new transaction starts on, back from « Virement ». */
+	initialNature?: Nature | undefined;
 };
 
 export function TransactionForm({
@@ -139,6 +147,8 @@ export function TransactionForm({
 	onCloseFocusing,
 	onCancel,
 	onDirtyChange,
+	onTypeChange,
+	initialNature,
 }: TransactionFormProps) {
 	const { t } = useTranslation();
 	// A viewer reads every field, disabled, and saves nothing.
@@ -211,6 +221,9 @@ export function TransactionForm({
 	const category = useController({ control: form.control, name: "categoryId" });
 	const merchant = useController({ control: form.control, name: "merchantId" });
 	const tagIds = useController({ control: form.control, name: "tagIds" });
+	// The tabs' sign, for a new transaction; an edit keeps the toggle beside the amount.
+	const [nature, setNature] = useState<Nature>(initialNature ?? "expense");
+	const tabs = transaction === null && onTypeChange !== undefined;
 
 	const accountChanged = choice !== null && chosenId !== choice.initialAccountId;
 
@@ -351,6 +364,25 @@ export function TransactionForm({
 					}
 				}}
 			>
+				{tabs && (
+					<TransactionTypeTabs
+						value={nature}
+						onChange={(type) => {
+							if (type === "transfer") {
+								onTypeChange?.(type);
+								return;
+							}
+
+							setNature(type);
+							amount.field.onChange(
+								joinAmount({
+									nature: type,
+									magnitude: splitAmount(amount.field.value, nature).magnitude,
+								}),
+							);
+						}}
+					/>
+				)}
 				{transaction !== null &&
 					pendingLine &&
 					transaction.postedMatch !== null &&
@@ -506,6 +538,7 @@ export function TransactionForm({
 							onChange={amount.field.onChange}
 							onBlur={amount.field.onBlur}
 							disabled={inSplit}
+							{...(tabs ? { nature, onNatureChange: setNature } : {})}
 							invalid={errors.amount !== undefined}
 							{...(errors.amount === undefined ? {} : { describedBy: "transaction-amount-error" })}
 						/>

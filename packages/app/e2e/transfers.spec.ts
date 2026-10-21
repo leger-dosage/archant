@@ -788,3 +788,56 @@ test("« Ne plus proposer » undoes a proposal for good, and the picker still of
 	await standardOffering(out, into);
 	await standardOffering(into, out);
 });
+
+test("« Virement » creates both sides of a transfer and its fee, as Sure's transfer form", async ({
+	page,
+	api,
+}) => {
+	const from = await api.openAccount({ name: uniqueName("Courant"), openingBalance: "500,00" });
+	const to = await api.openAccount({
+		name: uniqueName("Livret"),
+		kind: "savings",
+		openingBalance: "0,00",
+	});
+	const amount = uniqueAmount();
+	const cents = Number(amount.replace(",", ""));
+
+	await page.goto("/transactions");
+	await page.getByRole("button", { name: "Ajouter une opération", exact: true }).click();
+	await page
+		.getByRole("dialog", { name: "Ajouter une opération" })
+		.getByRole("button", { name: "Virement", exact: true })
+		.click();
+	const form = page.getByRole("dialog", { name: "Nouveau virement" });
+	await expect(form.getByRole("button", { name: "Virement", exact: true })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+
+	await form.getByRole("combobox", { name: "De" }).click();
+	await page.getByRole("option", { name: from.name, exact: true }).click();
+	await form.getByRole("combobox", { name: "Vers" }).click();
+	await page.getByRole("option", { name: to.name, exact: true }).click();
+	await expect(form.getByLabel("Date", { exact: true })).toBeVisible();
+	await expect(form.getByRole("button", { name: "Étiquettes" })).toBeVisible();
+	await form.getByRole("textbox", { name: "Montant", exact: true }).fill(amount);
+	await expect(form.getByRole("textbox", { name: "Frais de transfert sortant" })).toBeHidden();
+	await form.getByText("Frais bancaires").click();
+	await expect(form.getByRole("textbox", { name: "Frais de transfert entrant" })).toBeVisible();
+	await form.getByRole("textbox", { name: "Frais de transfert sortant" }).fill("1,50");
+	await form.getByRole("button", { name: "Créer le virement" }).click();
+	await expect(form).toBeHidden();
+
+	// Exact, as the fee's label holds the outflow's.
+	const row = (label: string) =>
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ has: page.getByText(label, { exact: true }) });
+
+	await visitOperations(page, to.name);
+	await expect(row(`Virement vers ${to.name}`)).toContainText(euros(-cents));
+	await expect(row(`Frais de virement — Virement vers ${to.name}`)).toContainText(euros(-150));
+	await visitOperations(page, from.name);
+	await expect(row(`Virement depuis ${from.name}`)).toContainText(euros(cents));
+});

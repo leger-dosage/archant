@@ -28,6 +28,10 @@ export const transfers = sqliteTable(
 		// Every transfer made before statuses existed reads `pending`: no column
 		// said which ones the matcher had made, and the owner confirms them.
 		status: text("status").$type<TransferStatus>().notNull().default("pending"),
+		// The form's key of a transfer created from « Virement », as Sure's
+		// `idempotency_key`: a double submit finds the first transfer under it.
+		// On the transfer rather than on each leg, so it goes with it when undone.
+		idempotencyKey: text("idempotency_key"),
 		createdAt: integer("created_at").notNull(),
 	},
 	(table) => [
@@ -35,6 +39,10 @@ export const transfers = sqliteTable(
 		// two indexes to show each side its counterpart.
 		uniqueIndex("transfers_outflow_unique").on(table.outflowTransactionId),
 		uniqueIndex("transfers_inflow_unique").on(table.inflowTransactionId),
+		// Two concurrent submits of one form cannot both commit.
+		uniqueIndex("transfers_idempotency_key_unique")
+			.on(table.idempotencyKey)
+			.where(sql`${table.idempotencyKey} is not null`),
 		check(
 			"transfers_distinct_sides_check",
 			sql`${table.outflowTransactionId} <> ${table.inflowTransactionId}`,

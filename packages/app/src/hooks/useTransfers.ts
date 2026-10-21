@@ -2,7 +2,7 @@ import type { InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import type { TransferInput } from "@archant/api/schemas/transfers";
+import type { NewTransferInput, TransferInput } from "@archant/api/schemas/transfers";
 
 import { api, unwrap } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
@@ -27,14 +27,19 @@ export function useTransferCandidates(transactionId: string, enabled: boolean) {
 }
 
 /**
- * Refreshes every transaction list, and the candidates with them. No balance
- * moves and no count changes, so nothing else; no optimistic update, as both
- * rows of a transfer change and only one may be on screen.
+ * Refreshes every transaction list, and the candidates with them, and the
+ * accounts: undoing a transfer created with fees deletes its fee lines, which
+ * moves balances. No optimistic update, as both rows of a transfer change and
+ * only one may be on screen.
  */
 function useInvalidateTransactions() {
 	const queryClient = useQueryClient();
 
-	return () => queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all });
+	return () =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+		]);
 }
 
 export function useMatchTransfer() {
@@ -78,5 +83,25 @@ export function useUnmatchTransfer() {
 		mutationFn: async (id: string) =>
 			(await unwrap(api.transfers[":id"].$delete({ param: { id } }))).data,
 		onSuccess: invalidate,
+	});
+}
+
+/**
+ * Creates a transfer between two accounts from « Virement », as Sure's
+ * `transfers#create`: both balances move, so every account and list refreshes.
+ */
+export function useCreateTransferBetween() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (input: NewTransferInput) =>
+			(await unwrap(api.transfers.new.$post({ json: input }))).data,
+		onSuccess: () =>
+			Promise.all([
+				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+				// A first fee creates « Frais ».
+				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+			]),
 	});
 }

@@ -37,6 +37,7 @@ import { LEASE_MS } from "../bank-connections.ts";
 import { DEFAULT_SURE_IMPORT_LIMITS, importSureArchive } from "../sure-import.ts";
 import { addAttachment } from "./attachments.ts";
 import { resetFinancialData } from "./reset.ts";
+import { createTransferBetween } from "./transfers.ts";
 
 useLedgerDatabase();
 
@@ -76,6 +77,7 @@ const RESET = [
 	"trades",
 	"transaction_attachments",
 	"transactions",
+	"transfer_fees",
 	"transfers",
 ];
 
@@ -443,6 +445,19 @@ async function household({ syncStartedAt = null }: { syncStartedAt?: number | nu
 		updatedAt: now,
 	});
 	await temp.db.insert(goalAccounts).values({ goalId, accountId: await accountNamed("Livret A") });
+	await createTransferBetween(
+		deps(),
+		{
+			fromAccountId: await accountNamed("Compte joint"),
+			toAccountId: await accountNamed("Livret A"),
+			date: "2026-09-12",
+			amount: toMinorUnits(5000),
+			sourceFee: toMinorUnits(100),
+			destinationFee: toMinorUnits(0),
+			tagIds: [],
+		},
+		{ origin: "user" },
+	);
 
 	return { userId };
 }

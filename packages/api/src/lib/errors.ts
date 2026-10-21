@@ -104,6 +104,12 @@ export const ERROR_STATUSES = {
 	 * now. Nothing is written.
 	 */
 	BULK_COUNT_STALE: 409,
+	/**
+	 * A new transfer whose form key already created a transfer with other
+	 * accounts, date, amount or fees, as Sure's `StaleIdempotencyKeyError`: a
+	 * form sent again after it changed. Nothing is written.
+	 */
+	TRANSFER_FORM_STALE: 409,
 	/** A revert of an import that is not confirmed: a preview, or one reverted already. */
 	IMPORT_NOT_REVERTABLE: 409,
 	/**

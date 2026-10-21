@@ -68,6 +68,40 @@ test("a transaction is added, edited and deleted, and the balance follows each",
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
+test("« Revenu », a tab of a new transaction, records an income; an edit keeps the toggle by the amount", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(30) });
+	const label = uniqueName("Salaire");
+
+	await page.goto(`/accounts/${account.id}`);
+	const sheet = await openNewSheet(page);
+	const tabs = sheet.getByRole("group", { name: "Type d'opération" });
+	await expect(tabs.getByRole("button")).toHaveText(["Dépense", "Revenu", "Virement"]);
+	await sheet.getByLabel("Libellé").fill(label);
+	await sheet.getByLabel("Montant").fill("120,00");
+	await tabs.getByRole("button", { name: "Revenu" }).click();
+	await expect(tabs.getByRole("button", { name: "Revenu" })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(sheet).toBeHidden();
+	await expect(row(page, label)).toContainText(euros(12_000));
+	await expect(header(page, account.name)).toContainText(euros(100_000 + 12_000));
+
+	await row(page, label).click();
+	const editSheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	await expect(editSheet.getByRole("group", { name: "Type d'opération" })).toHaveCount(0);
+	await expect(
+		editSheet
+			.getByRole("group", { name: "Sens de l'opération" })
+			.getByRole("button", { name: "Revenu" }),
+	).toHaveAttribute("aria-pressed", "true");
+});
+
 // Story 27.18: Sure's protection indicator, and its unlock.
 test("a hand-typed line is protected from sync until the owner lets a sync update it", async ({
 	page,

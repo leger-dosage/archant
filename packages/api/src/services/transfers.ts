@@ -1,11 +1,18 @@
-import type { TransferRequest } from "../schemas/transfers.ts";
+import type { NewTransferInput, TransferRequest } from "../schemas/transfers.ts";
 import type { ServiceDeps } from "./deps.ts";
-import type { TransferCandidate, TransferSides } from "./ledger/transfers.ts";
+import type { CreatedTransfer, TransferCandidate, TransferSides } from "./ledger/transfers.ts";
 
+import type { CurrencyCode } from "@archant/data/money";
 import type { Transfer } from "@archant/data/types";
 
+import { AppError } from "../lib/errors.ts";
+import { validationError } from "../lib/zod-error.ts";
+import { newTransferSchema } from "../schemas/transfers.ts";
+import { currencyOf } from "./accounts.ts";
+import { invalidField } from "./ledger/shared.ts";
 import {
 	confirmTransfer as confirmLedgerTransfer,
+	createTransferBetween,
 	matchTransfer,
 	rejectTransfer as rejectLedgerTransfer,
 	transferCandidates,
@@ -24,6 +31,37 @@ export async function listTransferCandidates(
 /** Links a transaction and the counterpart the user picked, on the user's behalf. */
 export async function createTransfer(deps: ServiceDeps, body: TransferRequest): Promise<Transfer> {
 	return matchTransfer(deps, body.transactionId, body.counterpartId, { origin: "user" });
+}
+
+/** The source account's currency, the amounts' unit; an unknown account is a field error. */
+async function sourceCurrency(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
+	try {
+		return await currencyOf(deps, accountId);
+	} catch (error) {
+		if (error instanceof AppError && error.code === "NOT_FOUND") {
+			throw invalidField("fromAccountId");
+		}
+
+		throw error;
+	}
+}
+
+/**
+ * Creates a transfer between two accounts from « Virement », on the user's
+ * behalf: the amount and the fees parsed in the source account's currency.
+ */
+export async function createTransferBetweenAccounts(
+	deps: ServiceDeps,
+	body: NewTransferInput,
+): Promise<CreatedTransfer> {
+	const currency = await sourceCurrency(deps, body.fromAccountId);
+	const parsed = newTransferSchema(currency).safeParse(body);
+
+	if (!parsed.success) {
+		throw validationError(parsed.error);
+	}
+
+	return createTransferBetween(deps, parsed.data, { origin: "user" });
 }
 
 /** A transfer confirmed or undone, with the two sides it joins or joined. */
