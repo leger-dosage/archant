@@ -4,7 +4,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { entryDateSchema } from "./accounts.ts";
-import { MAX_TAGS_PER_TRANSACTION } from "./transactions.ts";
+import { MAX_TAGS_PER_TRANSACTION, NOTES_MAX_LENGTH } from "./transactions.ts";
 
 /** Matching a transaction with the counterpart the user picked from its candidates. */
 export const transferBodySchema = z.object({
@@ -14,6 +14,32 @@ export const transferBodySchema = z.object({
 
 export type TransferInput = z.input<typeof transferBodySchema>;
 export type TransferRequest = z.output<typeof transferBodySchema>;
+
+/** Sure's `transfers#update` from the drawer: the outflow's category and the notes. */
+export const transferPatchSchema = z.object({
+	categoryId: z.string().min(1).nullable().optional(),
+	// A blank note is no note.
+	notes: z
+		.string()
+		.trim()
+		.max(NOTES_MAX_LENGTH)
+		.nullable()
+		.optional()
+		.transform((value) => (value === "" ? null : value)),
+});
+
+export type TransferPatchInput = z.input<typeof transferPatchSchema>;
+
+/** Sure's `update_tags`: the whole set, for both sides; `[]` removes every tag. */
+export const transferTagsSchema = z.object({
+	// Repeats are dropped before the cap counts, as a transaction's tags.
+	tagIds: z
+		.array(z.string().min(1))
+		.transform((ids) => [...new Set(ids)])
+		.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION)),
+});
+
+export type TransferTagsInput = z.input<typeof transferTagsSchema>;
 
 // What the route checks before it knows the source account: the amounts stay
 // text, parsed in its currency by `newTransferSchema`.

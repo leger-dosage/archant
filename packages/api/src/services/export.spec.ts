@@ -1882,6 +1882,7 @@ describe("exportArchive", () => {
 
 	it("gives each side of a transfer Sure's kind, and keeps the refused pair", async () => {
 		const { toSavings, toCard, toLoan, toPea, refused } = await household();
+		await sendOwn("PATCH", `/api/transfers/${toCard.transfer}`, { notes: "Carte de mars" });
 
 		const archive = await exported();
 		const kinds = new Map(archive.of("Transaction").map((row) => [row["id"], row["kind"]]));
@@ -1902,9 +1903,11 @@ describe("exportArchive", () => {
 			outflow_transaction_id: toCard.outflow,
 			inflow_transaction_id: toCard.inflow,
 			status: "confirmed",
+			// Sure's `Transfer.notes`, the drawer's.
+			notes: "Carte de mars",
 			archant: { kind: "credit_card_payment" },
 		});
-		expect(transfers.get(toSavings.transfer)).toMatchObject({ status: "pending" });
+		expect(transfers.get(toSavings.transfer)).toMatchObject({ status: "pending", notes: null });
 		expect(kinds.get(refused.outflow)).toBe("standard");
 		expect(archive.of("RejectedTransfer")).toEqual([
 			expect.objectContaining({

@@ -3284,6 +3284,31 @@
 			"outgoingFee": "Frais de transfert sortant",
 			"incomingFee": "Frais de transfert entrant",
 			"submit": "Créer le virement"
+		},
+		"show": {
+			"loading": "Chargement…",
+			"unavailable": "Ce virement n'existe plus.",
+			"transferTo": "Virement vers {{account}}",
+			"paymentTo": "Paiement vers {{account}}",
+			"overview": "Aperçu",
+			"from": "De",
+			"to": "À",
+			"date": "Date",
+			"transferAmount": "Montant du virement",
+			"sourceFee": "Frais d'origine",
+			"destinationFee": "Frais de destination",
+			"total": "Total",
+			"details": "Détails",
+			"category": "Catégorie",
+			"notes": "Notes",
+			"notesPlaceholder": "Ajoutez une note à ce virement",
+			"settings": "Paramètres",
+			"markRecurringTitle": "Marquer le virement comme récurrent",
+			"markRecurringDescription": "Suivez ce virement comme une opération récurrente, dans les prochaines échéances et la page des opérations récurrentes.",
+			"delete": "Supprimer le virement",
+			"deleteTitle": "Voulez-vous vraiment supprimer ce virement ?",
+			"deleteDescription": "Ceci supprime le virement et ses frais. Cela ne supprimera pas les deux opérations qui le forment.",
+			"deleted": "Virement supprimé"
 		}
 	}
 }

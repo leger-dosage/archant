@@ -212,6 +212,11 @@ export const queryKeys = {
 		 */
 		transferCandidates: (transactionId: string) =>
 			["transactions", "transfer-candidates", transactionId] as const,
+		/**
+		 * A transfer's drawer, under `all`: every transaction write can change a
+		 * side's date, category or tags.
+		 */
+		transfer: (transferId: string) => ["transactions", "transfer", transferId] as const,
 		/** Under `all`, for the same reason as `transferCandidates`. */
 		duplicateCandidates: (transactionId: string) =>
 			["transactions", "duplicate-candidates", transactionId] as const,

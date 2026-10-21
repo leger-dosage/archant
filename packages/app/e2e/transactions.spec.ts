@@ -1,5 +1,7 @@
 import type { Page } from "@playwright/test";
 
+import { randomInt } from "node:crypto";
+
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
 import { TIME_ZONE } from "./settings.ts";
 
@@ -177,7 +179,10 @@ test("a PEA line is labelled « Dividende » from its sheet, keeps it, and lists
 		openingDate: daysAgo(30),
 	});
 	const label = uniqueName("Dividende TotalEnergies");
-	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "12,00" });
+	// An amount of its own: a line of another test, opposite and days apart, would
+	// pair with it as a contribution, whose row opens the transfer's drawer.
+	const amount = `${String(randomInt(1000, 10_000))},${String(randomInt(10, 100))}`;
+	await api.addTransaction(account.id, { date: daysAgo(2), label, amount });
 	const today = new Intl.DateTimeFormat("fr-FR", {
 		day: "numeric",
 		month: "long",

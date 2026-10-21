@@ -154,7 +154,11 @@ describe("insertSureEntries", () => {
 			// A transfer side of the securities account, which no trade converts.
 			line("Transaction", { id: "t11", account_id: "i1", date: "2026-09-01", amount: "30" }),
 			line("Transaction", { id: "t12", account_id: "a2", date: "2026-09-01", amount: "-30" }),
-			line("Transfer", { outflow_transaction_id: "t11", inflow_transaction_id: "t12" }),
+			line("Transfer", {
+				outflow_transaction_id: "t11",
+				inflow_transaction_id: "t12",
+				notes: "Versement de mars",
+			}),
 			line("Transfer", { outflow_transaction_id: "t3", inflow_transaction_id: "t2" }),
 			line("Transfer", { outflow_transaction_id: "t5", inflow_transaction_id: "t2" }),
 			line("Transfer", { outflow_transaction_id: "s1", inflow_transaction_id: "t4" }),
@@ -306,6 +310,12 @@ describe("insertSureEntries", () => {
 				sql`select count(*) as count from rejected_transfers r join entries e on e.id = r.outflow_transaction_id where e.account_id = ${a1}`,
 			),
 		).toEqual([{ count: 1 }]);
+		// Sure's `Transfer.notes`, the transfer's own.
+		expect(
+			await temp.db.all(
+				sql`select t.notes from transfers t join entries e on e.id = t.outflow_transaction_id where e.account_id = ${i1}`,
+			),
+		).toEqual([{ notes: "Versement de mars" }]);
 
 		const trades = await temp.db.all<Record<string, unknown>>(sql`
 			select s.id as securityId, s.ticker, s.provider, t.income_kind as income, e.parent_entry_id as parent

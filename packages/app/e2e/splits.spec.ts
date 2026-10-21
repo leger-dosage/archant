@@ -186,12 +186,12 @@ test("a removed line leaves the counter, and only a splittable transaction offer
 		async (previous, label) => {
 			await previous;
 			await rowButton(page, label).click();
-			await expect(sheet(page)).toBeVisible();
-			await expect(sheet(page).getByRole("button", { name: "Diviser", exact: true })).toHaveCount(
-				0,
-			);
+			// A transfer side opens the transfer's drawer, which offers no « Diviser » either.
+			const opened = page.getByRole("dialog");
+			await expect(opened).toBeVisible();
+			await expect(opened.getByRole("button", { name: "Diviser", exact: true })).toHaveCount(0);
 			await page.keyboard.press("Escape");
-			await expect(sheet(page)).toBeHidden();
+			await expect(opened).toBeHidden();
 		},
 		Promise.resolve(),
 	);
@@ -557,7 +557,7 @@ test("« Grouper les opérations divisées » turned off lists each line as its 
 const amountText = (minor: number) =>
 	`${String(Math.floor(minor / 100))},${String(minor % 100).padStart(2, "0")}`;
 
-test("a split's line is matched as a transfer side, shown on its sheet, and offered to the other side's picker", async ({
+test("a split's line is matched as a transfer side, opens the transfer's drawer, and is offered to the other side's picker", async ({
 	page,
 	api,
 }) => {
@@ -586,15 +586,16 @@ test("a split's line is matched as a transfer side, shown on its sheet, and offe
 	await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
 	await expect(rowButton(page, moving)).toContainText("Correspondance automatique");
 	await rowButton(page, moving).click();
-	const transfer = sheet(page).getByRole("region", { name: "Virement" });
-	await expect(transfer).toContainText(savings.name);
-	// A line offers no picker, as Sure's: only its matched transfer.
-	await expect(transfer.getByRole("button", { name: "Rapprocher un virement" })).toHaveCount(0);
-	await transfer.getByRole("button", { name: "Dissocier" }).click();
-	await expect(toast(page, "Virement dissocié")).toBeVisible();
-	await expect(transfer).toHaveCount(0);
-	await page.keyboard.press("Escape");
-	await expect(sheet(page)).toBeHidden();
+	const drawer = page.getByRole("dialog", { name: `Virement vers ${savings.name}` });
+	await expect(drawer.getByRole("link", { name: account.name })).toBeVisible();
+	await drawer.getByText("Paramètres", { exact: true }).click();
+	await drawer.getByRole("button", { name: "Supprimer le virement" }).click();
+	await page
+		.getByRole("alertdialog", { name: "Voulez-vous vraiment supprimer ce virement ?" })
+		.getByRole("button", { name: "Supprimer le virement" })
+		.click();
+	await expect(toast(page, "Virement supprimé")).toBeVisible();
+	await expect(drawer).toBeHidden();
 
 	await rowButton(page, into).click();
 	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();

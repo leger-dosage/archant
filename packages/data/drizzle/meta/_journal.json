@@ -638,6 +638,13 @@
       "when": 1792577644359,
       "tag": "0090_transfer_creation",
       "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "6",
+      "when": 1792581282602,
+      "tag": "0091_transfer_notes",
+      "breakpoints": true
     }
   ]
 }

@@ -3,14 +3,22 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { newTransferBodySchema, transferBodySchema } from "../schemas/transfers.ts";
+import {
+	newTransferBodySchema,
+	transferBodySchema,
+	transferPatchSchema,
+	transferTagsSchema,
+} from "../schemas/transfers.ts";
 import { markTransferRecurring } from "../services/recurring/bills.ts";
 import {
 	confirmTransfer,
 	createTransfer,
 	createTransferBetweenAccounts,
 	deleteTransfer,
+	getTransfer,
 	rejectTransfer,
+	setTransferTags,
+	updateTransfer,
 } from "../services/transfers.ts";
 
 export function transfersRoutes(deps: ServiceDeps) {
@@ -29,6 +37,17 @@ export function transfersRoutes(deps: ServiceDeps) {
 
 				return created ? c.json({ data: transfer }, 201) : c.json({ data: transfer }, 200);
 			})
+			// Sure's `transfers#show`, `update` and `update_tags`: the transfer's drawer.
+			.get("/:id", async (c) => c.json({ data: await getTransfer(deps, c.req.param("id")) }, 200))
+			.patch("/:id", validated("json", transferPatchSchema), async (c) =>
+				c.json({ data: await updateTransfer(deps, c.req.param("id"), c.req.valid("json")) }, 200),
+			)
+			.put("/:id/tags", validated("json", transferTagsSchema), async (c) =>
+				c.json(
+					{ data: await setTransferTags(deps, c.req.param("id"), c.req.valid("json").tagIds) },
+					200,
+				),
+			)
 			.delete("/:id", async (c) =>
 				c.json({ data: await deleteTransfer(deps, c.req.param("id")) }, 200),
 			)

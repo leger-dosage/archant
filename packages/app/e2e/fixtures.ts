@@ -652,6 +652,17 @@ export function apiHelpers(request: APIRequestContext) {
 			);
 		},
 
+		/** Creates a transfer between two accounts, as « Virement » does. */
+		async createTransfer(input: {
+			fromAccountId: string;
+			toAccountId: string;
+			date: string;
+			amount: string;
+			sourceFee?: string;
+		}): Promise<string> {
+			return created(await request.post("/api/transfers/new", { data: input }));
+		},
+
 		/** Confirms the transfer the matcher proposed for `transactionId`, as « Confirmer la correspondance ». */
 		async confirmTransfer(transactionId: string) {
 			const response = await request.post(

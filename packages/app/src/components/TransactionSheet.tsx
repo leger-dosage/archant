@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TransactionForm } from "@/components/TransactionForm";
+import { TransferDetails } from "@/components/TransferDetails";
 import { TransferForm } from "@/components/TransferForm";
 import {
 	Sheet,
@@ -36,7 +37,8 @@ type TransactionSheetProps = {
  * Annuler and the close button ask before throwing away unsaved changes, and
  * only then (EXPERIENCE.md). Focus goes back to what opened it. A viewer
  * reads it as « Opération », every field disabled: the sheet is the only
- * place a transaction's notes, tags and receipts show.
+ * place a transaction's notes, tags and receipts show. A transfer row opens
+ * the transfer's own drawer instead, as Sure's `open_path`.
  */
 export function TransactionSheet({
 	account,
@@ -80,6 +82,7 @@ export function TransactionSheet({
 		}
 	};
 	const transfer = transaction === null && type === "transfer";
+	const openedTransferId = transaction?.transfer?.id ?? null;
 	const close = () => {
 		dirty.current = false;
 		onOpenChange(false);
@@ -122,38 +125,44 @@ export function TransactionSheet({
 				// corners from 768 px; the whole screen below.
 				className="data-[side=right]:w-full data-[side=right]:border-l-0 data-[side=right]:sm:max-w-none data-[side=right]:md:inset-y-3 data-[side=right]:md:right-3 data-[side=right]:md:h-auto data-[side=right]:md:w-[550px] data-[side=right]:md:rounded-xl data-[side=right]:md:border motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
 			>
-				<SheetHeader className="border-b">
-					<SheetTitle>
-						{t(
-							transfer
-								? "transfers.form.title"
-								: transaction === null
-									? "transactions.form.addTitle"
-									: admin
-										? "transactions.form.editTitle"
-										: "transactions.form.viewTitle",
-						)}
-					</SheetTitle>
-					<SheetDescription>
-						{transaction?.source.kind === "import"
-							? t(
-									transaction.reference === null
-										? "transactions.sources.import"
-										: "transactions.sources.importReference",
-									{
-										format: transaction.source.format.toUpperCase(),
-										date: formatShortDate(transaction.source.date),
-										reference: transaction.reference,
-									},
-								)
-							: transaction?.source.kind === "bank"
-								? t("transactions.sources.bank", {
-										connector: t(`transactions.sources.connectors.${transaction.source.connector}`),
-									})
-								: t("transactions.sources.manual")}
-					</SheetDescription>
-				</SheetHeader>
-				{transfer ? (
+				{openedTransferId !== null ? (
+					<TransferDetails key={session} transferId={openedTransferId} onClose={close} />
+				) : (
+					<SheetHeader className="border-b">
+						<SheetTitle>
+							{t(
+								transfer
+									? "transfers.form.title"
+									: transaction === null
+										? "transactions.form.addTitle"
+										: admin
+											? "transactions.form.editTitle"
+											: "transactions.form.viewTitle",
+							)}
+						</SheetTitle>
+						<SheetDescription>
+							{transaction?.source.kind === "import"
+								? t(
+										transaction.reference === null
+											? "transactions.sources.import"
+											: "transactions.sources.importReference",
+										{
+											format: transaction.source.format.toUpperCase(),
+											date: formatShortDate(transaction.source.date),
+											reference: transaction.reference,
+										},
+									)
+								: transaction?.source.kind === "bank"
+									? t("transactions.sources.bank", {
+											connector: t(
+												`transactions.sources.connectors.${transaction.source.connector}`,
+											),
+										})
+									: t("transactions.sources.manual")}
+						</SheetDescription>
+					</SheetHeader>
+				)}
+				{openedTransferId !== null ? null : transfer ? (
 					<TransferForm
 						key={session}
 						fromAccountId={fromAccountId}
