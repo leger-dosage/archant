@@ -1,6 +1,13 @@
 import type { TransactionData } from "@/hooks/useTransactions";
 
-import { FileTextIcon, ImageIcon, PaperclipIcon, Trash2Icon } from "lucide-react";
+import {
+	DownloadIcon,
+	EyeIcon,
+	FileTextIcon,
+	ImageIcon,
+	PaperclipIcon,
+	Trash2Icon,
+} from "lucide-react";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -45,7 +52,7 @@ function AttachmentItem({
 }: {
 	transactionId: string;
 	attachment: Attachment;
-	/** `null` for a viewer, who opens a file and deletes none. */
+	/** `null` for a viewer, who opens and downloads a file and deletes none. */
 	onDelete: (() => void) | null;
 }) {
 	const { t } = useTranslation();
@@ -56,41 +63,61 @@ function AttachmentItem({
 			<div className="flex min-w-0 items-center gap-2">
 				<Icon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
 				<div className="flex min-w-0 flex-col">
-					{/* A new tab, so the sheet and its unsaved edits stay where they are. */}
-					<a
-						href={attachmentUrl(transactionId, attachment.id)}
-						target="_blank"
-						rel="noreferrer"
-						className="truncate text-sm font-medium underline-offset-4 hover:underline"
-					>
-						{attachment.filename}
-					</a>
+					<span className="truncate text-sm font-medium">{attachment.filename}</span>
 					<span className="text-xs text-muted-foreground">
 						{formatFileSize(attachment.byteSize)}
 					</span>
 				</div>
 			</div>
-			{onDelete !== null && (
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					aria-label={t("transactions.attachments.remove", { name: attachment.filename })}
-					onClick={onDelete}
-				>
-					<Trash2Icon aria-hidden="true" />
+			{/* Icons only, as Sure's; each names its file for a screen reader. */}
+			<div className="flex shrink-0 items-center gap-1.5">
+				{/* A new tab, so the sheet and its unsaved edits stay where they are. */}
+				<Button asChild variant="outline" size="icon-sm">
+					<a
+						href={attachmentUrl(transactionId, attachment.id)}
+						target="_blank"
+						rel="noreferrer"
+						aria-label={t("transactions.attachments.open", { name: attachment.filename })}
+					>
+						<EyeIcon aria-hidden="true" />
+					</a>
 				</Button>
-			)}
+				{/* `download` plays Sure's `turbo: false`: the browser saves the file
+				    and never leaves the sheet, whatever the answer. */}
+				<Button asChild variant="outline" size="icon-sm">
+					<a
+						href={attachmentUrl(transactionId, attachment.id, "attachment")}
+						download
+						aria-label={t("transactions.attachments.download", { name: attachment.filename })}
+					>
+						<DownloadIcon aria-hidden="true" />
+					</a>
+				</Button>
+				{onDelete !== null && (
+					<Button
+						type="button"
+						variant="outline"
+						size="icon-sm"
+						// Sure's `outline_destructive`.
+						className="text-destructive hover:text-destructive"
+						aria-label={t("transactions.attachments.remove", { name: attachment.filename })}
+						onClick={onDelete}
+					>
+						<Trash2Icon aria-hidden="true" />
+					</Button>
+				)}
+			</div>
 		</li>
 	);
 }
 
 /**
  * The sheet's « Pièces jointes », as Sure's `transactions/_attachments`: each
- * file with its size, opened in a new tab, « Ajouter » and a delete with
- * confirmation. Every action saves at once, apart from the form, and never
- * touches it, so none waits for its unsaved edits. A viewer opens the files,
- * and neither adds nor deletes one.
+ * file with its size, an open button (new tab) and a download button,
+ * « Ajouter » and a delete with confirmation. Every action saves at once,
+ * apart from the form, and never touches it, so none waits for its unsaved
+ * edits. A viewer opens and downloads the files, and neither adds nor
+ * deletes one.
  */
 export function TransactionAttachments({ transaction }: { transaction: TransactionData }) {
 	const { t } = useTranslation();

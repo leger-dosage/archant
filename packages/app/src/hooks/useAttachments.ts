@@ -37,9 +37,19 @@ export function useAttachmentCount(transactionIds: readonly string[], enabled: b
 	});
 }
 
-/** Where the browser opens an attachment: its bytes, served inline under a sandbox. */
-export function attachmentUrl(transactionId: string, attachmentId: string): string {
-	return `/api/transactions/${encodeURIComponent(transactionId)}/attachments/${encodeURIComponent(attachmentId)}`;
+/**
+ * Where the browser reads an attachment's bytes, served under a sandbox:
+ * inline for the open button, as a download when `disposition` is
+ * `attachment`, as Sure's `disposition` parameter.
+ */
+export function attachmentUrl(
+	transactionId: string,
+	attachmentId: string,
+	disposition: "inline" | "attachment" = "inline",
+): string {
+	const path = `/api/transactions/${encodeURIComponent(transactionId)}/attachments/${encodeURIComponent(attachmentId)}`;
+
+	return disposition === "attachment" ? `${path}?disposition=attachment` : path;
 }
 
 /** Attaches one file; the section sends several one after the other. */

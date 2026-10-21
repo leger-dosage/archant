@@ -3,9 +3,13 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 
-import { inlineDisposition } from "../lib/content-disposition.ts";
+import { contentDisposition } from "../lib/content-disposition.ts";
 import { validated } from "../lib/validated.ts";
-import { MAX_ATTACHMENT_BODY_BYTES, attachmentUploadSchema } from "../schemas/attachments.ts";
+import {
+	MAX_ATTACHMENT_BODY_BYTES,
+	attachmentFileQuerySchema,
+	attachmentUploadSchema,
+} from "../schemas/attachments.ts";
 import {
 	getAttachmentFile,
 	listTransactionAttachments,
@@ -50,19 +54,21 @@ export function attachmentsRoutes(deps: ServiceDeps) {
 				);
 			},
 		)
-		.get("/:attachmentId", async (c) => {
+		.get("/:attachmentId", validated("query", attachmentFileQuerySchema), async (c) => {
+			const { disposition = "inline" } = c.req.valid("query");
 			const file = await getAttachmentFile(
 				deps,
 				c.req.param("id") ?? "",
 				c.req.param("attachmentId"),
 			);
 
-			// Inline: every allowed type is an image or a PDF, which the browser
-			// shows in the new tab the sheet opens.
+			// Inline by default: every allowed type is an image or a PDF, which the
+			// browser shows in the new tab the sheet opens. The download button asks
+			// for `attachment`, under the same headers and the same sandbox.
 			return c.body(new Uint8Array(file.content), 200, {
 				"Content-Type": file.contentType,
 				"Content-Length": String(file.byteSize),
-				"Content-Disposition": inlineDisposition(file.filename),
+				"Content-Disposition": contentDisposition(disposition, file.filename),
 				// A receipt names a shop and an amount: no shared cache, nor the
 				// browser's, keeps a copy.
 				"Cache-Control": "private, no-store",
