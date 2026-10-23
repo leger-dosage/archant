@@ -645,6 +645,13 @@
       "when": 1792581282602,
       "tag": "0091_transfer_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "6",
+      "when": 1792791115025,
+      "tag": "0092_categories_without_kind",
+      "breakpoints": true
     }
   ]
 }

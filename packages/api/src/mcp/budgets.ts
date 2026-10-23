@@ -97,7 +97,7 @@ const monthOutput = z.object({
 	}),
 	categories: z
 		.array(categoryOutput)
-		.describe("Every top-level expense category, by name, with its subcategories."),
+		.describe("Every top-level category, by name, with its subcategories."),
 });
 
 type Envelope = Pick<UncategorisedLine, "budgeted" | "spent" | "status">;
@@ -184,7 +184,7 @@ export const getBudgetTool = defineTool({
 	name: "get_budget",
 	title: "Budget",
 	description:
-		"Sure's get_budget: a calendar month's budget as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each expense category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. A month not set up shows 0 for what it plans; months before the first one a budget can cover are left out and counted in months_unavailable.",
+		"Sure's get_budget: a calendar month's budget as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. A month not set up shows 0 for what it plans; months before the first one a budget can cover are left out and counted in months_unavailable.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: budgetInput,
@@ -309,7 +309,7 @@ export const updateBudgetTool = defineTool({
 	name: "update_budget",
 	title: "Set a budget",
 	description:
-		"Sure's update_budget: sets a month's planned spending, expected income and expense category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. Call get_budget first for the current amounts and the category names. Amounts are non-negative numbers in the reporting currency. A category is named by its name, case aside, or its id; « Non catégorisé » is what budgeted_spending leaves unallocated and cannot be set. A field absent keeps its value; a month not set up needs both budgeted_spending and expected_income, and its categories need the month set up. Refusals answer Sure's keys in Sure's order: no_changes, invalid_params for the month, invalid_month, invalid_params for an amount or a category; what Archant refuses beyond Sure, validation_failed.",
+		"Sure's update_budget: sets a month's planned spending, expected income and category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. Call get_budget first for the current amounts and the category names. Amounts are non-negative numbers in the reporting currency. A category is named by its name, case aside, or its id; « Non catégorisé » is what budgeted_spending leaves unallocated and cannot be set. A field absent keeps its value; a month not set up needs both budgeted_spending and expected_income, and its categories need the month set up. Refusals answer Sure's keys in Sure's order: no_changes, invalid_params for the month, invalid_month, invalid_params for an amount or a category; what Archant refuses beyond Sure, validation_failed.",
 	scope: "archant:write",
 	annotations: REPLACES,
 	fieldPaths: FIELD_NAMES,
@@ -385,14 +385,6 @@ export const updateBudgetTool = defineTool({
 					isUncategorisedName(ref)
 						? `'${ref}' is the unallocated remainder of budgeted_spending and cannot be set directly. Adjust budgeted_spending or category amounts instead.`
 						: `Category '${ref}' not found. Use get_categories to list categories.`,
-				);
-			}
-
-			// Budgets hold expense categories only: an income category has no row.
-			if (category.kind !== "expense") {
-				refuse(
-					"invalid_params",
-					`No budget row exists for category '${category.name}' in ${monthParam(month)}.`,
 				);
 			}
 

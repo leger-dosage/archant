@@ -67,7 +67,6 @@ describe("declareBill", () => {
 		await temp.db.insert(categories).values({
 			id: "streaming",
 			name: "Streaming",
-			kind: "expense",
 			color: "#e99537",
 			icon: "tv",
 			createdAt: 0,
@@ -247,7 +246,6 @@ describe("editBill", () => {
 		await temp.db.insert(categories).values({
 			id: "eau",
 			name: "Eau",
-			kind: "expense",
 			color: "#e99537",
 			icon: "tag",
 			createdAt: 0,

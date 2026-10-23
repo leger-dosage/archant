@@ -51,7 +51,7 @@ describe("actualsOf", () => {
 		expect(actualsOf(month).spending).toBe(4_000);
 	});
 
-	it("counts what an income-kind category spends, where it counted nowhere", () => {
+	it("counts what a category that earns spends, where it counted nowhere", () => {
 		const month = views([row("salaire", -5_000), row(null, 250_000)]);
 
 		expect(actualsOf(month)).toEqual({ spending: 5_000, income: 250_000 });

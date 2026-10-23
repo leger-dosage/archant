@@ -3467,7 +3467,6 @@ describe("setting a budget", () => {
 	it("update_budget refuses in Sure's order and words, and Archant's own refusals as validation_failed, writing nothing", async () => {
 		const { db, app, author } = await budgetHousehold();
 		const groceries = await ownCategory("Courses");
-		await ownCategory("Salaire", { kind: "income" });
 		const call = async (args: Record<string, unknown>) => {
 			const answer = await callTool(app, author, "update_budget", { month: "2026-10", ...args });
 
@@ -3541,11 +3540,6 @@ describe("setting a budget", () => {
 			),
 		);
 		await expect(
-			call({ ...setUp, categories: [{ category: "salaire", amount: 5 }] }),
-		).resolves.toEqual(
-			refusal("invalid_params", "No budget row exists for category 'Salaire' in oct-2026."),
-		);
-		await expect(
 			call({ ...setUp, categories: [{ category: "courses", amount: -5 }] }),
 		).resolves.toEqual(
 			refusal("invalid_params", "amount for 'Courses' must be a non-negative number."),
@@ -3578,7 +3572,6 @@ describe("setting a budget", () => {
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"NOT_FOUND",
-			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
@@ -3627,9 +3620,9 @@ describe("setting a budget", () => {
 		await expect(carriedIntoSeptember()).resolves.toBe(11_000);
 	});
 
-	it("update_budget refuses an income category before writing the total it was given", async () => {
+	it("update_budget sets a category that earns, every category holding a row as Sure's since #1160", async () => {
 		const { app, author } = await budgetHousehold();
-		await ownCategory("Salaire", { kind: "income" });
+		await ownCategory("Salaire");
 		await setBudget("2026-09", "1 000,00", "2 000,00");
 
 		const result = await callTool(app, author, "update_budget", {
@@ -3638,17 +3631,9 @@ describe("setting a budget", () => {
 			categories: [{ category: "Salaire", amount: "50.00" }],
 		});
 
-		expect(result).toEqual({
-			isError: true,
-			content: [
-				{
-					type: "text",
-					text: '{"success":false,"error":"invalid_params","message":"No budget row exists for category \'Salaire\' in sep-2026."}',
-				},
-			],
-		});
+		expect(result.isError).not.toBe(true);
 		await expect(budgetFromRoute("2026-09")).resolves.toMatchObject({
-			totals: { budgeted_spending: eur(100_000) },
+			totals: { budgeted_spending: eur(180_000), allocated_spending: eur(5_000) },
 		});
 	});
 

@@ -117,7 +117,7 @@ export const createCategoryTool = defineTool({
 	name: "create_category",
 	title: "Create a category",
 	description:
-		"Creates a category, as Sure's create_category. Two levels at most: parent_id (from get_categories) makes it a subcategory, which takes its parent's colour and kind; any other is an expense category. The colour defaults to the picker's first and the icon to \"tag\". Category names must be unique, case aside.",
+		"Creates a category, as Sure's create_category. Two levels at most: parent_id (from get_categories) makes it a subcategory, which takes its parent's colour. The colour defaults to the picker's first and the icon to \"tag\". Category names must be unique, case aside.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createCategoryInput,
@@ -138,7 +138,6 @@ export const createCategoryTool = defineTool({
 		const created = await validated(async () =>
 			createCategory(deps, {
 				...preset,
-				kind: "expense",
 				color: color ?? preset.color,
 				icon: icon ?? preset.icon,
 				parentId: parent,
@@ -153,7 +152,7 @@ export const updateCategoryTool = defineTool({
 	name: "update_category",
 	title: "Update a category",
 	description:
-		"Updates a category's name, colour or icon, as Sure's update_category: use get_categories first to find its id, and give at least one of name, color or icon. Its kind and parent stay. A parent's new colour passes to its subcategories, and a subcategory keeps its parent's whatever it is given.",
+		"Updates a category's name, colour or icon, as Sure's update_category: use get_categories first to find its id, and give at least one of name, color or icon. Its parent stays. A parent's new colour passes to its subcategories, and a subcategory keeps its parent's whatever it is given.",
 	scope: "archant:write",
 	annotations: REPLACES,
 	input: updateCategoryInput,

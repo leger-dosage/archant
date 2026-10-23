@@ -430,7 +430,6 @@ export async function confirmedImport(accountId: string) {
 
 export const category = (name: string, overrides: Partial<CreateCategoryInput> = {}) => ({
 	name,
-	kind: "expense" as const,
 	color: "#e99537",
 	icon: "tag" as const,
 	parentId: null,

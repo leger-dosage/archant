@@ -54,26 +54,24 @@ test("banks: « Choisir une banque » opens the bank picker, its search focused"
 	await expect(picker.getByLabel("Rechercher une banque")).toBeFocused();
 });
 
-/** An empty kind's state, then its button, which opens the form on `kind`. */
-async function addFromEmptyKind(page: Page, group: string, heading: string, kind: string) {
-	const empty = await expectEmptyState(
-		page.getByRole("region", { name: group, exact: true }),
-		heading,
-	);
-
-	await empty.getByRole("button", { name: "Ajouter une catégorie" }).click();
-	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
-	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveText(kind);
-	await dialog.getByRole("button", { name: "Annuler" }).click();
-	await expect(dialog).toBeHidden();
-}
-
-test("categories: an empty kind's button opens the form on that kind", async ({ page }) => {
+test("categories: the one list's empty state opens the form, with no « Type »", async ({
+	page,
+}) => {
 	await emptyList(page, "/api/categories");
 	await page.goto("/settings/categories");
 
-	await addFromEmptyKind(page, "Revenus", "Aucune catégorie de revenus", "Revenu");
-	await addFromEmptyKind(page, "Dépenses", "Aucune catégorie de dépenses", "Dépense");
+	const empty = await expectEmptyState(
+		page.getByRole("region", { name: "Catégories", exact: true }),
+		"Aucune catégorie pour l'instant",
+	);
+	await expect(page.getByRole("region", { name: "Revenus", exact: true })).toHaveCount(0);
+
+	await empty.getByRole("button", { name: "Ajouter une catégorie" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
+	await expect(dialog.getByLabel("Nom")).toBeVisible();
+	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(dialog).toBeHidden();
 });
 
 test("merchants: « Ajouter un marchand » opens the form", async ({ page }) => {

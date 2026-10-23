@@ -1742,16 +1742,11 @@
 	},
 	"categories": {
 		"title": "Catégories",
-		"description": "Les catégories classent vos opérations. Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
+		"description": "Les catégories classent vos opérations. Une sous-catégorie prend la couleur de sa catégorie parente.",
 		"add": "Ajouter une catégorie",
-		"groups": {
-			"income": "Revenus",
-			"expense": "Dépenses"
-		},
-		"groupEmpty": {
-			"income": "Aucune catégorie de revenus",
-			"expense": "Aucune catégorie de dépenses",
-			"description": "Ajoutez-en une pour classer ces opérations."
+		"empty": {
+			"title": "Aucune catégorie pour l'instant",
+			"description": "Ajoutez-en une pour classer vos opérations."
 		},
 		"transactions_one": "{{count}} opération",
 		"transactions_other": "{{count}} opérations",
@@ -1759,10 +1754,6 @@
 		"edit": "Modifier",
 		"merge": "Fusionner",
 		"delete": "Supprimer",
-		"kinds": {
-			"income": "Revenu",
-			"expense": "Dépense"
-		},
 		"colors": {
 			"#fc7840": "Orange",
 			"#f0bf00": "Jaune",
@@ -1818,12 +1809,11 @@
 		"form": {
 			"addTitle": "Ajouter une catégorie",
 			"editTitle": "Modifier la catégorie",
-			"description": "Une sous-catégorie prend le type et la couleur de sa catégorie parente.",
+			"description": "Une sous-catégorie prend la couleur de sa catégorie parente.",
 			"name": "Nom",
 			"parent": "Catégorie parente",
 			"noParent": "Aucune, catégorie principale",
 			"parentLocked": "Cette catégorie a des sous-catégories, elle reste donc une catégorie principale.",
-			"kind": "Type",
 			"color": "Couleur",
 			"currentColor": "Couleur actuelle",
 			"preview": "Aperçu de la catégorie",
@@ -2037,7 +2027,7 @@
 			"confirm": "Valider",
 			"confirmHint": "Ramenez les catégories sous les dépenses prévues pour valider.",
 			"notSetUp": "Définissez d'abord les dépenses prévues de ce mois, puis répartissez-les ici.",
-			"noCategories": "Aucune catégorie de dépenses. Créez-en dans les réglages pour leur donner un budget.",
+			"noCategories": "Aucune catégorie. Créez-en dans les réglages pour leur donner un budget.",
 			"settings": "Gérer les catégories"
 		},
 		"categories": {

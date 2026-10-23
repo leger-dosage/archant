@@ -43,7 +43,6 @@ beforeEach(async () => {
 
 const input = (overrides: Partial<CreateCategoryRequest> = {}): CreateCategoryRequest => ({
 	name: "Courses",
-	kind: "expense",
 	color: "#e99537",
 	icon: "shopping-bag",
 	parentId: null,
@@ -188,7 +187,6 @@ describe("listCategories", () => {
 		expect(list.find((category) => category.id === savings.id)).toEqual({
 			id: savings.id,
 			name: "Épargne",
-			kind: "expense",
 			color: "#e99537",
 			icon: "shopping-bag",
 			parentId: null,
@@ -217,7 +215,6 @@ describe("createCategory", () => {
 
 		expect(category).toMatchObject({
 			name: "Animaux",
-			kind: "expense",
 			color: "#805dee",
 			icon: "dog",
 			parentId: null,
@@ -241,17 +238,16 @@ describe("createCategory", () => {
 		await expect(create({ name: "Epargne" })).resolves.toMatchObject({ name: "Epargne" });
 	});
 
-	it("gives a child its parent's kind and colour, whatever it asked for", async () => {
-		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
+	it("gives a child its parent's colour, whatever it asked for", async () => {
+		const income = await create({ name: "Revenus", color: "#6ad28a" });
 
 		const child = await create({
 			name: "Salaire",
-			kind: "expense",
 			color: "#db5a54",
 			parentId: income.id,
 		});
 
-		expect(child).toMatchObject({ kind: "income", color: "#6ad28a", parentId: income.id });
+		expect(child).toMatchObject({ color: "#6ad28a", parentId: income.id });
 	});
 
 	it("refuses a grandchild", async () => {
@@ -296,13 +292,12 @@ describe("updateCategory", () => {
 		);
 	});
 
-	it("moves under a parent and takes its kind and colour", async () => {
-		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
+	it("moves under a parent and takes its colour", async () => {
+		const income = await create({ name: "Revenus", color: "#6ad28a" });
 		const bonus = await create({ name: "Prime", color: "#db5a54" });
 
 		await expect(updateCategory(deps(), bonus.id, { parentId: income.id })).resolves.toMatchObject({
 			parentId: income.id,
-			kind: "income",
 			color: "#6ad28a",
 		});
 	});
@@ -311,32 +306,30 @@ describe("updateCategory", () => {
 		const housing = await create({ name: "Logement", color: "#e99537" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
 
-		await expect(
-			updateCategory(deps(), rent.id, { color: "#db5a54", kind: "income" }),
-		).resolves.toMatchObject({ color: "#e99537", kind: "expense" });
+		await expect(updateCategory(deps(), rent.id, { color: "#db5a54" })).resolves.toMatchObject({
+			color: "#e99537",
+		});
 	});
 
-	it("passes a parent's new kind and colour on to its children", async () => {
+	it("passes a parent's new colour on to its children", async () => {
 		const housing = await create({ name: "Logement" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
 		const unrelated = await create({ name: "Loisirs", color: "#c44fe9" });
 
-		await updateCategory(deps(), housing.id, { kind: "income", color: "#61c9ea" });
+		await updateCategory(deps(), housing.id, { color: "#61c9ea" });
 
-		await expect(stored(rent.id)).resolves.toMatchObject({ kind: "income", color: "#61c9ea" });
+		await expect(stored(rent.id)).resolves.toMatchObject({ color: "#61c9ea" });
 		await expect(stored(unrelated.id)).resolves.toMatchObject({
-			kind: "expense",
 			color: "#c44fe9",
 		});
 	});
 
-	it("becomes top-level again, keeping the kind and colour it had", async () => {
-		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
+	it("becomes top-level again, keeping the colour it had", async () => {
+		const income = await create({ name: "Revenus", color: "#6ad28a" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
 
 		await expect(updateCategory(deps(), salary.id, { parentId: null })).resolves.toMatchObject({
 			parentId: null,
-			kind: "income",
 			color: "#6ad28a",
 		});
 	});
@@ -412,16 +405,16 @@ describe("deleteCategory", () => {
 		await expect(budgetedCategories()).resolves.toEqual([travel.id]);
 	});
 
-	it("makes the children top-level, keeping their kind and colour", async () => {
-		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
+	it("makes the children top-level, keeping their colour", async () => {
+		const income = await create({ name: "Revenus", color: "#6ad28a" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
 		const bonus = await create({ name: "Prime", parentId: income.id });
 
 		await deleteCategory(deps(), income.id, undefined);
 
 		await expect(Promise.all([stored(salary.id), stored(bonus.id)])).resolves.toEqual([
-			expect.objectContaining({ parentId: null, kind: "income", color: "#6ad28a" }),
-			expect.objectContaining({ parentId: null, kind: "income", color: "#6ad28a" }),
+			expect.objectContaining({ parentId: null, color: "#6ad28a" }),
+			expect.objectContaining({ parentId: null, color: "#6ad28a" }),
 		]);
 	});
 
@@ -489,30 +482,29 @@ describe("mergeCategory", () => {
 		await expect(budgetedCategories()).resolves.toEqual([food.id]);
 	});
 
-	it("moves the source's children under the target, with its kind and colour", async () => {
+	it("moves the source's children under the target, with its colour", async () => {
 		const housing = await create({ name: "Logement", color: "#e99537" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
-		const income = await create({ name: "Revenus", kind: "income", color: "#6ad28a" });
+		const income = await create({ name: "Revenus", color: "#6ad28a" });
 
 		await mergeCategory(deps(), housing.id, income.id);
 
 		await expect(stored(rent.id)).resolves.toMatchObject({
 			parentId: income.id,
-			kind: "income",
 			color: "#6ad28a",
 		});
 	});
 
-	it("merges across kinds, and a child into its own parent", async () => {
-		const income = await create({ name: "Revenus", kind: "income" });
+	it("merges any category into another, and a child into its own parent", async () => {
+		const income = await create({ name: "Revenus" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
-		const leisure = await create({ name: "Loisirs", kind: "expense" });
+		const leisure = await create({ name: "Loisirs" });
 
 		await expect(mergeCategory(deps(), salary.id, income.id)).resolves.toMatchObject({
 			id: income.id,
 		});
 		await expect(mergeCategory(deps(), leisure.id, income.id)).resolves.toMatchObject({
-			kind: "income",
+			id: income.id,
 		});
 	});
 

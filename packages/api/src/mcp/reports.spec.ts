@@ -93,7 +93,7 @@ async function household() {
 	const checking = await openOwn({ ...opened, name: "Courant" });
 	const savings = await openOwn({ ...opened, name: "Livret", subtype: "savings" });
 	const dollars = await openOwn({ ...opened, name: "Dollars", currency: "USD" });
-	const pay = await ownCategory("Paie test", { kind: "income" });
+	const pay = await ownCategory("Paie test");
 	const home = await ownCategory("Maison test");
 	const groceries = await ownCategory("Courses test", { parentId: home });
 

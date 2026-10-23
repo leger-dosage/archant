@@ -60,9 +60,9 @@ export async function preflightSureImport(
 
 /**
  * Categories as Sure's importer reads them: one whose name exists is reused
- * unchanged; a new one takes Sure's classification as its kind, its colour
- * and its icon, then its parent in a second pass when that parent is a
- * top-level category, with the parent's kind and colour.
+ * unchanged; a new one takes its colour and its icon, then its parent in a
+ * second pass when that parent is a top-level category, with the parent's
+ * colour. Sure's `classification` is read no more, as Sure since #1160.
  */
 async function importCategories(
 	tx: Transaction,
@@ -71,15 +71,11 @@ async function importCategories(
 	now: number,
 ): Promise<void> {
 	const existing = await tx
-		.select({ id: categories.id, kind: categories.kind, parentId: categories.parentId })
+		.select({ id: categories.id, parentId: categories.parentId })
 		.from(categories);
 	const parents = new Map(existing.map((row) => [row.id, row.parentId]));
 	const colours = new Map<string, string>();
 	const created = new Set<string>();
-
-	for (const row of existing) {
-		taxonomy.kinds.set(row.id, row.kind);
-	}
 
 	await oneByOne(plan, async (category) => {
 		const found = taxonomy.names.categories.get(foldName(category.name));
@@ -94,7 +90,6 @@ async function importCategories(
 		await tx.insert(categories).values({
 			id,
 			name: category.name,
-			kind: category.kind,
 			color: category.color,
 			icon: category.icon,
 			parentId: null,
@@ -103,7 +98,6 @@ async function importCategories(
 		});
 		taxonomy.ids.categories.set(category.sourceId, id);
 		taxonomy.names.categories.set(foldName(category.name), id);
-		taxonomy.kinds.set(id, category.kind);
 		parents.set(id, null);
 		colours.set(id, category.color);
 		created.add(id);
@@ -130,7 +124,6 @@ async function importCategories(
 			return;
 		}
 
-		const kind = taxonomy.kinds.get(parentId) ?? category.kind;
 		const parentColour = colours.get(parentId);
 		const parent = await tx
 			.select({ color: categories.color })
@@ -140,9 +133,8 @@ async function importCategories(
 
 		await tx
 			.update(categories)
-			.set({ parentId, kind, color: parentColour ?? parent?.color ?? category.color })
+			.set({ parentId, color: parentColour ?? parent?.color ?? category.color })
 			.where(eq(categories.id, id));
-		taxonomy.kinds.set(id, kind);
 		parents.set(id, parentId);
 	});
 }
@@ -279,8 +271,8 @@ async function importRecurring(
 
 /**
  * Months as Sure's importer keeps them: a month the household set up takes
- * the file's totals; a category's amount the same, one on an income category
- * skipped, as Archant budgets expenses only.
+ * the file's totals; a category's amount the same, whatever Sure once
+ * classified it as, every category taking one since #1160.
  */
 async function importBudgets(
 	tx: Transaction,
@@ -327,11 +319,7 @@ async function importBudgets(
 		const budgetId = months.get(line.budgetSourceId);
 		const categoryId = taxonomy.ids.categories.get(line.categorySourceId);
 
-		if (
-			budgetId === undefined ||
-			categoryId === undefined ||
-			taxonomy.kinds.get(categoryId) !== "expense"
-		) {
+		if (budgetId === undefined || categoryId === undefined) {
 			return;
 		}
 

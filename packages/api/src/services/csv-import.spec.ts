@@ -207,9 +207,9 @@ describe("categories", () => {
 		]);
 	});
 
-	it("creates categories and their parents, a child taking its parent's kind and colour", async () => {
+	it("creates categories and their parents, a child taking its parent's colour", async () => {
 		await ownDatabase();
-		await ownCategory("Salaire", { kind: "income", color: "#27a644" });
+		await ownCategory("Salaire", { color: "#27a644" });
 
 		const result = await publish(
 			"categories",
@@ -224,21 +224,20 @@ describe("categories", () => {
 
 		expect(result.counts).toEqual({ categories: 4 });
 		expect(
-			await rows(sql`select c.name, c.kind, c.color, c.icon, p.name as parent
+			await rows(sql`select c.name, c.color, c.icon, p.name as parent
 				from categories c left join categories p on p.id = c.parent_id order by c.name`),
 		).toEqual([
-			{ name: "Food & Drink", kind: "expense", color: "#f97316", icon: "utensils", parent: null },
+			{ name: "Food & Drink", color: "#f97316", icon: "utensils", parent: null },
 			{
 				name: "Groceries",
-				kind: "expense",
 				color: "#f97316",
 				icon: "shopping-cart",
 				parent: "Food & Drink",
 			},
-			{ name: "Prime", kind: "income", color: "#27a644", icon: "tag", parent: "Salaire" },
-			{ name: "Restaurants", kind: "expense", color: "#fc7840", icon: "tag", parent: "Sorties" },
-			{ name: "Salaire", kind: "income", color: "#27a644", icon: "tag", parent: null },
-			{ name: "Sorties", kind: "expense", color: "#fc7840", icon: "tag", parent: null },
+			{ name: "Prime", color: "#27a644", icon: "tag", parent: "Salaire" },
+			{ name: "Restaurants", color: "#fc7840", icon: "tag", parent: "Sorties" },
+			{ name: "Salaire", color: "#27a644", icon: "tag", parent: null },
+			{ name: "Sorties", color: "#fc7840", icon: "tag", parent: null },
 		]);
 	});
 
@@ -270,14 +269,14 @@ describe("categories", () => {
 		const food = await ownCategory("Alimentation maison", { color: "#9d6fe8", icon: "coffee" });
 		await ownCategory("Boulangerie maison", { parentId: food });
 		const before = await rows(
-			sql`select id, name, kind, color, icon, parent_id, updated_at from categories order by name`,
+			sql`select id, name, color, icon, parent_id, updated_at from categories order by name`,
 		);
 
 		await publish("categories", await exported("categories.csv"));
 
 		expect(
 			await rows(
-				sql`select id, name, kind, color, icon, parent_id, updated_at from categories order by name`,
+				sql`select id, name, color, icon, parent_id, updated_at from categories order by name`,
 			),
 		).toEqual(before);
 	});
@@ -419,9 +418,7 @@ describe("rules", () => {
 		expect(await listedRules()).toEqual([
 			expect.objectContaining({ name: "Courses", enabled: false, effectiveDate: "2024-01-01" }),
 		]);
-		expect(await rows(sql`select name, kind from categories`)).toEqual([
-			{ name: "Groceries", kind: "expense" },
-		]);
+		expect(await rows(sql`select name from categories`)).toEqual([{ name: "Groceries" }]);
 	});
 
 	it("reads the escaped and wrapped JSON of Sure's older rule files", async () => {

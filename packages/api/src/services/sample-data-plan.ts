@@ -2,7 +2,7 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { PlanAccount, PlanCategory, PlanSecurity, SurePlan } from "./sure-import-plan.ts";
 
 import type { AccountDetails, AccountSubtype, AccountType } from "@archant/data/account-types";
-import type { CategoryColor, CategoryKind } from "@archant/data/category-presets";
+import type { CategoryColor } from "@archant/data/category-presets";
 import { CATEGORY_COLORS, newCategory } from "@archant/data/category-presets";
 import { formatQuantity, formatTradePrice } from "@archant/data/decimals";
 import type { GoalState } from "@archant/data/goals";
@@ -146,40 +146,38 @@ function firstBusinessDay(date: IsoDate): IsoDate {
 type CategorySpec = {
 	id: string;
 	name: string;
-	kind: CategoryKind;
 	color: string;
 	parent?: string;
 };
 
 /** Sure's `create_realistic_categories!`, in its order, named in French. */
 const CATEGORIES: readonly CategorySpec[] = [
-	{ id: "salary", name: "Salaire", kind: "income", color: "#10b981" },
-	{ id: "freelance", name: "Freelance", kind: "income", color: "#059669" },
-	{ id: "investment_income", name: "Revenus de placements", kind: "income", color: "#047857" },
-	{ id: "housing", name: "Logement", kind: "expense", color: "#dc2626" },
-	{ id: "rent", name: "Loyer et prêt", kind: "expense", color: "#b91c1c", parent: "housing" },
-	{ id: "utilities", name: "Charges", kind: "expense", color: "#991b1b", parent: "housing" },
-	{ id: "food", name: "Alimentation", kind: "expense", color: "#ea580c" },
-	{ id: "groceries", name: "Courses", kind: "expense", color: "#c2410c", parent: "food" },
-	{ id: "restaurants", name: "Restaurants", kind: "expense", color: "#9a3412", parent: "food" },
-	{ id: "coffee", name: "Cafés et à emporter", kind: "expense", color: "#7c2d12", parent: "food" },
-	{ id: "transportation", name: "Transports", kind: "expense", color: "#2563eb" },
-	{ id: "gas", name: "Carburant", kind: "expense", color: "#1d4ed8", parent: "transportation" },
+	{ id: "salary", name: "Salaire", color: "#10b981" },
+	{ id: "freelance", name: "Freelance", color: "#059669" },
+	{ id: "investment_income", name: "Revenus de placements", color: "#047857" },
+	{ id: "housing", name: "Logement", color: "#dc2626" },
+	{ id: "rent", name: "Loyer et prêt", color: "#b91c1c", parent: "housing" },
+	{ id: "utilities", name: "Charges", color: "#991b1b", parent: "housing" },
+	{ id: "food", name: "Alimentation", color: "#ea580c" },
+	{ id: "groceries", name: "Courses", color: "#c2410c", parent: "food" },
+	{ id: "restaurants", name: "Restaurants", color: "#9a3412", parent: "food" },
+	{ id: "coffee", name: "Cafés et à emporter", color: "#7c2d12", parent: "food" },
+	{ id: "transportation", name: "Transports", color: "#2563eb" },
+	{ id: "gas", name: "Carburant", color: "#1d4ed8", parent: "transportation" },
 	{
 		id: "car_payment",
 		name: "Crédit auto",
-		kind: "expense",
 		color: "#1e40af",
 		parent: "transportation",
 	},
-	{ id: "entertainment", name: "Loisirs", kind: "expense", color: "#7c3aed" },
-	{ id: "healthcare", name: "Santé", kind: "expense", color: "#db2777" },
-	{ id: "shopping", name: "Shopping", kind: "expense", color: "#059669" },
-	{ id: "travel", name: "Voyages", kind: "expense", color: "#0891b2" },
-	{ id: "personal_care", name: "Soins personnels", kind: "expense", color: "#be185d" },
-	{ id: "insurance", name: "Assurances", kind: "expense", color: "#6366f1" },
-	{ id: "misc", name: "Divers", kind: "expense", color: "#6b7280" },
-	{ id: "interest", name: "Intérêts d'emprunt", kind: "expense", color: "#475569" },
+	{ id: "entertainment", name: "Loisirs", color: "#7c3aed" },
+	{ id: "healthcare", name: "Santé", color: "#db2777" },
+	{ id: "shopping", name: "Shopping", color: "#059669" },
+	{ id: "travel", name: "Voyages", color: "#0891b2" },
+	{ id: "personal_care", name: "Soins personnels", color: "#be185d" },
+	{ id: "insurance", name: "Assurances", color: "#6366f1" },
+	{ id: "misc", name: "Divers", color: "#6b7280" },
+	{ id: "interest", name: "Intérêts d'emprunt", color: "#475569" },
 ];
 
 type AccountSpec = {
@@ -241,7 +239,6 @@ export function samplePlan(options: {
 		categories: CATEGORIES.map((category): PlanCategory => ({
 			sourceId: category.id,
 			name: category.name,
-			kind: category.kind,
 			color: category.color,
 			// Sure's demo sets no icon; Archant has none for « shapes ».
 			icon: newCategory().icon,

@@ -1981,7 +1981,7 @@ describe("exportArchive", () => {
 		await ownDatabase();
 		const checking = await openOwn({ name: "Compte joint", openingDate: "2026-04-01" });
 		await database().run(
-			sql`insert into categories (id, name, kind, color, icon, created_at, updated_at) values ('eau', 'Eau', 'expense', '#e99537', 'tag', 0, 0)`,
+			sql`insert into categories (id, name, color, icon, created_at, updated_at) values ('eau', 'Eau', '#e99537', 'tag', 0, 0)`,
 		);
 		await database().run(
 			sql`insert into recurring_transactions (id, account_id, label_key, label, name, amount, currency, expected_day_of_month, anchor_date, last_occurrence_date, next_expected_date, occurrence_count, status, manual, bill_type, category_id, autopay, notes, payment_url, end_after_count, schedule_pinned_at, dedup_scope, created_at, updated_at) values ('r1', ${checking.id}, 'eau', 'PRLV EAU', 'Eau', -8420, 'EUR', 10, '2026-07-10', '2026-07-10', '2026-10-10', 1, 'active', 1, 'installment', 'eau', 1, 'Contrat 4821', 'https://eau.example/payer', 4, ${Date.parse("2026-09-20T08:00:00Z")}, '-8420', 0, 0), ('r2', ${checking.id}, 'edf', 'PRLV EDF', null, -6500, 'EUR', 5, null, '2026-09-05', '2026-10-05', 3, 'suggested', 0, 'bill', null, 0, null, null, null, null, '', 1, 1)`,
@@ -2188,10 +2188,10 @@ describe("exportArchive", () => {
 			expect.objectContaining({
 				id: bakery,
 				parent_id: food,
-				classification: "expense",
 				lucide_icon: "tag",
 			}),
 		);
+		expect(archive.of("Category").every((entry) => !("classification" in entry))).toBe(true);
 		expect(archive.csv("categories.csv")).toContainEqual([
 			"Boulangerie",
 			"#e99537",

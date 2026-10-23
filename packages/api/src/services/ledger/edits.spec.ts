@@ -1470,7 +1470,6 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 			await big.db.insert(categories).values({
 				id: category,
 				name: "Courses",
-				kind: "expense",
 				color: "#e99537",
 				icon: "tag",
 				createdAt: 0,

@@ -22,7 +22,7 @@ const categoryIcon = categoryField.icon.describe(
 	`A Lucide icon name, one of: ${CATEGORY_ICONS.join(", ")}.`,
 );
 
-/** `create_category`: Sure's fields; the category is an expense, or its parent's kind. */
+/** `create_category`: Sure's fields; a subcategory takes its parent's colour. */
 export const createCategoryInput = z.strictObject({
 	name: requiredSureName(CATEGORY_NAME_MAX_LENGTH).describe(
 		"Category name, which no other category holds, case aside.",
@@ -44,7 +44,7 @@ export const createCategoryInput = z.strictObject({
 /**
  * `update_category`: Sure's name, colour and icon, through the edit
  * « Réglages » makes; `run` refuses none of them with Sure's `no_changes`.
- * Its kind and parent stay, as Sure's function moves no category.
+ * Its parent stays, as Sure's function moves no category.
  */
 export const updateCategoryInput = z.strictObject({
 	id: z.string().describe("ID of the category to update; use get_categories to find it."),

@@ -9,8 +9,6 @@ import { toast } from "sonner";
 import type { CreateCategoryInput } from "@archant/api/schemas/categories";
 import { createCategorySchema } from "@archant/api/schemas/categories";
 import { newCategory } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/category-presets";
-import { CATEGORY_KINDS } from "@archant/data/category-presets";
 
 import { ChoiceField } from "@/components/ChoiceField";
 import { FieldMessage } from "@/components/FieldMessage";
@@ -32,21 +30,17 @@ import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
-const FIELD_NAMES = ["name", "kind", "color", "icon", "parentId"] as const;
+const FIELD_NAMES = ["name", "color", "icon", "parentId"] as const;
 
 // Radix Select refuses an empty value, so « no parent » needs a token of its own.
 const NO_PARENT = "none";
 
 const valuesOf = (category: CategoryData): CreateCategoryInput => ({
 	name: category.name,
-	kind: category.kind,
 	color: category.color,
 	icon: category.icon,
 	parentId: category.parentId,
 });
-
-const blank = (kind: CategoryKind | undefined): CreateCategoryInput =>
-	kind === undefined ? newCategory() : { ...newCategory(), kind };
 
 type CategoryDialogProps = {
 	open: boolean;
@@ -55,30 +49,22 @@ type CategoryDialogProps = {
 	category?: CategoryData | undefined;
 	/** Every category, for the parent choice. */
 	categories: readonly CategoryData[];
-	/** The type a new category starts with, as an empty group's button sets it. */
-	kind?: CategoryKind | undefined;
 };
 
 /**
- * Creates or edits a category. Once a parent is chosen, the type and colour
- * disappear: the child takes its parent's, as the API enforces.
+ * Creates or edits a category, as Sure's `categories/_form.html.erb`: no
+ * type since Sure's #1160. Once a parent is chosen, the colour disappears:
+ * the child takes its parent's, as the API enforces.
  */
-export function CategoryDialog({
-	open,
-	onOpenChange,
-	category,
-	categories,
-	kind: presetKind,
-}: CategoryDialogProps) {
+export function CategoryDialog({ open, onOpenChange, category, categories }: CategoryDialogProps) {
 	const { t } = useTranslation();
 	const createCategory = useCreateCategory();
 	const updateCategory = useUpdateCategory();
 	const form = useForm<CreateCategoryInput>({
 		resolver: zodResolver(createCategorySchema),
-		defaultValues: category === undefined ? blank(presetKind) : valuesOf(category),
+		defaultValues: category === undefined ? newCategory() : valuesOf(category),
 	});
 	const { errors, isSubmitting } = form.formState;
-	const kind = useController({ control: form.control, name: "kind" });
 	const color = useController({ control: form.control, name: "color" });
 	const icon = useController({ control: form.control, name: "icon" });
 	const parentId = useController({ control: form.control, name: "parentId" });
@@ -101,9 +87,9 @@ export function CategoryDialog({
 
 	useEffect(() => {
 		if (open) {
-			form.reset(latest.current === undefined ? blank(presetKind) : valuesOf(latest.current));
+			form.reset(latest.current === undefined ? newCategory() : valuesOf(latest.current));
 		}
-	}, [open, categoryId, presetKind, form]);
+	}, [open, categoryId, form]);
 
 	const submit = form.handleSubmit(async (values) => {
 		try {
@@ -188,26 +174,13 @@ export function CategoryDialog({
 					</div>
 
 					{!hasParent && (
-						<>
-							<ChoiceField
-								id="category-kind"
-								label={t("categories.form.kind")}
-								value={kind.field.value}
-								options={CATEGORY_KINDS.map((value) => ({
-									value,
-									label: t(`categories.kinds.${value}`),
-								}))}
-								onChange={kind.field.onChange}
-							/>
-
-							<ColorPicker
-								form="category"
-								legend={t("categories.form.color")}
-								value={color.field.value}
-								onChange={color.field.onChange}
-								error={errors.color}
-							/>
-						</>
+						<ColorPicker
+							form="category"
+							legend={t("categories.form.color")}
+							value={color.field.value}
+							onChange={color.field.onChange}
+							error={errors.color}
+						/>
 					)}
 
 					<IconPicker

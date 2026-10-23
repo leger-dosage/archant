@@ -208,7 +208,7 @@ export async function fundableAccountsNamed(
 const fold = (value: string) => value.trim().toLocaleLowerCase("fr");
 
 /** A category as Sure's `update_budget` finds it. */
-type FoundCategory = { id: string; name: string; kind: string; parentId: string | null };
+type FoundCategory = { id: string; name: string; parentId: string | null };
 
 /**
  * Sure's `find_budget_category!` lookup: each reference's category by its
@@ -222,7 +222,6 @@ export async function categoriesByRef(
 		.select({
 			id: categories.id,
 			name: categories.name,
-			kind: categories.kind,
 			parentId: categories.parentId,
 		})
 		.from(categories);

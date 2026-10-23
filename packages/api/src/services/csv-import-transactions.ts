@@ -7,7 +7,6 @@ import type { CsvStatement } from "./ledger/csv-transactions.ts";
 import type { Transaction } from "./ledger/shared.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
 
-import type { CategoryKind } from "@archant/data/category-presets";
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, parseDecimalAmount, toMinorUnits } from "@archant/data/money";
@@ -58,7 +57,7 @@ type ReadRow = {
 	tags: string[];
 };
 
-type StoredCategory = { id: string; name: string; kind: CategoryKind; color: string };
+type StoredCategory = { id: string; name: string; color: string };
 
 /**
  * Sure's `CategoryMapping` key looked up by its leaf: « Maison:Jardin »
@@ -188,7 +187,7 @@ export function readRows(
 
 /**
  * Sure's `CategoryMapping#create_mappable!`: a key `Parent:Child` files the
- * child, found by name or created with its parent's colour and kind, under a
+ * child, found by name or created with its parent's colour, under a
  * root parent found or created; any other key is the category of that name
  * or a new one. Returns the category the key maps to.
  */
@@ -203,7 +202,6 @@ async function createCategory(
 		const created = {
 			id: crypto.randomUUID(),
 			name,
-			kind: parent?.kind ?? preset.kind,
 			color: parent?.color ?? preset.color,
 			icon: preset.icon,
 			parentId: parent?.id ?? null,
@@ -267,7 +265,6 @@ export async function classificationsOf(
 		.select({
 			id: categories.id,
 			name: categories.name,
-			kind: categories.kind,
 			color: categories.color,
 			parentId: categories.parentId,
 		})

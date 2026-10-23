@@ -533,6 +533,17 @@ const insertCategory = (
 	database: Database,
 	id: string,
 	name: string,
+	parentId: string | null = null,
+) =>
+	database.run(
+		sql`insert into categories (id, name, color, icon, parent_id, created_at, updated_at) values (${id}, ${name}, '#e99537', 'tag', ${parentId}, 0, 0)`,
+	);
+
+/** A category before 0092, which still required an income or expense kind. */
+const insertKindedCategory = (
+	database: Database,
+	id: string,
+	name: string,
 	kind = "expense",
 	parentId: string | null = null,
 ) =>
@@ -541,12 +552,48 @@ const insertCategory = (
 	);
 
 describe("categories", () => {
-	it("accepts an income or an expense kind only", async () => {
+	it("keeps every category, its children, lines and envelopes when 0092 drops the kind", async () => {
+		const before = await migratedBefore("0092");
+		await insertKindedCategory(before, "c1", "Revenus", "income");
+		await insertKindedCategory(before, "c2", "Salaire", "income", "c1");
+		await insertKindedCategory(before, "c3", "Courses", "expense");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(
+			sql`insert into transactions (entry_id, label, category_id, category_origin) values ('e1', 'Paie', 'c2', 'user')`,
+		);
+		await before.run(
+			sql`insert into budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at) values ('b1', '2026-09', 'EUR', 100000, 0, 0, 0)`,
+		);
+		await before.run(
+			sql`insert into budget_categories (id, budget_id, category_id, budgeted_spending, created_at, updated_at) values ('bc1', 'b1', 'c1', 5000, 0, 0)`,
+		);
+		before.$client.close();
+
 		const database = await migrated();
 
-		await expect(insertCategory(database, "c1", "Salaire", "income")).resolves.toBeDefined();
-		await expect(insertCategory(database, "c2", "Courses", "expense")).resolves.toBeDefined();
-		await expect(insertCategory(database, "c3", "Virements", "transfer")).rejects.toThrow();
+		await expect(
+			database.all(
+				sql`select id, name, color, icon, parent_id as parentId from categories order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "c1", name: "Revenus", color: "#e99537", icon: "tag", parentId: null },
+			{ id: "c2", name: "Salaire", color: "#e99537", icon: "tag", parentId: "c1" },
+			{ id: "c3", name: "Courses", color: "#e99537", icon: "tag", parentId: null },
+		]);
+		await expect(
+			database.all(sql`select name from pragma_table_info('categories') where name = 'kind'`),
+		).resolves.toEqual([]);
+		await expect(
+			database.get(sql`select category_id as categoryId from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ categoryId: "c2" });
+		await expect(
+			database.get(sql`select category_id as categoryId from budget_categories where id = 'bc1'`),
+		).resolves.toEqual({ categoryId: "c1" });
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+		// The rebuilt table keeps its case-folded unique name and its restricted parent.
+		await expect(insertCategory(database, "c4", "courses")).rejects.toThrow();
+		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
 	});
 
 	it("holds a name once, ignoring case", async () => {
@@ -562,8 +609,8 @@ describe("categories", () => {
 		const database = await migrated();
 		await insertCategory(database, "c1", "Logement");
 
-		await expect(insertCategory(database, "c2", "Loyer", "expense", "nope")).rejects.toThrow();
-		await insertCategory(database, "c3", "Loyer", "expense", "c1");
+		await expect(insertCategory(database, "c2", "Loyer", "nope")).rejects.toThrow();
+		await insertCategory(database, "c3", "Loyer", "c1");
 		await expect(database.run(sql`delete from categories where id = 'c1'`)).rejects.toThrow();
 	});
 
@@ -654,7 +701,7 @@ describe("categories", () => {
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertEntry(before, "e1", "transaction", null);
 		await insertEntry(before, "e2", "transaction", null);
-		await insertCategory(before, "c1", "Courses");
+		await insertKindedCategory(before, "c1", "Courses");
 		await before.run(
 			sql`insert into transactions (entry_id, label, notes, reference, excluded, possible_duplicate, locked_fields, category_id) values ('e1', 'Boulangerie', 'pain', '12', 1, 1, '["label"]', 'c1'), ('e2', 'Loyer', null, null, 0, 0, '[]', null)`,
 		);
@@ -723,7 +770,7 @@ describe("merchants", () => {
 		const before = await migratedBefore("0013");
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertEntry(before, "e1", "transaction", null);
-		await insertCategory(before, "c1", "Courses");
+		await insertKindedCategory(before, "c1", "Courses");
 		await before.run(
 			sql`insert into transactions (entry_id, label, locked_fields, category_id, category_origin) values ('e1', 'CB CARREFOUR 1234', '["category"]', 'c1', 'user')`,
 		);
@@ -1987,7 +2034,7 @@ describe("recurring transactions", () => {
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertAccount(before, "a2", "depository", "savings");
 		await insertEntry(before, "e1", "transaction", null);
-		await insertCategory(before, "c1", "Courses");
+		await insertKindedCategory(before, "c1", "Courses");
 		await insertMerchant(before, "m1", "Carrefour");
 		await before.run(
 			sql`insert into transactions (entry_id, label, notes, reference, excluded, one_time, possible_duplicate, pending, pending_missed_syncs, pending_missed_on, locked_fields, category_id, category_origin, merchant_id, expected_transfer_account_id) values ('e1', 'Carrefour', 'Courses', '123', 1, 1, 1, 1, 1, '2026-09-20', '{"label":1789984800000}', 'c1', 'user', 'm1', 'a2')`,
@@ -2553,7 +2600,7 @@ describe("pending transactions", () => {
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertAccount(before, "a2", "depository", "savings");
 		await insertEntry(before, "e1", "transaction", null);
-		await insertCategory(before, "c1", "Courses");
+		await insertKindedCategory(before, "c1", "Courses");
 		await insertMerchant(before, "m1", "Carrefour");
 		await before.run(
 			sql`insert into transactions (entry_id, label, notes, reference, excluded, one_time, possible_duplicate, pending, locked_fields, category_id, category_origin, merchant_id, expected_transfer_account_id, investment_activity_label) values ('e1', 'Carrefour', 'Courses', '123', 1, 1, 1, 1, '{"label":1789984800000}', 'c1', 'user', 'm1', 'a2', 'Fee')`,
@@ -3061,7 +3108,7 @@ describe("migrateFromEnv", () => {
 describe("budgets", () => {
 	it("keeps each amount and turns rollover off when 0041 adds it", async () => {
 		const before = await migratedBefore("0041");
-		await insertCategory(before, "c1", "Cadeaux");
+		await insertKindedCategory(before, "c1", "Cadeaux");
 		await before.run(
 			sql`insert into budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at) values ('b1', '2026-06', 'EUR', 100000, 0, 0, 0)`,
 		);

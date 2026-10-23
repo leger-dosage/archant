@@ -342,7 +342,6 @@ export async function newCategory(name: string) {
 	await temp.db.insert(categories).values({
 		id,
 		name: `${name} ${id}`,
-		kind: "expense",
 		color: "#e99537",
 		icon: "tag",
 		createdAt: 0,

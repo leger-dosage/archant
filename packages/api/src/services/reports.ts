@@ -323,7 +323,6 @@ async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[
 		.select({
 			id: categories.id,
 			name: categories.name,
-			kind: categories.kind,
 			color: categories.color,
 			icon: categories.icon,
 			parentId: categories.parentId,

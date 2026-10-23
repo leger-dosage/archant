@@ -91,7 +91,6 @@ async function category(name: string) {
 	await temp.db.insert(categories).values({
 		id,
 		name,
-		kind: "expense",
 		color: "#e99537",
 		icon: "tag",
 		parentId: null,

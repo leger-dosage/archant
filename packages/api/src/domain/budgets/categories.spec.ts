@@ -16,7 +16,6 @@ import {
 const category = (id: string, overrides: Partial<CashFlowCategory> = {}): CashFlowCategory => ({
 	id,
 	name: id,
-	kind: "expense",
 	color: "#e99537",
 	icon: "tag",
 	parentId: null,
@@ -50,7 +49,7 @@ const house = category("Maison");
 const works = category("Travaux", { parentId: "Maison" });
 const garden = category("Jardin", { parentId: "Maison" });
 const groceries = category("Courses");
-const salary = category("Salaire", { kind: "income" });
+const salary = category("Salaire");
 
 function budgetOf(
 	input: Partial<Parameters<typeof budgetCategories>[0]> & { amounts?: Map<string, MinorUnits> },
@@ -77,7 +76,7 @@ const lineOf = (result: ReturnType<typeof budgetCategories>, id: string) => {
 };
 
 describe("budgetCategories", () => {
-	it("lists expense categories, parents by name with their children by name under them", () => {
+	it("lists every category, parents by name with their children by name under them", () => {
 		const result = budgetOf({});
 
 		expect(result.categories.map((line) => [line.categoryId, line.parentId])).toEqual([
@@ -85,7 +84,22 @@ describe("budgetCategories", () => {
 			["Maison", null],
 			["Jardin", "Maison"],
 			["Travaux", "Maison"],
+			["Salaire", null],
 		]);
+	});
+
+	it("gives a category that also takes income an envelope of what it nets out, as Sure's #1160", () => {
+		const result = budgetOf({
+			amounts: amounts({ Salaire: 10_000 }),
+			rows: [row("Salaire", 250_000), row("Salaire", -260_000)],
+		});
+
+		expect(lineOf(result, "Salaire")).toMatchObject({
+			budgetedSpending: 10_000,
+			spent: 10_000,
+			available: 0,
+		});
+		expect(result.allocated).toBe(10_000);
 	});
 
 	it("reads a category without a row as 0, and adds top-level amounts into the allocation", () => {
@@ -319,9 +333,9 @@ describe("budgetCategories", () => {
 		});
 	});
 
-	it("lists « Sans catégorie » on track only beside an expense category", () => {
-		const alone = budgetOf({ categories: [salary] });
-		const over = budgetOf({ categories: [salary], rows: [row(null, -300_000)] });
+	it("lists « Sans catégorie » on track only beside a category", () => {
+		const alone = budgetOf({ categories: [] });
+		const over = budgetOf({ categories: [], rows: [row(null, -300_000)] });
 
 		expect(alone.categories).toEqual([]);
 		expect(alone.uncategorised).toMatchObject({ budgeted: true, section: null });
@@ -412,7 +426,7 @@ describe("budgetCategories", () => {
 });
 
 describe("spentByCategory", () => {
-	it("counts each category's outflow net of refunds, a parent with its children, an income category's too where it counted nowhere", () => {
+	it("counts each category's outflow net of refunds, a parent with its children, a category that earns too, where it counted nowhere", () => {
 		expect(
 			Object.fromEntries(
 				spentByCategory(

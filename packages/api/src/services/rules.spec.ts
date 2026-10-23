@@ -49,7 +49,6 @@ beforeAll(async () => {
 		["courses", "loisirs"].map((id) => ({
 			id,
 			name: id,
-			kind: "expense" as const,
 			color: "#e99537",
 			icon: "tag" as const,
 			createdAt: 0,

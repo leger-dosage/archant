@@ -33,7 +33,7 @@ export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
 });
 
 /**
- * Sure's categories step: the share of the total allocated, then each expense
+ * Sure's categories step: the share of the total allocated, then each
  * category's amount, parents by name with their children under them, and
  * « Sans catégorie », which takes what is left. « Valider » returns to the
  * month, and waits while the categories take more than the total.

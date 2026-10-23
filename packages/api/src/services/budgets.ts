@@ -95,13 +95,13 @@ export type BudgetMonth = {
 	/** The donut's slices: each top-level expense line that spent, largest first. */
 	segments: SpendingSegment[];
 	/**
-	 * Every expense category's envelope, parents by name with their children
+	 * Every category's envelope, parents by name with their children
 	 * by name under them, whether the month is set up or not.
 	 */
 	categories: BudgetCategoryLine[];
 	/** « Sans catégorie »: what the total leaves unallocated, never stored. */
 	uncategorised: UncategorisedLine;
-	/** The top-level expense categories' amounts, summed: « Valider » waits while it passes the total. */
+	/** The top-level categories' amounts, summed: « Valider » waits while it passes the total. */
 	allocated: MinorUnits;
 	/** The medians « Suggérer » fills; `null` without an earlier month to take one from. */
 	suggested: { spending: MinorUnits | null; income: MinorUnits | null };
@@ -118,7 +118,7 @@ type Db = ServiceDeps["db"];
 
 const notFound = () => new AppError("NOT_FOUND", "No budget can be set for this month.");
 
-const notExpense = () => new AppError("NOT_FOUND", "No expense category has this id.");
+const unknownCategory = () => new AppError("NOT_FOUND", "No category has this id.");
 
 /** The latest month before `month` that is set up, gaps skipped; `undefined` without one. */
 function latestSetUpBefore(db: Db, month: IsoMonth) {
@@ -214,9 +214,7 @@ async function setUpMonths(
 
 /** Every category, as the chain places it in today's tree. */
 function treeCategories(db: Db) {
-	return db
-		.select({ id: categories.id, kind: categories.kind, parentId: categories.parentId })
-		.from(categories);
+	return db.select({ id: categories.id, parentId: categories.parentId }).from(categories);
 }
 
 /**
@@ -438,7 +436,7 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
  * Sets a month's planned spending and expected income, in the reporting
  * currency: creates the month's row on its first save, updates it after.
  * Under the write lock, so two saves of one month never both insert. A month
- * set up for the first time inherits each expense category's rollover switch
+ * set up for the first time inherits each category's rollover switch
  * that is on in the latest earlier month set up, as Sure's
  * `inherited_rollover_flags`, through a row at 0.
  */
@@ -499,7 +497,7 @@ async function writeTotals(
 
 /**
  * Sure's `inherited_rollover_flags`: a row at 0, rollover on, for each
- * expense category whose switch is on in the latest month set up before
+ * category whose switch is on in the latest month set up before
  * `month`. A month not set up has no row yet, so nothing here collides.
  */
 async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: number) {
@@ -514,11 +512,7 @@ async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: n
 		.from(budgetCategoryRows)
 		.innerJoin(categories, eq(categories.id, budgetCategoryRows.categoryId))
 		.where(
-			and(
-				eq(budgetCategoryRows.budgetId, source.id),
-				eq(budgetCategoryRows.rolloverEnabled, true),
-				eq(categories.kind, "expense"),
-			),
+			and(eq(budgetCategoryRows.budgetId, source.id), eq(budgetCategoryRows.rolloverEnabled, true)),
 		);
 
 	if (inherited.length > 0) {
@@ -540,7 +534,7 @@ async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: n
 }
 
 /**
- * Sets one expense category's amount in a month set up, as Sure's
+ * Sets one category's amount in a month set up, as Sure's
  * `update_budgeted_spending!`: creates its row on the first save. A
  * subcategory's save also sets its parent to its children's amounts plus its
  * own reserve, creating the parent's row if needed, in the same transaction;
@@ -576,9 +570,8 @@ export async function saveCategoryBudget(
 				.where(eq(categories.id, categoryId))
 				.get();
 
-			// Only expense categories carry an amount, as income is one figure per month.
-			if (category === undefined || category.kind !== "expense") {
-				throw notExpense();
+			if (category === undefined) {
+				throw unknownCategory();
 			}
 
 			await writeCategoryAmount(tx, budget.id, category, amount);
@@ -592,7 +585,7 @@ export async function saveCategoryBudget(
 
 /**
  * `saveCategoryBudget`'s write, under the caller's write lock, in a month set
- * up and for an expense category: its amount, then its parent's, as
+ * up: its amount, then its parent's, as
  * `parentAfterOwnSave` and `parentAfterChildSave` compute them.
  */
 async function writeCategoryAmount(
@@ -714,7 +707,7 @@ export async function updateBudget(
 			if (categoryAmounts.length > 0) {
 				const budget = await setUpBudget(tx, month);
 				const found = await tx
-					.select({ id: categories.id, parentId: categories.parentId, kind: categories.kind })
+					.select({ id: categories.id, parentId: categories.parentId })
 					.from(categories)
 					.where(
 						inArray(
@@ -726,9 +719,8 @@ export async function updateBudget(
 				const writes = categoryAmounts.map((entry) => {
 					const category = byId.get(entry.categoryId);
 
-					// Only expense categories carry an amount, as income is one figure per month.
-					if (category === undefined || category.kind !== "expense") {
-						throw notExpense();
+					if (category === undefined) {
+						throw unknownCategory();
 					}
 
 					return { category, amount: entry.budgeted };
@@ -793,7 +785,7 @@ export async function copyBudget(
 
 			const sourceRows = await storedRowsOf(tx, source.id);
 			const allCategories = await tx
-				.select({ id: categories.id, parentId: categories.parentId, kind: categories.kind })
+				.select({ id: categories.id, parentId: categories.parentId })
 				.from(categories);
 			const now = Date.now();
 			const amounts = {
@@ -837,7 +829,7 @@ export async function copyBudget(
 }
 
 /**
- * Sure's `BudgetCategory.move_allocation!`: moves an amount from one expense
+ * Sure's `BudgetCategory.move_allocation!`: moves an amount from one
  * category to another in a month set up, both sides in one transaction, as
  * `moveAllocation` computes them. A refusal is a field of `VALIDATION_ERROR`,
  * so the dialog shows it under its field. Answers the month, as `getBudget` does.
@@ -864,21 +856,20 @@ export async function moveCategoryBudget(
 			}
 
 			const budget = await setUpBudget(tx, month);
-			const expense = await tx
+			const allCategories = await tx
 				.select({ id: categories.id, parentId: categories.parentId })
-				.from(categories)
-				.where(eq(categories.kind, "expense"));
-			const from = expense.find((category) => category.id === fromCategoryId);
-			const to = expense.find((category) => category.id === toCategoryId);
+				.from(categories);
+			const from = allCategories.find((category) => category.id === fromCategoryId);
+			const to = allCategories.find((category) => category.id === toCategoryId);
 
 			// « Sans catégorie » has no row to give from or to receive.
 			if (from === undefined || to === undefined) {
-				throw notExpense();
+				throw unknownCategory();
 			}
 
 			const stored = await storedRowsOf(tx, budget.id);
 			const result = moveAllocation({
-				categories: expense,
+				categories: allCategories,
 				amounts: new Map([...stored].map(([id, row]) => [id, row.budgetedSpending])),
 				from,
 				to,
@@ -906,7 +897,7 @@ export async function moveCategoryBudget(
 }
 
 /**
- * Sure's rollover switch on one expense category: sets it in a month set up
+ * Sure's rollover switch on one category: sets it in a month set up
  * and in every later month set up, turning it on through a row at 0 where the
  * category has none, as Sure's `propagate_rollover_choice_forward!`, so the
  * latest choice holds from there on; earlier months keep theirs. Refused as a category's amount
@@ -936,13 +927,13 @@ export async function setCategoryRollover(
 
 			const budget = await setUpBudget(tx, month);
 			const category = await tx
-				.select({ kind: categories.kind })
+				.select({ id: categories.id })
 				.from(categories)
 				.where(eq(categories.id, categoryId))
 				.get();
 
-			if (category === undefined || category.kind !== "expense") {
-				throw notExpense();
+			if (category === undefined) {
+				throw unknownCategory();
 			}
 
 			const later = await tx

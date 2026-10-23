@@ -13,8 +13,8 @@ const PAGE = "/settings/categories";
 const row = (scope: Page | Locator, name: string) =>
 	scope.getByRole("button", { name: `Actions pour ${name}`, exact: true }).locator("..");
 
-const group = (page: Page, name: "Revenus" | "Dépenses") =>
-	page.getByRole("region", { name, exact: true });
+/** The page's one list, as Sure's since #1160: no income or expense group. */
+const list = (page: Page) => page.getByRole("region", { name: "Catégories", exact: true });
 
 /** Picks a swatch or an icon by clicking its label, as a pointer does: the radio itself is hidden. */
 async function pick(dialog: Locator, name: string) {
@@ -53,7 +53,8 @@ const preview = (dialog: Locator) =>
 /** A tinted icon's colour in light mode: the category's, adjusted to 3:1 on the hover row. */
 const iconColor = (hex: string) => rgb(adjustToContrast(hex, "#f4f4f4", 3));
 
-const EXPENSE_DEFAULTS = [
+const DEFAULTS = [
+	"Revenus",
 	"Courses",
 	"Restaurants",
 	"Transports",
@@ -70,33 +71,30 @@ const EXPENSE_DEFAULTS = [
 	"Épargne et placements",
 ];
 
-test("a fresh instance lists the defaults under Revenus and Dépenses, each with its colour and icon", async ({
+test("a fresh instance lists the defaults in one list, each with its colour and icon", async ({
 	page,
 }) => {
 	await page.goto(PAGE);
 	await expect(page.getByRole("heading", { level: 1, name: "Catégories" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Revenus", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("region", { name: "Dépenses", exact: true })).toHaveCount(0);
 
-	const income = group(page, "Revenus");
-	await expect(row(income, "Revenus")).toBeVisible();
-	await expect(row(income, "Revenus").locator('[data-slot="tinted-icon"]')).toHaveCSS(
+	const categories = list(page);
+	await expect(row(categories, "Revenus").locator('[data-slot="tinted-icon"]')).toHaveCSS(
 		"color",
 		iconColor("#22c55e"),
 	);
-	await expect(row(income, "Revenus").locator("svg.lucide-circle-dollar-sign")).toBeVisible();
+	await expect(row(categories, "Revenus").locator("svg.lucide-circle-dollar-sign")).toBeVisible();
 
-	const expenses = group(page, "Dépenses");
-	const names = await expenses
+	const names = await categories
 		.getByRole("button", { name: /^Actions pour / })
 		.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label")));
-	expect(names).toEqual(
-		expect.arrayContaining(EXPENSE_DEFAULTS.map((name) => `Actions pour ${name}`)),
-	);
-	await expect(row(expenses, "Courses").locator('[data-slot="tinted-icon"]')).toHaveCSS(
+	expect(names).toEqual(expect.arrayContaining(DEFAULTS.map((name) => `Actions pour ${name}`)));
+	await expect(row(categories, "Courses").locator('[data-slot="tinted-icon"]')).toHaveCSS(
 		"color",
 		iconColor("#407706"),
 	);
-	await expect(row(expenses, "Courses").locator("svg.lucide-shopping-bag")).toBeVisible();
-	await expect(row(expenses, "Revenus")).toHaveCount(0);
+	await expect(row(categories, "Courses").locator("svg.lucide-shopping-bag")).toBeVisible();
 
 	// French order: « Énergie et eau » sorts under E, before « Frais bancaires ».
 	const energy = names.indexOf("Actions pour Énergie et eau");
@@ -115,6 +113,8 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await page.goto(PAGE);
 	await page.getByRole("button", { name: "Ajouter une catégorie" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
+	// No « Type » since Sure's #1160: a category takes any line and any budget.
+	await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
 	await dialog.getByLabel("Nom").fill(name);
 	const swatches = dialog.getByRole("group", { name: "Couleur" }).getByRole("radio");
 	await expect(swatches).toHaveCount(SWATCHES.length);
@@ -133,7 +133,7 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await expect(page.getByText(`Catégorie « ${name} » ajoutée.`)).toBeVisible();
 
 	await page.reload();
-	await expect(row(group(page, "Dépenses"), name).locator("svg.lucide-dog")).toBeVisible();
+	await expect(row(list(page), name).locator("svg.lucide-dog")).toBeVisible();
 	await expect(row(page, name).locator('[data-slot="tinted-icon"]')).toHaveCSS(
 		"color",
 		iconColor("#eb5757"),
@@ -157,9 +157,8 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await edit.getByRole("combobox", { name: "Catégorie parente" }).click();
 	await page.getByRole("option", { name: parent.name }).click();
 	await expect(preview(edit)).toHaveCSS("color", iconColor("#4da568"));
-	// A child takes its parent's type and colour, so the form stops offering them.
+	// A child takes its parent's colour, so the form stops offering it.
 	await expect(edit.getByRole("group", { name: "Couleur" })).toHaveCount(0);
-	await expect(edit.getByRole("combobox", { name: "Type" })).toHaveCount(0);
 	await edit.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(page.getByText(`Catégorie « ${renamed} » enregistrée.`)).toBeVisible();
 
@@ -241,7 +240,7 @@ test("merging moves the source's transactions into the target and removes the so
 }) => {
 	const account = await api.openAccount();
 	const source = await api.createCategory({ name: uniqueName("Resto") });
-	const target = await api.createCategory({ name: uniqueName("Repas"), kind: "income" });
+	const target = await api.createCategory({ name: uniqueName("Repas") });
 	await api.categorise(
 		[
 			await api.addTransaction(account.id, { date: daysAgo(2), label: "Pizzeria", amount: "-18" }),

@@ -29,7 +29,7 @@ const sumOf = (amounts: readonly MinorUnits[]): MinorUnits =>
  * is off, so a month switched off neither receives nor gives. A parent leaves
  * out its ring-fenced children's amounts and spending, which carry their own.
  * A shared subcategory, at 0, has nothing of its own to carry. A category
- * deleted, or no longer an expense category, is off. A month in another
+ * deleted is off. A month in another
  * currency than the one before starts from nothing: the amounts are not in
  * the same unit. Today's category tree applies to every month.
  */
@@ -37,13 +37,9 @@ export function rolloverChain(input: {
 	categories: readonly TreeCategory[];
 	months: readonly RolloverMonth[];
 }): Map<IsoMonth, Map<string, MinorUnits>> {
-	const expense = new Map(
-		input.categories
-			.filter((category) => category.kind === "expense")
-			.map((category) => [category.id, category]),
-	);
+	const byId = new Map(input.categories.map((category) => [category.id, category]));
 	const childrenOf = (id: string) =>
-		[...expense.values()].filter((category) => category.parentId === id);
+		input.categories.filter((category) => category.parentId === id);
 	const chain = new Map<IsoMonth, Map<string, MinorUnits>>();
 	let previous: { currency: string; carry: ReadonlyMap<string, MinorUnits> } | null = null;
 
@@ -56,7 +52,7 @@ export function rolloverChain(input: {
 		const carry = new Map<string, MinorUnits>();
 
 		for (const [id, row] of month.rows) {
-			const category = expense.get(id);
+			const category = byId.get(id);
 
 			if (
 				category === undefined ||

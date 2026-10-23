@@ -27,7 +27,7 @@ import { eq } from "drizzle-orm";
 import type { AccountType } from "@archant/data/account-types";
 import { isSubtypeOf, supportsTrades } from "@archant/data/account-types";
 import { errorCode } from "@archant/data/backup";
-import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
+import type { CategoryIcon } from "@archant/data/category-presets";
 import {
 	CATEGORY_COLOR_PATTERN,
 	CATEGORY_ICONS,
@@ -438,7 +438,6 @@ function analyseAccounts(sheet: Sheet, mappings: Mappings | undefined): Analysis
 type CategoryState = {
 	id: string;
 	name: string;
-	kind: CategoryKind;
 	color: string;
 	icon: CategoryIcon;
 	parentId: string | null;
@@ -456,10 +455,10 @@ const categoryName = (name: string) => cut(name.trim().normalize("NFC"), CATEGOR
 
 /**
  * Sure's `CategoryImport`: each row finds its category by name, folded as
- * Archant compares names, else creates it as an expense; takes the file's
+ * Archant compares names, else creates it; takes the file's
  * colour and icon when Archant reads them, and the file's parent, found or
- * created as a placeholder, none when blank. A child takes its parent's kind
- * and colour. A category its own parent, or a tree deeper than two levels,
+ * created as a placeholder, none when blank. A child takes its parent's
+ * colour. A category its own parent, or a tree deeper than two levels,
  * is refused on its line.
  */
 async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet): Promise<Analysis> {
@@ -490,7 +489,6 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 		const created: CategoryState = {
 			id: crypto.randomUUID(),
 			name,
-			kind: preset.kind,
 			color: preset.color,
 			icon: preset.icon,
 			parentId: null,
@@ -552,12 +550,11 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 		}
 	}
 
-	// A child carries its parent's kind and colour, as `updateCategory` keeps them.
+	// A child carries its parent's colour, as `updateCategory` keeps it.
 	for (const category of all.values()) {
 		const parent = category.parentId === null ? undefined : all.get(category.parentId);
 
 		if (parent !== undefined) {
-			category.kind = parent.kind;
 			category.color = parent.color;
 		}
 	}
@@ -573,7 +570,6 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 				tx.insert(categories).values({
 					id: category.id,
 					name: category.name,
-					kind: category.kind,
 					color: category.color,
 					icon: category.icon,
 					parentId: null,
@@ -587,8 +583,7 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 				const changed =
 					before === undefined
 						? category.parentId !== null
-						: before.kind !== category.kind ||
-							before.color !== category.color ||
+						: before.color !== category.color ||
 							before.icon !== category.icon ||
 							before.parentId !== category.parentId;
 
@@ -596,7 +591,6 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 					await tx
 						.update(categories)
 						.set({
-							kind: category.kind,
 							color: category.color,
 							icon: category.icon,
 							parentId: category.parentId,

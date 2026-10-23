@@ -130,7 +130,7 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	);
 	await api.categorise(spent, groceries.id);
 	// In a category of their own: uncategorised, November's would net « Retrait » away.
-	const salary = await api.createCategory({ name: uniqueName("Salaire"), kind: "income" });
+	const salary = await api.createCategory({ name: uniqueName("Salaire") });
 	const paid = await (
 		[
 			["2023-08-25", "2 000,00"],
@@ -281,7 +281,7 @@ test("a month is spread over its categories, which show their status and open a 
 	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
 	const gifts = await api.createCategory({ name: uniqueName("Cadeaux") });
 	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
-	const refunds = await api.createCategory({ name: uniqueName("Remboursements"), kind: "income" });
+	const refunds = await api.createCategory({ name: uniqueName("Remboursements") });
 	// One after the other: each is an `immediate` ledger write.
 	const lines = [
 		["2023-12-10", "-100,00", house.id, "Quincaillerie"],
@@ -480,6 +480,26 @@ test("a month is spread over its categories, which show their status and open a 
 		await expect(page).toHaveURL(/[?&]to=2024-02-29(&|$)/u);
 		await expect(page.getByText("Retrait")).toBeVisible();
 		await expect(page.getByText("Remboursement")).toBeHidden();
+	});
+
+	await test.step("a category added without a type takes an envelope, as every category since Sure's #1160", async () => {
+		const trips = uniqueName("Escapades");
+		await page.goto("/settings/categories");
+		await page.getByRole("button", { name: "Ajouter une catégorie" }).click();
+		const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
+		await expect(dialog.getByRole("combobox", { name: "Type" })).toHaveCount(0);
+		await dialog.getByLabel("Nom").fill(trips);
+		await dialog.getByRole("button", { name: "Ajouter une catégorie" }).click();
+		await expect(page.getByText(`Catégorie « ${trips} » ajoutée.`)).toBeVisible();
+
+		await page.goto("/budgets/2024-02/categories");
+		// Where its inflow once made it an income category, « Remboursements » has one too.
+		await expect(field(page, refunds.name)).toBeVisible();
+		await field(page, trips).fill("50");
+		await field(page, trips).press("Tab");
+		await expect(allocation(page)).toContainText(`Budget dépassé de ${euros(5_000)}`);
+		await page.reload();
+		await expect(field(page, trips)).toHaveValue("50,00");
 	});
 });
 

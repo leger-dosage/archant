@@ -1,6 +1,6 @@
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import { INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
-import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
+import type { CategoryIcon } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { TransferKind } from "@archant/data/transfer-kinds";
@@ -84,8 +84,6 @@ export type CashFlowRow = { categoryId: string | null; amount: MinorUnits };
 export type CashFlowCategory = {
 	id: string;
 	name: string;
-	/** Shown beside a category, never read by either view: a row's side is its sign. */
-	kind: CategoryKind;
 	color: string;
 	icon: CategoryIcon;
 	parentId: string | null;
@@ -176,9 +174,9 @@ const uncategorisedLine = (amount: MinorUnits): UnsharedLine => ({
  * rows rolled into its top-level parent, each category's side summed, so a
  * category may sit on both sides and a refund is income in its category.
  * Uncategorised rows make « Sans catégorie » on each side. A row whose
- * category is unknown counts as uncategorised rather than vanishing. The
- * category's kind is never read. Sub-category lines are each side's own
- * rows, as Sure's `subcategory_totals`.
+ * category is unknown counts as uncategorised rather than vanishing.
+ * Sub-category lines are each side's own rows, as Sure's
+ * `subcategory_totals`.
  */
 export function grossCashFlow(
 	rows: readonly CashFlowRow[],

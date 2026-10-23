@@ -7,14 +7,6 @@
 export const CATEGORY_NAME_MAX_LENGTH = 60;
 
 /**
- * Groups the display only (AD-9): a category total is the signed sum of its
- * transactions, and nothing flips a sign on the kind.
- */
-export const CATEGORY_KINDS = ["income", "expense"] as const;
-
-export type CategoryKind = (typeof CATEGORY_KINDS)[number];
-
-/**
  * DESIGN.md's ten swatches, Linear's register, the only colours the form
  * offers. Existing categories keep theirs: see `CATEGORY_COLOR_PATTERN`.
  */
@@ -86,7 +78,6 @@ export type CategoryIcon = (typeof CATEGORY_ICONS)[number];
 /** A category as the form or a picker creates it, before the API checks it. */
 export type CategoryPreset = {
 	name: string;
-	kind: CategoryKind;
 	color: CategoryColor;
 	icon: CategoryIcon;
 	parentId: string | null;
@@ -94,10 +85,10 @@ export type CategoryPreset = {
 
 /**
  * What a new category starts from, in the form, when a picker creates one by
- * name and when an assistant creates one: a top-level expense, the first
+ * name and when an assistant creates one: a top-level category, the first
  * swatch, a plain icon. Neither a picker nor an assistant has room for the
  * rest, which « Réglages › Catégories » edits later.
  */
 export function newCategory(name = ""): CategoryPreset {
-	return { name, kind: "expense", color: CATEGORY_COLORS[0], icon: "tag", parentId: null };
+	return { name, color: CATEGORY_COLORS[0], icon: "tag", parentId: null };
 }

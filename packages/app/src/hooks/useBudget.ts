@@ -15,7 +15,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 export type BudgetData = InferResponseType<(typeof api.budgets)[":month"]["$get"], 200>["data"];
 
-/** An expense category's envelope in the month. */
+/** A category's envelope in the month. */
 export type BudgetCategoryData = BudgetData["categories"][number];
 
 /** « Sans catégorie »'s envelope, what the total leaves unallocated. */

@@ -25,7 +25,7 @@ const CashFlowChart = lazy(async () => ({
 const UNUSED_FILL = "var(--inset)";
 
 /**
- * Sure's `to_donut_segments_json`: what each top-level expense category spent,
+ * Sure's `to_donut_segments_json`: what each top-level category spent,
  * in its colour, then what is left of the budget in grey. A budget of zero
  * with nothing spent is one grey ring.
  */
@@ -46,7 +46,7 @@ function segmentsOf(budget: BudgetData, budgeted: MinorUnits): CashFlowSegment[]
 
 /**
  * Sure's `_budget_donut` for a month set up: a ring of the month's spending
- * by top-level expense category against its budget, and in its centre what
+ * by top-level category against its budget, and in its centre what
  * was spent, in the destructive colour once over budget, « sur » the budget
  * with a link to edit it. The ring is one image to assistive technology,
  * named by a sentence; the centre's figures and link stay readable apart.

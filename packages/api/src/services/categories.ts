@@ -4,7 +4,6 @@ import type { ServiceDeps } from "./deps.ts";
 import { eq, inArray } from "drizzle-orm";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/category-presets";
 import { categories } from "@archant/data/schema/categories";
 import type { Category } from "@archant/data/types";
 
@@ -15,7 +14,6 @@ import { assertNameFree } from "./names.ts";
 export type CategorySummary = {
 	id: string;
 	name: string;
-	kind: CategoryKind;
 	color: string;
 	icon: CategoryIcon;
 	/** `null` for a top-level category. */
@@ -37,7 +35,6 @@ function summarise(category: Category, counts: Map<string, number>): CategorySum
 	return {
 		id: category.id,
 		name: category.name,
-		kind: category.kind,
 		color: category.color,
 		icon: category.icon,
 		parentId: category.parentId,
@@ -48,7 +45,7 @@ function summarise(category: Category, counts: Map<string, number>): CategorySum
 /**
  * Every category with its transaction count, sorted by name as a French
  * reader expects: « Épargne » under E. The whole set, not a page: a household
- * keeps a few dozen. The interface groups them by kind and parent.
+ * keeps a few dozen. The interface groups them by parent.
  */
 export async function listCategories(deps: ServiceDeps): Promise<CategorySummary[]> {
 	const [rows, counts] = await Promise.all([
@@ -123,7 +120,7 @@ async function validParent(db: Db, parentId: string, ownId: string | null): Prom
 	return parent;
 }
 
-/** Creates a category; under a parent, it takes the parent's kind and colour. */
+/** Creates a category; under a parent, it takes the parent's colour. */
 export async function createCategory(
 	deps: ServiceDeps,
 	input: CreateCategoryRequest,
@@ -139,7 +136,6 @@ export async function createCategory(
 			await tx.insert(categories).values({
 				id,
 				name: input.name,
-				kind: parent?.kind ?? input.kind,
 				color: parent?.color ?? input.color,
 				icon: input.icon,
 				parentId: parent?.id ?? null,
@@ -155,9 +151,9 @@ export async function createCategory(
 
 /**
  * Renames, recolours, re-icons or moves a category. A child takes its
- * parent's kind and colour whatever the patch says, and a top-level
- * category passes a new kind or colour on to its children in the same
- * transaction, so the two never disagree.
+ * parent's colour whatever the patch says, as Sure's
+ * `inherit_color_from_parent`, and a top-level category passes a new colour
+ * on to its children in the same transaction, so the two never disagree.
  */
 export async function updateCategory(
 	deps: ServiceDeps,
@@ -178,7 +174,6 @@ export async function updateCategory(
 
 			const parentId = patch.parentId === undefined ? current.parentId : patch.parentId;
 			const parent = parentId === null ? null : await validParent(tx, parentId, id);
-			const kind = parent?.kind ?? patch.kind ?? current.kind;
 			const color = parent?.color ?? patch.color ?? current.color;
 			const now = Date.now();
 
@@ -186,7 +181,6 @@ export async function updateCategory(
 				.update(categories)
 				.set({
 					name: patch.name ?? current.name,
-					kind,
 					color,
 					icon: patch.icon ?? current.icon,
 					parentId,
@@ -197,7 +191,7 @@ export async function updateCategory(
 			if (parent === null) {
 				await tx
 					.update(categories)
-					.set({ kind, color, updatedAt: now })
+					.set({ color, updatedAt: now })
 					.where(eq(categories.parentId, id));
 			}
 		},
@@ -210,7 +204,7 @@ export async function updateCategory(
 /**
  * Deletes a category. Its transactions move to `replacementId`, or become
  * uncategorised without one; its children become top-level and keep their
- * kind and colour, as in Sure. One transaction for all three.
+ * colour, as in Sure. One transaction for all three.
  */
 export async function deleteCategory(
 	deps: ServiceDeps,
@@ -247,9 +241,8 @@ export async function deleteCategory(
 
 /**
  * Merges a category into `targetId`: its transactions move to the target,
- * its children move under the target and take its kind and colour, then it
- * is deleted. Across kinds too, since the kind only groups the display
- * (AD-9). A category with children cannot merge into a child, its own or
+ * its children move under the target and take its colour, then it is
+ * deleted. A category with children cannot merge into a child, its own or
  * another's: they would land on a third level. Returns the target.
  */
 export async function mergeCategory(
@@ -279,7 +272,6 @@ export async function mergeCategory(
 				.update(categories)
 				.set({
 					parentId: target.id,
-					kind: target.kind,
 					color: target.color,
 					updatedAt: Date.now(),
 				})
