@@ -45,7 +45,7 @@ test("« Réglages » works without the version when its route fails", async ({ 
 
 	await page.goto("/settings/categories");
 
-	await expect(page.getByRole("heading", { name: "Catégories" })).toBeVisible();
+	await expect(page.getByRole("heading", { level: 1, name: "Catégories" })).toBeVisible();
 	await expect(page.getByRole("link", { name: "Sécurité" })).toBeVisible();
 	// No retry: the one failure is final, and only then would a toast show.
 	await expect.poll(() => calls).toBe(1);
