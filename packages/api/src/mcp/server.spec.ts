@@ -6,6 +6,7 @@ import { http } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import { toDecimalString, toMinorUnits } from "@archant/data/money";
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
 import { rateLimits, users } from "@archant/data/schema/auth";
@@ -152,6 +153,11 @@ async function callsRecorded(db = temp.db) {
 		})
 		.from(assistantCalls);
 }
+
+/** One of Sure's ten, drawn at random as `COLORS.sample`. */
+const sampledColor: unknown = expect.stringMatching(
+	new RegExp(`^(${CATEGORY_COLORS.join("|")})$`, "u"),
+);
 
 describe("the token check", () => {
 	it("answers no token with 401 and a challenge naming the protected resource metadata", async () => {
@@ -2425,7 +2431,7 @@ describe("creating what a rule names", () => {
 				id: parentId,
 				name,
 				name_with_parent: name,
-				color: "#fc7840",
+				color: sampledColor,
 				icon: "tag",
 				parent_id: null,
 			},
@@ -2446,7 +2452,7 @@ describe("creating what a rule names", () => {
 				args: [parentId],
 			})
 			.then((result) => result.rows);
-		expect(stored).toMatchObject({ color: "#fc7840", icon: "tag" });
+		expect(stored).toMatchObject({ color: sampledColor, icon: "tag" });
 	});
 
 	it("creates a merchant and a tag, and refuses a taken name", async () => {

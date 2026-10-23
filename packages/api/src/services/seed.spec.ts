@@ -45,10 +45,10 @@ afterEach(async () => {
 });
 
 describe("seedDefaults", () => {
-	it("inserts the fifteen top-level defaults with the settings row on first start", async () => {
+	it("inserts Sure's 22 top-level defaults with the settings row on first start", async () => {
 		const db = await fresh();
 
-		await expect(seedDefaults({ db })).resolves.toBe(15);
+		await expect(seedDefaults({ db })).resolves.toBe(22);
 
 		const rows = await db
 			.select({
@@ -58,7 +58,7 @@ describe("seedDefaults", () => {
 				parentId: categories.parentId,
 			})
 			.from(categories);
-		expect(rows).toHaveLength(15);
+		expect(rows).toHaveLength(22);
 		expect(rows).toEqual(
 			expect.arrayContaining(
 				DEFAULT_CATEGORIES.map((category) => ({ ...category, parentId: null })),
@@ -68,6 +68,13 @@ describe("seedDefaults", () => {
 			name: "Revenus",
 			color: "#22c55e",
 			icon: "circle-dollar-sign",
+			parentId: null,
+		});
+		// One of the seven Sure added, under its `fr.yml` name.
+		expect(rows).toContainEqual({
+			name: "Contributions aux investissements",
+			color: "#0d9488",
+			icon: "trending-up",
 			parentId: null,
 		});
 		await expect(
@@ -94,7 +101,7 @@ describe("seedDefaults", () => {
 		// transaction could never finish to release the lock.
 		const results = await Promise.all([seedInProcess(url), seedInProcess(url)]);
 
-		expect(results.toSorted((a, b) => a - b)).toEqual([0, 15]);
-		await expect(db.select().from(categories).all()).resolves.toHaveLength(15);
+		expect(results.toSorted((a, b) => a - b)).toEqual([0, 22]);
+		await expect(db.select().from(categories).all()).resolves.toHaveLength(22);
 	});
 });

@@ -7,7 +7,7 @@ import type { ServiceDeps } from "./deps.ts";
 import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
-import type { CategoryColor, CategoryIcon } from "@archant/data/category-presets";
+import type { CategoryIcon } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
 import {
 	FUNDABLE_ACCOUNT_TYPES,
@@ -74,7 +74,7 @@ export type GoalSummary = GoalProgress & {
 	/** The currency of every amount here, its accounts'. */
 	currency: string;
 	targetDate: IsoDate | null;
-	color: CategoryColor;
+	color: string;
 	icon: CategoryIcon | null;
 	notes: string | null;
 	state: GoalState;

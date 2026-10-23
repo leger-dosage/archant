@@ -3,6 +3,7 @@ import type { TempDatabase } from "../testing/temp-database.ts";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import { assistantCalls } from "@archant/data/schema/assistant-calls";
 
 import { createLogger } from "../lib/logger.ts";
@@ -47,6 +48,11 @@ const listed = z.object({
 	page_size: z.number(),
 	total_pages: z.number(),
 });
+
+/** One of Sure's ten, drawn at random as `COLORS.sample`. */
+const sampledColor: unknown = expect.stringMatching(
+	new RegExp(`^(${CATEGORY_COLORS.join("|")})$`, "u"),
+);
 
 describe("get_categories", () => {
 	it("lists each parent followed by its subcategories, a page at a time, with Sure's fields alone", async () => {
@@ -239,7 +245,7 @@ describe("create_category", () => {
 
 		expect(created.structuredContent).toMatchObject({
 			success: true,
-			category: { name: "Sport", color: "#fc7840", icon: "tag" },
+			category: { name: "Sport", color: sampledColor, icon: "tag" },
 		});
 	});
 });

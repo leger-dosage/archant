@@ -8,7 +8,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
@@ -161,7 +160,6 @@ function CategoryChip({
 					value={transaction.categoryId}
 					onSelect={onPick}
 					allowCreate
-					createColor={randomColor}
 					onCreate={(categoryId) => {
 						setAssignError(null);
 						onCreated(categoryId, () => setAssignError(t("transactions.category.assignError")));
@@ -171,11 +169,6 @@ function CategoryChip({
 			</PopoverContent>
 		</Popover>
 	);
-}
-
-/** A swatch at random, as Sure's quick picker gives a category it creates. */
-function randomColor() {
-	return CATEGORY_COLORS[Math.floor(Math.random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
 }
 
 /**

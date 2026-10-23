@@ -149,3 +149,33 @@ export function adjustToContrast(color: string, background: string, target: numb
 
 	return oklchToHex({ ...start, l: far });
 }
+
+/** Sure's tint behind a category's icon: the colour at 10 % over white. */
+function sureTint(hex: string): string {
+	return toHex(mapRgb(parseHex(hex), (channel) => channel * 0.1 + 0.9));
+}
+
+/**
+ * Whether a custom colour passes Sure's check, `color_icon_picker_controller`:
+ * 4.5 against its own tint. Below, the form shows « Mauvais contraste ».
+ */
+export function hasSureContrast(hex: string): boolean {
+	return contrastRatio(hex, sureTint(hex)) >= 4.5;
+}
+
+/**
+ * Sure's « réglage automatique », `darkenColor`: each channel down by 10 of
+ * 255 at a time until the colour passes, or is black. Checked against the
+ * darkened colour's own tint, which the form checks next, where Sure keeps
+ * the first one and can leave its warning up.
+ */
+export function darkenToSureContrast(hex: string): string {
+	let [r, g, b] = mapRgb(parseHex(hex), (channel) => Math.round(channel * 255));
+	const current = () => toHex([r / 255, g / 255, b / 255]);
+
+	while (!hasSureContrast(current()) && (r > 0 || g > 0 || b > 0)) {
+		[r, g, b] = [Math.max(0, r - 10), Math.max(0, g - 10), Math.max(0, b - 10)];
+	}
+
+	return current();
+}

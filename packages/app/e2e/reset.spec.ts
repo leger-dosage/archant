@@ -1,10 +1,11 @@
-import { expect, test } from "./fixtures.ts";
+import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 import { ADMIN_FIRST_NAME } from "./settings.ts";
 
 // Stories 30.8 and 30.9: Sure's « Zone dangereuse › Réinitialiser le compte »
 // and « Réinitialiser et précharger ». They empty the shared database, so the
 // `reset` project runs them alone, after every `chromium` test and before the
-// password change. The sample-data test runs last on purpose: `password`,
+// password change. Story 32.2's « Supprimer tout » of categories runs here
+// too, for the same reason. The sample-data test runs last on purpose: `password`,
 // `two-factor` and `ceiling` then run on a filled household, as an owner's.
 
 test("a refused reset keeps its dialog while pending, then toasts the error and deletes nothing", async ({
@@ -95,6 +96,65 @@ test("« Réinitialiser le compte » asks first, then empties every list without
 	await rail.getByRole("link", { name: "Accueil", exact: true }).click();
 	await expect(
 		page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }),
+	).toBeVisible();
+});
+
+test("« Supprimer tout » deletes every category, then the empty page and a row's picker restore Sure's defaults", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const label = uniqueName("Boulangerie");
+	const kept = await api.createCategory({ name: uniqueName("Pain") });
+	await api.categorise(
+		[await api.addTransaction(account.id, { date: daysAgo(1), label, amount: "-4" })],
+		kept.id,
+	);
+
+	await page.goto("/settings/categories");
+	await page.getByRole("button", { name: "Plus d'actions sur les catégories" }).click();
+	await page.getByRole("menuitem", { name: "Supprimer tout" }).click();
+	// Sure's high-severity confirmation: Annuler focused, the button destructive.
+	const confirm = page.getByRole("alertdialog", { name: "Supprimer toutes les catégories ?" });
+	await expect(confirm.getByRole("button", { name: "Annuler" })).toBeFocused();
+	await confirm.getByRole("button", { name: "Supprimer toutes les catégories" }).click();
+	await expect(page.getByText("Toutes les catégories supprimées.")).toBeVisible();
+	const list = page.getByRole("region", { name: "Catégories", exact: true });
+	await expect(
+		list.getByRole("heading", { name: "Aucune catégorie pour l'instant" }),
+	).toBeVisible();
+
+	await list.getByRole("button", { name: "Utiliser les valeurs par défaut (recommandé)" }).click();
+	await expect(page.getByText("22 catégories par défaut créées.")).toBeVisible();
+	await expect(
+		list.getByRole("button", { name: "Actions pour Contributions aux investissements" }),
+	).toBeVisible();
+	await expect(list.getByRole("button", { name: /^Actions pour / })).toHaveCount(22);
+
+	await page.getByRole("button", { name: "Plus d'actions sur les catégories" }).click();
+	await page.getByRole("menuitem", { name: "Supprimer tout" }).click();
+	await confirm.getByRole("button", { name: "Supprimer toutes les catégories" }).click();
+	await expect(
+		list.getByRole("heading", { name: "Aucune catégorie pour l'instant" }),
+	).toBeVisible();
+
+	// The line lost its category with the rest, and its picker offers the defaults.
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	const chip = page
+		.getByRole("main")
+		.getByRole("listitem")
+		.filter({ hasText: label })
+		.getByRole("button", { name: "Catégorie : Sans catégorie", exact: true });
+	await chip.click();
+	await page.getByRole("button", { name: "Générer les catégories par défaut" }).click();
+	await expect(page.getByRole("option", { name: "Revenus", exact: true })).toBeVisible();
+	await page.getByRole("option", { name: "Revenus", exact: true }).click();
+	await expect(
+		page
+			.getByRole("main")
+			.getByRole("listitem")
+			.filter({ hasText: label })
+			.getByRole("button", { name: "Catégorie : Revenus", exact: true }),
 	).toBeVisible();
 });
 

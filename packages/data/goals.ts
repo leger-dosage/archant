@@ -2,9 +2,6 @@
 // values without bundling Drizzle.
 
 import type { AccountType } from "./account-types.ts";
-import type { CategoryColor } from "./category-presets.ts";
-
-import { CATEGORY_COLORS } from "./category-presets.ts";
 
 /**
  * Sure's goal states. A goal is created `active`, then moves through
@@ -80,15 +77,6 @@ export function goalTransition(
 export const GOAL_NAME_MAX_LENGTH = 100;
 
 export const GOAL_NOTES_MAX_LENGTH = 1000;
-
-/**
- * The colour « Nouvel objectif » starts from, and the one a goal an assistant
- * creates keeps: a swatch drawn at random, as Sure's `GoalsController#new`
- * and its `create_goal` both take `COLORS.sample`.
- */
-export function sampleGoalColor(random: () => number = Math.random): CategoryColor {
-	return CATEGORY_COLORS[Math.floor(random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
-}
 
 /**
  * Sure's `FUNDABLE_ACCOUNT_TYPES`: the accounts that hold savings. A card or

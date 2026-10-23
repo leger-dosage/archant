@@ -2,8 +2,8 @@ import type { GoalEvent, GoalKind, GoalState } from "./goals.ts";
 
 import { describe, expect, it } from "vitest";
 
-import { CATEGORY_COLORS } from "./category-presets.ts";
-import { GOAL_EVENTS, GOAL_STATES, canBackGoal, goalTransition, sampleGoalColor } from "./goals.ts";
+import { CATEGORY_COLORS, sampleCategoryColor } from "./category-presets.ts";
+import { GOAL_EVENTS, GOAL_STATES, canBackGoal, goalTransition } from "./goals.ts";
 
 /** Sure's AASM events, as `app/models/goal.rb` declares them, for a one-off goal. */
 const SURE: Record<GoalEvent, Partial<Record<GoalState, GoalState>>> = {
@@ -42,14 +42,14 @@ describe("canBackGoal", () => {
 	});
 });
 
-describe("sampleGoalColor", () => {
+describe("sampleCategoryColor", () => {
 	it("draws any category swatch, as Sure's COLORS.sample", () => {
-		expect(sampleGoalColor(() => 0)).toBe(CATEGORY_COLORS[0]);
-		expect(sampleGoalColor(() => 0.999_999)).toBe(CATEGORY_COLORS.at(-1));
-		expect(CATEGORY_COLORS).toContain(sampleGoalColor());
+		expect(sampleCategoryColor(() => 0)).toBe(CATEGORY_COLORS[0]);
+		expect(sampleCategoryColor(() => 0.999_999)).toBe(CATEGORY_COLORS.at(-1));
+		expect(CATEGORY_COLORS).toContain(sampleCategoryColor());
 	});
 
 	it("keeps to the swatches when the draw reaches one", () => {
-		expect(sampleGoalColor(() => 1)).toBe(CATEGORY_COLORS[0]);
+		expect(sampleCategoryColor(() => 1)).toBe(CATEGORY_COLORS[0]);
 	});
 });

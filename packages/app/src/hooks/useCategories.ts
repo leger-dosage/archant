@@ -92,6 +92,8 @@ function useInvalidateAfterMove() {
 		Promise.all([
 			queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			// A recurring series follows its category into a merge, or loses it.
+			queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
 		]);
 }
 
@@ -113,12 +115,33 @@ export function useDeleteCategory() {
 	});
 }
 
-export function useMergeCategory() {
+/** Sure's « Fusionner les catégories »: several sources into one target. */
+export function useMergeCategories() {
 	const invalidate = useInvalidateAfterMove();
 
 	return useMutation({
-		mutationFn: async ({ id, targetId }: { id: string; targetId: string }) =>
-			(await unwrap(api.categories[":id"].merge.$post({ param: { id }, json: { targetId } }))).data,
+		mutationFn: async (json: { targetId: string; sourceIds: string[] }) =>
+			(await unwrap(api.categories.merge.$post({ json }))).data,
 		onSuccess: invalidate,
+	});
+}
+
+/** Sure's « Supprimer tout »: every category goes, transactions left uncategorised. */
+export function useDeleteAllCategories() {
+	const invalidate = useInvalidateAfterMove();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(api.categories.$delete())).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** Sure's `bootstrap`: creates each default no category holds by name. */
+export function useBootstrapCategories() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(api.categories.bootstrap.$post())).data,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 	});
 }

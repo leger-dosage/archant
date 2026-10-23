@@ -286,13 +286,13 @@ for (const list of EMPTY_LISTS) {
 }
 
 /** An empty state inside its group's white block: the block frames it, so it has no border or corner. */
-async function expectFlush(group: Locator, heading: string) {
+async function expectFlush(group: Locator, heading: string, buttons = 1) {
 	const empty = group.locator('[data-slot="empty-state"]');
 	await expect(empty.getByRole("heading", { level: 3, name: heading })).toBeVisible();
 	await expect(empty).toHaveCSS("border-top-width", "0px");
 	await expect(empty).toHaveCSS("border-radius", "0px");
 	await expect(empty.locator('[data-slot="tinted-icon"]')).toHaveCSS("width", "36px");
-	await expect(empty.getByRole("button")).toHaveCount(1);
+	await expect(empty.getByRole("button")).toHaveCount(buttons);
 }
 
 test("inside a group's white block, the empty states of banks and categories drop their frame", async ({
@@ -315,7 +315,12 @@ test("inside a group's white block, the empty states of banks and categories dro
 	);
 
 	await page.goto("/settings/categories");
-	await expectFlush(await expectListGroup(page, "Catégories"), "Aucune catégorie pour l'instant");
+	// Sure's two: its defaults, then a category of one's own.
+	await expectFlush(
+		await expectListGroup(page, "Catégories"),
+		"Aucune catégorie pour l'instant",
+		2,
+	);
 });
 
 test("the transactions page says it is empty inside its list card, with no frame of its own", async ({

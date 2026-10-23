@@ -2,7 +2,6 @@ import type { IsoDate } from "../domain/dates.ts";
 import type { PlanAccount, PlanCategory, PlanSecurity, SurePlan } from "./sure-import-plan.ts";
 
 import type { AccountDetails, AccountSubtype, AccountType } from "@archant/data/account-types";
-import type { CategoryColor } from "@archant/data/category-presets";
 import { CATEGORY_COLORS, newCategory } from "@archant/data/category-presets";
 import { formatQuantity, formatTradePrice } from "@archant/data/decimals";
 import type { GoalState } from "@archant/data/goals";
@@ -34,7 +33,7 @@ export type SampleGoal = {
 	name: string;
 	targetAmount: MinorUnits;
 	targetDate: IsoDate | null;
-	color: CategoryColor;
+	color: string;
 	state: GoalState;
 	/** What a completed goal had saved, Sure's earmark on the account it closed with. */
 	completedAmount: MinorUnits | null;

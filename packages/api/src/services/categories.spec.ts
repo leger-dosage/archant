@@ -7,16 +7,20 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { toMinorUnits } from "@archant/data/money";
 import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
+import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
+	bootstrapCategories,
 	createCategory,
+	deleteAllCategories,
 	deleteCategory,
 	listCategories,
-	mergeCategory,
+	mergeCategories,
 	updateCategory,
 	withChildren,
 } from "./categories.ts";
+import { DEFAULT_CATEGORIES } from "./default-categories.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { updateTransaction } from "./ledger/edits.ts";
 import { ingest } from "./ledger/ingest.ts";
@@ -201,7 +205,7 @@ describe("listCategories", () => {
 			await seedDefaults({ db: db.db });
 			const list = await listCategories({ db: db.db, timeZone: "Europe/Paris" });
 
-			expect(list).toHaveLength(15);
+			expect(list).toHaveLength(22);
 			expect(list.every((category) => category.transactionCount === 0)).toBe(true);
 		} finally {
 			await db.dispose();
@@ -451,43 +455,117 @@ describe("deleteCategory", () => {
 	});
 });
 
-describe("mergeCategory", () => {
-	it("moves the transactions to the target, deletes the source and returns the target", async () => {
+/** A month's budget, `lines` giving each category its amount in cents. */
+async function budgetMonth(month: string, lines: Record<string, number>) {
+	const budgetId = crypto.randomUUID();
+	await temp.db.insert(budgets).values({
+		id: budgetId,
+		month,
+		currency: "EUR",
+		budgetedSpending: 100_000,
+		expectedIncome: 0,
+		createdAt: 0,
+		updatedAt: 0,
+	});
+
+	await temp.db.insert(budgetCategories).values(
+		Object.entries(lines).map(([categoryId, budgetedSpending]) => ({
+			id: crypto.randomUUID(),
+			budgetId,
+			categoryId,
+			budgetedSpending,
+			createdAt: 0,
+			updatedAt: 0,
+		})),
+	);
+}
+
+const budgetLines = async () =>
+	(
+		await temp.db
+			.select({
+				month: budgets.month,
+				categoryId: budgetCategories.categoryId,
+				amount: budgetCategories.budgetedSpending,
+			})
+			.from(budgetCategories)
+			.innerJoin(budgets, eq(budgets.id, budgetCategories.budgetId))
+	).toSorted((a, b) => a.month.localeCompare(b.month));
+
+describe("mergeCategories", () => {
+	it("moves several sources' transactions to the target, deletes them and returns the target", async () => {
 		const groceries = await create({ name: "Courses" });
+		const market = await create({ name: "Marché" });
 		const food = await create({ name: "Alimentation" });
-		const moved = await transactionsIn(groceries.id, 2);
+		const moved = [
+			...(await transactionsIn(groceries.id, 2)),
+			...(await transactionsIn(market.id, 1)),
+		];
 		const kept = await transactionsIn(food.id, 1);
 
-		await expect(mergeCategory(deps(), groceries.id, food.id)).resolves.toMatchObject({
-			id: food.id,
-			transactionCount: 3,
-		});
+		await expect(
+			mergeCategories(deps(), food.id, [groceries.id, market.id]),
+		).resolves.toMatchObject({ id: food.id, transactionCount: 4 });
 
-		await expect(categoriesOf([...moved, ...kept])).resolves.toEqual([food.id, food.id, food.id]);
+		await expect(categoriesOf([...moved, ...kept])).resolves.toEqual(Array(4).fill(food.id));
 		await expect(stored(groceries.id)).resolves.toBeUndefined();
+		await expect(stored(market.id)).resolves.toBeUndefined();
 		// Still the user's choice, still locked: a rule must not undo the merge.
-		await expect(originsOf(moved)).resolves.toEqual([
-			{ origin: "user", locked: ["category"] },
-			{ origin: "user", locked: ["category"] },
+		await expect(originsOf(moved)).resolves.toEqual(
+			Array.from({ length: 3 }, () => ({ origin: "user", locked: ["category"] })),
+		);
+	});
+
+	it("adds the sources' budget lines to the target's month by month, as Sure's merger", async () => {
+		const groceries = await create({ name: "Courses" });
+		const market = await create({ name: "Marché" });
+		const food = await create({ name: "Alimentation" });
+		await budgetMonth("2026-05", { [groceries.id]: 3000, [food.id]: 2000 });
+		await budgetMonth("2026-06", { [market.id]: 1000 });
+		await budgetMonth("2026-07", { [groceries.id]: 500, [market.id]: 250 });
+
+		await mergeCategories(deps(), food.id, [groceries.id, market.id]);
+
+		await expect(budgetLines()).resolves.toEqual([
+			{ month: "2026-05", categoryId: food.id, amount: 5000 },
+			{ month: "2026-06", categoryId: food.id, amount: 1000 },
+			{ month: "2026-07", categoryId: food.id, amount: 750 },
 		]);
 	});
 
-	it("deletes the source's budget amounts, leaving the target's as they were", async () => {
+	it("moves a recurring series of a source to the target instead of clearing it", async () => {
 		const groceries = await create({ name: "Courses" });
 		const food = await create({ name: "Alimentation" });
-		await budgeted(groceries.id, food.id);
+		await temp.db.insert(recurringTransactions).values({
+			id: "series",
+			labelKey: "marche",
+			label: "Marché",
+			amount: -2000,
+			currency: "EUR",
+			expectedDayOfMonth: 5,
+			lastOccurrenceDate: "2026-09-05",
+			nextExpectedDate: "2026-10-05",
+			occurrenceCount: 3,
+			categoryId: groceries.id,
+			createdAt: 0,
+			updatedAt: 0,
+		});
 
-		await mergeCategory(deps(), groceries.id, food.id);
+		await mergeCategories(deps(), food.id, [groceries.id]);
 
-		await expect(budgetedCategories()).resolves.toEqual([food.id]);
+		const [series] = await temp.db
+			.select({ categoryId: recurringTransactions.categoryId })
+			.from(recurringTransactions);
+		expect(series).toEqual({ categoryId: food.id });
+		await temp.db.delete(recurringTransactions);
 	});
 
-	it("moves the source's children under the target, with its colour", async () => {
+	it("moves the sources' children under the target, with its colour", async () => {
 		const housing = await create({ name: "Logement", color: "#e99537" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
 		const income = await create({ name: "Revenus", color: "#6ad28a" });
 
-		await mergeCategory(deps(), housing.id, income.id);
+		await mergeCategories(deps(), income.id, [housing.id]);
 
 		await expect(stored(rent.id)).resolves.toMatchObject({
 			parentId: income.id,
@@ -495,56 +573,114 @@ describe("mergeCategory", () => {
 		});
 	});
 
-	it("merges any category into another, and a child into its own parent", async () => {
+	it("merges a child into its own parent, and a parent with its child into another", async () => {
 		const income = await create({ name: "Revenus" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
-		const leisure = await create({ name: "Loisirs" });
+		const housing = await create({ name: "Logement" });
+		const rent = await create({ name: "Loyer", parentId: housing.id });
+		const home = await create({ name: "Maison" });
+		await budgetMonth("2026-05", { [salary.id]: 100, [income.id]: 200 });
 
-		await expect(mergeCategory(deps(), salary.id, income.id)).resolves.toMatchObject({
+		await expect(mergeCategories(deps(), income.id, [salary.id])).resolves.toMatchObject({
 			id: income.id,
 		});
-		await expect(mergeCategory(deps(), leisure.id, income.id)).resolves.toMatchObject({
-			id: income.id,
+		await expect(mergeCategories(deps(), home.id, [housing.id, rent.id])).resolves.toMatchObject({
+			id: home.id,
 		});
+
+		await expect(budgetLines()).resolves.toEqual([
+			{ month: "2026-05", categoryId: income.id, amount: 300 },
+		]);
+		await expect(stored(rent.id)).resolves.toBeUndefined();
 	});
 
-	it("merges a category without children into another's child", async () => {
+	it("merges categories without children into another's child", async () => {
 		const housing = await create({ name: "Logement" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
 		const deposit = await create({ name: "Caution" });
 
-		await expect(mergeCategory(deps(), deposit.id, rent.id)).resolves.toMatchObject({
+		await expect(mergeCategories(deps(), rent.id, [deposit.id])).resolves.toMatchObject({
 			id: rent.id,
 		});
 	});
 
 	it.each([
-		["its own child", "child"],
-		["another's child, while it has children", "otherChild"],
-		["itself", "self"],
-		["an unknown category", "unknown"],
-	])("refuses to merge into %s", async (_label, which) => {
+		["into its own child", "child", "targetId", "parent_child"],
+		["into another's child, while it has children", "otherChild", "targetId", "invalid_parent"],
+		["into itself", "self", "sourceIds", "same_category"],
+		["into an unknown category", "unknown", "targetId", "invalid_value"],
+		["with an unknown source", "unknownSource", "sourceIds", "invalid_value"],
+	])("refuses to merge a parent %s, writing nothing", async (_label, which, path, code) => {
 		const housing = await create({ name: "Logement" });
 		const rent = await create({ name: "Loyer", parentId: housing.id });
 		const income = await create({ name: "Revenus" });
 		const salary = await create({ name: "Salaire", parentId: income.id });
 		const ids = await transactionsIn(housing.id, 1);
+		await budgetMonth("2026-05", { [housing.id]: 100 });
 		const targetId =
-			{ child: rent.id, otherChild: salary.id, self: housing.id, unknown: "nope" }[which] ?? "";
+			{ child: rent.id, otherChild: salary.id, self: housing.id, unknown: "nope" }[which] ??
+			income.id;
+		const sourceIds = which === "unknownSource" ? [housing.id, "nope"] : [housing.id];
 
-		await expect(mergeCategory(deps(), housing.id, targetId)).rejects.toMatchObject(
-			fieldError("targetId", "invalid_value"),
+		await expect(mergeCategories(deps(), targetId, sourceIds)).rejects.toMatchObject(
+			fieldError(path, code),
 		);
 		await expect(categoriesOf(ids)).resolves.toEqual([housing.id]);
 		await expect(stored(rent.id)).resolves.toMatchObject({ parentId: housing.id });
+		await expect(budgetedCategories()).resolves.toEqual([housing.id]);
+	});
+});
+
+describe("deleteAllCategories", () => {
+	it("deletes every category, children included, leaving transactions uncategorised and no budget line", async () => {
+		const housing = await create({ name: "Logement" });
+		const rent = await create({ name: "Loyer", parentId: housing.id });
+		await create({ name: "Loisirs" });
+		const ids = [...(await transactionsIn(rent.id, 1)), ...(await transactionsIn(housing.id, 1))];
+		await budgetMonth("2026-05", { [housing.id]: 100, [rent.id]: 50 });
+
+		await expect(deleteAllCategories(deps())).resolves.toEqual({ deleted: 3 });
+
+		await expect(listCategories(deps())).resolves.toEqual([]);
+		await expect(categoriesOf(ids)).resolves.toEqual([null, null]);
+		await expect(originsOf(ids)).resolves.toEqual([
+			{ origin: null, locked: ["category"] },
+			{ origin: null, locked: ["category"] },
+		]);
+		await expect(budgetLines()).resolves.toEqual([]);
+	});
+});
+
+describe("bootstrapCategories", () => {
+	it("creates every default on an empty list", async () => {
+		await expect(bootstrapCategories(deps())).resolves.toEqual({ created: 22 });
+
+		const list = await listCategories(deps());
+		expect(list.map((category) => category.name).toSorted()).toEqual(
+			DEFAULT_CATEGORIES.map((category) => category.name).toSorted(),
+		);
+		expect(list.find((category) => category.name === "Logement")).toMatchObject({
+			color: "#b45309",
+			icon: "home",
+			parentId: null,
+		});
 	});
 
-	it("answers NOT_FOUND for an unknown source", async () => {
-		const target = await create();
+	it("creates only the defaults no category holds by name, case aside, and changes none", async () => {
+		const income = await create({ name: "revenus", color: "#e99537", icon: "coins" });
+		const housing = await create({ name: "Maison" });
+		const rent = await create({ name: "Logement", parentId: housing.id });
 
-		await expect(mergeCategory(deps(), "nope", target.id)).rejects.toMatchObject({
-			code: "NOT_FOUND",
+		await expect(bootstrapCategories(deps())).resolves.toEqual({ created: 20 });
+		await expect(bootstrapCategories(deps())).resolves.toEqual({ created: 0 });
+
+		await expect(stored(income.id)).resolves.toMatchObject({
+			name: "revenus",
+			color: "#e99537",
+			icon: "coins",
 		});
+		await expect(stored(rent.id)).resolves.toMatchObject({ parentId: housing.id });
+		await expect(listCategories(deps())).resolves.toHaveLength(23);
 	});
 });
 

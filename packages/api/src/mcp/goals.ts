@@ -3,7 +3,8 @@ import type { GoalAccountChoice, GoalSummary } from "../services/goals.ts";
 
 import { z } from "zod";
 
-import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX, sampleGoalColor } from "@archant/data/goals";
+import { sampleCategoryColor } from "@archant/data/category-presets";
+import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 
 import { AppError } from "../lib/errors.ts";
@@ -331,7 +332,8 @@ export const createGoalTool = defineTool({
 					targetAmount: targetAmount ?? "",
 					targetMonths: months === undefined ? "" : String(months),
 					targetDate,
-					color: sampleGoalColor(),
+					// Sure's `create_goal`: `COLORS.sample`.
+					color: sampleCategoryColor(),
 					icon: null,
 					notes: input.notes ?? null,
 					accounts: matched.map((row) => ({

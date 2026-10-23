@@ -1,11 +1,13 @@
 import type { CategoryData } from "@/hooks/useCategories";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, ShapesIcon } from "lucide-react";
+import { CombineIcon, EllipsisIcon, ShapesIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
 
 import { CategoryDialog } from "@/components/CategoryDialog";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -21,22 +23,27 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useCategories } from "@/hooks/useCategories";
+import {
+	useBootstrapCategories,
+	useCategories,
+	useDeleteAllCategories,
+} from "@/hooks/useCategories";
 import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
+import { showErrorToast } from "@/lib/error-toast";
 
 export const Route = createFileRoute("/_authed/settings/categories")({
 	component: CategoriesPage,
 });
 
-type Action = "edit" | "merge" | "delete";
+type Action = "edit" | "delete";
 
 /**
  * The dialog open, kept while it closes so its content does not vanish
  * mid-animation. An id, not the category: the dialog reads it from the
  * current list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: "create" } | { action: Action; id: string };
+type Opened = { action: "create" | "merge" | "deleteAll" } | { action: Action; id: string };
 
 function CategoryRow({
 	category,
@@ -68,15 +75,49 @@ function CategoryRow({
 					<DropdownMenuItem onSelect={() => onAction("edit")}>
 						{t("categories.edit")}
 					</DropdownMenuItem>
-					<DropdownMenuItem onSelect={() => onAction("merge")}>
-						{t("categories.merge")}
-					</DropdownMenuItem>
 					<DropdownMenuItem variant="destructive" onSelect={() => onAction("delete")}>
 						{t("categories.delete")}
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>
+	);
+}
+
+/**
+ * Sure's empty list: its defaults first, « Utiliser les valeurs par défaut
+ * (recommandé) », then a category of one's own.
+ */
+function EmptyCategories({ onAdd }: { onAdd: () => void }) {
+	const { t } = useTranslation();
+	const bootstrap = useBootstrapCategories();
+
+	return (
+		<EmptyState
+			flush
+			icon={{ kind: "transfer", icon: ShapesIcon }}
+			title={t("categories.empty.title")}
+			description={t("categories.empty.description")}
+			action={
+				<div className="flex flex-wrap justify-center gap-2">
+					<Button
+						disabled={bootstrap.isPending}
+						onClick={() =>
+							bootstrap.mutate(undefined, {
+								onSuccess: ({ created }) =>
+									toast.success(t("categories.bootstrapped", { count: created })),
+								onError: (error) => showErrorToast(errorCodeOf(error)),
+							})
+						}
+					>
+						{t("categories.bootstrap")}
+					</Button>
+					<Button variant="outline" onClick={onAdd}>
+						{t("categories.add")}
+					</Button>
+				</div>
+			}
+		/>
 	);
 }
 
@@ -102,13 +143,7 @@ function CategoryGroup({
 		>
 			{branches.length === 0 ? (
 				// The group's block is the card already.
-				<EmptyState
-					flush
-					icon={{ kind: "transfer", icon: ShapesIcon }}
-					title={t("categories.empty.title")}
-					description={t("categories.empty.description")}
-					action={<Button onClick={onAdd}>{t("categories.add")}</Button>}
-				/>
+				<EmptyCategories onAdd={onAdd} />
 			) : (
 				<ul className="divide-y divide-line">
 					{branches.map(({ parent, children }) => {
@@ -142,12 +177,13 @@ function CategoriesPage() {
 	const [opened, setOpened] = useState<Opened | null>(null);
 	const [open, setOpen] = useState(false);
 	const list = categories.data ?? [];
+	const deleteAll = useDeleteAllCategories();
 	const category =
-		opened === null || opened.action === "create"
+		opened === null || !("id" in opened)
 			? undefined
 			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted or merged elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && opened.action !== "create" && category === undefined;
+	const gone = opened !== null && "id" in opened && category === undefined;
 
 	useEffect(() => {
 		if (gone) {
@@ -170,7 +206,36 @@ function CategoriesPage() {
 			centred
 			title={t("categories.title")}
 			description={t("categories.description")}
-			actions={<Button onClick={() => show({ action: "create" })}>{t("categories.add")}</Button>}
+			actions={
+				<div className="flex items-center gap-2">
+					{/* Sure's page menu: merge several, delete all. */}
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Button variant="outline" size="icon" aria-label={t("categories.menu")}>
+								<EllipsisIcon />
+							</Button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem
+								disabled={list.length < 2}
+								onSelect={() => show({ action: "merge" })}
+							>
+								<CombineIcon />
+								{t("categories.mergeAll")}
+							</DropdownMenuItem>
+							<DropdownMenuItem
+								variant="destructive"
+								disabled={list.length === 0}
+								onSelect={() => show({ action: "deleteAll" })}
+							>
+								<Trash2Icon />
+								{t("categories.deleteAll.action")}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+					<Button onClick={() => show({ action: "create" })}>{t("categories.add")}</Button>
+				</div>
+			}
 			className="gap-4"
 		>
 			{categories.isPending && (
@@ -211,12 +276,27 @@ function CategoriesPage() {
 					categories={list}
 				/>
 			)}
-			{opened?.action === "merge" && category !== undefined && (
-				<MergeCategoryDialog
+			{opened?.action === "merge" && (
+				<MergeCategoryDialog open={open} onOpenChange={setOpen} categories={list} />
+			)}
+			{opened?.action === "deleteAll" && (
+				<ConfirmDialog
 					open={open}
 					onOpenChange={setOpen}
-					category={category}
-					categories={list}
+					destructive
+					title={t("categories.deleteAll.title")}
+					description={t("categories.deleteAll.description")}
+					confirmLabel={t("categories.deleteAll.confirm")}
+					pending={deleteAll.isPending}
+					onConfirm={() =>
+						deleteAll.mutate(undefined, {
+							onSuccess: () => {
+								toast.success(t("categories.deleteAll.deleted"));
+								setOpen(false);
+							},
+							onError: (error) => showErrorToast(errorCodeOf(error)),
+						})
+					}
 				/>
 			)}
 		</Page>

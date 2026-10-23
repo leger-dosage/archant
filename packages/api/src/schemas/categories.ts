@@ -15,9 +15,12 @@ const categoryName = z
 	.transform((value) => value.normalize("NFC"))
 	.pipe(z.string().min(1).max(CATEGORY_NAME_MAX_LENGTH));
 
-// A custom code rather than Zod's `invalid_format`, which the interface
-// translates as a date.
-const categoryColor = z
+/**
+ * Any `#rrggbb`, a category's or a goal's, as Sure validates both by format.
+ * A custom code rather than Zod's `invalid_format`, which the interface
+ * translates as a date.
+ */
+export const categoryColor = z
 	.string()
 	.transform((value) => value.toLowerCase())
 	.refine((value) => CATEGORY_COLOR_PATTERN.test(value), "invalid_value");
@@ -25,14 +28,14 @@ const categoryColor = z
 const categoryId = z.string().min(1);
 
 /**
- * A new category, shared with the interface's form resolver. With a parent,
- * `color` is still required but replaced by the parent's, as Sure's
- * `inherit_color_from_parent`: the form can keep sending what it holds. No
- * kind, as Sure since #1160: an old client's `kind` is stripped.
+ * A new category, shared with the interface's form resolver. Without a
+ * colour, it takes one of Sure's ten at random, as `COLORS.sample`; with a
+ * parent, the parent's replaces it, as Sure's `inherit_color_from_parent`.
+ * No kind, as Sure since #1160: an old client's `kind` is stripped.
  */
 export const createCategorySchema = z.object({
 	name: categoryName,
-	color: categoryColor,
+	color: categoryColor.optional(),
 	icon: z.enum(CATEGORY_ICONS),
 	parentId: categoryId.nullable(),
 });
@@ -58,4 +61,8 @@ export const deleteCategoryQuerySchema = z.object({
 	replacementId: categoryId.optional(),
 });
 
-export const mergeCategorySchema = z.object({ targetId: categoryId });
+/** Sure's `perform_merge`: several sources into one target. */
+export const mergeCategoriesSchema = z.object({
+	targetId: categoryId,
+	sourceIds: z.array(categoryId).min(1),
+});

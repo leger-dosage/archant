@@ -117,7 +117,7 @@ export const createCategoryTool = defineTool({
 	name: "create_category",
 	title: "Create a category",
 	description:
-		"Creates a category, as Sure's create_category. Two levels at most: parent_id (from get_categories) makes it a subcategory, which takes its parent's colour. The colour defaults to the picker's first and the icon to \"tag\". Category names must be unique, case aside.",
+		"Creates a category, as Sure's create_category. Two levels at most: parent_id (from get_categories) makes it a subcategory, which takes its parent's colour. The colour defaults to one of the ten palette colours at random, as Sure's, and the icon to \"tag\". Category names must be unique, case aside.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createCategoryInput,
