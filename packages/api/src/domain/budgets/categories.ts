@@ -39,7 +39,7 @@ type Envelope = {
 	average: MinorUnits | null;
 };
 
-/** An expense category's envelope. */
+/** A category's envelope. */
 export type BudgetCategoryLine = Envelope & {
 	categoryId: string;
 	parentId: string | null;
@@ -71,7 +71,7 @@ export type MonthRows = { month: IsoMonth; rows: readonly CashFlowRow[] };
 export type BudgetRow = { budgetedSpending: MinorUnits; rolloverEnabled: boolean };
 
 /** What placing a category in today's tree reads of it. */
-export type TreeCategory = Pick<CashFlowCategory, "id" | "kind" | "parentId">;
+export type TreeCategory = Pick<CashFlowCategory, "id" | "parentId">;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
@@ -186,7 +186,7 @@ function measured(envelope: {
 
 /**
  * Each category's signed net over `rows`, a parent's with its children's,
- * whatever its kind, and « Sans catégorie »'s, as Sure's
+ * and « Sans catégorie »'s, as Sure's
  * `budget_category_actual_spending` nets a category's expense and refunds,
  * its `:uncategorized` key included. A row in an unknown category is
  * uncategorised, as `grossCashFlow` counts it.
@@ -229,8 +229,9 @@ const sumOf = (amounts: readonly MinorUnits[]): MinorUnits =>
 
 /**
  * A month's envelopes, as Sure's `budget_category.rb` computes them: every
- * expense category, parents by name with their children by name under them,
- * and « Sans catégorie », which budgets what the total leaves unallocated.
+ * category, as `Budget#sync_budget_categories` over `family.categories`,
+ * parents by name with their children by name under them, and « Sans
+ * catégorie », which budgets what the total leaves unallocated.
  * `amounts` holds the stored amounts by category; a category without one has
  * 0. `rollover` holds each row's switch and what `rolloverChain` carried into
  * it. `statistics` is `categoryStats`' over the whole history: each
@@ -247,11 +248,9 @@ export function budgetCategories(input: {
 }): { categories: BudgetCategoryLine[]; uncategorised: UncategorisedLine; allocated: MinorUnits } {
 	const { amounts } = input;
 	const byId = new Map(input.categories.map((category) => [category.id, category]));
-	const expense = input.categories
-		.filter((category) => category.kind === "expense")
-		.toSorted((a, b) => byName.compare(a.name, b.name));
-	const parents = expense.filter((category) => category.parentId === null);
-	const childrenOf = (id: string) => expense.filter((category) => category.parentId === id);
+	const sorted = input.categories.toSorted((a, b) => byName.compare(a.name, b.name));
+	const parents = sorted.filter((category) => category.parentId === null);
+	const childrenOf = (id: string) => sorted.filter((category) => category.parentId === id);
 	const amountOf = (id: string) => amounts.get(id) ?? zero;
 	const carriedOf = (id: string) => input.rollover.get(id)?.carried ?? zero;
 	const ringFencedOf = (parentId: string) =>
@@ -348,7 +347,7 @@ export function budgetCategories(input: {
 			...uncategorised,
 			// Sure lists « Sans catégorie » on track only beside a category of its own.
 			section:
-				uncategorised.section === "onTrack" && expense.length === 0 ? null : uncategorised.section,
+				uncategorised.section === "onTrack" && sorted.length === 0 ? null : uncategorised.section,
 			...statsOf(null),
 		},
 		allocated,

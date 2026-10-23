@@ -89,7 +89,7 @@ export const updateBudgetInput = z.strictObject({
 					.string()
 					.optional()
 					.describe(
-						"An expense category's name, case aside, or its id, from get_categories or get_budget. « Non catégorisé » is refused: it holds what budgeted_spending leaves unallocated.",
+						"A category's name, case aside, or its id, from get_categories or get_budget. « Non catégorisé » is refused: it holds what budgeted_spending leaves unallocated.",
 					),
 				amount: requiredLoose(sureAmount).describe(
 					"The amount, a non-negative number or decimal string; 0 lets a subcategory share its parent's. A parent's amount is never below what its subcategories hold.",

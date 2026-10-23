@@ -53,7 +53,6 @@ describe("seedDefaults", () => {
 		const rows = await db
 			.select({
 				name: categories.name,
-				kind: categories.kind,
 				color: categories.color,
 				icon: categories.icon,
 				parentId: categories.parentId,
@@ -67,7 +66,6 @@ describe("seedDefaults", () => {
 		);
 		expect(rows).toContainEqual({
 			name: "Revenus",
-			kind: "income",
 			color: "#22c55e",
 			icon: "circle-dollar-sign",
 			parentId: null,

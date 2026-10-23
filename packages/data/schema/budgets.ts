@@ -32,7 +32,7 @@ export const budgets = sqliteTable(
 );
 
 /**
- * Sure's `BudgetCategory`: one expense category's amount in one month's
+ * Sure's `BudgetCategory`: one category's amount in one month's
  * budget, in minor units of that budget's currency. Written on the first save
  * of that amount, never on read: a category without a row has 0. A parent's
  * amount is its total, its ring-fenced children's amounts plus its own

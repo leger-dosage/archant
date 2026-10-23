@@ -2,7 +2,6 @@ import type { BudgetedCategory } from "./moves.ts";
 
 import { describe, expect, it } from "vitest";
 
-import type { CategoryKind } from "@archant/data/category-presets";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
@@ -13,11 +12,10 @@ const amounts = (entries: Record<string, number>) =>
 
 const minor = (value: number): MinorUnits => toMinorUnits(value);
 
-const category = (
-	id: string,
-	parentId: string | null = null,
-	kind: CategoryKind = "expense",
-): BudgetedCategory & { kind: CategoryKind } => ({ id, parentId, kind });
+const category = (id: string, parentId: string | null = null): BudgetedCategory => ({
+	id,
+	parentId,
+});
 
 // Sure's fixture: « P » holds « A », ring-fenced at 300, and « B », shared;
 // « Q » stands alone.
@@ -125,9 +123,9 @@ const rows = (entries: Record<string, [number, boolean]>) =>
 	);
 
 describe("copiedRows", () => {
-	it("copies each row of a category still an expense category, its rollover switch included", () => {
+	it("copies each row of a category that still exists, a former income one too, its rollover switch included", () => {
 		const copied = copiedRows({
-			categories: [P, A, B, Q, category("Salaire", null, "income")],
+			categories: [P, A, B, Q, category("Salaire")],
 			source: rows({
 				P: [100_000, true],
 				A: [30_000, false],
@@ -139,7 +137,13 @@ describe("copiedRows", () => {
 		});
 
 		expect(copied).toEqual(
-			rows({ P: [100_000, true], A: [30_000, false], B: [0, true], Q: [20_000, false] }),
+			rows({
+				P: [100_000, true],
+				A: [30_000, false],
+				B: [0, true],
+				Q: [20_000, false],
+				Salaire: [5_000, true],
+			}),
 		);
 	});
 

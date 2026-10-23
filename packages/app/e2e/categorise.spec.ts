@@ -107,7 +107,6 @@ const categoryList = z.object({
 			id: z.string(),
 			name: z.string(),
 			parentId: z.string().nullable(),
-			kind: z.string(),
 			color: z.string(),
 		}),
 	),
@@ -147,7 +146,6 @@ test("« Créer » creates « Voyages » from the sheet, then a row's picker cre
 	await expect(chipOf(page, ticket, parent)).toBeVisible();
 	await expect(categoryNamed(page, parent)).resolves.toMatchObject({
 		parentId: null,
-		kind: "expense",
 		color: "#fc7840",
 	});
 
@@ -167,7 +165,7 @@ test("« Créer » creates « Voyages » from the sheet, then a row's picker cre
 	await expect(toast(page, "Catégorie modifiée")).toBeVisible();
 	const created = await categoryNamed(page, child);
 	const createdParent = await categoryNamed(page, parent);
-	expect(created).toMatchObject({ parentId: createdParent?.id, kind: "expense", color: "#fc7840" });
+	expect(created).toMatchObject({ parentId: createdParent?.id, color: "#fc7840" });
 });
 
 test("a category created in a row's picker but not set says so, and « Créer » again sets it without a second one", async ({

@@ -26,7 +26,7 @@ import {
 } from "@archant/data/account-types";
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
-import type { CategoryIcon, CategoryKind } from "@archant/data/category-presets";
+import type { CategoryIcon } from "@archant/data/category-presets";
 import {
 	CATEGORY_COLOR_PATTERN,
 	CATEGORY_ICONS,
@@ -121,7 +121,6 @@ export type PlanAccount = {
 export type PlanCategory = {
 	sourceId: string;
 	name: string;
-	kind: CategoryKind;
 	color: string;
 	icon: CategoryIcon;
 	parentSourceId: string | null;
@@ -630,7 +629,6 @@ function readCategories(reader: Reader): PlanCategory[] {
 		const name = textOf(record.data.name);
 		const preset = newCategory();
 		const color = typeof record.data.color === "string" ? record.data.color.toLowerCase() : "";
-		const kind = record.data.classification_unused ?? record.data.classification;
 
 		return sourceId === null || name === null
 			? []
@@ -638,7 +636,6 @@ function readCategories(reader: Reader): PlanCategory[] {
 					{
 						sourceId,
 						name: cut(name.trim(), CATEGORY_NAME_MAX_LENGTH),
-						kind: kind === "income" ? "income" : "expense",
 						color: CATEGORY_COLOR_PATTERN.test(color) ? color : preset.color,
 						icon: oneOf(CATEGORY_ICONS, record.data.lucide_icon) ?? preset.icon,
 						parentSourceId: idOf(record.data.parent_id),

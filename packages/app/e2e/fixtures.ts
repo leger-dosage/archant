@@ -13,7 +13,6 @@ import type { BalancePeriod } from "@archant/api/schemas/balances";
 import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { AccountOrder } from "@archant/data/account-orders";
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { CategoryKind } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { CsvMapping } from "@archant/data/schema/imports";
@@ -42,7 +41,6 @@ export type Created = { id: string; name: string };
 
 export type CreateCategoryOptions = {
 	name?: string;
-	kind?: CategoryKind;
 	color?: string;
 	icon?: CategoryIcon;
 	parentId?: string | null;
@@ -345,7 +343,6 @@ export function apiHelpers(request: APIRequestContext) {
 			const response = await request.post("/api/categories", {
 				data: {
 					name,
-					kind: options.kind ?? "expense",
 					color: options.color ?? "#e99537",
 					icon: options.icon ?? "tag",
 					parentId: options.parentId ?? null,

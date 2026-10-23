@@ -88,8 +88,9 @@ test("« Réinitialiser le compte » asks first, then empties every list without
 		.getByRole("navigation", { name: "Réglages" })
 		.getByRole("link", { name: "Catégories", exact: true })
 		.click();
-	await expect(page.getByRole("heading", { name: "Aucune catégorie de dépenses" })).toBeVisible();
-	await expect(page.getByRole("heading", { name: "Aucune catégorie de revenus" })).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Aucune catégorie pour l'instant" }),
+	).toBeVisible();
 	// The users stay: still signed in, the greeting by the same name.
 	await rail.getByRole("link", { name: "Accueil", exact: true }).click();
 	await expect(

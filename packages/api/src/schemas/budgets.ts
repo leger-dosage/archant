@@ -93,7 +93,7 @@ export function budgetCategorySchema(currency: CurrencyCode) {
  * read by the rules of `budgetSchema` and `budgetCategorySchema`. Something
  * must be given, a category once, and never « Sans catégorie »: it has no id,
  * since it holds what the total leaves unallocated. Whether the month is set
- * up, and whether an id names an expense category, need the database: the
+ * up, and whether an id names a category, need the database: the
  * service checks them.
  */
 export function budgetUpdateSchema(currency: CurrencyCode) {

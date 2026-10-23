@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
 	buildApp,
@@ -33,27 +34,27 @@ describe("categories", () => {
 		const own = await ownDatabase();
 		const client = testClient(buildApp(own.db)).api.categories;
 		await client.$post({ json: category("Frais") });
-		await client.$post({ json: category("Épargne", { kind: "income" }) });
+		await client.$post({ json: category("Épargne") });
 		await client.$post({ json: category("Assurances") });
 
 		const list = await categoryList(own.db);
 
-		expect(list.map((item) => [item.name, item.kind, item.transactionCount])).toEqual([
-			["Assurances", "expense", 0],
-			["Épargne", "income", 0],
-			["Frais", "expense", 0],
+		expect(list.map((item) => [item.name, item.transactionCount])).toEqual([
+			["Assurances", 0],
+			["Épargne", 0],
+			["Frais", 0],
 		]);
+		expect(list[0]).not.toHaveProperty("kind");
 	});
 
-	it("creates a child with its parent's kind and colour", async () => {
+	it("creates a child with its parent's colour", async () => {
 		const parent = await createCategory(uniqueCategory("Revenus"), {
-			kind: "income",
 			color: "#6ad28a",
 		});
 
 		const child = await createCategory(uniqueCategory("Salaire"), { parentId: parent.id });
 
-		expect(child).toMatchObject({ parentId: parent.id, kind: "income", color: "#6ad28a" });
+		expect(child).toMatchObject({ parentId: parent.id, color: "#6ad28a" });
 	});
 
 	it("refuses a name taken in another case", async () => {
@@ -95,7 +96,7 @@ describe("categories", () => {
 	});
 
 	it("keeps a default's colour outside the swatches on edit", async () => {
-		const target = await createCategory(uniqueCategory("Revenus"), { kind: "income" });
+		const target = await createCategory(uniqueCategory("Revenus"));
 
 		const { status, body } = await request("PATCH", `/api/categories/${target.id}`, {
 			color: "#22c55e",
@@ -130,7 +131,6 @@ describe("categories", () => {
 		["a name over 60 characters", { name: "x".repeat(61) }, "name", "too_big"],
 		["a free colour name", { color: "red" }, "color", "invalid_value"],
 		["an unknown icon", { icon: "rocket" }, "icon", "invalid_value"],
-		["an unknown kind", { kind: "transfer" }, "kind", "invalid_value"],
 	])("refuses %s", async (_label, overrides, path, code) => {
 		const { status, body } = await request("POST", "/api/categories", {
 			...category(uniqueCategory("Autre")),
@@ -139,6 +139,28 @@ describe("categories", () => {
 
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual([{ path, code }]);
+	});
+
+	it("ignores the kind an older client still sends, as Sure's since #1160", async () => {
+		const { status, body } = await request("POST", "/api/categories", {
+			...category(uniqueCategory("Primes")),
+			kind: "income",
+		});
+
+		expect(status).toBe(201);
+		expect(body).toMatchObject({ data: { color: "#e99537" } });
+		expect(body).not.toHaveProperty("data.kind");
+
+		const created = z.object({ data: z.object({ id: z.string() }) }).parse(body).data;
+		const renamed = uniqueCategory("Bonus");
+		const patched = await request("PATCH", `/api/categories/${created.id}`, {
+			name: renamed,
+			kind: "expense",
+		});
+
+		expect(patched.status).toBe(200);
+		expect(patched.body).toMatchObject({ data: { name: renamed } });
+		expect(patched.body).not.toHaveProperty("data.kind");
 	});
 
 	it("renames, recolours and moves a category under a parent", async () => {

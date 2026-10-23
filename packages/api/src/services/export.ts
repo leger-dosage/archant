@@ -943,7 +943,6 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 				color: category.color,
 				lucide_icon: category.icon,
 				parent_id: category.parentId,
-				classification: category.kind,
 				created_at: timestamp(category.createdAt),
 				updated_at: timestamp(category.updatedAt),
 			},

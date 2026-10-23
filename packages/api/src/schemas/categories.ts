@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
 	CATEGORY_COLOR_PATTERN,
 	CATEGORY_ICONS,
-	CATEGORY_KINDS,
 	CATEGORY_NAME_MAX_LENGTH,
 } from "@archant/data/category-presets";
 
@@ -27,12 +26,12 @@ const categoryId = z.string().min(1);
 
 /**
  * A new category, shared with the interface's form resolver. With a parent,
- * `kind` and `color` are still required but replaced by the parent's: a
- * child always carries them, so the form can keep sending what it holds.
+ * `color` is still required but replaced by the parent's, as Sure's
+ * `inherit_color_from_parent`: the form can keep sending what it holds. No
+ * kind, as Sure since #1160: an old client's `kind` is stripped.
  */
 export const createCategorySchema = z.object({
 	name: categoryName,
-	kind: z.enum(CATEGORY_KINDS),
 	color: categoryColor,
 	icon: z.enum(CATEGORY_ICONS),
 	parentId: categoryId.nullable(),
@@ -45,7 +44,6 @@ export type CreateCategoryRequest = z.output<typeof createCategorySchema>;
 export const updateCategorySchema = z
 	.object({
 		name: categoryName.optional(),
-		kind: z.enum(CATEGORY_KINDS).optional(),
 		color: categoryColor.optional(),
 		icon: z.enum(CATEGORY_ICONS).optional(),
 		parentId: categoryId.nullable().optional(),

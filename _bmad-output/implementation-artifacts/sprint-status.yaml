@@ -322,8 +322,8 @@ development_status:
   31-8-edit-a-split-by-recreating-its-lines: done
   epic-31-retrospective: optional
 
-  epic-32: backlog
-  32-1-categories-without-a-kind: backlog
+  epic-32: in-progress
+  32-1-categories-without-a-kind: done
   32-2-sures-default-categories-merged-deleted-and-restored: backlog
   32-3-merchants-and-tags-as-sure: backlog
   32-4-every-rule-operator: backlog

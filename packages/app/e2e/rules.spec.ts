@@ -813,7 +813,7 @@ test("a merchant created from the action's picker is picked and read back in the
 	).toBeVisible();
 });
 
-test("a category created from the action's picker lands at the top of Dépenses", async ({
+test("a category created from the action's picker lands at the top of the list", async ({
 	page,
 }) => {
 	const marker = uniqueName("CB CINEMA").replace(" ", "-");
@@ -836,11 +836,10 @@ test("a category created from the action's picker lands at the top of Dépenses"
 	).toBeVisible();
 
 	await page.goto("/settings/categories");
-	const expenses = page.getByRole("region", { name: "Dépenses", exact: true });
-	// A top-level row sits in the group's own list, inside its white block, not
-	// in a parent's nested one.
+	const list = page.getByRole("region", { name: "Catégories", exact: true });
+	// A top-level row sits in the list's own block, not in a parent's nested one.
 	await expect(
-		expenses
+		list
 			.locator(":scope > div > ul > li > div")
 			.getByRole("button", { name: `Actions pour ${name}`, exact: true }),
 	).toBeVisible();

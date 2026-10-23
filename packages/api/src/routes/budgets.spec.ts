@@ -119,7 +119,7 @@ async function household() {
 	const account = await openOwn({ openingDate: "2026-04-01", openingBalance: "10 000,00" });
 	const courses = await ownCategory("Courses");
 	const clothes = await ownCategory("Vêtements", { color: "#4ea7fc" });
-	const salary = await ownCategory("Salaire", { kind: "income" });
+	const salary = await ownCategory("Salaire");
 	await line(account.id, "2026-05-10", "-100,00", courses);
 	await line(account.id, "2026-06-10", "-300,00", courses);
 	await line(account.id, "2026-06-25", "2 000,00", salary);
@@ -131,12 +131,12 @@ async function household() {
 	await line(account.id, "2026-09-07", "30,00", clothes);
 	await line(account.id, "2026-09-08", "1 000,00", salary);
 
-	return { account, courses, clothes };
+	return { account, courses, clothes, salary };
 }
 
 describe("GET /api/budgets/:month", () => {
 	it("answers a month not set up with its actuals and suggestions, and writes nothing", async () => {
-		const { courses, clothes } = await household();
+		const { courses, clothes, salary } = await household();
 
 		await expect(budgetOf("2026-09")).resolves.toEqual({
 			month: "2026-09",
@@ -175,6 +175,27 @@ describe("GET /api/budgets/:month", () => {
 					// May to September, the current month included: 100, 300, 200, 400 and 60.
 					median: 20_000,
 					average: 21_200,
+				},
+				// Every category takes an envelope, as Sure's since #1160: hidden while it spends nothing.
+				{
+					categoryId: salary,
+					parentId: null,
+					name: "Salaire",
+					color: "#e99537",
+					icon: "tag",
+					budgetedSpending: 0,
+					shared: false,
+					movable: 0,
+					rolloverEnabled: false,
+					rolledOver: 0,
+					budgeted: false,
+					spent: 0,
+					available: 0,
+					percentSpent: 0,
+					status: "onTrack",
+					section: null,
+					median: null,
+					average: null,
 				},
 				{
 					categoryId: clothes,
@@ -732,21 +753,19 @@ describe("PUT /api/budgets/:month/categories/:categoryId", () => {
 		await expect(amountRows()).resolves.toEqual([]);
 	});
 
-	it("refuses an income category or an unknown one, and writes nothing", async () => {
+	it("refuses an unknown category and writes nothing, where a category that earns takes an amount", async () => {
 		await openOwn();
-		const salary = await ownCategory("Salaire", { kind: "income" });
+		const salary = await ownCategory("Salaire");
 		await save("2026-09", "1 000", "0");
 
-		const refused = await Promise.all([
-			put("2026-09", salary, "100"),
-			put("2026-09", "inconnue", "100"),
-		]);
+		const refused = await put("2026-09", "inconnue", "100");
 
-		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual([
-			[404, "NOT_FOUND"],
-			[404, "NOT_FOUND"],
-		]);
+		expect([refused.status, errorBody.parse(refused.body).error.code]).toEqual([404, "NOT_FOUND"]);
 		await expect(amountRows()).resolves.toEqual([]);
+
+		// Every category takes an envelope, as Sure's since #1160.
+		expect((await put("2026-09", salary, "100")).status).toBe(200);
+		await expect(amountRows()).resolves.toEqual([{ categoryId: salary, budgetedSpending: 10_000 }]);
 	});
 
 	it("refuses a month out of bounds", async () => {
@@ -847,24 +866,20 @@ describe("POST /api/budgets/:month/copy", () => {
 		await expect(budgetOf("2026-08")).resolves.toMatchObject({ copySource: null });
 	});
 
-	it("skips a category deleted or turned into income since", async () => {
+	it("skips a category deleted since", async () => {
 		await openOwn({ openingDate: "2026-04-01" });
 		const groceries = await ownCategory("Courses");
 		const gifts = await ownCategory("Cadeaux");
-		const bonus = await ownCategory("Primes");
 		await save("2026-06", "1 000", "0");
 		await saved("2026-06", groceries, "300");
 		await saved("2026-06", gifts, "100");
-		await saved("2026-06", bonus, "50");
 		await sendOwn("DELETE", `/api/categories/${gifts}`);
-		await sendOwn("PATCH", `/api/categories/${bonus}`, { kind: "income" });
 
 		const { status, body } = await copy("2026-08");
 
 		expect(status).toBe(200);
 		expect(amountsOf(budgetBody.parse(body).data)).toEqual({ Courses: 30_000 });
 		await expect(amountRows()).resolves.toEqual([
-			{ categoryId: bonus, budgetedSpending: 5_000 },
 			{ categoryId: groceries, budgetedSpending: 30_000 },
 			{ categoryId: groceries, budgetedSpending: 30_000 },
 		]);
@@ -1079,19 +1094,17 @@ describe("POST /api/budgets/:month/move", () => {
 		await expect(amountsByName()).resolves.toMatchObject({ Maison: 100_000 });
 	});
 
-	it("refuses « Sans catégorie », an income category or an unknown one", async () => {
+	it("refuses « Sans catégorie » or an unknown category", async () => {
 		const { parent } = await envelopes();
-		const salary = await ownCategory("Salaire", { kind: "income" });
 
 		const refused = await Promise.all([
 			move("2026-09", "none", parent, "10"),
 			move("2026-09", parent, "none", "10"),
-			move("2026-09", parent, salary, "10"),
 			move("2026-09", "inconnue", parent, "10"),
 		]);
 
 		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual(
-			Array.from({ length: 4 }, () => [404, "NOT_FOUND"]),
+			Array.from({ length: 3 }, () => [404, "NOT_FOUND"]),
 		);
 		await expect(amountsByName()).resolves.toMatchObject({ Maison: 100_000 });
 	});
@@ -1393,34 +1406,19 @@ describe("PUT /api/budgets/:month/categories/:categoryId/rollover", () => {
 		});
 	});
 
-	it("never inherits a switch for a category turned into income since", async () => {
-		await openOwn({ openingDate: "2026-04-01" });
-		const bonus = await ownCategory("Primes");
-		await save("2026-06", "1 000", "0");
-		await toggled("2026-06", bonus, true);
-		await sendOwn("PATCH", `/api/categories/${bonus}`, { kind: "income" });
-
-		await save("2026-07", "1 000", "0");
-
-		await expect(storedOf(bonus)).resolves.toEqual({ "2026-06": [true, 0] });
-	});
-
-	it("refuses a month not set up, an income or unknown category, or out of bounds, and writes nothing", async () => {
+	it("refuses a month not set up, an unknown category, or out of bounds, and writes nothing", async () => {
 		await openOwn({ openingDate: "2026-04-01" });
 		const gift = await ownCategory("Cadeaux");
-		const salary = await ownCategory("Salaire", { kind: "income" });
 		await save("2026-06", "1 000", "0");
 
 		const refused = await Promise.all([
 			toggle("2026-07", gift, true),
-			toggle("2026-06", salary, true),
 			toggle("2026-06", "inconnue", true),
 			toggle("2028-10", gift, true),
 		]);
 
 		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual([
 			[409, "BUDGET_NOT_SET_UP"],
-			[404, "NOT_FOUND"],
 			[404, "NOT_FOUND"],
 			[404, "NOT_FOUND"],
 		]);

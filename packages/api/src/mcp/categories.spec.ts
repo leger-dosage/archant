@@ -132,7 +132,7 @@ const written = z.object({
 });
 
 describe("create_category", () => {
-	it("creates with Sure's colour and icon as an expense, a subcategory taking its parent's colour and kind", async () => {
+	it("creates with Sure's colour and icon and no kind, a subcategory taking its parent's colour", async () => {
 		const tools = await assistants();
 
 		const parent = written.parse(
@@ -148,10 +148,8 @@ describe("create_category", () => {
 				})
 			).structuredContent,
 		);
-		const income = await ownCategory("Revenus", { kind: "income" });
-		await tools.write("create_category", { name: "Primes", parent_id: income });
 		const route = z
-			.object({ data: z.array(z.object({ name: z.string(), kind: z.string() }).loose()) })
+			.object({ data: z.array(z.object({ name: z.string() }).loose()) })
 			.parse(await sendOwn("GET", "/api/categories")).data;
 
 		expect(parent).toEqual({
@@ -179,8 +177,7 @@ describe("create_category", () => {
 			},
 			message: "Category 'Loisirs > Cinéma' created.",
 		});
-		expect(route.find((item) => item.name === "Loisirs")?.kind).toBe("expense");
-		expect(route.find((item) => item.name === "Primes")?.kind).toBe("income");
+		expect(route.find((item) => item.name === "Loisirs")).not.toHaveProperty("kind");
 	});
 
 	it("refuses a blank name, an unknown parent, a taken name and a third level as Sure's", async () => {

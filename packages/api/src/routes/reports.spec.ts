@@ -516,10 +516,10 @@ describe("GET /api/reports/cash-flow", () => {
 		await expect(cashFlowOf("2026-09")).resolves.toMatchObject({ expenses: -600 });
 	});
 
-	it("puts an income-kind category that spends on the expense side, where it lowered income to zero", async () => {
+	it("puts a category that earns and spends on the expense side, where it lowered income to zero", async () => {
 		const account = await openOwn(august);
-		const salaire = await ownCategory("Salaire", { kind: "income" });
-		const primes = await ownCategory("Primes", { kind: "income" });
+		const salaire = await ownCategory("Salaire");
+		const primes = await ownCategory("Primes");
 		await spend(account.id, "50,00", salaire);
 		await spend(account.id, "-50,00", primes);
 

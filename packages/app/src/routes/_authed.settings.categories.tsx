@@ -5,9 +5,6 @@ import { EllipsisIcon, ShapesIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CategoryKind } from "@archant/data/category-presets";
-import { CATEGORY_KINDS } from "@archant/data/category-presets";
-
 import { CategoryDialog } from "@/components/CategoryDialog";
 import { DeleteCategoryDialog } from "@/components/DeleteCategoryDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -39,7 +36,7 @@ type Action = "edit" | "merge" | "delete";
  * mid-animation. An id, not the category: the dialog reads it from the
  * current list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: "create"; kind?: CategoryKind } | { action: Action; id: string };
+type Opened = { action: "create" } | { action: Action; id: string };
 
 function CategoryRow({
 	category,
@@ -83,33 +80,33 @@ function CategoryRow({
 	);
 }
 
+/** Sure's `categories/index.html.erb`: one list since #1160, no income or expense group. */
 function CategoryGroup({
-	kind,
 	categories,
 	onAction,
 	onAdd,
 }: {
-	kind: CategoryKind;
 	categories: readonly CategoryData[];
 	onAction: (action: Action, category: CategoryData) => void;
-	/** Opens the form on this group's type. */
 	onAdd: () => void;
 }) {
 	const { t } = useTranslation();
-	const headingId = `categories-${kind}`;
-	const branches = categoryTree(categories).filter(({ parent }) => parent.kind === kind);
-
-	const count = categories.filter((category) => category.kind === kind).length;
+	const branches = categoryTree(categories);
 
 	return (
-		<InsetGroup id={headingId} level={2} title={t(`categories.groups.${kind}`)} count={count}>
+		<InsetGroup
+			id="categories-list"
+			level={2}
+			title={t("categories.title")}
+			count={categories.length}
+		>
 			{branches.length === 0 ? (
 				// The group's block is the card already.
 				<EmptyState
 					flush
 					icon={{ kind: "transfer", icon: ShapesIcon }}
-					title={t(`categories.groupEmpty.${kind}`)}
-					description={t("categories.groupEmpty.description")}
+					title={t("categories.empty.title")}
+					description={t("categories.empty.description")}
 					action={<Button onClick={onAdd}>{t("categories.add")}</Button>}
 				/>
 			) : (
@@ -195,26 +192,16 @@ function CategoriesPage() {
 
 			{categories.data !== undefined && (
 				<ListCard>
-					{CATEGORY_KINDS.map((kind) => (
-						<CategoryGroup
-							key={kind}
-							kind={kind}
-							categories={list}
-							onAction={(action, target) => show({ action, id: target.id })}
-							onAdd={() => show({ action: "create", kind })}
-						/>
-					))}
+					<CategoryGroup
+						categories={list}
+						onAction={(action, target) => show({ action, id: target.id })}
+						onAdd={() => show({ action: "create" })}
+					/>
 				</ListCard>
 			)}
 
 			{(opened?.action === "create" || (opened?.action === "edit" && category !== undefined)) && (
-				<CategoryDialog
-					open={open}
-					onOpenChange={setOpen}
-					category={category}
-					categories={list}
-					kind={opened.action === "create" ? opened.kind : undefined}
-				/>
+				<CategoryDialog open={open} onOpenChange={setOpen} category={category} categories={list} />
 			)}
 			{opened?.action === "delete" && category !== undefined && (
 				<DeleteCategoryDialog

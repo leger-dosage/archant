@@ -151,7 +151,7 @@ function RolloverSwitch({ month, line }: { month: string; line: BudgetCategoryDa
 }
 
 /**
- * An expense category's amount for the month, saved when it changes, on
+ * A category's amount for the month, saved when it changes, on
  * leaving the field or on `Enter`, as Sure's auto-submitted field. A blank
  * subcategory reads « Partagé ». The field follows the month as the server
  * answers it, the parent's new total included, unless it holds unsaved text.
@@ -168,7 +168,7 @@ export function BudgetCategoryField({
 	line: BudgetCategoryData;
 	/** The parent's name, for a subcategory's hint. */
 	parentName: string | null;
-	/** Every expense category of the month, where a move can send money. */
+	/** Every category of the month, where a move can send money. */
 	categories: readonly BudgetCategoryData[];
 }) {
 	const { t } = useTranslation();

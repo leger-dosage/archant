@@ -3,7 +3,6 @@ import type { Transaction } from "./ledger/shared.ts";
 
 import Papa from "papaparse";
 
-import type { CategoryKind } from "@archant/data/category-presets";
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 import { parseDecimalAmount, toDecimalString } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
@@ -42,8 +41,6 @@ export type Taxonomy = {
 		merchants: Map<string, string>;
 	};
 	names: { categories: NameBook; tags: NameBook; merchants: NameBook };
-	/** Each category's kind by its id, the household's and the new ones. */
-	kinds: Map<string, CategoryKind>;
 };
 
 /** The household's categories, tags and merchants by folded name, no archive id yet. */
@@ -55,7 +52,6 @@ export async function taxonomyOf(tx: Pick<Transaction, "select">): Promise<Taxon
 			tags: await nameBook(tx, tags),
 			merchants: await nameBook(tx, merchants),
 		},
-		kinds: new Map(),
 	};
 }
 
@@ -159,13 +155,11 @@ export async function createMissing(
 			await tx.insert(categories).values({
 				id,
 				name,
-				kind: preset.kind,
 				color: preset.color,
 				icon: preset.icon,
 				parentId: null,
 				...stamps,
 			});
-			taxonomy.kinds.set(id, preset.kind);
 		} else {
 			await tx.insert(kind === "tags" ? tags : merchants).values({ id, name, ...stamps });
 		}

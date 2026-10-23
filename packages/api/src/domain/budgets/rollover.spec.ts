@@ -3,16 +3,14 @@ import type { RolloverMonth } from "./rollover.ts";
 
 import { describe, expect, it } from "vitest";
 
-import type { CategoryKind } from "@archant/data/category-presets";
 import { toMinorUnits } from "@archant/data/money";
 
 import { rolloverChain } from "./rollover.ts";
 
-const category = (
-	id: string,
-	parentId: string | null = null,
-	kind: CategoryKind = "expense",
-): TreeCategory => ({ id, parentId, kind });
+const category = (id: string, parentId: string | null = null): TreeCategory => ({
+	id,
+	parentId,
+});
 
 const A = category("A");
 const P = category("P");
@@ -139,16 +137,16 @@ describe("rolloverChain", () => {
 		expect(chain["2026-08"]).toEqual({ A: 5_000 });
 	});
 
-	it("turns off a category deleted or no longer an expense category", () => {
+	it("turns off a deleted category, and carries any other, one that earns included", () => {
 		const chain = chainOf(
 			[
 				month("2026-06", { A: [10_000, true], B: [10_000, true] }),
 				month("2026-07", { A: [0, true], B: [0, true] }),
 			],
-			[category("B", null, "income")],
+			[category("B")],
 		);
 
-		expect(chain["2026-07"]).toEqual({ A: 0, B: 0 });
+		expect(chain["2026-07"]).toEqual({ A: 0, B: 10_000 });
 	});
 
 	it("reads today's tree: a child re-parented since is ring-fenced under its new parent", () => {

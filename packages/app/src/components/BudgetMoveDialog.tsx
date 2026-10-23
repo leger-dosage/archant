@@ -42,7 +42,7 @@ type BudgetMoveDialogProps = {
 	currency: CurrencyCode;
 	/** The category the money leaves. */
 	source: BudgetCategoryData;
-	/** Every expense category of the month, parents with their children under them. */
+	/** Every category of the month, parents with their children under them. */
 	categories: readonly BudgetCategoryData[];
 	open: boolean;
 	onOpenChange: (open: boolean) => void;

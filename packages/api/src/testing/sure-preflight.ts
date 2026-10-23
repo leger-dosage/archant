@@ -316,7 +316,8 @@ const SCHEMAS = {
 		color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
 		lucide_icon: present,
 		parent_id: z.string().nullable(),
-		classification: z.enum(["income", "expense"]),
+		// Read when present since #1160, `expense` otherwise; Archant writes none.
+		classification: z.enum(["income", "expense"]).optional(),
 		...stamps,
 	}),
 	Tag: z.strictObject({ id, name: present, ...stamps }),

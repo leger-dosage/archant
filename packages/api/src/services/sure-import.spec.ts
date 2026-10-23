@@ -283,7 +283,7 @@ async function snapshotOf(db: Database) {
 			from holdings h join accounts a on a.id = h.account_id join securities s on s.id = h.security_id
 			order by a.name, s.name, h.date`),
 		categories: await rows(sql`
-			select c.name, c.kind, c.color, c.icon, p.name as parent from categories c left join categories p on p.id = c.parent_id order by c.name`),
+			select c.name, c.color, c.icon, p.name as parent from categories c left join categories p on p.id = c.parent_id order by c.name`),
 		tags: await rows(sql`select name from tags order by name`),
 		merchants: await rows(sql`select name from merchants order by name`),
 		budgets: await rows(
@@ -492,9 +492,9 @@ describe("importSureArchive", () => {
 		expect(await source().all(sql`select id from accounts`)).toEqual(accounts);
 	});
 
-	it("gives an existing month the file's totals and currency, and skips another currency and an income category", async () => {
+	it("gives an existing month the file's totals and currency, every category its line, and skips another currency", async () => {
 		await ownDatabase();
-		const salary = await ownCategory(`Salaire ${crypto.randomUUID()}`, { kind: "income" });
+		const salary = await ownCategory(`Salaire ${crypto.randomUUID()}`);
 		const food = await ownCategory(`Courses ${crypto.randomUUID()}`);
 		await sendOwn("PUT", "/api/budgets/2026-09", {
 			budgetedSpending: "500",
@@ -534,9 +534,13 @@ describe("importSureArchive", () => {
 		).toEqual([{ month: "2026-09", currency: "EUR", spending: 120000, income: 300000 }]);
 		expect(
 			await source().all(
-				sql`select category_id as category, budgeted_spending as amount from budget_categories`,
+				sql`select category_id as category, budgeted_spending as amount from budget_categories order by amount`,
 			),
-		).toEqual([{ category: food, amount: 30000 }]);
+			// A category Sure once classified as income takes its line, as Sure's since #1160.
+		).toEqual([
+			{ category: salary, amount: 1000 },
+			{ category: food, amount: 30000 },
+		]);
 	});
 
 	it("imports Sure's rules Archant can hold, and leaves nothing behind for one it skips", async () => {

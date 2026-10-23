@@ -111,25 +111,23 @@ test.describe("rules", () => {
 	});
 });
 
-test("categories: one card, a tray per kind, each row at least 56 px", async ({ page, api }) => {
-	const category = await api.createCategory({ kind: "expense" });
+test("categories: one card, one tray, each row at least 56 px", async ({ page, api }) => {
+	const category = await api.createCategory();
 
 	await page.goto("/settings/categories");
 
-	const income = await expectListGroup(page, "Revenus");
-	const expenses = await expectListGroup(page, "Dépenses");
-	// Each header counts its own kind, children included.
+	// One list since Sure's #1160, no income or expense tray.
+	const list = await expectListGroup(page, "Catégories");
+	await expect(page.getByRole("region", { name: "Revenus", exact: true })).toHaveCount(0);
+	await expect(page.getByRole("region", { name: "Dépenses", exact: true })).toHaveCount(0);
+	// The header counts every category, children included.
 	const listed = await page.request.get("/api/categories");
 	const { data } = z
-		.object({ data: z.array(z.object({ kind: z.string() })) })
+		.object({ data: z.array(z.object({ id: z.string() })) })
 		.parse(await listed.json());
-	const count = (kind: string) => data.filter((item) => item.kind === kind).length;
-	await expect(groupHeader(income)).toHaveText(`Revenus·${count("income")}`);
-	await expect(groupHeader(expenses)).toHaveText(`Dépenses·${count("expense")}`);
+	await expect(groupHeader(list)).toHaveText(`Catégories·${data.length}`);
 	await expectRowAtLeast56(
-		expenses
-			.getByRole("button", { name: `Actions pour ${category.name}`, exact: true })
-			.locator(".."),
+		list.getByRole("button", { name: `Actions pour ${category.name}`, exact: true }).locator(".."),
 	);
 
 	await pageHeader(page).getByRole("button", { name: "Ajouter une catégorie" }).click();
@@ -317,8 +315,7 @@ test("inside a group's white block, the empty states of banks and categories dro
 	);
 
 	await page.goto("/settings/categories");
-	await expectFlush(await expectListGroup(page, "Revenus"), "Aucune catégorie de revenus");
-	await expectFlush(await expectListGroup(page, "Dépenses"), "Aucune catégorie de dépenses");
+	await expectFlush(await expectListGroup(page, "Catégories"), "Aucune catégorie pour l'instant");
 });
 
 test("the transactions page says it is empty inside its list card, with no frame of its own", async ({

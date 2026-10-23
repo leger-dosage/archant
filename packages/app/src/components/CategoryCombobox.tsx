@@ -56,9 +56,9 @@ type CategoryComboboxProps = {
 	noneLabel?: string;
 	/**
 	 * Offers « Créer « … » » and « Ajouter comme sous-catégorie… » last, as
-	 * Sure's `DS::CategorySelect` and quick picker: a top-level expense, or a
-	 * child of the parent picked next, which takes that parent's kind and
-	 * colour. « Réglages › Catégories » edits the rest later.
+	 * Sure's `DS::CategorySelect` and quick picker: a top-level category, or
+	 * a child of the parent picked next, which takes that parent's colour.
+	 * « Réglages › Catégories » edits the rest later.
 	 */
 	allowCreate?: boolean;
 	/** A new top-level category's colour: the first swatch, as Sure's form, unless the caller picks. */

@@ -45,9 +45,7 @@ async function named(table: typeof categories | typeof tags | typeof merchants, 
 	const stamps = { createdAt: 0, updatedAt: 0 };
 
 	await (table === categories
-		? temp.db
-				.insert(categories)
-				.values({ id, name, kind: "expense", color: "#e99537", icon: "tag", ...stamps })
+		? temp.db.insert(categories).values({ id, name, color: "#e99537", icon: "tag", ...stamps })
 		: temp.db.insert(table).values({ id, name, ...stamps }));
 
 	return id;

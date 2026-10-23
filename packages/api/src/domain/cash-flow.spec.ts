@@ -91,11 +91,13 @@ describe("countsInCashFlow", () => {
 	});
 });
 
-const category = (
-	id: string,
-	kind: CashFlowCategory["kind"] = "expense",
-	parentId: string | null = null,
-): CashFlowCategory => ({ id, name: id, kind, color: `#${id}`, icon: "tag", parentId });
+const category = (id: string, parentId: string | null = null): CashFlowCategory => ({
+	id,
+	name: id,
+	color: `#${id}`,
+	icon: "tag",
+	parentId,
+});
 
 const row = (categoryId: string | null, amount: number): CashFlowRow => ({
 	categoryId,
@@ -112,9 +114,9 @@ const line = (categoryId: string | null, amount: number, share: number | null = 
 });
 
 const courses = category("Courses");
-const bio = category("Bio", "expense", "Courses");
-const salaire = category("Salaire", "income");
-const primes = category("Primes", "income");
+const bio = category("Bio", "Courses");
+const salaire = category("Salaire");
+const primes = category("Primes");
 const loisirs = category("Loisirs");
 const all = [courses, bio, salaire, primes, loisirs];
 
@@ -151,7 +153,7 @@ describe("grossCashFlow and netCashFlow", () => {
 		});
 	});
 
-	it("counts what an income-kind category spends as an expense of −40 €, where it lowered income", () => {
+	it("counts what a category that earns spends as an expense of −40 €, where it lowered income", () => {
 		const { gross, net } = both([row("Salaire", -4000)]);
 
 		expect(gross).toMatchObject({
@@ -255,10 +257,8 @@ describe("grossCashFlow and netCashFlow", () => {
 
 	it("gives each parent its sub-categories' own sums per side, largest first then by name, never the parent's rows nor a zero", () => {
 		const maison = category("Maison");
-		const children = ["Jardin", "Travaux", "Meubles", "Bois"].map((id) =>
-			category(id, "expense", "Maison"),
-		);
-		const orphan = category("Orphelin", "expense", "gone");
+		const children = ["Jardin", "Travaux", "Meubles", "Bois"].map((id) => category(id, "Maison"));
+		const orphan = category("Orphelin", "gone");
 		const { subcategories } = grossCashFlow(
 			[
 				row("Maison", -80000),
