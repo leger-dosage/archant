@@ -1,6 +1,7 @@
 import type { TFunction } from "i18next";
 
 import { RULE_TYPE_VALUES } from "@archant/api/schemas/rules";
+import { isActivityLabel } from "@archant/data/activity-labels";
 import { isDecimalString } from "@archant/data/money";
 import type {
 	RuleActionType,
@@ -9,6 +10,8 @@ import type {
 	RuleOperatorOf,
 } from "@archant/data/rules";
 import { isRuleOperatorOf, isValuelessOperator, tagIdsOf } from "@archant/data/rules";
+
+import { ACTIVITY_LABEL_NAMES } from "@/lib/activity-labels";
 
 const isRuleTypeValue = (value: string): value is (typeof RULE_TYPE_VALUES)[number] =>
 	RULE_TYPE_VALUES.some((known) => known === value);
@@ -249,6 +252,10 @@ function actionText(action: SummaryRule["actions"][number], names: SummaryNames,
 				? t("rules.summary.replaceBySpace", { pattern: value })
 				: t("rules.summary.replace", { pattern: value, replacement });
 		}
+		case "set_investment_activity_label":
+			return t("rules.summary.activityLabel", {
+				name: isActivityLabel(value) ? t(ACTIVITY_LABEL_NAMES[value]) : value,
+			});
 		case "exclude_transaction":
 			return t("rules.summary.exclude");
 		default: {

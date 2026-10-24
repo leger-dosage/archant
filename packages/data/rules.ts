@@ -82,6 +82,7 @@ export const RULE_ACTION_TYPES = [
 	"set_transaction_tags",
 	"set_transaction_name",
 	"replace_in_transaction_name",
+	"set_investment_activity_label",
 	"exclude_transaction",
 	"set_as_transfer_or_payment",
 ] as const;

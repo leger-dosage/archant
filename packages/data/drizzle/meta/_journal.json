@@ -694,6 +694,13 @@
       "when": 1792848198426,
       "tag": "0098_provider_details",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "6",
+      "when": 1792852452830,
+      "tag": "0099_investment_activity_label_action",
+      "breakpoints": true
     }
   ]
 }

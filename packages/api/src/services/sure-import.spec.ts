@@ -657,6 +657,39 @@ describe("importSureArchive", () => {
 		]);
 	});
 
+	it("imports Sure's activity label action with its English label, and drops one with another value", async () => {
+		await ownDatabase();
+
+		await importLines([
+			line("Rule", {
+				id: "r1",
+				name: "Dividendes",
+				active: true,
+				conditions: [{ condition_type: "transaction_name", operator: "like", value: "DIVIDENDE" }],
+				actions: [{ action_type: "set_investment_activity_label", value: "Dividend" }],
+			}),
+			line("Rule", {
+				id: "r2",
+				name: "Inconnu",
+				active: true,
+				conditions: [],
+				actions: [
+					{ action_type: "set_investment_activity_label", value: "Dividende" },
+					{ action_type: "exclude_transaction", value: null },
+				],
+			}),
+		]);
+
+		expect(
+			await source().all(
+				sql`select r.name, a.action_type as type, a.value from rule_actions a join rules r on r.id = a.rule_id order by r.name`,
+			),
+		).toEqual([
+			{ name: "Dividendes", type: "set_investment_activity_label", value: "Dividend" },
+			{ name: "Inconnu", type: "exclude_transaction", value: null },
+		]);
+	});
+
 	it("imports Sure's tag action naming several tags as one action holding them all", async () => {
 		await ownDatabase();
 

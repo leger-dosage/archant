@@ -6,6 +6,7 @@ import { XIcon } from "lucide-react";
 import { useController, useFormState } from "react-hook-form";
 import { Trans, useTranslation } from "react-i18next";
 
+import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { RuleActionType } from "@archant/data/rules";
 import { RULE_ACTION_TYPES } from "@archant/data/rules";
 
@@ -21,6 +22,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { ACTIVITY_LABEL_NAMES } from "@/lib/activity-labels";
 import { errorAt } from "@/lib/form-errors";
 import { described, errorId, newAction } from "@/lib/rule-form";
 import { cn } from "@/lib/utils";
@@ -97,6 +99,27 @@ export function ActionRow({
 						onChange={value.field.onChange}
 						onBlur={value.field.onBlur}
 					/>
+				);
+			case "set_investment_activity_label":
+				return (
+					<Select value={current} onValueChange={pick}>
+						<SelectTrigger
+							id={id}
+							className="w-full"
+							aria-label={valueLabel}
+							aria-invalid={error !== undefined}
+							{...described(path, error)}
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{ACTIVITY_LABELS.map((option) => (
+								<SelectItem key={option} value={option}>
+									{t(ACTIVITY_LABEL_NAMES[option])}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
 				);
 			case "replace_in_transaction_name":
 				return (

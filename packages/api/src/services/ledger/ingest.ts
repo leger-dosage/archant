@@ -1320,6 +1320,7 @@ export async function ingest(
 					].map((row) => ({
 						...row,
 						excluded: false,
+						investmentActivityLabel: null,
 						transfer: null,
 						expectedTransferAccountId: null,
 					})),

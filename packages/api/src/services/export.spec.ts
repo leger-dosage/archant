@@ -378,6 +378,7 @@ async function household() {
 			{ actionType: "set_transaction_merchant", value: baker },
 			{ actionType: "set_transaction_tags", value: `${trip},${odd}` },
 			{ actionType: "replace_in_transaction_name", value: "^CB ", replacement: "" },
+			{ actionType: "set_investment_activity_label", value: "Dividend" },
 		],
 	});
 	const transfer = await created("/api/rules", {
@@ -2396,6 +2397,7 @@ describe("exportArchive", () => {
 						{ type: "Tag", id: odd, name: "A\\B|C" },
 					],
 				},
+				{ action_type: "set_investment_activity_label", value: "Dividend" },
 			],
 			archant: {
 				actions: [{ action_type: "replace_in_transaction_name", value: "^CB ", replacement: "" }],

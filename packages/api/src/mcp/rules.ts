@@ -3,6 +3,7 @@ import type { NameBook } from "../services/names.ts";
 
 import { z } from "zod";
 
+import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import {
 	RULE_ACTION_TYPES,
@@ -71,7 +72,7 @@ const actionOutput = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'The category, merchant or account by name, the tags by name separated by ", ", else the label or the pattern; null to exclude.',
+			'The category, merchant or account by name, the tags by name separated by ", ", else the label, the pattern or the investment activity label; null to exclude.',
 		),
 	replacement: z.string().nullable().optional(),
 });
@@ -352,6 +353,9 @@ function changesOf(changes: Changes, names: NameBook) {
 		...(merchant === undefined ? {} : { merchant }),
 		...(tags === undefined ? {} : { tags }),
 		...(changes.label === undefined ? {} : { name: changes.label }),
+		...(changes.investmentActivityLabel === undefined
+			? {}
+			: { investment_activity_label: changes.investmentActivityLabel }),
 		...(changes.excluded === undefined ? {} : { excluded: changes.excluded }),
 		...(account === undefined ? {} : { expected_transfer_account: account }),
 	};
@@ -384,6 +388,7 @@ export const previewRule = defineTool({
 					merchant: change(z.string().nullable()),
 					tags: change(z.array(z.string())),
 					name: change(z.string()),
+					investment_activity_label: change(z.enum(ACTIVITY_LABELS).nullable()),
 					excluded: change(z.boolean()),
 					expected_transfer_account: change(z.string().nullable()),
 				}),

@@ -6,6 +6,7 @@ import type { ShownError } from "@/lib/form-errors";
 import type { Path } from "react-hook-form";
 
 import type { RuleFormInput } from "@archant/api/schemas/rules";
+import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { CurrencyCode } from "@archant/data/money";
 import { minorUnitsOf } from "@archant/data/money";
 import type { RuleActionType, RuleConditionType } from "@archant/data/rules";
@@ -48,8 +49,13 @@ export const newAction = (
 	actionType: RuleActionType = "set_transaction_category",
 ): ActionValues => ({
 	actionType,
-	// An exclusion takes no value: the schema refuses one.
-	value: isValuelessAction(actionType) ? null : "",
+	// An exclusion takes no value: the schema refuses one. An activity label
+	// starts on Sure's first option, as its select shows it.
+	value: isValuelessAction(actionType)
+		? null
+		: actionType === "set_investment_activity_label"
+			? ACTIVITY_LABELS[0]
+			: "",
 	// Only a replacement in the label has a replacement: the schema refuses one elsewhere.
 	replacement: actionType === "replace_in_transaction_name" ? "" : null,
 });

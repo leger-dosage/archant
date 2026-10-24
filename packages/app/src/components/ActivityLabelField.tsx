@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
-import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
+import { ACTIVITY_LABELS, isActivityLabel } from "@archant/data/activity-labels";
 
 import { Label } from "@/components/ui/label";
 import {
@@ -13,32 +13,12 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { useUpdateTransaction } from "@/hooks/useTransactions";
+import { ACTIVITY_LABEL_NAMES } from "@/lib/activity-labels";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
-/** Each label's French name, Sure's `transactions.activity_labels.*`. */
-const LABEL_NAMES = {
-	Buy: "transactions.activityLabels.buy",
-	Sell: "transactions.activityLabels.sell",
-	"Sweep In": "transactions.activityLabels.sweepIn",
-	"Sweep Out": "transactions.activityLabels.sweepOut",
-	Dividend: "transactions.activityLabels.dividend",
-	Reinvestment: "transactions.activityLabels.reinvestment",
-	Interest: "transactions.activityLabels.interest",
-	Fee: "transactions.activityLabels.fee",
-	Transfer: "transactions.activityLabels.transfer",
-	Contribution: "transactions.activityLabels.contribution",
-	Withdrawal: "transactions.activityLabels.withdrawal",
-	Exchange: "transactions.activityLabels.exchange",
-	Other: "transactions.activityLabels.other",
-} as const satisfies Record<ActivityLabel, string>;
-
 // Radix refuses an empty item value, so « — » takes a name no label has.
 const NONE = "none";
-
-function isActivityLabel(value: string): value is ActivityLabel {
-	return Object.hasOwn(LABEL_NAMES, value);
-}
 
 type ActivityLabelFieldProps = {
 	accountId: string;
@@ -97,7 +77,7 @@ export function ActivityLabelField({ accountId, transactionId, value }: Activity
 					<SelectItem value={NONE}>{t("transactions.form.activityLabelNone")}</SelectItem>
 					{ACTIVITY_LABELS.map((label) => (
 						<SelectItem key={label} value={label}>
-							{t(LABEL_NAMES[label])}
+							{t(ACTIVITY_LABEL_NAMES[label])}
 						</SelectItem>
 					))}
 				</SelectContent>

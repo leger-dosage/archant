@@ -2,6 +2,7 @@ import type { RuleInput } from "../rules.ts";
 
 import { z } from "zod";
 
+import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "../rules.ts";
@@ -147,6 +148,12 @@ const action = z.discriminatedUnion("action_type", [
 			.describe(
 				"The text put in place of each match, literally: $1 means nothing. Empty removes it.",
 			),
+	}),
+	z.strictObject({
+		action_type: z.literal("set_investment_activity_label"),
+		value: z
+			.enum(ACTIVITY_LABELS)
+			.describe("The investment activity label written on the transaction, as Sure names it."),
 	}),
 	z.strictObject({
 		action_type: z.literal("exclude_transaction"),

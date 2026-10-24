@@ -2005,6 +2005,29 @@ describe("reading accounts, recurring series and one transaction", () => {
 });
 
 describe("writing rules", () => {
+	it("previews a draft setting the activity label with the label's current and new value", async () => {
+		const token = await writer();
+		const account = await openAccount({ name: "Titres" });
+		const id = await spend(account, "DIVIDEND7 TTE", 1250, "2026-09-10");
+
+		const drafted = previewed.parse(
+			(
+				await callTool(bare, token, "preview_rule", {
+					rule: {
+						conditions: [labelLike("dividend7")],
+						actions: [{ action_type: "set_investment_activity_label", value: "Dividend" }],
+					},
+				})
+			).structuredContent,
+		);
+
+		expect(drafted).toMatchObject({
+			matched: 1,
+			changed: 1,
+			samples: [{ id, changes: { investment_activity_label: { from: null, to: "Dividend" } } }],
+		});
+	});
+
 	it("previews a draft, refuses a field error, then creates, previews and applies the corrected rule", async () => {
 		const token = await writer();
 		const account = await openAccount({ name: "Flux" });
@@ -2311,6 +2334,7 @@ describe("writing rules", () => {
 			{ action_type: "set_transaction_category", value: food.id },
 			{ action_type: "set_transaction_merchant", value: shop.id },
 			{ action_type: "set_transaction_tags", value: `${tag.id},${trip.id}` },
+			{ action_type: "set_investment_activity_label", value: "Dividend" },
 			{ action_type: "set_as_transfer_or_payment", value: account.id },
 		];
 		const created = savedRule.parse(
@@ -2343,6 +2367,7 @@ describe("writing rules", () => {
 				{ action_type: "set_transaction_category", value: food.name },
 				{ action_type: "set_transaction_merchant", value: shop.name },
 				{ action_type: "set_transaction_tags", value: `${tag.name}, ${trip.name}` },
+				{ action_type: "set_investment_activity_label", value: "Dividend" },
 				{ action_type: "set_as_transfer_or_payment", value: "Règles lues" },
 			],
 		};
