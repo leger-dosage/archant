@@ -78,8 +78,8 @@ export const ruleConditions = sqliteTable(
  * Sure's `Rule::Action`. `value` is a category, merchant or account id, or
  * tag ids comma-separated as Sure stores them, without a foreign key, for the
  * same reason as a condition's account: a deleted one makes the action write
- * nothing. It is the new label for a
- * rename, the pattern for a replacement in the label, and null for an
+ * nothing. It is the new label for a rename, one of `ACTIVITY_LABELS` for an
+ * activity label, the pattern for a replacement in the label, and null for an
  * exclusion, which needs nothing more. `replacement` is what a replacement
  * puts where the pattern matched, empty to remove it, and null for every other
  * type.

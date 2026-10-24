@@ -3,6 +3,7 @@ import type { Transaction } from "./ledger/shared.ts";
 
 import Papa from "papaparse";
 
+import { isActivityLabel } from "@archant/data/activity-labels";
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, isValuelessOperator } from "@archant/data/rules";
@@ -264,6 +265,11 @@ function actionOf(context: RuleContext, data: unknown): ActionInput | null {
 			return null;
 		case "exclude_transaction":
 			return { actionType: type, value: null };
+		case "set_investment_activity_label":
+			// Another value writes nothing in Sure, so the rule's other actions still run.
+			return typeof data.value === "string" && isActivityLabel(data.value)
+				? { actionType: type, value: data.value }
+				: null;
 		case "set_transaction_tags":
 			return { actionType: type, value: tagsValue(context, data) };
 		case "set_as_transfer_or_payment": {

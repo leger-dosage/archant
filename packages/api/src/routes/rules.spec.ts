@@ -457,6 +457,26 @@ describe("rules", () => {
 		]);
 	});
 
+	it("sets the activity label of a line typed by hand", async () => {
+		const account = await openAccount();
+		await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "dividende")],
+			actions: [{ actionType: "set_investment_activity_label", value: "Dividend" }],
+		});
+
+		await postTransaction(account.id, { ...expense, label: "DIVIDENDE TTE", notes: "" });
+		await postTransaction(account.id, { ...expense, label: "Fnac", notes: "" });
+
+		await expect(
+			temp.db.all(
+				sql`select t.label as label, t.investment_activity_label as activity from transactions t join entries e on e.id = t.entry_id where e.account_id = ${account.id} order by t.label`,
+			),
+		).resolves.toEqual([
+			{ label: "DIVIDENDE TTE", activity: "Dividend" },
+			{ label: "Fnac", activity: null },
+		]);
+	});
+
 	it("never rewrites the label of a line typed by hand", async () => {
 		const account = await openAccount();
 		await createRule({
@@ -506,6 +526,18 @@ describe("rules", () => {
 			[],
 			[{ actionType: "exclude_transaction", value: "yes" }],
 			[{ path: "actions.0.value", code: "invalid_value" }],
+		],
+		[
+			"an activity label outside Sure's list",
+			[],
+			[{ actionType: "set_investment_activity_label", value: "Dividende" }],
+			[{ path: "actions.0.value", code: "invalid_value" }],
+		],
+		[
+			"an empty activity label",
+			[],
+			[{ actionType: "set_investment_activity_label", value: "" }],
+			[{ path: "actions.0.value", code: "too_small" }],
 		],
 		[
 			"a pattern RE2 refuses",

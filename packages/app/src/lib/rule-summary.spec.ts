@@ -206,6 +206,8 @@ describe("ruleSummary with Story 8.2's conditions and actions", () => {
 		["set_transaction_tags", "t1", "Ajouter l'étiquette Achats"],
 		["set_transaction_name", "Amazon", "Renommer en « Amazon »"],
 		["exclude_transaction", null, "Exclure"],
+		["set_investment_activity_label", "Dividend", "Libellé d'activité : Dividende"],
+		["set_investment_activity_label", "Sweep In", "Libellé d'activité : Balayage entrant"],
 		["set_as_transfer_or_payment", "a2", "Virement avec Livret A"],
 		["set_transaction_merchant", "gone", "Marchand supprimé"],
 		["set_transaction_tags", "gone", "Étiquette supprimée"],

@@ -2688,7 +2688,7 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, exclusion ou virement attendu. Elle ne touche les opérations existantes que si vous l'appliquez. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
+		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Elle ne touche les opérations existantes que si vous l'appliquez. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
 		"list": "Ordre d'application",
 		"empty": {
 			"title": "Aucune règle pour l'instant",
@@ -2719,6 +2719,7 @@
 			"replace": "Remplacer « {{pattern}} » par « {{replacement}} »",
 			"replaceBySpace": "Remplacer « {{pattern}} » par une espace",
 			"remove": "Supprimer « {{pattern}} »",
+			"activityLabel": "Libellé d'activité : {{name}}",
 			"exclude": "Exclure",
 			"transfer": "Virement avec {{name}}",
 			"deletedAccount": "Compte supprimé",
@@ -2775,6 +2776,7 @@
 			"set_transaction_tags": "Ajouter des étiquettes",
 			"set_transaction_name": "Renommer",
 			"replace_in_transaction_name": "Remplacer dans le libellé",
+			"set_investment_activity_label": "Définir le libellé d'activité",
 			"exclude_transaction": "Exclure",
 			"set_as_transfer_or_payment": "Virement avec un compte"
 		},

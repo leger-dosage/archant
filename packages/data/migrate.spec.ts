@@ -1574,6 +1574,36 @@ describe("rules", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("keeps every action through 0099 and accepts Sure's activity label action", async () => {
+		const before = await migratedBefore("0099");
+		await insertRule(before, "r1");
+		await before.run(
+			sql`insert into rule_actions (id, rule_id, position, action_type, value, replacement) values ('a1', 'r1', 0, 'replace_in_transaction_name', '^CARTE ', ' ')`,
+		);
+		await expect(
+			before.run(
+				sql`insert into rule_actions (id, rule_id, position, action_type, value) values ('a2', 'r1', 1, 'set_investment_activity_label', 'Dividend')`,
+			),
+		).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await database.run(
+			sql`insert into rule_actions (id, rule_id, position, action_type, value) values ('a2', 'r1', 1, 'set_investment_activity_label', 'Dividend')`,
+		);
+		await expect(
+			database.all(
+				sql`select id, action_type as type, value, replacement from rule_actions order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "a1", type: "replace_in_transaction_name", value: "^CARTE ", replacement: " " },
+			{ id: "a2", type: "set_investment_activity_label", value: "Dividend", replacement: null },
+		]);
+		await database.run(sql`delete from rules where id = 'r1'`);
+		await expect(database.all(sql`select id from rule_actions`)).resolves.toEqual([]);
+	});
+
 	it("keeps every condition through 0095 and accepts Sure's negative and empty operators", async () => {
 		const before = await migratedBefore("0095");
 		await insertRule(before, "r1");

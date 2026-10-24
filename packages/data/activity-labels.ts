@@ -1,5 +1,6 @@
 /**
- * What an investment or crypto account's transaction did, Sure's
+ * What an investment or crypto account's transaction did, set from its sheet
+ * or, on any account's transaction as in Sure, by a rule: Sure's
  * `Transaction::ACTIVITY_LABELS` in its order. Stored in English, as Sure
  * stores them, so an export reads the same in both. Kept out of the schema
  * module so the pure domain and the interface can read it without reaching
@@ -22,6 +23,12 @@ export const ACTIVITY_LABELS = [
 ] as const;
 
 export type ActivityLabel = (typeof ACTIVITY_LABELS)[number];
+
+export function isActivityLabel(value: string): value is ActivityLabel {
+	const labels: readonly string[] = ACTIVITY_LABELS;
+
+	return labels.includes(value);
+}
 
 /**
  * Money moving within the account, not in or out of the household: Sure's

@@ -149,6 +149,7 @@ export async function applyRulePlan(
 				merchantId: ifStillThere(knownMerchants, planned.merchantId),
 				tagIds,
 				label: planned.label,
+				investmentActivityLabel: planned.investmentActivityLabel,
 				excluded: planned.excluded,
 			},
 			origin,

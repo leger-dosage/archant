@@ -2,6 +2,7 @@ import type { Direction } from "../cash-flow.ts";
 import type { IsoDate } from "../dates.ts";
 import type { LabelPattern } from "./label-pattern.ts";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { Decimal, MinorUnits } from "@archant/data/money";
 import { compareWithDecimal, toMinorUnits } from "@archant/data/money";
 import type { RuleOperatorOf, ValuelessRuleOperator } from "@archant/data/rules";
@@ -112,6 +113,16 @@ type ReplaceAction = {
 	replacement: string;
 };
 
+/**
+ * Sure's `set_investment_activity_label`. `label` is `null` for a stored value
+ * outside `ACTIVITY_LABELS`: the action then writes nothing, as Sure's
+ * executor returns 0.
+ */
+type ActivityLabelAction = {
+	type: "set_investment_activity_label";
+	label: ActivityLabel | null;
+};
+
 type ExcludeAction = { type: "exclude_transaction" };
 
 /**
@@ -126,6 +137,7 @@ export type RuleAction =
 	| TagAction
 	| RenameAction
 	| ReplaceAction
+	| ActivityLabelAction
 	| ExcludeAction
 	| TransferAction;
 
@@ -152,6 +164,7 @@ export type RuleCandidate = {
 	categoryId: string | null;
 	tagIds: readonly string[];
 	excluded: boolean;
+	investmentActivityLabel: ActivityLabel | null;
 	/** The transfer the row is a side of: `direction` needs its kind. */
 	transfer: { kind: TransferKind } | null;
 	expectedTransferAccountId: string | null;
@@ -318,14 +331,15 @@ export function matches(rule: Rule, candidate: RuleCandidate): boolean {
 
 /**
  * What rules change on one row, only where the value differs from the row's:
- * the category, the merchant, the tags to add, the label, the exclusion and
- * the expected counterpart account.
+ * the category, the merchant, the tags to add, the label, the activity
+ * label, the exclusion and the expected counterpart account.
  */
 export type RowPlan = {
 	categoryId?: string;
 	merchantId?: string;
 	addTagIds?: string[];
 	label?: string;
+	investmentActivityLabel?: ActivityLabel;
 	excluded?: true;
 	expectedTransferAccountId?: string;
 };
@@ -365,6 +379,10 @@ function applyAction(
 			return locked("label")
 				? {}
 				: { label: replaceInLabel(action.pattern, action.replacement, row.label) };
+		case "set_investment_activity_label":
+			return action.label === null || locked("investmentActivityLabel")
+				? {}
+				: { investmentActivityLabel: action.label };
 		case "exclude_transaction":
 			return locked("excluded") ? {} : { excluded: true };
 		default:
@@ -391,6 +409,10 @@ function planOf(candidate: RuleCandidate, row: RuleCandidate): RowPlan {
 			: {}),
 		...(added.length > 0 ? { addTagIds: added } : {}),
 		...(row.label !== candidate.label ? { label: row.label } : {}),
+		...(row.investmentActivityLabel !== null &&
+		row.investmentActivityLabel !== candidate.investmentActivityLabel
+			? { investmentActivityLabel: row.investmentActivityLabel }
+			: {}),
 		...(row.excluded && !candidate.excluded ? { excluded: true as const } : {}),
 		...(row.expectedTransferAccountId !== null &&
 		row.expectedTransferAccountId !== candidate.expectedTransferAccountId

@@ -539,7 +539,7 @@ describe("rules", () => {
 					"true",
 					"",
 					"[]",
-					csvCell('[{"action_type":"set_investment_activity_label","value":"Dividend"}]'),
+					csvCell('[{"action_type":"send_email_notification","value":null}]'),
 				].join(","),
 				["E", "", "true", "", "[]", action].join(","),
 			].join("\n"),

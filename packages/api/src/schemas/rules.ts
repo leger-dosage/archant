@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { isActivityLabel } from "@archant/data/activity-labels";
 import { parseUnsignedDecimal, toPlainDecimal } from "@archant/data/money";
 import type {
 	RuleActionType,
@@ -320,6 +321,9 @@ export const ruleSchema = z
 				issue(context, path, "too_big");
 			} else if (action.actionType === "set_transaction_tags") {
 				checkTags(value, path, context);
+			} else if (action.actionType === "set_investment_activity_label" && !isActivityLabel(value)) {
+				// Sure's executor writes nothing for any other value.
+				issue(context, path, "invalid_value");
 			}
 		}
 	})

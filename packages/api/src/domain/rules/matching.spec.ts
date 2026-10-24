@@ -22,6 +22,7 @@ const candidate = (overrides: Partial<RuleCandidate> = {}): RuleCandidate => ({
 	categoryId: null,
 	tagIds: [],
 	excluded: false,
+	investmentActivityLabel: null,
 	transfer: null,
 	expectedTransferAccountId: null,
 	lockedFields: {},
@@ -487,6 +488,42 @@ describe("planActions", () => {
 				},
 			],
 		]);
+	});
+
+	it("sets a free activity label, and leaves a locked, an equal or an unknown one alone", () => {
+		const dividend = withActions([{ type: "set_investment_activity_label", label: "Dividend" }]);
+
+		expect(
+			tallies(
+				[dividend],
+				[
+					candidate(),
+					candidate({
+						id: "e2",
+						investmentActivityLabel: "Buy",
+						lockedFields: { investmentActivityLabel: 1 },
+					}),
+					candidate({ id: "e3", investmentActivityLabel: "Dividend" }),
+				],
+			),
+		).toEqual([{ ruleId: "r1", matched: 3, changed: 1 }]);
+		expect(
+			plan(
+				[dividend],
+				[
+					candidate({ investmentActivityLabel: "Fee" }),
+					candidate({
+						id: "e2",
+						investmentActivityLabel: "Buy",
+						lockedFields: { investmentActivityLabel: 1 },
+					}),
+					candidate({ id: "e3", investmentActivityLabel: "Dividend" }),
+				],
+			),
+		).toEqual([["e1", { investmentActivityLabel: "Dividend" }]]);
+		expect(plan([withActions([{ type: "set_investment_activity_label", label: null }])])).toEqual(
+			[],
+		);
 	});
 
 	it("lets a later rule see what an earlier one planned", () => {

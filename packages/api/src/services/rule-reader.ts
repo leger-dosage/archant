@@ -3,6 +3,7 @@ import type { ServiceDeps } from "./deps.ts";
 
 import { asc, eq, inArray } from "drizzle-orm";
 
+import { isActivityLabel } from "@archant/data/activity-labels";
 import { parseUnsignedDecimal } from "@archant/data/money";
 import type { RuleConditionType } from "@archant/data/rules";
 import {
@@ -220,6 +221,8 @@ function toAction(action: RuleActionRow, known: Known): RuleAction {
 
 			return { type: action.actionType, pattern, replacement: action.replacement ?? "" };
 		}
+		case "set_investment_activity_label":
+			return { type: action.actionType, label: isActivityLabel(value) ? value : null };
 		case "exclude_transaction":
 			return { type: action.actionType };
 		default:

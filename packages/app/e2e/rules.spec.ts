@@ -426,6 +426,47 @@ test("a rule « Détails bancaires » « Contient » is saved, read in the list 
 	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveValue("5411");
 });
 
+test("a rule setting the activity label « Dividende » offers Sure's 13 labels, reads so in the list and reopens as saved", async ({
+	page,
+}) => {
+	const marker = uniqueName("dividende");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await choose(page, "Action 1", "Définir le libellé d'activité");
+	await expect(dialog(page).getByLabel("Définir le libellé d'activité")).toHaveText("Achat");
+	expect(await optionsOf(page, "Définir le libellé d'activité")).toEqual([
+		"Achat",
+		"Vente",
+		"Balayage entrant",
+		"Balayage sortant",
+		"Dividende",
+		"Réinvestissement",
+		"Intérêts",
+		"Frais",
+		"Transfert",
+		"Contribution",
+		"Retrait",
+		"Échange",
+		"Autre",
+	]);
+	await choose(page, "Définir le libellé d'activité", "Dividende");
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	const row = ruleRow(page, `Si Libellé contient ${marker}, alors Libellé d'activité : Dividende`);
+	await expect(row).toBeVisible();
+
+	await row.getByRole("button", { name: /^Actions pour /u }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog(page).getByLabel("Action 1", { exact: true })).toHaveText(
+		"Définir le libellé d'activité",
+	);
+	await expect(dialog(page).getByLabel("Définir le libellé d'activité")).toHaveText("Dividende");
+});
+
 test("a merchant condition saved through its picker reads « Marchand est … » in the list", async ({
 	page,
 	api,

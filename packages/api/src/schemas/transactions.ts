@@ -42,7 +42,7 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 	merchantId: z.string().nullable().optional(),
 	// The whole set; the ledger checks that every id names a tag.
 	tagIds: z.array(z.string()).optional(),
-	// Sure's `investment_activity_label`; `null` clears it. Only this edit sets it.
+	// Sure's `investment_activity_label`; `null` clears it. A rule also sets it.
 	investmentActivityLabel: z.enum(ACTIVITY_LABELS).nullable().optional(),
 });
 

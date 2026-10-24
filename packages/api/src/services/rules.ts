@@ -12,6 +12,7 @@ import type { ReadRule, Reference } from "./rule-reader.ts";
 
 import { asc, count, desc, eq } from "drizzle-orm";
 
+import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
 import type { RuleActionType, RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import { tagIdsOf } from "@archant/data/rules";
@@ -433,6 +434,7 @@ type RulePreviewSample = {
 		merchant?: FieldChange<string | null>;
 		tags?: FieldChange<string[]>;
 		label?: FieldChange<string>;
+		investmentActivityLabel?: FieldChange<ActivityLabel | null>;
 		excluded?: FieldChange<boolean>;
 		expectedTransferAccount?: FieldChange<string | null>;
 	};
@@ -469,6 +471,14 @@ function sampleOf(row: RuleCandidate, planned: RowPlan): RulePreviewSample {
 				? {}
 				: { tags: { from: [...row.tagIds], to: [...row.tagIds, ...planned.addTagIds] } }),
 			...(planned.label === undefined ? {} : { label: { from: row.label, to: planned.label } }),
+			...(planned.investmentActivityLabel === undefined
+				? {}
+				: {
+						investmentActivityLabel: {
+							from: row.investmentActivityLabel,
+							to: planned.investmentActivityLabel,
+						},
+					}),
 			...(planned.excluded === undefined
 				? {}
 				: { excluded: { from: row.excluded, to: planned.excluded } }),

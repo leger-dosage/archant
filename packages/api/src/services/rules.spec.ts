@@ -686,6 +686,39 @@ describe("previewRules and applyRules", () => {
 		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 0 });
 	});
 
+	it("set the activity label of every row but a locked one, without locking it", async () => {
+		const [free = "", locked = "", already = ""] = await rowsOf([
+			"DIVIDEND1 A",
+			"DIVIDEND1 B",
+			"DIVIDEND1 C",
+		]);
+		await updateTransaction(deps(), locked, { investmentActivityLabel: "Buy" }, { origin: "user" });
+		await updateTransaction(
+			deps(),
+			already,
+			{ investmentActivityLabel: "Dividend" },
+			{ origin: "rule" },
+		);
+		const rule = await createRule(deps(), {
+			conditions: [labelHas("dividend1")],
+			actions: [{ actionType: "set_investment_activity_label", value: "Dividend" }],
+		});
+
+		await expect(applyRules(deps(), rule.id)).resolves.toMatchObject({ changed: 1 });
+
+		const rows = await candidatesOf([free, locked, already]);
+		expect(rows.map((row) => row?.investmentActivityLabel)).toEqual([
+			"Dividend",
+			"Buy",
+			"Dividend",
+		]);
+		expect(rows.map((row) => Object.keys(row?.lockedFields ?? {}))).toEqual([
+			[],
+			["investmentActivityLabel"],
+			[],
+		]);
+	});
+
 	it("apply a disabled rule from its own menu, leaving its switch off", async () => {
 		const [id = ""] = await rowsOf(["CB COMPTE2"]);
 		const rule = await createRule(deps(), {
@@ -905,6 +938,7 @@ describe("previewRules on a draft, and its samples", () => {
 				{ actionType: "set_transaction_merchant", value: "amazon" },
 				{ actionType: "set_transaction_tags", value: "achats" },
 				{ actionType: "set_transaction_name", value: "Courses" },
+				{ actionType: "set_investment_activity_label", value: "Fee" },
 				{ actionType: "exclude_transaction" },
 				{ actionType: "set_as_transfer_or_payment", value: "a1" },
 			],
@@ -918,6 +952,7 @@ describe("previewRules on a draft, and its samples", () => {
 					merchant: { from: null, to: "amazon" },
 					tags: { from: [], to: ["achats"] },
 					label: { from: "DRAFT4", to: "Courses" },
+					investmentActivityLabel: { from: null, to: "Fee" },
 					excluded: { from: false, to: true },
 					expectedTransferAccount: { from: null, to: "a1" },
 				},
