@@ -322,7 +322,7 @@ development_status:
   31-8-edit-a-split-by-recreating-its-lines: done
   epic-31-retrospective: optional
 
-  epic-32: in-progress
+  epic-32: done
   32-1-categories-without-a-kind: done
   32-2-sures-default-categories-merged-deleted-and-restored: done
   32-3-merchants-and-tags-as-sure: done
@@ -335,7 +335,7 @@ development_status:
   32-10-run-rules-over-the-history-after-each-sync-and-list-every-run: done
   32-11-offer-a-rule-after-categorising: done
   32-12-categorise-uncategorised-lines-in-groups: done
-  32-13-delete-every-rule: backlog
+  32-13-delete-every-rule: done
   epic-32-retrospective: optional
 
   epic-33: backlog

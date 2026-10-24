@@ -668,6 +668,8 @@ reader.describe("a viewer", () => {
 			{ role: "button", name: "Appliquer tout" },
 			{ role: "button", name: "Ajouter une règle" },
 			{ role: "button", name: `Actions pour ${prefix} règle` },
+			// Story 32.13: no page menu, so no « Supprimer toutes les règles ».
+			{ role: "button", name: "Plus d'actions sur les règles" },
 		]);
 	});
 

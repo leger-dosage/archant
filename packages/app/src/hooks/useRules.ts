@@ -69,6 +69,16 @@ export function useDeleteRule() {
 	});
 }
 
+/** Deletes every rule, as Sure's `rules#destroy_all`; what they wrote stays. */
+export function useDeleteAllRules() {
+	const invalidate = useInvalidateRules();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(api.rules.$delete())).data,
+		onSuccess: invalidate,
+	});
+}
+
 /**
  * Returns a function that reads how many transactions the rule `ruleId`, or
  * every rule for `null`, matches and would change. Read afresh on each call:

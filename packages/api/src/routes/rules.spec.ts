@@ -1,6 +1,8 @@
+import type { Auth } from "../services/auth.ts";
+
 import { sql } from "drizzle-orm";
 import { testClient } from "hono/testing";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
@@ -21,6 +23,7 @@ import {
 	uploaded,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -183,6 +186,51 @@ describe("rules", () => {
 			body: { data: { id: rule.id } },
 		});
 		expect((await (await client.$get()).json()).data).toEqual([]);
+	});
+
+	it("deletes every rule with its conditions and actions, leaving what they wrote and their runs", async () => {
+		const account = await openAccount();
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		const first = await createRule(labelRule("carrefour", groceries.id));
+		await createRule({
+			conditions: [
+				{
+					conditionType: "compound",
+					operator: "or",
+					conditions: [
+						ruleLeaf("transaction_name", "like", "cinema"),
+						ruleLeaf("transaction_name", "like", "theatre"),
+					],
+				},
+			],
+			actions: [categoryAction(leisure.id)],
+		});
+		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+		await nextSync();
+		expect((await request("POST", `/api/rules/${first.id}/apply`)).status).toBe(200);
+
+		await expect(request("DELETE", "/api/rules")).resolves.toEqual({
+			status: 200,
+			body: { data: { deleted: 2 } },
+		});
+
+		await expect(request("GET", "/api/rules")).resolves.toMatchObject({ body: { data: [] } });
+		await expect(
+			temp.db.all(sql`select id from rule_conditions union all select id from rule_actions`),
+		).resolves.toEqual([]);
+		// As a single deletion: the line keeps the rule's category, still the rule's.
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB CARREFOUR", category: groceries.id, origin: "rule" },
+		]);
+		// The sync's run of each rule, then the application's, each kept without its rule.
+		await expect(request("GET", "/api/rules/runs")).resolves.toMatchObject({
+			body: { data: { items: [{ ruleId: null }, { ruleId: null }, { ruleId: null }], total: 3 } },
+		});
+		await expect(request("DELETE", "/api/rules")).resolves.toEqual({
+			status: 200,
+			body: { data: { deleted: 0 } },
+		});
 	});
 
 	it.each([
@@ -1004,5 +1052,36 @@ describe("rules", () => {
 
 		expect(response.status).toBe(404);
 		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
+	});
+});
+
+describe("a viewer and every rule", () => {
+	let viewerCookie: string;
+	let auth: Auth;
+	const silent = createLogger("silent");
+
+	beforeAll(async () => {
+		auth = createTestAuth(temp.db, silent);
+		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	});
+
+	afterEach(async () => {
+		await temp.db.run(sql`delete from rules`);
+	});
+
+	it("is refused FORBIDDEN by `viewerReadOnly`, every rule kept", async () => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		expect((await request("POST", "/api/rules", labelRule("carrefour", groceries.id))).status).toBe(
+			201,
+		);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const response = await viewer.request("/api/rules", { method: "DELETE" });
+
+		expect(response.status).toBe(403);
+		expect(errorBody.parse(await response.json()).error.code).toBe("FORBIDDEN");
+		await expect(request("GET", "/api/rules")).resolves.toMatchObject({
+			body: { data: [{ name: null }] },
+		});
 	});
 });

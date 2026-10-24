@@ -8,6 +8,7 @@ import { pageQuerySchema } from "../schemas/transactions.ts";
 import {
 	applyRules,
 	createRule,
+	deleteAllRules,
 	deleteRule,
 	listRuleRuns,
 	listRules,
@@ -20,6 +21,7 @@ export function rulesRoutes(deps: ServiceDeps) {
 	return (
 		new Hono()
 			.get("/", async (c) => c.json({ data: await listRules(deps) }, 200))
+			.delete("/", async (c) => c.json({ data: await deleteAllRules(deps) }, 200))
 			// Static paths before `/:id`, so « preview », « apply » and « runs » are never read as ids.
 			.get("/preview", async (c) => c.json({ data: await previewRules(deps) }, 200))
 			.post("/apply", async (c) => c.json({ data: await applyRules(deps) }, 200))

@@ -63,8 +63,6 @@ const splitBody = z.object({
 	data: z.object({ children: z.array(z.object({ id: z.string() })) }),
 });
 
-const ruleListBody = z.object({ data: z.array(z.object({ id: z.string() })) });
-
 const currentBody = z.object({
 	data: z.object({ record: z.object({ currentOccurrence: z.object({ id: z.string() }) }) }),
 });
@@ -480,24 +478,16 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
-		 * Deletes every rule, so none outlives the test that created it. Their
-		 * runs stay, as they would for the user, with no rule to point at: a
-		 * test reads runs by a rule name or a label of its own.
+		 * Deletes every rule, as « Supprimer toutes les règles », so none
+		 * outlives the test that created it. Their runs stay, as they would for
+		 * the user, with no rule to point at: a test reads runs by a rule name
+		 * or a label of its own.
 		 */
 		async deleteRules() {
-			const response = await request.get("/api/rules");
+			// Bodiless, so it needs the `Origin` a browser would add.
+			const response = await request.delete("/api/rules", { headers: sameOrigin });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
-			const { data } = ruleListBody.parse(await response.json());
-
-			// One after the other: each is an `immediate` write.
-			await data.reduce(async (previous, rule) => {
-				await previous;
-				// Bodiless, so it needs the `Origin` a browser would add.
-				const deleted = await request.delete(`/api/rules/${rule.id}`, { headers: sameOrigin });
-
-				expect(deleted.ok(), `${deleted.url()} answered ${await deleted.text()}`).toBe(true);
-			}, Promise.resolve());
 		},
 
 		/**

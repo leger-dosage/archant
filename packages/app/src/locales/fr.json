@@ -2925,6 +2925,14 @@
 			"description": "Les opérations que cette règle a déjà modifiées restent telles quelles.",
 			"action": "Supprimer",
 			"deleted": "Règle supprimée."
+		},
+		"menu": "Plus d'actions sur les règles",
+		"deleteAll": {
+			"action": "Supprimer toutes les règles",
+			"title": "Supprimer toutes les règles ?",
+			"description": "Êtes-vous sûr de vouloir supprimer toutes les règles ? Les opérations qu'elles ont déjà modifiées restent telles quelles. Ceci n'est pas réversible.",
+			"confirm": "Supprimer toutes les règles",
+			"deleted": "Toutes les règles supprimées"
 		}
 	},
 	"settings": {

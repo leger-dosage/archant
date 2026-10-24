@@ -359,6 +359,22 @@ export async function deleteRule(deps: ServiceDeps, id: string): Promise<{ id: s
 	);
 }
 
+/**
+ * Deletes every rule with its conditions and actions, as Sure's
+ * `rules#destroy_all`; what they wrote stays, and so do their runs, as after
+ * `deleteRule`.
+ */
+export async function deleteAllRules(deps: ServiceDeps): Promise<{ deleted: number }> {
+	return deps.db.transaction(
+		async (tx) => {
+			const result = await tx.delete(rules);
+
+			return { deleted: result.rowsAffected };
+		},
+		{ behavior: "immediate" },
+	);
+}
+
 /** A rule as the evaluator reads it, beside the snapshot a run keeps of it. */
 type Applied = { rule: Rule; snapshot: RuleSnapshot };
 
