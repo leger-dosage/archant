@@ -1,11 +1,12 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { ExpectingSide, TransferSide } from "../../domain/transfer-matching.ts";
+import type { DefaultCategory } from "../default-categories.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Origin, Transaction } from "./shared.ts";
 import type { SQL, SQLWrapper } from "drizzle-orm";
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 
-import { and, between, eq, inArray, lt, ne, not, sql } from "drizzle-orm";
+import { and, between, eq, inArray, isNull, lt, ne, not, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
 
 import type { AccountType } from "@archant/data/account-types";
@@ -13,6 +14,7 @@ import { classificationOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import type { CategoryOrigin } from "@archant/data/schema/categories";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -34,6 +36,7 @@ import {
 	transferKindOf,
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
+import { INVESTMENT_CONTRIBUTIONS_CATEGORY } from "../default-categories.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { categoryOriginOf, tagsExist } from "./patch.ts";
 import {
@@ -331,7 +334,8 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
  * from both sides, through `narrowToExpected`; `greedyMatches` then takes
  * the closest pairs. Every candidate is read before the first transfer is
  * written, so the result depends neither on line order nor on which account
- * synced first. No balance, category, lock or tag moves.
+ * synced first. No balance, lock or tag moves; a contribution's outflow
+ * without a category takes « Contributions aux investissements », as Sure's.
  */
 export async function matchTransfers(
 	tx: Pick<Transaction, "select" | "insert" | "update">,
@@ -372,6 +376,7 @@ export async function matchTransfers(
 
 	await inSequence(links, ROWS_PER_INSERT, (chunk) => tx.insert(transfers).values(chunk));
 	await clearOneTime(tx, links.flatMap(sidesOf));
+	await categoriseContributions(tx, links, "rule", now);
 }
 
 /**
@@ -420,8 +425,10 @@ export async function transferCandidates(
  * owner chose it, so there is nothing left to confirm. The candidate search
  * runs again inside the write, so a concurrent match cannot put a
  * transaction in two transfers. A pair the owner once rejected may be paired
- * by hand. No balance moves and no category, lock or tag changes: the two
- * rows stay what they were, only their direction changes. Throws `NOT_FOUND`
+ * by hand. No balance, lock or tag moves: the two rows stay what they were,
+ * only their direction changes, and a contribution's outflow without a
+ * category takes « Contributions aux investissements », as Sure's
+ * `TransferMatchesController#create`. Throws `NOT_FOUND`
  * for an unknown `entryId`, `VALIDATION_ERROR` on `counterpartId` when it is
  * no candidate, unknown, more than 30 days away, already matched, excluded
  * or on a deactivated account included.
@@ -430,7 +437,7 @@ export async function matchTransfer(
 	deps: ServiceDeps,
 	entryId: string,
 	counterpartId: string,
-	_options: { origin: Origin },
+	options: { origin: Origin },
 ): Promise<Transfer> {
 	return deps.db.transaction(
 		async (tx): Promise<Transfer> => {
@@ -444,10 +451,12 @@ export async function matchTransfer(
 				throw invalidField("counterpartId", "not_a_candidate");
 			}
 
-			const transfer = transferBetween(pair.source, pair.candidate, "confirmed", Date.now());
+			const now = Date.now();
+			const transfer = transferBetween(pair.source, pair.candidate, "confirmed", now);
 
 			await tx.insert(transfers).values(transfer);
 			await clearOneTime(tx, sidesOf(transfer));
+			await categoriseContributions(tx, [transfer], categoryOriginOf(options.origin), now);
 
 			return transfer;
 		},
@@ -629,19 +638,21 @@ export type TransferBetween = {
 export type CreatedTransfer = { transfer: Transfer; created: boolean };
 
 /** Sure's `models.category.defaults.fees`, the category of every transfer fee. */
-const FEES_CATEGORY = {
-	name: "Frais",
-	kind: "expense",
-	color: "#6b7280",
-	icon: "receipt",
-} as const;
+const FEES_CATEGORY: DefaultCategory = { name: "Frais", color: "#6b7280", icon: "receipt" };
 
-/** The « Frais » category, case aside, else one created, as Sure's `find_or_create_by!`. */
-async function feesCategoryId(tx: Transaction, now: number): Promise<string> {
+/**
+ * The category named as `category`, case aside, else one created with its
+ * colour and icon, as Sure's `find_or_create_by!`.
+ */
+async function categoryIdFor(
+	tx: Pick<Transaction, "select" | "insert">,
+	category: DefaultCategory,
+	now: number,
+): Promise<string> {
 	const found = await tx
 		.select({ id: categories.id })
 		.from(categories)
-		.where(eq(sql`lower(${categories.name})`, FEES_CATEGORY.name.toLowerCase()))
+		.where(eq(sql`lower(${categories.name})`, category.name.toLowerCase()))
 		.get();
 
 	if (found !== undefined) {
@@ -651,9 +662,52 @@ async function feesCategoryId(tx: Transaction, now: number): Promise<string> {
 	const id = crypto.randomUUID();
 	await tx
 		.insert(categories)
-		.values({ id, ...FEES_CATEGORY, parentId: null, createdAt: now, updatedAt: now });
+		.values({ id, ...category, parentId: null, createdAt: now, updatedAt: now });
 
 	return id;
+}
+
+/** Which of `ids` have no category. */
+const uncategorised = (ids: readonly string[]) =>
+	and(inArray(transactions.entryId, ids), isNull(transactions.categoryId));
+
+/**
+ * Puts the outflow of each investment contribution among `written` in
+ * « Contributions aux investissements » when it has no category, as Sure's
+ * `Transfer::Creator`, `auto_match_transfers!` and `TransferMatchesController`;
+ * a category already there stays. The category is found or created only when
+ * an outflow needs it, so one the owner deleted comes back with the next
+ * contribution, as Sure's `Family#investment_contributions_category`. No lock,
+ * as Sure's `update!`.
+ */
+async function categoriseContributions(
+	tx: Pick<Transaction, "select" | "insert" | "update">,
+	written: readonly Transfer[],
+	origin: CategoryOrigin,
+	now: number,
+): Promise<void> {
+	const outflows = written
+		.filter((transfer) => transfer.kind === "investment_contribution")
+		.map((transfer) => transfer.outflowTransactionId);
+	let categoryId: string | undefined;
+
+	await inSequence(outflows, KEYS_PER_LOOKUP, async (chunk) => {
+		const needed = await tx
+			.select({ id: transactions.entryId })
+			.from(transactions)
+			.where(uncategorised(chunk))
+			.get();
+
+		if (needed === undefined) {
+			return;
+		}
+
+		categoryId ??= await categoryIdFor(tx, INVESTMENT_CONTRIBUTIONS_CATEGORY, now);
+		await tx
+			.update(transactions)
+			.set({ categoryId, categoryOrigin: origin })
+			.where(uncategorised(chunk));
+	});
 }
 
 /** An account a transfer names, or `VALIDATION_ERROR` on `path`. */
@@ -723,7 +777,8 @@ async function transferOfKey(tx: Transaction, key: string) {
  * liability, the inflow on `toAccountId` named « Virement depuis » or
  * « Paiement depuis » the source, both locked as a line typed by hand and
  * tagged with `tagIds`; the transfer `confirmed`, its kind from both
- * accounts' types; each fee above zero a standard line on its account in
+ * accounts' types, a contribution's outflow in « Contributions aux
+ * investissements »; each fee above zero a standard line on its account in
  * « Frais », linked to the transfer. A key a transfer already holds returns
  * that transfer when every field matches, else throws `TRANSFER_FORM_STALE`.
  * Throws `VALIDATION_ERROR` for an unknown account, the same account twice,
@@ -816,7 +871,9 @@ export async function createTransferBetween(
 				},
 			];
 			const feeCategoryId =
-				input.sourceFee > 0 || input.destinationFee > 0 ? await feesCategoryId(tx, now) : null;
+				input.sourceFee > 0 || input.destinationFee > 0
+					? await categoryIdFor(tx, FEES_CATEGORY, now)
+					: null;
 			const fees = [
 				{
 					accountId: source.id,
@@ -848,6 +905,7 @@ export async function createTransferBetween(
 				.insert(transactions)
 				.values(legs.map((leg) => ({ entryId: leg.id, label: leg.label, lockedFields: legLocks })));
 			await tx.insert(transfers).values(transfer);
+			await categoriseContributions(tx, [transfer], categoryOriginOf(options.origin), now);
 			if (input.tagIds.length > 0) {
 				await tx
 					.insert(taggings)

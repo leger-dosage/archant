@@ -294,6 +294,8 @@ describe("getCashFlow", () => {
 			await matchTransfer(deps(), outflow, inflow, { origin: "user" });
 		}
 
+		const contributions = (await findTransaction(deps(), outflow))?.categoryId ?? null;
+
 		const cashFlow = await getCashFlow(deps(), "2026-09");
 
 		expect(cashFlow.income).toBe(0);
@@ -301,7 +303,14 @@ describe("getCashFlow", () => {
 		expect(cashFlow.lines).toEqual({
 			income: [],
 			expense: [
-				{ categoryId: null, name: null, color: null, icon: null, amount: -20_000, share: 1 },
+				{
+					categoryId: contributions,
+					name: "Contributions aux investissements",
+					color: "#0d9488",
+					icon: "trending-up",
+					amount: -20_000,
+					share: 1,
+				},
 			],
 		});
 	});

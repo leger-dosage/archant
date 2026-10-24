@@ -67,14 +67,20 @@ function useInvalidateTransactions() {
 }
 
 export function useMatchTransfer() {
+	const queryClient = useQueryClient();
 	const invalidate = useInvalidateTransactions();
 
 	return useMutation({
 		mutationFn: async (input: TransferInput) =>
 			(await unwrap(api.transfers.$post({ json: input }))).data,
 		// A refused pick is usually a candidate matched or changed meanwhile:
-		// the picker must stop offering it.
-		onSettled: invalidate,
+		// the picker must stop offering it. A contribution may create
+		// « Contributions aux investissements ».
+		onSettled: () =>
+			Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+			]),
 	});
 }
 
@@ -124,7 +130,7 @@ export function useCreateTransferBetween() {
 			Promise.all([
 				queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
-				// A first fee creates « Frais ».
+				// A first fee creates « Frais », a contribution « Contributions aux investissements ».
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			]),
 	});

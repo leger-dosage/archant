@@ -441,7 +441,45 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 	await expect(rowButton(page, out)).not.toContainText("Vers");
 });
 
-test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses » under the category picked in its drawer", async ({
+test("a contribution paired by hand takes « Contributions aux investissements » on its outflow, as Sure's", async ({
+	page,
+	api,
+}) => {
+	const prefix = uniqueName("Versement");
+	const checking = await api.openAccount({ name: uniqueName("Compte courant") });
+	const pea = await api.openAccount({ name: uniqueName("PEA"), kind: "pea" });
+	const amount = uniqueAmount();
+	const out = `${prefix} départ`;
+	const into = `${prefix} arrivée`;
+	// Too far apart for the matcher's 4 days, within a pair by hand's 30.
+	await api.addTransaction(checking.id, { date: daysAgo(25), label: out, amount: `-${amount}` });
+	await api.addTransaction(pea.id, { date: daysAgo(5), label: into, amount });
+
+	await visitOperations(page, prefix);
+	await expect(categoryButtons(page, out)).toHaveAccessibleName("Catégorie : Sans catégorie");
+	await rowButton(page, out).click();
+	await sheet(page).getByRole("button", { name: "Rapprocher un virement" }).click();
+	await picker(page)
+		.getByRole("button", { name: new RegExp(into) })
+		.click();
+	await expect(picker(page)).toBeHidden();
+	await page.keyboard.press("Escape");
+	await expect(sheet(page)).toBeHidden();
+
+	await expect(rowButton(page, out)).toContainText(`Versement · Vers ${pea.name}`);
+	await expect(
+		rowItem(page, out).getByRole("button", {
+			name: "Catégorie : Contributions aux investissements",
+		}),
+	).toBeVisible();
+	await openDrawer(page, out);
+	await expect(drawer(page).getByRole("button", { name: "Catégorie", exact: true })).toHaveText(
+		"Contributions aux investissements",
+	);
+	await closeDrawer(page);
+});
+
+test("a contribution into a PEA shows « Versement », raises its value and counts in « Dépenses » under « Contributions aux investissements », then the category picked in its drawer", async ({
 	page,
 	api,
 }) => {
@@ -484,7 +522,8 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 
 	await openDrawer(page, out);
 	const field = drawer(page).getByRole("button", { name: "Catégorie", exact: true });
-	await expect(field).toHaveText("Sans catégorie");
+	// Given by the proposal, kept by the pair made by hand, as Sure's.
+	await expect(field).toHaveText("Contributions aux investissements");
 	await field.click();
 	await categorySearch(page).fill(savings.name);
 	await page.getByRole("option", { name: savings.name }).click();

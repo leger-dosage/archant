@@ -14,6 +14,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import {
 	asUser,
 	bankDeps,
+	categoryOriginOf,
 	deps,
 	history,
 	lockedFields,
@@ -149,6 +150,38 @@ describe("createTransferBetween", () => {
 			label: "Virement vers PEA",
 		});
 		expect(peaToWallet.transfer.kind).toBe("internal_move");
+	});
+
+	it("puts a contribution's outflow in « Contributions aux investissements », as Sure's `outflow_transaction`", async () => {
+		const { checking, livret } = await openHousehold();
+		const pea = await openPea();
+		const toLivret = await createTransferBetween(deps(), between(checking.id, livret.id), asUser);
+		const toPea = await createTransferBetween(deps(), between(checking.id, pea.id), asUser);
+		const again = await createTransferBetween(deps(), between(checking.id, pea.id), asUser);
+		const [created, ...others] = await temp.db
+			.select({ id: categories.id, color: categories.color, icon: categories.icon })
+			.from(categories)
+			.where(eq(categories.name, "Contributions aux investissements"));
+
+		expect(others).toEqual([]);
+		expect(created).toMatchObject({ color: "#0d9488", icon: "trending-up" });
+		await expect(rowOf(toPea.transfer.outflowTransactionId)).resolves.toMatchObject({
+			categoryId: created?.id,
+		});
+		await expect(rowOf(again.transfer.outflowTransactionId)).resolves.toMatchObject({
+			categoryId: created?.id,
+		});
+		await expect(rowOf(toPea.transfer.inflowTransactionId)).resolves.toMatchObject({
+			categoryId: null,
+		});
+		await expect(rowOf(toLivret.transfer.outflowTransactionId)).resolves.toMatchObject({
+			categoryId: null,
+		});
+		await expect(categoryOriginOf(toPea.transfer.outflowTransactionId)).resolves.toBe("user");
+		// Sure's `update!` locks nothing: a rule may still recategorise it.
+		await expect(lockedFields(toPea.transfer.outflowTransactionId)).resolves.not.toContain(
+			"category",
+		);
 	});
 
 	it("records each fee as a standard line in « Frais », created once and linked", async () => {

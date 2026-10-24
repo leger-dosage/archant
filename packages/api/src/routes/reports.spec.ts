@@ -388,7 +388,7 @@ describe("GET /api/reports/cash-flow", () => {
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
 	});
 
-	it("counts a contribution's outflow in « Dépenses », its PEA side in neither", async () => {
+	it("counts a contribution's outflow in « Dépenses » under « Contributions aux investissements », its PEA side in neither", async () => {
 		const checking = await openOwn({ ...august, name: "Compte courant" });
 		const account = await openOwn({ ...august, ...pea });
 		const outflow = await spend(checking.id, "-500,00", undefined, "2026-09-12");
@@ -397,13 +397,24 @@ describe("GET /api/reports/cash-flow", () => {
 		expect(matched?.transfer?.kind).toBe("investment_contribution");
 
 		const data = await cashFlowOf("2026-09");
+		const categoryId = data.lines.expense[0]?.categoryId ?? "";
 
+		expect(categoryId).not.toBe("");
 		expect(data).toMatchObject({
 			income: 0,
 			expenses: -50000,
-			lines: { income: [], expense: [line(null, null, -50000)] },
+			lines: {
+				income: [],
+				expense: [
+					{
+						...line(categoryId, "Contributions aux investissements", -50000),
+						color: "#0d9488",
+						icon: "trending-up",
+					},
+				],
+			},
 		});
-		const drilled = await listed("?category=none&from=2026-09-01&to=2026-09-30");
+		const drilled = await listed(`?category=${categoryId}&from=2026-09-01&to=2026-09-30`);
 		expect(drilled.items.map((item) => item.id)).toEqual([outflow]);
 		expect(drilled.items.map((item) => item.id)).not.toContain(inflow);
 	});

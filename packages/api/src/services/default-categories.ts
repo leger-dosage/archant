@@ -7,6 +7,16 @@ export type DefaultCategory = {
 };
 
 /**
+ * Sure's `Family#investment_contributions_category`: seeded with the others,
+ * and created again for a contribution's outflow once the owner deleted it.
+ */
+export const INVESTMENT_CONTRIBUTIONS_CATEGORY: DefaultCategory = {
+	name: "Contributions aux investissements",
+	color: "#0d9488",
+	icon: "trending-up",
+};
+
+/**
  * Sure's `Category#default_categories`, in its order, with its colours and
  * icons. All top-level, as in Sure: the user makes the sub-categories. Names
  * in the French a French user expects; the seven Archant lacked before Story
@@ -35,5 +45,5 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategory[] = [
 	{ name: "Prestations", color: "#7c3aed", icon: "briefcase" },
 	{ name: "Frais bancaires", color: "#6b7280", icon: "receipt" },
 	{ name: "Épargne et placements", color: "#059669", icon: "piggy-bank" },
-	{ name: "Contributions aux investissements", color: "#0d9488", icon: "trending-up" },
+	INVESTMENT_CONTRIBUTIONS_CATEGORY,
 ];
