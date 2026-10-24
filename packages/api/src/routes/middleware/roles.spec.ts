@@ -57,6 +57,7 @@ const ADMIN_READS = [
 	"/api/export",
 	"/api/prices",
 	"/api/securities",
+	"/api/transactions/x/rule-prompt",
 ];
 
 /** The query an administrator's read of these paths needs to answer 200. */
@@ -259,7 +260,7 @@ describe("a viewer's reads", () => {
 					.replace(/^\/api\/accounts\/:id/u, `/api/accounts/${account.id}`)
 					.replace(/^\/api\/transactions\/:id/u, `/api/transactions/${transactionId}`)
 					.replace(":month", "2026-09"),
-		).filter(({ path }) => !ADMIN_READS.includes(path));
+		).filter(({ path }) => !ADMIN_READS.includes(path.replace(transactionId, "x")));
 
 		expect(routes.length).toBeGreaterThanOrEqual(34);
 

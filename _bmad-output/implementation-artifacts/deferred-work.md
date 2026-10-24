@@ -475,3 +475,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-32-10-run-rules-over-the-history-after-each-sync-and-list-every-run.md`
   summary: No browser test shows a failed rule run's « Échoué » badge and its reason in « Exécutions récentes ».
   evidence: Producing a failed run end to end needs a database fault in the e2e server; the service test covers the recorded code.
+- source_spec: `_bmad-output/implementation-artifacts/spec-32-11-offer-a-rule-after-categorising.md`
+  summary: Anchor the e2e checks that no rule prompt shows on an event after the client handled the `/rule-prompt` answer.
+  evidence: `categorise()` waits for the response, but `useOfferRule` handles it asynchronously, so `toHaveCount(0)` may pass before a wrongly shown prompt renders; the server's eligibility and dismissals are covered in `routes/transactions.spec.ts` and `routes/preferences.spec.ts`.

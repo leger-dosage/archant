@@ -46,6 +46,8 @@ type RuleDialogProps = {
 	onOpenChange: (open: boolean) => void;
 	/** The rule to edit; absent to create one. */
 	rule?: RuleData | undefined;
+	/** What a new rule starts with, Sure's defaults when absent. */
+	preset?: FormValues | undefined;
 	options: Options;
 	/** Called with the rule once saved, after the dialog closes. */
 	onSaved?: ((rule: RuleData) => void) | undefined;
@@ -56,14 +58,21 @@ type RuleDialogProps = {
  * optional, then « Si » its conditions and groups, then « Alors » its
  * actions, one per type.
  */
-export function RuleDialog({ open, onOpenChange, rule, options, onSaved }: RuleDialogProps) {
+export function RuleDialog({
+	open,
+	onOpenChange,
+	rule,
+	preset,
+	options,
+	onSaved,
+}: RuleDialogProps) {
 	const { t } = useTranslation();
 	const createRule = useCreateRule();
 	const updateRule = useUpdateRule();
 	const form = useForm<FormValues>({
 		// `raw` hands the typed text to the API as is: the same schema parses it there.
 		resolver: zodResolver(ruleSchema, undefined, { raw: true }),
-		defaultValues: rule === undefined ? defaults() : valuesOf(rule),
+		defaultValues: rule === undefined ? (preset ?? defaults()) : valuesOf(rule),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const conditions = useFieldArray({ control: form.control, name: "conditions" });
@@ -78,12 +87,13 @@ export function RuleDialog({ open, onOpenChange, rule, options, onSaved }: RuleD
 	// Keyed on the id: the page hands over the rule from the current list, a
 	// new object on every refetch, which must not wipe what is being typed.
 	const ruleId = rule?.id;
-	const latest = useRef(rule);
-	latest.current = rule;
+	const latest = useRef({ rule, preset });
+	latest.current = { rule, preset };
 
 	useEffect(() => {
 		if (open) {
-			form.reset(latest.current === undefined ? defaults() : valuesOf(latest.current));
+			const { rule: current, preset: start } = latest.current;
+			form.reset(current === undefined ? (start ?? defaults()) : valuesOf(current));
 		}
 	}, [open, ruleId, form]);
 

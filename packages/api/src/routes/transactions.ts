@@ -19,6 +19,7 @@ import {
 	transactionTotalsSchema,
 } from "../schemas/transactions.ts";
 import { getPreferences } from "../services/preferences.ts";
+import { offersRulePrompt } from "../services/rule-prompt.ts";
 import {
 	bulkDeleteTransactions,
 	bulkUpdateTransactions,
@@ -42,7 +43,7 @@ import {
 	updateTransaction,
 } from "../services/transactions.ts";
 import { listTransferCandidates } from "../services/transfers.ts";
-import { signedInUser } from "./middleware/roles.ts";
+import { requireRole, signedInUser } from "./middleware/roles.ts";
 
 /**
  * Refuses a category on the inflow of a loan payment or a contribution, as
@@ -122,6 +123,18 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			)
 			.post("/:id/dismiss-posted-match", async (c) =>
 				c.json({ data: await dismissPostedMatch(deps, c.req.param("id")) }, 200),
+			)
+			// Sure's rule prompt, asked once the interface set a category by hand.
+			// Only an administrator writes rules: a viewer is never offered one.
+			.get("/:id/rule-prompt", requireRole("admin"), async (c) =>
+				c.json(
+					{
+						data: {
+							offered: await offersRulePrompt(deps, signedInUser(c).id, c.req.param("id")),
+						},
+					},
+					200,
+				),
 			)
 			// Sure's `unlock_for_sync!`: every lock at once, none per field.
 			.post("/:id/unlock", async (c) =>

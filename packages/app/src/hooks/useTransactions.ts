@@ -14,6 +14,7 @@ import type {
 } from "@archant/api/schemas/transactions";
 
 import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
+import { useOfferRule, withdrawRulePrompt } from "@/hooks/useOfferRule";
 import { api, errorCodeOf, unwrap } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
@@ -166,6 +167,7 @@ const ROW_FIELDS = {
  */
 function useSetRowField<Field extends RowField>(field: Field) {
 	const queryClient = useQueryClient();
+	const offerRule = useOfferRule();
 	const texts = ROW_FIELDS[field];
 	const patchOf = (value: RowValues[Field]): Partial<RowValues> => ({ [field]: value });
 
@@ -202,9 +204,13 @@ function useSetRowField<Field extends RowField>(field: Field) {
 				change.onError();
 			}
 		},
-		onSuccess: (_data, change) => {
+		onSuccess: (saved, change) => {
 			if (change.undo === true) {
 				return;
+			}
+
+			if (change.value !== null) {
+				void offerRule({ id: change.id, label: saved.label, categoryId: change.value });
 			}
 
 			// One toast per row and field: a newer choice replaces the older
@@ -217,6 +223,8 @@ function useSetRowField<Field extends RowField>(field: Field) {
 					label: t(texts.undo),
 					onClick: () => {
 						toast.dismiss(id);
+						// The prompt offered a rule for the category being undone.
+						withdrawRulePrompt();
 						mutation.mutate({
 							id: change.id,
 							value: change.previous,

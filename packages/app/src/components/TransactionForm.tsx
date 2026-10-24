@@ -50,6 +50,7 @@ import { SheetFooter } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useAttachmentCount } from "@/hooks/useAttachments";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useOfferRule } from "@/hooks/useOfferRule";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -160,6 +161,7 @@ export function TransactionForm({
 	const accountId = chosen?.id ?? "";
 	const createTransaction = useCreateTransaction(accountId);
 	const updateTransaction = useUpdateTransaction(accountId);
+	const offerRule = useOfferRule();
 	const deleteTransaction = useDeleteTransaction(accountId);
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [transfer, setTransfer] = useState<TransferLink>(transaction?.transfer ?? null);
@@ -282,7 +284,11 @@ export function TransactionForm({
 					...(dirtyFields.oneTime === true ? { oneTime: oneTimeValue } : {}),
 					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
 				};
-				await updateTransaction.mutateAsync({ id: transaction.id, input });
+				const saved = await updateTransaction.mutateAsync({ id: transaction.id, input });
+
+				if (input.categoryId !== undefined && input.categoryId !== null) {
+					void offerRule({ id: saved.id, label: saved.label, categoryId: input.categoryId });
+				}
 			}
 			// No success toast: the row and the balance changing say it.
 			onClose();

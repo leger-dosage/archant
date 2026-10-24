@@ -1,12 +1,25 @@
 import type { Auth } from "../services/auth.ts";
 
 import { testClient } from "hono/testing";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
 
 import { createLogger } from "../lib/logger.ts";
-import { buildApp, errorBody, ownDatabase, temp, useSignedInApp } from "../testing/app.ts";
+import {
+	buildApp,
+	errorBody,
+	expense,
+	openOwn,
+	ownCategory,
+	ownDatabase,
+	ownRequest,
+	postOwn,
+	sendOwn,
+	temp,
+	useSignedInApp,
+} from "../testing/app.ts";
 import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
@@ -39,6 +52,21 @@ describe("GET /api/preferences", () => {
 		});
 	});
 });
+
+// Story 32.11: a line categorised by hand in the test's own database.
+async function categorisedLine() {
+	const account = await openOwn();
+	const id = await postOwn(account.id, expense);
+	const categoryId = await ownCategory("Courses");
+	await sendOwn("PATCH", `/api/transactions/${id}`, { categoryId });
+
+	return id;
+}
+
+const offered = async (id: string) =>
+	z
+		.object({ data: z.object({ offered: z.boolean() }) })
+		.parse((await ownRequest("GET", `/api/transactions/${id}/rule-prompt`)).body).data.offered;
 
 describe("PATCH /api/preferences", () => {
 	it.each(ACCOUNT_ORDERS)("saves %s and answers the preferences", async (order) => {
@@ -116,6 +144,54 @@ describe("PATCH /api/preferences", () => {
 		});
 	});
 
+	// Story 32.11: Sure's `rule_prompt_settings`, each test in its own database.
+	describe("/rule-prompt", () => {
+		const DAY = 24 * 60 * 60 * 1000;
+
+		afterEach(() => {
+			vi.useRealTimers();
+		});
+
+		it("hides the prompt for 24 hours with « Masquer pour aujourd'hui », then offers it again", async () => {
+			const id = await categorisedLine();
+
+			const dismissed = await ownRequest("PATCH", "/api/preferences/rule-prompt", {
+				disabled: false,
+			});
+			const hidden = await offered(id);
+			const now = Date.now();
+			vi.useFakeTimers({ now: now + DAY - 60_000, toFake: ["Date"] });
+			const stillHidden = await offered(id);
+			vi.setSystemTime(now + DAY + 1000);
+			const back = await offered(id);
+
+			expect(dismissed).toEqual({ status: 200, body: { data: { rulePromptsDisabled: false } } });
+			expect([hidden, stillHidden, back]).toEqual([false, false, true]);
+		});
+
+		it("hides it for good with « Ne plus afficher » ticked", async () => {
+			const id = await categorisedLine();
+
+			await ownRequest("PATCH", "/api/preferences/rule-prompt", { disabled: true });
+			vi.useFakeTimers({ now: Date.now() + 2 * DAY, toFake: ["Date"] });
+			const later = await offered(id);
+
+			expect(later).toBe(false);
+		});
+
+		it("refuses a missing choice VALIDATION_ERROR", async () => {
+			await openOwn();
+
+			const refused = await ownRequest("PATCH", "/api/preferences/rule-prompt", {});
+
+			expect(refused.status).toBe(400);
+			expect(errorBody.parse(refused.body).error).toMatchObject({
+				code: "VALIDATION_ERROR",
+				fields: [{ path: "disabled", code: "invalid_type" }],
+			});
+		});
+	});
+
 	describe("as a viewer", () => {
 		const silent = createLogger("silent");
 		let auth: Auth;
@@ -128,6 +204,17 @@ describe("PATCH /api/preferences", () => {
 		});
 
 		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		it("is refused FORBIDDEN on hiding the rule prompt", async () => {
+			const refused = await viewer().request("/api/preferences/rule-prompt", {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ disabled: true }),
+			});
+
+			expect(refused.status).toBe(403);
+			expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+		});
 
 		it("reads the default order, and is refused FORBIDDEN on a save, nothing written", async () => {
 			const refused = await patchRaw({ defaultAccountOrder: "balance_desc" }, viewer());

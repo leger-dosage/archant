@@ -64,6 +64,13 @@ export const users = sqliteTable(
 		// transaction lists show a split's lines under their parent. Absent in
 		// Sure means on, so every existing user keeps the grouping.
 		showSplitGrouped: integer("show_split_grouped", { mode: "boolean" }).notNull().default(true),
+		// Sure's `users.rule_prompts_disabled` and `rule_prompt_dismissed_at`:
+		// whether the rule prompt after a hand categorisation is turned off for
+		// good, and when it was last hidden for the day.
+		rulePromptsDisabled: integer("rule_prompts_disabled", { mode: "boolean" })
+			.notNull()
+			.default(false),
+		rulePromptDismissedAt: integer("rule_prompt_dismissed_at", { mode: "timestamp_ms" }),
 	},
 	(table) => [
 		check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`),
