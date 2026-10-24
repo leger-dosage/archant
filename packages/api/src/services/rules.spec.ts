@@ -12,12 +12,13 @@ import { ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import { tags } from "@archant/data/schema/tags";
 
 import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
+import { createLogger } from "../lib/logger.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { updateTransaction } from "./ledger/edits.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { ruleCandidates } from "./ledger/rule-plans.ts";
-import { loadEnabledRules } from "./rule-reader.ts";
+import { knownReferences, readRules, toRule } from "./rule-reader.ts";
 import {
 	applyRules,
 	createRule,
@@ -25,6 +26,7 @@ import {
 	listRuleRuns,
 	listRules,
 	previewRules,
+	runRulesAfterSync,
 	setRuleEnabled,
 	updateRule,
 } from "./rules.ts";
@@ -336,7 +338,14 @@ describe("deleteRule", () => {
 	});
 });
 
-describe("loadEnabledRules", () => {
+/** The enabled rules as a run of rules reads them. */
+async function loadEnabledRules(db: TempDatabase["db"]) {
+	const known = await knownReferences(db);
+
+	return (await readRules(db, { enabled: true })).map((rule) => toRule(rule, known));
+}
+
+describe("readRules and toRule", () => {
 	it("gives nothing without an enabled rule", async () => {
 		const rule = await createRule(deps(), { ...grouped, enabled: true });
 		await setRuleEnabled(deps(), rule.id, { enabled: false });
@@ -610,7 +619,7 @@ async function candidatesOf(ids: readonly string[]) {
 }
 
 describe("previewRules and applyRules", () => {
-	it("rewrite labels with a replacement, on rows already there and on a line imported after", async () => {
+	it("rewrite labels with a replacement, on rows already there and on a line imported after, at the next run", async () => {
 		const [terminal = "", plain = ""] = await rowsOf(["BKSL\\ANCENIS\\ FR", "BKSL IKEA"]);
 		const rule = await createRule(deps(), {
 			conditions: [labelHas("bksl")],
@@ -638,6 +647,7 @@ describe("previewRules and applyRules", () => {
 		});
 
 		const [later = ""] = await rowsOf(["BKSL\\LILLE\\ FR"]);
+		await runRulesAfterSync({ ...deps(), logger: createLogger("silent") });
 
 		expect((await candidatesOf([later]))[0]?.label).toBe("BKSL LILLE FR");
 	});
@@ -679,8 +689,12 @@ describe("previewRules and applyRules", () => {
 					],
 					actions: [{ actionType: "set_transaction_category", value: "courses" }],
 				},
-				matchedCount: 5,
-				changedCount: 3,
+				executionType: "manual",
+				status: "success",
+				transactionsQueued: 5,
+				transactionsProcessed: 5,
+				transactionsModified: 3,
+				errorMessage: null,
 			},
 		]);
 		const rows = await candidatesOf(ids);
@@ -747,7 +761,7 @@ describe("previewRules and applyRules", () => {
 
 		await expect(applyRules(deps(), rule.id)).resolves.toMatchObject({
 			changed: 1,
-			runs: [{ changedCount: 1 }],
+			runs: [{ transactionsModified: 1 }],
 		});
 		await expect(candidatesOf([id])).resolves.toMatchObject([{ categoryId: "courses" }]);
 		await expect(listRules(deps())).resolves.toMatchObject([{ enabled: true }]);
@@ -774,9 +788,9 @@ describe("previewRules and applyRules", () => {
 		// Rows changed by several rules count once overall, once per run.
 		expect(changed).toBe(2);
 		expect(runs).toMatchObject([
-			{ ruleId: merchant.id, matchedCount: 1, changedCount: 1, position: 0 },
-			{ ruleId: tag.id, matchedCount: 1, changedCount: 1, position: 1 },
-			{ ruleId: disabled.id, matchedCount: 2, changedCount: 2, position: 2 },
+			{ ruleId: merchant.id, transactionsQueued: 1, transactionsModified: 1, position: 0 },
+			{ ruleId: tag.id, transactionsQueued: 1, transactionsModified: 1, position: 1 },
+			{ ruleId: disabled.id, transactionsQueued: 2, transactionsModified: 2, position: 2 },
 		]);
 		await expect(candidatesOf([id, untouched])).resolves.toMatchObject([
 			{ merchantId: "amazon", tagIds: ["achats"], categoryId: "courses" },
@@ -1068,6 +1082,134 @@ describe("listRuleRuns' order within one application", () => {
 		expect(runs.map((run) => run.ruleId)).toEqual((await listRules(deps())).map((rule) => rule.id));
 		expect(listed.items.map((run) => run.ruleId)).toEqual(runs.map((run) => run.ruleId));
 		expect(listed.items.map((run) => run.position)).toEqual([0, 1, 2, 3]);
+	});
+});
+
+// Story 32.10: every enabled rule over the history after a sync, as Sure's
+// `Family::Syncer#perform_post_sync`, each run recorded as `RuleJob` does.
+const afterSync = () => runRulesAfterSync({ ...deps(), logger: createLogger("silent") });
+
+describe("runRulesAfterSync", () => {
+	it("recategorises an old line, leaves a locked one and runs no disabled rule, recording each run", async () => {
+		const [old = "", locked = ""] = await rowsOf(["CB COMPTE20 A", "CB COMPTE20 B"], "2026-06-02");
+		await updateTransaction(deps(), locked, { categoryId: "loisirs" }, { origin: "user" });
+		const enabled = await laterRule({
+			name: "Courses",
+			enabled: true,
+			conditions: [labelHas("compte20")],
+			actions: [action()],
+		});
+		await laterRule({ conditions: [labelHas("compte20")], actions: [action("loisirs")] });
+
+		await afterSync();
+
+		await expect(candidatesOf([old, locked])).resolves.toMatchObject([
+			{ categoryId: "courses", lockedFields: {} },
+			{ categoryId: "loisirs" },
+		]);
+		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
+			total: 1,
+			items: [
+				{
+					ruleId: enabled.id,
+					rule: { name: "Courses" },
+					executionType: "scheduled",
+					status: "success",
+					transactionsQueued: 2,
+					transactionsProcessed: 2,
+					transactionsModified: 1,
+					errorMessage: null,
+				},
+			],
+		});
+	});
+
+	it("records a failed rule with its code, rolls its writes back and still runs the next", async () => {
+		const [id = ""] = await rowsOf(["CB COMPTE21"]);
+		const failing = await laterRule({
+			enabled: true,
+			conditions: [labelHas("compte21")],
+			actions: [action("loisirs"), { actionType: "set_transaction_name", value: "Refusé" }],
+		});
+		const next = await laterRule({
+			enabled: true,
+			conditions: [labelHas("compte21")],
+			actions: [{ actionType: "set_transaction_merchant", value: "amazon" }],
+		});
+		// The database refuses the first rule's rename, as an unexpected failure would.
+		await temp.db.run(
+			sql`create trigger refuse_rename before update of label on transactions when new.label = 'Refusé' begin select raise(abort, 'refused'); end`,
+		);
+
+		try {
+			await afterSync();
+		} finally {
+			await temp.db.run(sql`drop trigger refuse_rename`);
+		}
+
+		await expect(candidatesOf([id])).resolves.toMatchObject([
+			{ categoryId: null, label: "CB COMPTE21", merchantId: "amazon" },
+		]);
+		const { items } = await listRuleRuns(deps(), { page: 1, pageSize: 10 });
+		expect(items).toMatchObject([
+			{
+				ruleId: failing.id,
+				status: "failed",
+				transactionsQueued: 1,
+				transactionsProcessed: 0,
+				transactionsModified: 0,
+				errorMessage: "INTERNAL_ERROR",
+			},
+			{ ruleId: next.id, status: "success", transactionsModified: 1, errorMessage: null },
+		]);
+	});
+
+	it("lets each rule see what the earlier ones wrote: a rename, a category, an exclusion", async () => {
+		const [id = ""] = await rowsOf(["CB COMPTE23"]);
+		const rename = await laterRule({
+			enabled: true,
+			conditions: [labelHas("compte23")],
+			actions: [{ actionType: "set_transaction_name", value: "Compte23 renommé" }],
+		});
+		const categorise = await laterRule({
+			enabled: true,
+			conditions: [{ conditionType: "transaction_name", operator: "=", value: "Compte23 renommé" }],
+			actions: [action("loisirs")],
+		});
+		const exclude = await laterRule({
+			enabled: true,
+			conditions: [
+				labelHas("compte23"),
+				{ conditionType: "transaction_category", operator: "=", value: "loisirs" },
+			],
+			actions: [{ actionType: "exclude_transaction" }],
+		});
+
+		await afterSync();
+
+		await expect(candidatesOf([id])).resolves.toMatchObject([
+			{ label: "Compte23 renommé", categoryId: "loisirs", excluded: true },
+		]);
+		const { items } = await listRuleRuns(deps(), { page: 1, pageSize: 10 });
+		expect(
+			items
+				.filter((run) => [rename.id, categorise.id, exclude.id].includes(run.ruleId ?? ""))
+				.map(({ ruleId, transactionsQueued }) => ({ ruleId, transactionsQueued })),
+		).toEqual([
+			{ ruleId: rename.id, transactionsQueued: 1 },
+			{ ruleId: categorise.id, transactionsQueued: 1 },
+			{ ruleId: exclude.id, transactionsQueued: 1 },
+		]);
+	});
+
+	it("records nothing without an enabled rule", async () => {
+		await laterRule({ conditions: [labelHas("compte22")], actions: [action()] });
+
+		await afterSync();
+
+		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
+			total: 0,
+		});
 	});
 });
 

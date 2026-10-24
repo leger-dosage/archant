@@ -2688,7 +2688,7 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l'ordre de leur création, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
+		"description": "Après chaque synchronisation ou importation, chaque règle activée complète toutes les opérations qu'elle vise, anciennes comprises : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l'ordre de leur création, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
 		"list": "Règles",
 		"sort": {
 			"label": "Trier par :",
@@ -2698,7 +2698,7 @@
 		},
 		"empty": {
 			"title": "Aucune règle pour l'instant",
-			"description": "Une règle complète les nouvelles opérations à leur arrivée : catégorie, marchand, étiquette ou libellé."
+			"description": "Après chaque synchronisation ou importation, une règle complète les opérations qu'elle vise : catégorie, marchand, étiquette ou libellé."
 		},
 		"add": "Ajouter une règle",
 		"mobile": "Disponible sur ordinateur",
@@ -2789,13 +2789,13 @@
 		"form": {
 			"addTitle": "Ajouter une règle",
 			"editTitle": "Modifier la règle",
-			"description": "La règle s'applique aux nouvelles opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes. Après l'enregistrement, vous pourrez l'appliquer aux opérations existantes.",
+			"description": "La règle s'applique, après chaque synchronisation ou importation, aux opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes. Après l'enregistrement, vous pourrez l'appliquer aux opérations existantes.",
 			"name": "Nom",
 			"namePlaceholder": "Facultatif",
 			"effectiveDate": "À partir du",
 			"effectiveDateHint": "Facultatif. La règle ne touche que les opérations datées de ce jour ou après.",
 			"conditions": "Si",
-			"noCondition": "Aucune condition : la règle s'applique à toutes les nouvelles opérations.",
+			"noCondition": "Aucune condition : la règle s'applique à toutes les opérations.",
 			"condition": "Condition {{index}}",
 			"field": "Champ de la condition {{index}}",
 			"operator": "Opérateur de la condition {{index}}",
@@ -2842,17 +2842,31 @@
 			"allConfirm": "Confirmer et appliquer tout",
 			"done_one": "{{count}} opération modifiée.",
 			"done_other": "{{count}} opérations modifiées.",
-			"doneNothing": "Aucune opération modifiée."
+			"doneNothing": "Aucune opération modifiée.",
+			"failed_one": "Une règle a échoué : voyez « Exécutions récentes ».",
+			"failed_other": "{{count}} règles ont échoué : voyez « Exécutions récentes »."
 		},
 		"runs": {
 			"title": "Exécutions récentes",
-			"empty": "Aucune règle appliquée aux opérations existantes pour l'instant.",
+			"description": "Consultez l'historique d'exécution de vos règles, y compris le statut de réussite ou d'échec et le nombre d'opérations.",
+			"empty": "Aucune règle exécutée pour l'instant.",
 			"paginationLabel": "Pages des exécutions",
 			"columns": {
-				"date": "Date",
-				"rule": "Règle",
-				"matched": "Correspondances",
-				"changed": "Modifiées"
+				"dateTime": "Date/Heure",
+				"type": "Type",
+				"status": "Statut",
+				"rule": "Nom de la règle",
+				"processed": "Traitées",
+				"modified": "Modifiées"
+			},
+			"types": {
+				"manual": "Manuel",
+				"scheduled": "Planifié"
+			},
+			"statuses": {
+				"pending": "En attente",
+				"success": "Réussi",
+				"failed": "Échoué"
 			}
 		},
 		"deleteDialog": {

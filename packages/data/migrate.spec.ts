@@ -1793,25 +1793,54 @@ describe("rules", () => {
 		await expect(insertAction(database, "a1", "set_transaction_category")).rejects.toThrow();
 	});
 
-	it("keeps a run and its snapshot once its rule goes, and refuses an unknown rule", async () => {
+	it("keeps a run and its snapshot once its rule goes, and refuses an unknown rule or status", async () => {
 		const database = await migrated();
 		await insertRule(database, "r1");
-		const insertRun = (id: string, ruleId: string) =>
+		const insertRun = (id: string, ruleId: string, status = "success") =>
 			database.run(
-				sql`insert into rule_runs (id, rule_id, rule, matched_count, changed_count, executed_at, position) values (${id}, ${ruleId}, '{"name":"Courses"}', 5, 3, 0, 0)`,
+				sql`insert into rule_runs (id, rule_id, rule, execution_type, status, transactions_queued, transactions_processed, transactions_modified, executed_at, position) values (${id}, ${ruleId}, '{"name":"Courses"}', 'scheduled', ${status}, 5, 5, 3, 0, 0)`,
 			);
 
 		await expect(insertRun("u1", "r1")).resolves.toBeDefined();
 		await expect(insertRun("u2", "nope")).rejects.toThrow();
+		await expect(insertRun("u3", "r1", "done")).rejects.toThrow();
 
 		await database.run(sql`delete from rules where id = 'r1'`);
 
 		await expect(
 			database.all(
-				sql`select id, rule_id as ruleId, rule, matched_count as matched, changed_count as changed from rule_runs`,
+				sql`select id, rule_id as ruleId, rule, transactions_queued as queued, transactions_modified as modified from rule_runs`,
 			),
 		).resolves.toEqual([
-			{ id: "u1", ruleId: null, rule: '{"name":"Courses"}', matched: 5, changed: 3 },
+			{ id: "u1", ruleId: null, rule: '{"name":"Courses"}', queued: 5, modified: 3 },
+		]);
+	});
+
+	it("reads every run before 0100 as a confirmed, successful one, its matches queued and processed", async () => {
+		const before = await migratedBefore("0100");
+		await insertRule(before, "r1");
+		await before.run(
+			sql`insert into rule_runs (id, rule_id, rule, matched_count, changed_count, executed_at, position) values ('u1', 'r1', '{"name":"Courses"}', 5, 3, 7, 1)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select execution_type as type, status, transactions_queued as queued, transactions_processed as processed, transactions_modified as modified, error_message as error, executed_at as executedAt, position from rule_runs`,
+			),
+		).resolves.toEqual([
+			{
+				type: "manual",
+				status: "success",
+				queued: 5,
+				processed: 5,
+				modified: 3,
+				error: null,
+				executedAt: 7,
+				position: 1,
+			},
 		]);
 	});
 });

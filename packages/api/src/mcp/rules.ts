@@ -1,5 +1,6 @@
 import type { ServiceDeps } from "../services/deps.ts";
 import type { NameBook } from "../services/names.ts";
+import type { RuleApplication } from "../services/rules.ts";
 
 import { z } from "zod";
 
@@ -9,6 +10,8 @@ import {
 	RULE_ACTION_TYPES,
 	RULE_CONDITION_TYPES,
 	RULE_OPERATORS,
+	RULE_RUN_EXECUTION_TYPES,
+	RULE_RUN_STATUSES,
 	tagIdsOf,
 } from "@archant/data/rules";
 
@@ -239,10 +242,36 @@ export const getRules = defineTool({
 	},
 });
 
+/** A run's fields, named as Sure's API names a rule run's. */
+const runFields = {
+	execution_type: z.enum(RULE_RUN_EXECUTION_TYPES),
+	status: z.enum(RULE_RUN_STATUSES),
+	transactions_queued: z.number().int(),
+	transactions_processed: z.number().int(),
+	transactions_modified: z.number().int(),
+	error_message: z.string().nullable().describe("The error's code when the run failed."),
+};
+
+const runFieldsOf = (run: RuleApplication["runs"][number]) => ({
+	execution_type: run.executionType,
+	status: run.status,
+	transactions_queued: run.transactionsQueued,
+	transactions_processed: run.transactionsProcessed,
+	transactions_modified: run.transactionsModified,
+	error_message: run.errorMessage,
+});
+
+/** What `apply_rules` adds to its message when a rule failed, which wrote nothing. */
+function failedNote(runs: RuleApplication["runs"]): string {
+	const failed = runs.filter((run) => run.status === "failed").length;
+
+	return failed === 0 ? "" : ` ${pluralize(failed, "rule")} failed and changed nothing.`;
+}
+
 export const getRuleRuns = defineTool({
 	name: "get_rule_runs",
 	title: "Rule runs",
-	description: `Past applications of rules to existing transactions, the latest first, a page at a time as Sure's get_categories: the rule as it was then, how many transactions it matched and how many it changed. ${READS} ${BANK_TEXT}`,
+	description: `Past runs of rules over existing transactions, the latest first, a page at a time as Sure's get_categories, with the fields of Sure's rule runs: manual when the owner applied the rule, scheduled after a sync or an import; its status; how many transactions it matched (queued), processed and changed (modified); and an error code when it failed. The rule is given as it was then. ${READS} ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: ruleRunsInput,
@@ -252,8 +281,7 @@ export const getRuleRuns = defineTool({
 				id: z.string(),
 				rule_id: z.string().nullable().describe("null once the rule is deleted."),
 				rule: z.object(snapshotFields),
-				matched_count: z.number().int(),
-				changed_count: z.number().int(),
+				...runFields,
 				executed_at: z.string().describe("When it ran, an ISO 8601 UTC timestamp."),
 			}),
 		),
@@ -272,8 +300,7 @@ export const getRuleRuns = defineTool({
 					id: run.id,
 					rule_id: run.ruleId,
 					rule: snapshotOf(run.rule, reader),
-					matched_count: run.matchedCount,
-					changed_count: run.changedCount,
+					...runFieldsOf(run),
 					executed_at: new Date(run.executedAt).toISOString(),
 				})),
 				...pageFieldsOf(runs.total, runs.page, runs.pageSize),
@@ -446,7 +473,7 @@ const WRITES_RULES =
 export const createRuleTool = defineTool({
 	name: "create_rule",
 	title: "Create a rule",
-	description: `Saves a rule, disabled, as one saved in Archant until the owner confirms it: apply_rules with its rule_id enables it and applies it to existing transactions, as « Confirmer les modifications » does, and set_rule_enabled enables it for new transactions only. Preview it as a draft first. ${WRITES_RULES} ${BANK_TEXT}`,
+	description: `Saves a rule, disabled, as one saved in Archant until the owner confirms it: apply_rules with its rule_id enables it and applies it to existing transactions, as « Confirmer les modifications » does, and set_rule_enabled enables it for the run after each sync or import only. Preview it as a draft first. ${WRITES_RULES} ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: ruleToolInput,
@@ -474,7 +501,7 @@ export const updateRuleTool = defineTool({
 export const setRuleEnabledTool = defineTool({
 	name: "set_rule_enabled",
 	title: "Enable or disable a rule",
-	description: `Turns a rule on or off. Off, it no longer applies to new transactions; what it wrote stays. It answers { success, rule, message }. ${BANK_TEXT}`,
+	description: `Turns a rule on or off. Off, it no longer runs after a sync or an import; what it wrote stays. It answers { success, rule, message }. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: setRuleEnabledInput,
@@ -535,8 +562,7 @@ export const applyRulesTool = defineTool({
 			z.object({
 				rule_id: z.string().nullable(),
 				rule: z.object(snapshotFields).describe("The rule as it ran."),
-				matched_count: z.number().int(),
-				changed_count: z.number().int(),
+				...runFields,
 			}),
 		),
 		message: z.string(),
@@ -555,10 +581,9 @@ export const applyRulesTool = defineTool({
 				runs: runs.map((run) => ({
 					rule_id: run.ruleId,
 					rule: snapshotOf(run.rule, reader),
-					matched_count: run.matchedCount,
-					changed_count: run.changedCount,
+					...runFieldsOf(run),
 				})),
-				message: `Applied ${pluralize(runs.length, "rule")}: ${pluralize(changed, "transaction")} changed.`,
+				message: `Applied ${pluralize(runs.length, "rule")}: ${pluralize(changed, "transaction")} changed.${failedNote(runs)}`,
 			},
 			changedRows: changed,
 		};

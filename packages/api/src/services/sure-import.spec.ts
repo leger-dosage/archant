@@ -632,6 +632,37 @@ describe("importSureArchive", () => {
 		).toEqual([]);
 	});
 
+	it("runs an imported active rule over the imported lines once the import is done, as Sure's sync after it", async () => {
+		await ownDatabase();
+
+		await importLines([
+			line("Account", { id: "x", name: "Compte X", balance: "0", accountable_type: "Depository" }),
+			line("Transaction", {
+				id: "t",
+				account_id: "x",
+				date: "2026-09-10",
+				amount: "15.99",
+				name: "NETFLIX.COM",
+			}),
+			line("Rule", {
+				id: "r",
+				name: "Abonnement",
+				active: true,
+				conditions: [{ condition_type: "transaction_name", operator: "like", value: "NETFLIX" }],
+				actions: [{ action_type: "set_transaction_merchant", value: "Netflix" }],
+			}),
+		]);
+
+		expect(
+			await source().all(
+				sql`select m.name as merchant from transactions t join merchants m on m.id = t.merchant_id`,
+			),
+		).toEqual([{ merchant: "Netflix" }]);
+		expect(await source().all(sql`select execution_type as type, status from rule_runs`)).toEqual([
+			{ type: "scheduled", status: "success" },
+		]);
+	});
+
 	it("imports Sure's details condition with its operator and text", async () => {
 		await ownDatabase();
 

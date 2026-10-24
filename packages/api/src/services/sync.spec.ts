@@ -11,6 +11,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
 
 import * as registry from "../connectors/registry.ts";
@@ -48,6 +49,8 @@ import { linkBankAccount } from "./ledger/bank-link.ts";
 import { deleteTransaction } from "./ledger/edits.ts";
 import * as recurringService from "./recurring/pipeline.ts";
 import { getNetWorth } from "./reports.ts";
+import * as ruleReader from "./rule-reader.ts";
+import { createRule, deleteRule, listRuleRuns } from "./rules.ts";
 import {
 	startConnectionSync,
 	startDailySync,
@@ -660,6 +663,44 @@ describe("syncConnection", () => {
 		await expect(balanceOn(deps(), accountId, dayBefore)).resolves.toEqual(before);
 	});
 
+	it("runs every enabled rule over the history once the accounts are read, a line synced earlier included", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		const [old] = await temp.db.all<{ id: string; label: string }>(
+			sql`select e.id, t.label from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} order by e.date limit 1`,
+		);
+		const categoryId = randomUUID();
+		await temp.db.insert(categories).values({
+			id: categoryId,
+			name: `Règle ${categoryId}`,
+			color: "#e99537",
+			icon: "tag",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const rule = await createRule(deps(), {
+			enabled: true,
+			conditions: [{ conditionType: "transaction_name", operator: "=", value: old?.label ?? "" }],
+			actions: [{ actionType: "set_transaction_category", value: categoryId }],
+		});
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(
+			temp.db.all(
+				sql`select category_id as categoryId, category_origin as origin from transactions where entry_id = ${old?.id ?? ""}`,
+			),
+		).resolves.toEqual([{ categoryId, origin: "rule" }]);
+		const { items } = await listRuleRuns(deps(), { page: 1, pageSize: 10 });
+		expect(items.filter((run) => run.ruleId === rule.id)).toMatchObject([
+			{ executionType: "scheduled", status: "success", transactionsModified: 1 },
+		]);
+		await deleteRule(deps(), rule.id);
+	});
+
 	it("commits the accounts that sync and rolls back the one that fails", async () => {
 		failingOn(FIXTURE_CARD_UID);
 		const connectionId = await newConnection({ lastSyncedAt: NOW - 2 * DAY });
@@ -1160,6 +1201,23 @@ describe("syncConnection", () => {
 		});
 		await expect(transactionCount(accountId)).resolves.toBe(6);
 		expect(requests.length).toBeGreaterThan(0);
+	});
+
+	it("keeps the sync when the rules fail as a whole, and logs their code only", async () => {
+		mockProvider();
+		vi.spyOn(ruleReader, "readRules").mockRejectedValue(new Error("amount 4290 refused"));
+		const connectionId = await newConnection();
+		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await expect(syncConnection(deps(), connectionId)).resolves.toEqual({
+			lastSyncedAt: NOW,
+			lastError: null,
+		});
+		const failure = logLines
+			.map((line) => logLine.parse(JSON.parse(line)))
+			.find((line) => line["msg"] === "rules after sync failed");
+		expect(failure).toMatchObject({ code: "INTERNAL_ERROR" });
+		expect(loggedFigures(logLines)).not.toContain("4290");
 	});
 
 	it("keeps the sync when recurring detection fails, and logs its code only", async () => {
@@ -1690,6 +1748,30 @@ describe("syncAll", () => {
 			lastSyncedAt: null,
 			lastError: "BANK_PROVIDER_ERROR",
 		});
+	});
+
+	it("runs the rules once the household's connections are synced, not once per connection", async () => {
+		mockProvider();
+		const first = await newConnection({ createdAt: NOW - 5 });
+		await linkedAccount(first, FIXTURE_CHECKING_UID);
+		const second = await newConnection({ createdAt: NOW - 4 });
+		await linkedAccount(second, FIXTURE_CARD_UID);
+		const rule = await createRule(deps(), {
+			enabled: true,
+			conditions: [{ conditionType: "transaction_name", operator: "like", value: randomUUID() }],
+			actions: [{ actionType: "exclude_transaction", value: null }],
+		});
+
+		try {
+			await syncAll(deps());
+
+			const { items } = await listRuleRuns(deps(), { page: 1, pageSize: 50 });
+			expect(items.filter((run) => run.ruleId === rule.id)).toMatchObject([
+				{ executionType: "scheduled", status: "success" },
+			]);
+		} finally {
+			await deleteRule(deps(), rule.id);
+		}
 	});
 
 	it("goes on with the next connection when one throws", async () => {

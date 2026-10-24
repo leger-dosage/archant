@@ -31,6 +31,7 @@ import { resolveBankConnector } from "./bank-credentials.ts";
 import { includesPending } from "./bank-settings.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
+import { runRulesAfterSync } from "./rules.ts";
 
 /**
  * The first window of an account never synced, when its connection names no
@@ -427,7 +428,7 @@ async function runLeased(
 	connectionId: string,
 	startedAt: number,
 	trigger: SyncTrigger,
-): Promise<SyncResult> {
+): Promise<Outcome> {
 	try {
 		const stopped = await readSession(deps, bank, connectionId, startedAt);
 
@@ -437,7 +438,7 @@ async function runLeased(
 				"bank connection not synced",
 			);
 
-			return stopped;
+			return { result: stopped, synced: 0 };
 		}
 
 		const outcome = await runSync(deps, bank.connector, connectionId, startedAt);
@@ -447,7 +448,7 @@ async function runLeased(
 			"bank connection synced",
 		);
 
-		return outcome.failed === 0 ? "synced" : "failed";
+		return { result: outcome.failed === 0 ? "synced" : "failed", synced: outcome.synced };
 	} finally {
 		// Only this run's lease: a run that outlived it may have lost it to another.
 		await deps.db
@@ -456,6 +457,19 @@ async function runLeased(
 			.where(
 				and(eq(bankConnections.id, connectionId), eq(bankConnections.syncStartedAt, startedAt)),
 			);
+	}
+}
+
+/** A run's result, and how many of its accounts it read. */
+type Outcome = { result: SyncResult; synced: number };
+
+/**
+ * Sure's `Family::Syncer#perform_post_sync` once the household's sync ends:
+ * every enabled rule over the history, when a run read at least one account.
+ */
+async function afterSyncs(deps: BankConnectionDeps, synced: number): Promise<void> {
+	if (synced > 0) {
+		await runRulesAfterSync(deps);
 	}
 }
 
@@ -473,7 +487,7 @@ async function syncOne(
 	bank: Bank,
 	connection: Connection,
 	trigger: SyncTrigger,
-): Promise<SyncResult> {
+): Promise<Outcome> {
 	const startedAt = Date.now();
 
 	// Nothing to read without consent, and nothing deleted: a renewal picks
@@ -488,7 +502,7 @@ async function syncOne(
 			throw consentExpired();
 		}
 
-		return "consent_expired";
+		return { result: "consent_expired", synced: 0 };
 	}
 
 	if (!(await takeLease(deps, connection.id, startedAt))) {
@@ -503,16 +517,16 @@ async function syncOne(
 			throw error;
 		}
 
-		return "skipped";
+		return { result: "skipped", synced: 0 };
 	}
 
-	const result = await runLeased(deps, bank, connection.id, startedAt, trigger);
+	const outcome = await runLeased(deps, bank, connection.id, startedAt, trigger);
 
-	if (result === "consent_expired" && trigger === "button") {
+	if (outcome.result === "consent_expired" && trigger === "button") {
 		throw consentExpired();
 	}
 
-	return result;
+	return outcome;
 }
 
 const connectionColumns = {
@@ -540,7 +554,8 @@ export async function syncConnection(
 		throw new AppError("NOT_FOUND", "No bank connection has this id.");
 	}
 
-	await syncOne(deps, bank, connection, "button");
+	const { synced } = await syncOne(deps, bank, connection, "button");
+	await afterSyncs(deps, synced);
 
 	const status = await deps.db
 		.select({ lastSyncedAt: bankConnections.lastSyncedAt, lastError: bankConnections.lastError })
@@ -569,20 +584,23 @@ export async function syncAll(
 		.where(eq(bankConnections.status, "active"))
 		.orderBy(asc(bankConnections.createdAt), asc(bankConnections.id));
 	const results: { id: string; result: SyncResult }[] = [];
+	let synced = 0;
 
 	await connections.reduce<Promise<void>>(async (previous, connection) => {
 		await previous;
 
 		try {
-			results.push({
-				id: connection.id,
-				result: await syncOne(deps, bank, connection, trigger),
-			});
+			const outcome = await syncOne(deps, bank, connection, trigger);
+
+			synced += outcome.synced;
+			results.push({ id: connection.id, result: outcome.result });
 		} catch (error) {
 			deps.logger.error({ connectionId: connection.id, code: codeOf(error) }, "bank sync failed");
 			results.push({ id: connection.id, result: "failed" });
 		}
 	}, Promise.resolve());
+
+	await afterSyncs(deps, synced);
 
 	return results;
 }
@@ -674,17 +692,22 @@ async function leaseAll(
 
 	return {
 		leased,
-		run: () =>
+		run: async () => {
 			// One after another, as `syncAll` runs them.
-			leased.reduce<Promise<void>>(async (previous, connectionId) => {
-				await previous;
+			const synced = await leased.reduce<Promise<number>>(async (previous, connectionId) => {
+				const before = await previous;
 
 				try {
-					await runLeased(deps, bank, connectionId, now, trigger);
+					return before + (await runLeased(deps, bank, connectionId, now, trigger)).synced;
 				} catch (error) {
 					deps.logger.error({ connectionId, code: codeOf(error) }, "bank sync failed");
+
+					return before;
 				}
-			}, Promise.resolve()),
+			}, Promise.resolve(0));
+
+			await afterSyncs(deps, synced);
+		},
 	};
 }
 

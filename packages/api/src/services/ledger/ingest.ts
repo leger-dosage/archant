@@ -35,12 +35,9 @@ import { toStoredBalance, toStoredBankBalance } from "../../domain/balances/stor
 import { addDays, today } from "../../domain/dates.ts";
 import { fingerprintOf, lineKeys, pairLines, previewDigest, tripleOf } from "../../domain/keys.ts";
 import { MAX_IDENTICAL_LINES, absorbPending, assignIdentical } from "../../domain/pending.ts";
-import { planActions } from "../../domain/rules/matching.ts";
 import { rejectionFor } from "../../domain/statement.ts";
 import { mergeExtra } from "../../domain/transaction-extra.ts";
 import { AppError } from "../../lib/errors.ts";
-import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
-import { loadEnabledRules } from "../rule-reader.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
@@ -54,7 +51,6 @@ import {
 	transactionRow,
 } from "./patch.ts";
 import { absorb, heldFingerprints, pendingOfConnection, suggestPostedMatches } from "./pending.ts";
-import { applyRulePlan } from "./rule-plans.ts";
 import {
 	KEYS_PER_LOOKUP,
 	ROWS_PER_INSERT,
@@ -195,7 +191,7 @@ export function countsOf(groups: IngestGroups): ImportCounts {
 }
 
 /**
- * What step 7 of the pipeline does with the statement balance (AD-8), in
+ * What step 6 of the pipeline does with the statement balance (AD-8), in
  * stored balances (AD-5). `recorded`: confirm writes it as a snapshot owned by
  * the import. `present`: a snapshot with the same value is on that date
  * already, whoever wrote it, the opening anchor on its own date included.
@@ -661,7 +657,7 @@ const isSplit = (row: { line: NormalizedTransaction; duplicate: boolean }) =>
  * inserts them: the parent's account, date, currency and merchant, one
  * millisecond apart so they keep the file's order, never keyed, so no
  * import, sync or revert takes one for a bank line. Their category, tags and
- * notes lock as the import's origin locks them. Returns them, for the rules.
+ * notes lock as the import's origin locks them.
  */
 async function insertImportedSplits(
 	tx: Transaction,
@@ -673,7 +669,7 @@ async function insertImportedSplits(
 		merchantId: string | null;
 	}[],
 	options: { origin: Origin; now: number },
-) {
+): Promise<void> {
 	const children = rows.flatMap(({ id, line, duplicate, merchantId }) =>
 		splitOf({ line, duplicate }).map((split) => ({
 			id: crypto.randomUUID(),
@@ -733,8 +729,6 @@ async function insertImportedSplits(
 		ROWS_PER_INSERT,
 		(chunk) => tx.insert(taggings).values(chunk),
 	);
-
-	return children;
 }
 
 /**
@@ -783,7 +777,7 @@ type BalancePlan = {
 };
 
 /**
- * Step 7 of the pipeline, planned (AD-8): what the statement balance becomes,
+ * Step 6 of the pipeline, planned (AD-8): what the statement balance becomes,
  * placed as a snapshot is, before the opening date included. A snapshot the
  * user entered on that date wins, and so does the opening anchor on its own
  * date, which only the owner sets; one an earlier import wrote gives way, as
@@ -834,7 +828,7 @@ async function planStatementBalance(
 }
 
 /**
- * Step 7 of the pipeline, written: inserts the statement balance as a
+ * Step 6 of the pipeline, written: inserts the statement balance as a
  * snapshot owned by the import, or moves an earlier import's snapshot to it.
  * Returns the date written, `null` when nothing was.
  */
@@ -1026,7 +1020,7 @@ export async function ingest(
 			];
 			const openingMovedTo =
 				target?.source === "qif" ? await qifOpeningMove(tx, account, accepted) : null;
-			// 7. The statement balance, planned here so the preview shows it and
+			// 6. The statement balance, planned here so the preview shows it and
 			// the digest covers it. A manual statement carries none.
 			const balancePlan =
 				target === null || statement.balance === null
@@ -1196,7 +1190,7 @@ export async function ingest(
 				(chunk) => tx.insert(taggings).values(chunk),
 			);
 
-			const children = await insertImportedSplits(tx, accountId, rows, {
+			await insertImportedSplits(tx, accountId, rows, {
 				origin: options.origin,
 				now,
 			});
@@ -1277,63 +1271,10 @@ export async function ingest(
 					.where(eq(entries.id, account.openingId));
 			}
 
-			// 5. Rules, on the rows this ingest created, possible duplicates
-			// included. Loaded once per call, inside this transaction. A new row
-			// carries no transfer yet, nor a category or tag but an assistant's,
-			// locked; its merchant is the assistant's or the bank's, which a rule
-			// may still change.
-			if (rows.length > 0) {
-				// A split's parent counts in no rule, its lines do (AD-20).
-				const { plan } = planActions(
-					await loadEnabledRules(tx),
-					[
-						...rows
-							.filter((row) => !isSplit(row))
-							.map(({ id, line, merchantId, categoryId, tagIds }) => ({
-								id,
-								accountId,
-								date: line.date,
-								amount: line.amount,
-								currency: line.currency,
-								label: line.label,
-								notes: line.notes,
-								extra: line.extra ?? null,
-								merchantId,
-								categoryId,
-								tagIds,
-								lockedFields: locksOf(line),
-							})),
-						...children.map(({ id, line, merchantId, split, lockedFields }) => ({
-							id,
-							accountId,
-							date: line.date,
-							amount: split.amount,
-							currency: line.currency,
-							label: split.label,
-							notes: split.notes,
-							extra: null,
-							merchantId,
-							categoryId: split.categoryId,
-							tagIds: [...new Set(split.tagIds)],
-							lockedFields,
-						})),
-					].map((row) => ({
-						...row,
-						excluded: false,
-						investmentActivityLabel: null,
-						transfer: null,
-						expectedTransferAccountId: null,
-					})),
-					MAX_TAGS_PER_TRANSACTION,
-				);
-
-				await applyRulePlan(tx, plan, { origin: "rule" });
-			}
-
-			// A merchant this ingest created that no line kept, a rule having
-			// replaced it or an absorbed entry keeping its own, would sit in
-			// « Réglages › Marchands » with no transaction, where Sure lists a
-			// provider's merchant only once a transaction holds it.
+			// A merchant this ingest created that no line kept, an absorbed entry
+			// keeping its own, would sit in « Réglages › Marchands » with no
+			// transaction, where Sure lists a provider's merchant only once a
+			// transaction holds it.
 			await inSequence(createdMerchants, KEYS_PER_LOOKUP, (chunk) =>
 				tx
 					.delete(merchants)
@@ -1350,11 +1291,11 @@ export async function ingest(
 					),
 			);
 
-			// 6. Transfer matching, once every new row exists, over every unmatched
+			// 5. Transfer matching, once every new row exists, over every unmatched
 			// line of the household as Sure's family sync (AD-11).
 			await matchTransfers(tx, now);
 
-			// 7. The statement balance (AD-8). A sync's earlier bank figure stays
+			// 6. The statement balance (AD-8). A sync's earlier bank figure stays
 			// as a reconciliation, so one missing line cannot shift the whole past.
 			const snapshotDate =
 				balancePlan === null ? null : await writeStatementBalance(tx, account, balancePlan, now);
@@ -1375,7 +1316,7 @@ export async function ingest(
 						)
 					: null;
 
-			// 8. Recompute balances from the earliest date this write touched.
+			// 7. Recompute balances from the earliest date this write touched.
 			const [earliest] = [
 				...rows.map(({ line }) => line.date),
 				...absorbedFrom,

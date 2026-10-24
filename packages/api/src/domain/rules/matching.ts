@@ -421,6 +421,26 @@ function planOf(candidate: RuleCandidate, row: RuleCandidate): RowPlan {
 	};
 }
 
+/** `candidate` once `planned` is written, as the next rule of a run reads it. */
+export function plannedRow(candidate: RuleCandidate, planned: RowPlan): RuleCandidate {
+	return {
+		...candidate,
+		...(planned.categoryId === undefined ? {} : { categoryId: planned.categoryId }),
+		...(planned.merchantId === undefined ? {} : { merchantId: planned.merchantId }),
+		...(planned.addTagIds === undefined
+			? {}
+			: { tagIds: [...candidate.tagIds, ...planned.addTagIds] }),
+		...(planned.label === undefined ? {} : { label: planned.label }),
+		...(planned.investmentActivityLabel === undefined
+			? {}
+			: { investmentActivityLabel: planned.investmentActivityLabel }),
+		...(planned.excluded === undefined ? {} : { excluded: planned.excluded }),
+		...(planned.expectedTransferAccountId === undefined
+			? {}
+			: { expectedTransferAccountId: planned.expectedTransferAccountId }),
+	};
+}
+
 /** What one rule did over the candidates, for its run. */
 export type RuleTally = {
 	ruleId: string;

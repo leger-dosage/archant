@@ -268,7 +268,7 @@ export const salary = line({
 	label: "VIR SALAIRE",
 });
 
-// Story 2.2: step 7 of the pipeline, the statement balance.
+// Story 2.2: step 6 of the pipeline, the statement balance.
 
 /** A statement with `cafe` and `salary` closing on `amount`, signed as the bank prints it. */
 export const closingOn = (

@@ -37,6 +37,7 @@ import { currencyOf, getAccount } from "./accounts.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
+import { runRulesAfterSync } from "./rules.ts";
 
 /**
  * `$client` too: a large import refreshes SQLite's statistics, which only the
@@ -439,12 +440,15 @@ export async function refreshAfterImport(deps: ImportDeps, importId: string): Pr
 }
 
 /**
- * The recurring pipeline once a confirm or a revert is committed, so series
- * and their payments follow the lines it wrote or removed. The import is
- * done by then: a failure here is logged, code only, and never fails the
- * request.
+ * Once a confirm or a revert is committed, every enabled rule over the
+ * history, as Sure's `family.sync_later` after an import, then the recurring
+ * pipeline, so series and their payments follow the lines it wrote or
+ * removed. The import is done by then: a failure here is logged, code only,
+ * and never fails the request.
  */
 export async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+	await runRulesAfterSync(deps);
+
 	try {
 		await runRecurring(deps, { backfill: false });
 	} catch (error) {

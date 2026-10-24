@@ -60,6 +60,10 @@ const STATUSES = {
 	billPaid: { icon: CircleCheckIcon, key: "bills.paid", tone: "neutral" },
 	// What a viewer reads in place of a disabled rule's switch.
 	ruleDisabled: { icon: CirclePauseIcon, key: "rules.disabledBadge", tone: "neutral" },
+	// A rule run's status, Sure's pills: pending a warning, failed an error.
+	rulePending: { icon: ClockIcon, key: "rules.runs.statuses.pending", tone: "warning" },
+	ruleSuccess: { icon: CircleCheckIcon, key: "rules.runs.statuses.success", tone: "neutral" },
+	ruleFailed: { icon: CircleAlertIcon, key: "rules.runs.statuses.failed", tone: "destructive" },
 	// A connection that needs the user, as BankAlerts' strip says above the page.
 	consentExpiring: { icon: ClockAlertIcon, key: "banks.consentExpiring", tone: "warning" },
 	consentExpired: { icon: TriangleAlertIcon, key: "banks.consentExpired", tone: "warning" },

@@ -27,7 +27,7 @@ import { oneByOne } from "./ledger/shared.ts";
 import { insertSureAccounts, insertSureEntries } from "./ledger/sure-import.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
 import { insertRules } from "./recurring/rules.ts";
-import { createRule } from "./rules.ts";
+import { createRule, runRulesAfterSync } from "./rules.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { readSureArchive } from "./sure-import-plan.ts";
 import { foldName } from "./sure-import-preflight.ts";
@@ -481,9 +481,9 @@ export async function importSureArchive(
 }
 
 /**
- * Statistics and the recurring pipeline once the import is committed, as
- * after a file import. The import stands by then: a failure is logged, its
- * code only, and never fails the request.
+ * Statistics, every enabled rule over the history and the recurring pipeline
+ * once the import is committed, as after a file import. The import stands by
+ * then: a failure is logged, its code only, and never fails the request.
  */
 export async function afterImport(deps: SureImportDeps): Promise<void> {
 	try {
@@ -491,6 +491,8 @@ export async function afterImport(deps: SureImportDeps): Promise<void> {
 	} catch (error) {
 		deps.logger.warn({ code: errorCode(error) }, "statistics refresh failed");
 	}
+
+	await runRulesAfterSync(deps);
 
 	try {
 		await runRecurring(deps, { backfill: false });

@@ -1,4 +1,11 @@
-import type { RuleActionType, RuleConditionType, RuleOperator, RuleSnapshot } from "../rules.ts";
+import type {
+	RuleActionType,
+	RuleConditionType,
+	RuleOperator,
+	RuleRunExecutionType,
+	RuleRunStatus,
+	RuleSnapshot,
+} from "../rules.ts";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 import { sql } from "drizzle-orm";
@@ -9,13 +16,15 @@ import {
 	RULE_CONDITION_TYPES,
 	RULE_OPERATORS,
 	RULE_OPERATORS_BY_TYPE,
+	RULE_RUN_EXECUTION_TYPES,
+	RULE_RUN_STATUSES,
 } from "../rules.ts";
 import { inList } from "./check.ts";
 
 /**
- * Sure's `Rule`. Enabled rules run on every new transaction in creation
- * order; a rule reaches transactions dated on or after `effective_date`, every
- * date when it is null.
+ * Sure's `Rule`. Enabled rules run over the history after each sync or
+ * import, in creation order; a rule reaches transactions dated on or after
+ * `effective_date`, every date when it is null.
  */
 export const rules = sqliteTable("rules", {
 	id: text("id").primaryKey(),
@@ -103,8 +112,8 @@ export const ruleActions = sqliteTable(
 );
 
 /**
- * Sure's `RuleRun`: one confirmed application of a rule to existing
- * transactions. An ingest records none. `rule` is the rule as it was then;
+ * Sure's `RuleRun`: one rule's run over existing transactions, confirmed by
+ * the owner or after a sync or an import. `rule` is the rule as it was then;
  * `rule_id` still points at it for as long as it exists.
  */
 export const ruleRuns = sqliteTable(
@@ -113,14 +122,27 @@ export const ruleRuns = sqliteTable(
 		id: text("id").primaryKey(),
 		ruleId: text("rule_id").references(() => rules.id, { onDelete: "set null" }),
 		rule: text("rule", { mode: "json" }).$type<RuleSnapshot>().notNull(),
-		// Rows the rule matched against what earlier rules of the same run planned.
-		matchedCount: integer("matched_count").notNull(),
+		executionType: text("execution_type").$type<RuleRunExecutionType>().notNull(),
+		status: text("status").$type<RuleRunStatus>().notNull(),
+		// Rows the rule matched, as earlier rules of the same run left them.
+		transactionsQueued: integer("transactions_queued").notNull(),
+		// The queued rows once it ran, none when it failed.
+		transactionsProcessed: integer("transactions_processed").notNull(),
 		// Rows it altered: a locked field or a value already there is no change.
-		changedCount: integer("changed_count").notNull(),
+		transactionsModified: integer("transactions_modified").notNull(),
+		// An error code, never a message, which may embed bound amounts.
+		errorMessage: text("error_message"),
 		executedAt: integer("executed_at").notNull(),
-		// The rule's place in its application: the runs of one « Appliquer toutes
-		// les règles » share `executed_at`, and list in the order they applied.
+		// The rule's place in its run: the rules of one run share `executed_at`,
+		// and list in the order they applied.
 		position: integer("position").notNull(),
 	},
-	(table) => [index("rule_runs_executed").on(table.executedAt, table.position)],
+	(table) => [
+		index("rule_runs_executed").on(table.executedAt, table.position),
+		check(
+			"rule_runs_execution_type_check",
+			sql`${table.executionType} in ${inList(RULE_RUN_EXECUTION_TYPES)}`,
+		),
+		check("rule_runs_status_check", sql`${table.status} in ${inList(RULE_RUN_STATUSES)}`),
+	],
 );

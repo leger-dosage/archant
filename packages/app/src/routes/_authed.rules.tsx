@@ -43,6 +43,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
@@ -59,9 +60,7 @@ import {
 } from "@/hooks/useRules";
 import { useTags } from "@/hooks/useTags";
 import { accountsByName } from "@/lib/account-list";
-import { errorCodeOf } from "@/lib/api";
-import { formatShortDate } from "@/lib/balance-change";
-import { toIsoDate } from "@/lib/dates";
+import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { pageSearch } from "@/lib/page-search";
 import { amountStep } from "@/lib/rule-form";
@@ -106,8 +105,39 @@ type Applying = {
 	ruleCount: number;
 };
 
-// The API stores instants; the user reads the day it ran, in their zone.
-const dayOf = (epochMs: number) => formatShortDate(toIsoDate(new Date(epochMs)));
+// The API stores instants; the user reads when it ran, in their zone, as
+// Sure's `%b %d, %Y %I:%M %p` in French.
+const runTime = new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+
+const RUN_STATUSES = {
+	pending: "rulePending",
+	success: "ruleSuccess",
+	failed: "ruleFailed",
+} as const;
+
+/** A run's status, Sure's pill, with the failure's reason in a tooltip as Sure's. */
+function RunStatus({ run }: { run: RuleRunData }) {
+	const { t } = useTranslation();
+	const badge = <StatusBadge status={RUN_STATUSES[run.status]} />;
+
+	if (run.status !== "failed" || run.errorMessage === null) {
+		return badge;
+	}
+
+	const reason = t(`errors.${isErrorCode(run.errorMessage) ? run.errorMessage : "INTERNAL_ERROR"}`);
+
+	return (
+		<Tooltip>
+			<TooltipTrigger asChild>
+				{/* Focusable, so a keyboard reaches the reason the tooltip describes it with. */}
+				<span tabIndex={0} className="inline-flex rounded-md">
+					{badge}
+				</span>
+			</TooltipTrigger>
+			<TooltipContent side="bottom">{reason}</TooltipContent>
+		</Tooltip>
+	);
+}
 
 /** A rule as a viewer reads it: no switch and no menu, « Désactivée » when it is. */
 function RuleLine({ rule, summary }: { rule: RuleData; summary: string }) {
@@ -241,8 +271,9 @@ function RuleSortControls({ sortBy, direction }: { sortBy: RuleSort; direction: 
 }
 
 /**
- * The recorded applications, the latest first: the day, the rule as it was
- * then, labelled with today's names, and its counts.
+ * Sure's « Exécutions récentes », the latest first: when, how it started, its
+ * status, the rule as it was then, labelled with today's names, and the rows
+ * it processed and modified.
  */
 function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 	const { t } = useTranslation();
@@ -271,6 +302,7 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 					level={2}
 					id="rule-runs"
 					title={t("rules.runs.title")}
+					note={t("rules.runs.description")}
 					{...(data === undefined ? {} : { count: data.total })}
 				>
 					{runs.isPending && (
@@ -298,26 +330,45 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 							<TableHeader>
 								<TableRow className="border-line hover:bg-transparent">
 									<TableHead scope="col" className="type-overline text-muted-foreground">
-										{t("rules.runs.columns.date")}
+										{t("rules.runs.columns.dateTime")}
+									</TableHead>
+									<TableHead scope="col" className="type-overline text-muted-foreground">
+										{t("rules.runs.columns.type")}
+									</TableHead>
+									<TableHead scope="col" className="type-overline text-muted-foreground">
+										{t("rules.runs.columns.status")}
 									</TableHead>
 									<TableHead scope="col" className="type-overline text-muted-foreground">
 										{t("rules.runs.columns.rule")}
 									</TableHead>
 									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
-										{t("rules.runs.columns.matched")}
+										{t("rules.runs.columns.processed")}
 									</TableHead>
 									<TableHead scope="col" className="type-overline text-right text-muted-foreground">
-										{t("rules.runs.columns.changed")}
+										{t("rules.runs.columns.modified")}
 									</TableHead>
 								</TableRow>
 							</TableHeader>
 							<TableBody>
+								{/* No hover: a run opens nothing, and a failed one's tint keeps its contrast. */}
 								{data.items.map((run) => (
-									<TableRow key={run.id} className="h-14 border-line hover:bg-hover">
-										<TableCell className="whitespace-nowrap">{dayOf(run.executedAt)}</TableCell>
+									<TableRow key={run.id} className="h-14 border-line hover:bg-transparent">
+										<TableCell className="whitespace-nowrap">
+											{runTime.format(new Date(run.executedAt))}
+										</TableCell>
+										<TableCell className="whitespace-nowrap">
+											{t(`rules.runs.types.${run.executionType}`)}
+										</TableCell>
+										<TableCell>
+											<RunStatus run={run} />
+										</TableCell>
 										<TableCell className="max-w-96 truncate">{labelOf(run)}</TableCell>
-										<TableCell className="text-right tabular-nums">{run.matchedCount}</TableCell>
-										<TableCell className="text-right tabular-nums">{run.changedCount}</TableCell>
+										<TableCell className="text-right tabular-nums">
+											{run.transactionsProcessed}
+										</TableCell>
+										<TableCell className="text-right tabular-nums">
+											{run.transactionsModified}
+										</TableCell>
 									</TableRow>
 								))}
 							</TableBody>
@@ -340,10 +391,10 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 
 /**
  * The rules, sorted as the user picks, each with its switch and its menu.
- * New transactions go through the enabled ones as they arrive, in creation
- * order; existing ones only through an application the user confirms, which
- * a new rule offers once saved and which enables it, as Sure's
- * `rules#confirm`. A viewer reads the rules and their runs, and changes none.
+ * After each sync or import the enabled ones run over every transaction, in
+ * creation order, as Sure's post-sync; an application the user confirms runs
+ * them at once, which a new rule offers once saved and which enables it, as
+ * Sure's `rules#confirm`. A viewer reads the rules and their runs, and changes none.
  */
 function RulesPage() {
 	const { t } = useTranslation();
@@ -581,12 +632,19 @@ function RulesPage() {
 						applyRules.mutate(applying.ruleId, {
 							// What was written, each row once: the runs' own counts would add
 							// up a row two rules both change.
-							onSuccess: ({ changed }) => {
-								toast.success(
-									changed === 0
-										? t("rules.apply.doneNothing")
-										: t("rules.apply.done", { count: changed }),
-								);
+							onSuccess: ({ changed, runs }) => {
+								const failedRuns = runs.filter((run) => run.status === "failed").length;
+
+								// A rule that failed wrote nothing; « Exécutions récentes » says which.
+								if (failedRuns > 0) {
+									toast.error(t("rules.apply.failed", { count: failedRuns }));
+								} else {
+									toast.success(
+										changed === 0
+											? t("rules.apply.doneNothing")
+											: t("rules.apply.done", { count: changed }),
+									);
+								}
 								setApplyOpen(false);
 							},
 							onError: (error) => {
