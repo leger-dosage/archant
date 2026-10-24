@@ -9,6 +9,7 @@ import type { NameBook, RuleContext, Taxonomy } from "./sure-rules.ts";
 import { and, eq } from "drizzle-orm";
 
 import { errorCode } from "@archant/data/backup";
+import { sampleCategoryColor } from "@archant/data/category-presets";
 import type { Database } from "@archant/data/client";
 import { refreshStatistics } from "@archant/data/client";
 import { budgetCategories, budgets } from "@archant/data/schema/budgets";
@@ -139,7 +140,7 @@ async function importCategories(
 	});
 }
 
-/** Tags or merchants: one whose name exists is reused, any other created. */
+/** Tags or merchants: one whose name exists is reused, any other created in its colour. */
 async function importNamed(
 	tx: Transaction,
 	table: typeof tags | typeof merchants,
@@ -158,7 +159,19 @@ async function importNamed(
 
 		const id = crypto.randomUUID();
 
-		await tx.insert(table).values({ id, name: row.name, createdAt: now, updatedAt: now });
+		// Sure's `set_default_color`: a colour the archive lacks is drawn.
+		const color = row.color ?? sampleCategoryColor();
+
+		await (table === tags
+			? tx.insert(tags).values({ id, name: row.name, color, createdAt: now, updatedAt: now })
+			: tx.insert(merchants).values({
+					id,
+					name: row.name,
+					color,
+					websiteUrl: row.websiteUrl,
+					createdAt: now,
+					updatedAt: now,
+				}));
 		ids.set(row.sourceId, id);
 		names.set(foldName(row.name), id);
 	});

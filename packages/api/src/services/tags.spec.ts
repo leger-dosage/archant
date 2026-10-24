@@ -3,6 +3,7 @@ import type { TempDatabase } from "../testing/temp-database.ts";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import { toMinorUnits } from "@archant/data/money";
 import { tags } from "@archant/data/schema/tags";
 
@@ -10,7 +11,7 @@ import { createTempDatabase } from "../testing/temp-database.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { updateTransaction } from "./ledger/edits.ts";
 import { ingest } from "./ledger/ingest.ts";
-import { createTag, deleteTag, listTags, renameTag } from "./tags.ts";
+import { createTag, deleteAllTags, deleteTag, listTags, updateTag } from "./tags.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -116,6 +117,11 @@ const fieldError = (path: string, code: string) => ({
 	fields: [{ path, code }],
 });
 
+/** One of Sure's ten, drawn at random as `COLORS.sample`. */
+const sampledColor: unknown = expect.stringMatching(
+	new RegExp(`^(${CATEGORY_COLORS.join("|")})$`, "u"),
+);
+
 describe("listTags", () => {
 	it("sorts names as a French reader does, with each one's transaction count", async () => {
 		const holidays = await create("Vacances 2026");
@@ -135,8 +141,20 @@ describe("createTag", () => {
 	it("creates a tag with no transaction", async () => {
 		const tag = await create("Vacances");
 
-		expect(tag).toEqual({ id: tag.id, name: "Vacances", transactionCount: 0 });
+		expect(tag).toEqual({
+			id: tag.id,
+			name: "Vacances",
+			color: sampledColor,
+			transactionCount: 0,
+		});
 		expect(tag.id).toMatch(/^[0-9a-f-]{36}$/u);
+	});
+
+	it("draws one of Sure's ten colours without one, and keeps one it is given", async () => {
+		expect(CATEGORY_COLORS).toContain((await create("Vacances")).color);
+		await expect(createTag(deps(), { name: "Travaux", color: "#805dee" })).resolves.toMatchObject({
+			color: "#805dee",
+		});
 	});
 
 	it.each(["vacances", "VACANCES"])("refuses %j when « Vacances » exists", async (name) => {
@@ -152,11 +170,22 @@ describe("createTag", () => {
 	});
 });
 
-describe("renameTag", () => {
+describe("updateTag", () => {
+	it("recolours when given, and keeps the colour otherwise", async () => {
+		const tag = await createTag(deps(), { name: "Vacances", color: "#805dee" });
+
+		await expect(updateTag(deps(), tag.id, { name: "Été" })).resolves.toMatchObject({
+			color: "#805dee",
+		});
+		await expect(
+			updateTag(deps(), tag.id, { name: "Été", color: "#db5a54" }),
+		).resolves.toMatchObject({ name: "Été", color: "#db5a54" });
+	});
+
 	it("renames, and keeps its own name in another case", async () => {
 		const tag = await create("Vacances");
 
-		await expect(renameTag(deps(), tag.id, { name: "VACANCES" })).resolves.toMatchObject({
+		await expect(updateTag(deps(), tag.id, { name: "VACANCES" })).resolves.toMatchObject({
 			name: "VACANCES",
 		});
 	});
@@ -165,13 +194,13 @@ describe("renameTag", () => {
 		await create("Vacances");
 		const work = await create("Travaux");
 
-		await expect(renameTag(deps(), work.id, { name: "vacances" })).rejects.toMatchObject(
+		await expect(updateTag(deps(), work.id, { name: "vacances" })).rejects.toMatchObject(
 			fieldError("name", "name_taken"),
 		);
 	});
 
 	it("answers NOT_FOUND for an unknown tag", async () => {
-		await expect(renameTag(deps(), "nope", { name: "X" })).rejects.toMatchObject({
+		await expect(updateTag(deps(), "nope", { name: "X" })).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
 	});
@@ -191,7 +220,58 @@ describe("deleteTag", () => {
 		await expect(stored(tag.id)).resolves.toBeUndefined();
 	});
 
+	it("moves it to its replacement, once on a row already carrying both, keeping locks", async () => {
+		const tag = await create("Vacances");
+		const replacement = await create("Voyages");
+		const ids = await transactionsOf(tag.id, 2);
+		const [first, second] = ids;
+		if (first === undefined || second === undefined) {
+			throw new Error("two transactions expected");
+		}
+		await temp.db.run(
+			sql`insert into taggings (transaction_id, tag_id) values (${second}, ${replacement.id})`,
+		);
+
+		await expect(deleteTag(deps(), tag.id, replacement.id)).resolves.toEqual({
+			id: tag.id,
+			untagged: 2,
+		});
+
+		await expect(linksOf(ids)).resolves.toEqual([
+			{ tagIds: [replacement.id], locked: ["tags"] },
+			{ tagIds: [replacement.id], locked: [] },
+		]);
+		await expect(stored(tag.id)).resolves.toBeUndefined();
+	});
+
+	it.each(["self", "unknown"])("refuses a %s replacement and changes nothing", async (which) => {
+		const tag = await create("Vacances");
+		const ids = await transactionsOf(tag.id, 1);
+
+		await expect(
+			deleteTag(deps(), tag.id, which === "self" ? tag.id : "nope"),
+		).rejects.toMatchObject(fieldError("replacementId", "invalid_value"));
+		await expect(linksOf(ids)).resolves.toEqual([{ tagIds: [tag.id], locked: ["tags"] }]);
+		await expect(stored(tag.id)).resolves.toBeDefined();
+	});
+
 	it("answers NOT_FOUND for an unknown tag", async () => {
 		await expect(deleteTag(deps(), "nope")).rejects.toMatchObject({ code: "NOT_FOUND" });
+	});
+});
+
+describe("deleteAllTags", () => {
+	it("takes every tag off every transaction, keeping locks, and deletes them all", async () => {
+		const tag = await create("Vacances");
+		await create("Travaux");
+		const ids = await transactionsOf(tag.id, 2);
+
+		await expect(deleteAllTags(deps())).resolves.toEqual({ deleted: 2 });
+
+		await expect(linksOf(ids)).resolves.toEqual([
+			{ tagIds: [], locked: ["tags"] },
+			{ tagIds: [], locked: [] },
+		]);
+		await expect(listTags(deps())).resolves.toEqual([]);
 	});
 });

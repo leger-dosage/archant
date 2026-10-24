@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 import { MAX_TAGS_PER_TRANSACTION } from "@archant/api/schemas/transactions";
 import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
+import { TagBadge } from "@/components/TagBadge";
 import {
 	Command,
 	CommandEmpty,
@@ -120,7 +121,7 @@ export function TagCombobox({
 							disabled={full && !selected.has(tag.id)}
 							onSelect={() => onToggle(tag.id)}
 						>
-							<span className="truncate">{tag.name}</span>
+							<TagBadge tag={tag} />
 						</CommandItem>
 					))}
 					{canCreate && (

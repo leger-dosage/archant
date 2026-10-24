@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
-// Stories 4.4 and 11.12: tag management under « Réglages ». One database serves the
+// Stories 4.4, 11.12 and 32.3: tag management under « Réglages ». One database serves the
 // whole run, so each test works on tags of its own.
 
 const PAGE = "/settings/tags";
@@ -11,7 +11,7 @@ const PAGE = "/settings/tags";
 const tagRow = (page: Page, name: string) =>
 	page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).locator("..");
 
-async function openAction(page: Page, name: string, action: "Renommer" | "Supprimer") {
+async function openAction(page: Page, name: string, action: "Modifier" | "Supprimer") {
 	await page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).click();
 	await page.getByRole("menuitem", { name: action }).click();
 }
@@ -35,7 +35,7 @@ async function visitOperations(page: Page, q: string) {
 	await expect(rowButton(page, q)).toBeVisible();
 }
 
-test("renaming a tag renames it on its rows", async ({ page, api }) => {
+test("editing a tag renames and recolours it on its rows", async ({ page, api }) => {
 	const label = uniqueName("HOTEL");
 	const tag = await api.createTag(uniqueName("Vacnces"));
 	const renamed = uniqueName("Vacances");
@@ -44,32 +44,58 @@ test("renaming a tag renames it on its rows", async ({ page, api }) => {
 	await page.goto(PAGE);
 	await expect(page.getByRole("heading", { level: 1, name: "Étiquettes" })).toBeVisible();
 	await expect(tagRow(page, tag.name)).toContainText("1 opération");
-	await openAction(page, tag.name, "Renommer");
+	await openAction(page, tag.name, "Modifier");
 	const dialog = page.getByRole("dialog");
 	await dialog.getByLabel("Nom").fill(renamed);
-	await dialog.getByRole("button", { name: "Renommer" }).click();
+	await dialog
+		.locator("label", { has: page.getByRole("radio", { name: "Violet", exact: true }) })
+		.click();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog).toBeHidden();
 	await expect(tagRow(page, renamed)).toBeVisible();
+	await openAction(page, renamed, "Modifier");
+	await expect(dialog.getByRole("radio", { name: "Violet", exact: true })).toBeChecked();
+	await page.keyboard.press("Escape");
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).toContainText(renamed);
 });
 
-test("deleting a used tag, once confirmed, takes it off its rows", async ({ page, api }) => {
+test("deleting a used tag without a replacement takes it off its rows", async ({ page, api }) => {
 	const label = uniqueName("PEINTURE");
 	const tag = await api.createTag(uniqueName("Travaux"));
 	await tagged(api, label, tag.id);
 
 	await page.goto(PAGE);
 	await openAction(page, tag.name, "Supprimer");
-	const dialog = page.getByRole("alertdialog");
-	await expect(dialog).toContainText("1 opération perdra cette étiquette.");
-	await dialog.getByRole("button", { name: "Supprimer" }).click();
+	const dialog = page.getByRole("dialog", { name: "Supprimer l'étiquette ?" });
+	await expect(dialog).toContainText(`« ${tag.name} » sera retirée de son opération.`);
+	await dialog.getByRole("button", { name: `Supprimer « ${tag.name} »` }).click();
 
 	await expect(dialog).toBeHidden();
 	await expect(tagRow(page, tag.name)).toHaveCount(0);
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).not.toContainText(tag.name);
+});
+
+test("deleting a used tag into a replacement moves its rows to it", async ({ page, api }) => {
+	const label = uniqueName("TRAIN");
+	const tag = await api.createTag(uniqueName("Vacances"));
+	const replacement = await api.createTag(uniqueName("Voyages"));
+	await tagged(api, label, tag.id);
+
+	await page.goto(PAGE);
+	await openAction(page, tag.name, "Supprimer");
+	const dialog = page.getByRole("dialog", { name: "Supprimer l'étiquette ?" });
+	await dialog.getByRole("combobox", { name: "Étiquette" }).click();
+	await page.getByRole("option", { name: replacement.name, exact: true }).click();
+	await dialog.getByRole("button", { name: "Supprimer et réaffecter" }).click();
+
+	await expect(dialog).toBeHidden();
+	await expect(tagRow(page, tag.name)).toHaveCount(0);
+	await expect(tagRow(page, replacement.name)).toContainText("1 opération");
+	await visitOperations(page, label);
+	await expect(rowButton(page, label)).toContainText(replacement.name);
 });
 
 test("a tag added from the header is listed with no transaction", async ({ page }) => {

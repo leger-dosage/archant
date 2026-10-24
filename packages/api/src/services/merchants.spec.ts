@@ -3,6 +3,7 @@ import type { TempDatabase } from "../testing/temp-database.ts";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import { toMinorUnits } from "@archant/data/money";
 import { merchants } from "@archant/data/schema/merchants";
 
@@ -14,8 +15,8 @@ import {
 	createMerchant,
 	deleteMerchant,
 	listMerchants,
-	mergeMerchant,
-	renameMerchant,
+	mergeMerchants,
+	updateMerchant,
 } from "./merchants.ts";
 
 let temp: TempDatabase;
@@ -115,6 +116,11 @@ const fieldError = (path: string, code: string) => ({
 	fields: [{ path, code }],
 });
 
+/** One of Sure's ten, drawn at random as `COLORS.sample`. */
+const sampledColor: unknown = expect.stringMatching(
+	new RegExp(`^(${CATEGORY_COLORS.join("|")})$`, "u"),
+);
+
 describe("listMerchants", () => {
 	it("sorts names as a French reader does, with each one's transaction count", async () => {
 		const carrefour = await create("Carrefour");
@@ -134,8 +140,26 @@ describe("createMerchant", () => {
 	it("creates a merchant with no transaction", async () => {
 		const merchant = await create("Carrefour");
 
-		expect(merchant).toEqual({ id: merchant.id, name: "Carrefour", transactionCount: 0 });
+		expect(merchant).toEqual({
+			id: merchant.id,
+			name: "Carrefour",
+			color: sampledColor,
+			websiteUrl: null,
+			transactionCount: 0,
+		});
 		expect(merchant.id).toMatch(/^[0-9a-f-]{36}$/u);
+	});
+
+	it("draws one of Sure's ten colours without one, as `set_default_color`", async () => {
+		const merchant = await create("Carrefour");
+
+		expect(CATEGORY_COLORS).toContain(merchant.color);
+	});
+
+	it("keeps the colour and the website it is given", async () => {
+		await expect(
+			createMerchant(deps(), { name: "Starbucks", color: "#4da568", websiteUrl: "starbucks.com" }),
+		).resolves.toMatchObject({ color: "#4da568", websiteUrl: "starbucks.com" });
 	});
 
 	it.each(["carrefour", "CARREFOUR"])("refuses %j when « Carrefour » exists", async (name) => {
@@ -151,11 +175,34 @@ describe("createMerchant", () => {
 	});
 });
 
-describe("renameMerchant", () => {
+describe("updateMerchant", () => {
+	it("recolours and changes the website when given, and keeps them otherwise", async () => {
+		const merchant = await createMerchant(deps(), {
+			name: "Starbucks",
+			color: "#4da568",
+			websiteUrl: "starbucks.com",
+		});
+
+		await expect(
+			updateMerchant(deps(), merchant.id, { name: "Starbucks Café" }),
+		).resolves.toMatchObject({
+			name: "Starbucks Café",
+			color: "#4da568",
+			websiteUrl: "starbucks.com",
+		});
+		await expect(
+			updateMerchant(deps(), merchant.id, {
+				name: "Starbucks",
+				color: "#805dee",
+				websiteUrl: null,
+			}),
+		).resolves.toMatchObject({ color: "#805dee", websiteUrl: null });
+	});
+
 	it("renames, and keeps its own name in another case", async () => {
 		const merchant = await create("Carrefour");
 
-		await expect(renameMerchant(deps(), merchant.id, { name: "CARREFOUR" })).resolves.toMatchObject(
+		await expect(updateMerchant(deps(), merchant.id, { name: "CARREFOUR" })).resolves.toMatchObject(
 			{ name: "CARREFOUR" },
 		);
 	});
@@ -164,13 +211,13 @@ describe("renameMerchant", () => {
 		await create("Carrefour");
 		const lidl = await create("Lidl");
 
-		await expect(renameMerchant(deps(), lidl.id, { name: "carrefour" })).rejects.toMatchObject(
+		await expect(updateMerchant(deps(), lidl.id, { name: "carrefour" })).rejects.toMatchObject(
 			fieldError("name", "name_taken"),
 		);
 	});
 
 	it("answers NOT_FOUND for an unknown merchant", async () => {
-		await expect(renameMerchant(deps(), "nope", { name: "X" })).rejects.toMatchObject({
+		await expect(updateMerchant(deps(), "nope", { name: "X" })).rejects.toMatchObject({
 			code: "NOT_FOUND",
 		});
 	});
@@ -198,44 +245,51 @@ describe("deleteMerchant", () => {
 	});
 });
 
-describe("mergeMerchant", () => {
-	it("moves the transactions to the target, deletes the source and returns the target", async () => {
-		const source = await create("CB Carrefour");
+describe("mergeMerchants", () => {
+	it("moves every source's transactions to the target, keeping locks, and deletes the sources", async () => {
+		const first = await create("CB Carrefour");
+		const second = await create("Carrefour Market");
 		const target = await create("Carrefour");
-		const moved = await transactionsOf(source.id, 3);
+		const fromFirst = await transactionsOf(first.id, 2);
+		const fromSecond = await transactionsOf(second.id, 1);
 
-		await expect(mergeMerchant(deps(), source.id, target.id)).resolves.toEqual({
-			id: target.id,
-			name: "Carrefour",
-			transactionCount: 3,
+		await expect(mergeMerchants(deps(), target.id, [first.id, second.id])).resolves.toMatchObject({
+			target: { id: target.id, name: "Carrefour", transactionCount: 3 },
+			merged: 2,
 		});
 
 		// The one set by hand stays locked: a rule must not undo the merge.
-		await expect(linksOf(moved)).resolves.toEqual([
+		await expect(linksOf([...fromFirst, ...fromSecond])).resolves.toEqual([
 			{ merchantId: target.id, locked: ["merchant"] },
 			{ merchantId: target.id, locked: [] },
-			{ merchantId: target.id, locked: [] },
+			{ merchantId: target.id, locked: ["merchant"] },
 		]);
-		await expect(stored(source.id)).resolves.toBeUndefined();
+		await expect(stored(first.id)).resolves.toBeUndefined();
+		await expect(stored(second.id)).resolves.toBeUndefined();
 	});
 
-	it.each(["self", "unknown"])("refuses a %s target and changes nothing", async (which) => {
-		const source = await create("Carrefour");
+	it("refuses the target among the sources and changes nothing", async () => {
+		const source = await create("CB Carrefour");
+		const target = await create("Carrefour");
 		const ids = await transactionsOf(source.id, 1);
-		const targetId = which === "self" ? source.id : "nope";
 
-		await expect(mergeMerchant(deps(), source.id, targetId)).rejects.toMatchObject(
-			fieldError("targetId", "invalid_value"),
+		await expect(mergeMerchants(deps(), target.id, [source.id, target.id])).rejects.toMatchObject(
+			fieldError("sourceIds", "same_merchant"),
 		);
 		await expect(linksOf(ids)).resolves.toEqual([{ merchantId: source.id, locked: ["merchant"] }]);
 		await expect(stored(source.id)).resolves.toBeDefined();
 	});
 
-	it("answers NOT_FOUND for an unknown source", async () => {
+	it("refuses an unknown target or source and changes nothing", async () => {
+		const source = await create("CB Carrefour");
 		const target = await create("Carrefour");
 
-		await expect(mergeMerchant(deps(), "nope", target.id)).rejects.toMatchObject({
-			code: "NOT_FOUND",
-		});
+		await expect(mergeMerchants(deps(), "nope", [source.id])).rejects.toMatchObject(
+			fieldError("targetId", "invalid_value"),
+		);
+		await expect(mergeMerchants(deps(), target.id, [source.id, "nope"])).rejects.toMatchObject(
+			fieldError("sourceIds", "invalid_value"),
+		);
+		await expect(stored(source.id)).resolves.toBeDefined();
 	});
 });

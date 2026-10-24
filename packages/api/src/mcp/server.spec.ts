@@ -731,7 +731,7 @@ describe("the tools", () => {
 		).toContainEqual({ id: merchant.id, name: "Boulangerie Dupain", source: "family" });
 		expect(
 			z.object({ tags: z.array(z.unknown()) }).parse(tags.structuredContent).tags,
-		).toContainEqual({ id: tag.id, name: "Vacances", color: null });
+		).toContainEqual({ id: tag.id, name: "Vacances", color: tag.color });
 	});
 
 	it("records each call with its client, tool and outcome, never its arguments or result", async () => {

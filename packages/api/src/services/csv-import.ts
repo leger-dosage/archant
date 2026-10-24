@@ -33,6 +33,7 @@ import {
 	CATEGORY_ICONS,
 	CATEGORY_NAME_MAX_LENGTH,
 	newCategory,
+	sampleCategoryColor,
 } from "@archant/data/category-presets";
 import { refreshStatistics } from "@archant/data/client";
 import {
@@ -64,6 +65,7 @@ import {
 	isToolImport,
 	maxRowsOf,
 } from "../schemas/csv-imports.ts";
+import { MERCHANT_WEBSITE_MAX_LENGTH } from "../schemas/merchants.ts";
 import { cleanOf } from "./csv-import-clean.ts";
 import {
 	columnOf,
@@ -607,8 +609,8 @@ async function analyseCategories(db: Pick<Transaction, "select">, sheet: Sheet):
 
 /**
  * Sure's `MerchantImport`: a blank name is skipped, a name the household
- * holds, folded, is kept, any other created. Colour and website wait for
- * merchants to have them.
+ * holds, folded, is kept, any other created with the file's colour, one
+ * of Sure's ten when it has none that reads, and its website.
  */
 async function analyseMerchants(db: Pick<Transaction, "select">, sheet: Sheet): Promise<Analysis> {
 	const counts = { merchants: sheet.table.rows.length };
@@ -621,14 +623,21 @@ async function analyseMerchants(db: Pick<Transaction, "select">, sheet: Sheet): 
 	const known = new Set(
 		(await db.select({ name: merchants.name }).from(merchants)).map((row) => foldName(row.name)),
 	);
-	const created: string[] = [];
+	const created: { name: string; color: string | null; websiteUrl: string | null }[] = [];
 
 	for (const row of sheet.table.rows) {
 		const name = cut(headerCellOf(sheet, row, "name").normalize("NFC"), MERCHANT_NAME_MAX_LENGTH);
 
 		if (name !== "" && !known.has(foldName(name))) {
+			const color = headerCellOf(sheet, row, "merchant_color").toLowerCase();
+			const website = headerCellOf(sheet, row, "merchant_website");
+
 			known.add(foldName(name));
-			created.push(name);
+			created.push({
+				name,
+				color: CATEGORY_COLOR_PATTERN.test(color) ? color : null,
+				websiteUrl: website === "" ? null : cut(website, MERCHANT_WEBSITE_MAX_LENGTH),
+			});
 		}
 	}
 
@@ -638,10 +647,15 @@ async function analyseMerchants(db: Pick<Transaction, "select">, sheet: Sheet): 
 		write: async (tx) => {
 			const now = Date.now();
 
-			await oneByOne(created, async (name) =>
-				tx
-					.insert(merchants)
-					.values({ id: crypto.randomUUID(), name, createdAt: now, updatedAt: now }),
+			await oneByOne(created, async ({ name, color, websiteUrl }) =>
+				tx.insert(merchants).values({
+					id: crypto.randomUUID(),
+					name,
+					color: color ?? sampleCategoryColor(),
+					websiteUrl,
+					createdAt: now,
+					updatedAt: now,
+				}),
 			);
 		},
 	};

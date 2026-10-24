@@ -60,6 +60,7 @@ import { isTooFarAhead } from "../domain/statement.ts";
 import { tradeAmount, tradeValue } from "../domain/trades.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import { parseAccountDetails } from "../schemas/accounts.ts";
+import { MERCHANT_WEBSITE_MAX_LENGTH } from "../schemas/merchants.ts";
 import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../schemas/transactions.ts";
 import { getReportingCurrency } from "./settings.ts";
 import {
@@ -126,7 +127,13 @@ export type PlanCategory = {
 	parentSourceId: string | null;
 };
 
-export type PlanNamed = { sourceId: string; name: string };
+/** A tag or a merchant; its colour and website `null` when the archive has none Archant reads. */
+export type PlanNamed = {
+	sourceId: string;
+	name: string;
+	color: string | null;
+	websiteUrl: string | null;
+};
 
 type PlanSplitLine = {
 	sourceId: string | null;
@@ -649,7 +656,19 @@ function readNamed(reader: Reader, type: string, max: number): PlanNamed[] {
 		const sourceId = idOf(record.data.id);
 		const name = textOf(record.data.name);
 
-		return sourceId === null || name === null ? [] : [{ sourceId, name: cut(name.trim(), max) }];
+		const color = textOf(record.data.color)?.toLowerCase() ?? null;
+		const website = textOf(record.data.website_url)?.trim() ?? "";
+
+		return sourceId === null || name === null
+			? []
+			: [
+					{
+						sourceId,
+						name: cut(name.trim(), max),
+						color: color !== null && CATEGORY_COLOR_PATTERN.test(color) ? color : null,
+						websiteUrl: website === "" ? null : cut(website, MERCHANT_WEBSITE_MAX_LENGTH),
+					},
+				];
 	});
 }
 

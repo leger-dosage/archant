@@ -4,10 +4,13 @@ import { sql } from "drizzle-orm";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CATEGORY_COLORS } from "./category-presets.ts";
 import { createDb } from "./client.ts";
 import { migrateFromEnv, runMigrations } from "./migrate.ts";
+import { merchants } from "./schema/merchants.ts";
+import { tags } from "./schema/tags.ts";
 import { migrateBefore } from "./testing/migrations.ts";
 
 let directory: string;
@@ -964,6 +967,50 @@ describe("investment contributions", () => {
 			{ id: "e5", categoryId: null, origin: null },
 			{ id: "e6", categoryId: null, origin: null },
 		]);
+	});
+});
+
+describe("merchant and tag colours", () => {
+	it("gives 0094 each existing merchant and tag one of Sure's ten colours, and no website", async () => {
+		const before = await migratedBefore("0094");
+		await before.run(
+			sql`insert into merchants (id, name, created_at, updated_at) values ('m1', 'A', 0, 0), ('m2', 'B', 0, 0)`,
+		);
+		await before.run(
+			sql`insert into tags (id, name, created_at, updated_at) values ('t1', 'V', 0, 0)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+		const rows = await database.all<{ color: string; website: string | null }>(
+			sql`select color, website_url as website from merchants union all select color, null from tags`,
+		);
+
+		expect(rows).toHaveLength(3);
+		for (const row of rows) {
+			expect(CATEGORY_COLORS).toContain(row.color);
+			expect(row.website).toBeNull();
+		}
+	});
+
+	it("draws a colour for an insert that gives none, a bank sync's or an import's", async () => {
+		const database = await migrated();
+		const random = vi.spyOn(Math, "random").mockReturnValue(0.95);
+
+		try {
+			await database
+				.insert(merchants)
+				.values({ id: "m1", name: "Carrefour", createdAt: 0, updatedAt: 0 });
+			await database
+				.insert(tags)
+				.values({ id: "t1", name: "Vacances", createdAt: 0, updatedAt: 0 });
+		} finally {
+			random.mockRestore();
+		}
+
+		await expect(
+			database.all(sql`select color from merchants union all select color from tags`),
+		).resolves.toEqual([{ color: CATEGORY_COLORS[9] }, { color: CATEGORY_COLORS[9] }]);
 	});
 });
 

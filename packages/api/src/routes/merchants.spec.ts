@@ -101,7 +101,13 @@ describe("merchants", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect((await response.json()).data).toEqual({ id: merchant.id, name, transactionCount: 0 });
+		expect((await response.json()).data).toEqual({
+			id: merchant.id,
+			name,
+			color: merchant.color,
+			websiteUrl: null,
+			transactionCount: 0,
+		});
 	});
 
 	it("deletes a merchant, unlinking its transactions and keeping their locks", async () => {
@@ -126,42 +132,63 @@ describe("merchants", () => {
 		expect((await merchantList()).find((item) => item.id === merchant.id)).toBeUndefined();
 	});
 
-	it("merges a merchant into a target, whose count then includes its transactions", async () => {
+	it("merges several merchants into a target, whose count then includes their transactions", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 		const source = await createMerchant(uniqueCategory("CB Carrefour"));
+		const other = await createMerchant(uniqueCategory("Carrefour Market"));
 		const target = await createMerchant(uniqueCategory("Carrefour"));
 		await linkMerchant(account.id, source.id);
 
-		const response = await testClient(buildApp()).api.merchants[":id"].merge.$post({
-			param: { id: source.id },
-			json: { targetId: target.id },
+		const response = await testClient(buildApp()).api.merchants.merge.$post({
+			json: { targetId: target.id, sourceIds: [source.id, other.id] },
 		});
 
 		expect(response.status).toBe(200);
-		expect((await response.json()).data).toMatchObject({ id: target.id, transactionCount: 1 });
+		expect((await response.json()).data).toMatchObject({
+			target: { id: target.id, transactionCount: 1 },
+			merged: 2,
+		});
 		expect((await merchantList()).find((item) => item.id === source.id)).toBeUndefined();
 	});
 
-	it.each([["nope"], ["self"]])("refuses %s as the merge target", async (which) => {
+	it.each([
+		["an unknown target", "targetId", "invalid_value"],
+		["the target among the sources", "sourceIds", "same_merchant"],
+	])("refuses %s", async (_, path, code) => {
 		const source = await createMerchant(uniqueCategory("Carrefour"));
-		const targetId = which === "self" ? source.id : which;
+		const targetId = path === "targetId" ? "nope" : source.id;
 
-		const { status, body } = await request("POST", `/api/merchants/${source.id}/merge`, {
+		const { status, body } = await request("POST", "/api/merchants/merge", {
 			targetId,
+			sourceIds: [source.id],
 		});
 
 		expect(status).toBe(400);
-		expect(errorBody.parse(body).error.fields).toEqual([
-			{ path: "targetId", code: "invalid_value" },
-		]);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path, code }]);
 		expect((await merchantList()).find((item) => item.id === source.id)).toBeDefined();
+	});
+
+	it("creates a merchant with its colour and website, a bad colour refused", async () => {
+		const name = uniqueCategory("Starbucks");
+
+		await expect(
+			request("POST", "/api/merchants", { name, color: "#4DA568", websiteUrl: " starbucks.com " }),
+		).resolves.toMatchObject({
+			status: 201,
+			body: { data: { name, color: "#4da568", websiteUrl: "starbucks.com" } },
+		});
+		const refused = await request("POST", "/api/merchants", { name: `${name} 2`, color: "red" });
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "color", code: "invalid_value" },
+		]);
 	});
 
 	it.each([
 		["PATCH", "/api/merchants/nope", { name: "Autre" }],
 		["DELETE", "/api/merchants/nope", undefined],
-		["POST", "/api/merchants/nope/merge", { targetId: "other" }],
 	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
 		const response = await request(method, path, body);
 

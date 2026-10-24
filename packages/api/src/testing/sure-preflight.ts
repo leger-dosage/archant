@@ -320,8 +320,20 @@ const SCHEMAS = {
 		classification: z.enum(["income", "expense"]).optional(),
 		...stamps,
 	}),
-	Tag: z.strictObject({ id, name: present, ...stamps }),
-	Merchant: z.strictObject({ id, name: present, ...stamps }),
+	// Sure's `Tag` and `FamilyMerchant` validate a colour's format; a website is free text.
+	Tag: z.strictObject({
+		id,
+		name: present,
+		color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
+		...stamps,
+	}),
+	Merchant: z.strictObject({
+		id,
+		name: present,
+		color: z.string().regex(/^#[0-9A-Fa-f]{6}$/u),
+		website_url: z.string().nullable(),
+		...stamps,
+	}),
 	RecurringTransaction: z
 		.strictObject({
 			id,

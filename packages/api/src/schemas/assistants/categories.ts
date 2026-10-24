@@ -3,14 +3,7 @@ import { z } from "zod";
 import { CATEGORY_ICONS, CATEGORY_NAME_MAX_LENGTH } from "@archant/data/category-presets";
 
 import { createCategorySchema } from "../categories.ts";
-import { requiredSureName, sureName } from "./fields.ts";
-
-/** Sure's `presence`: a blank value reads as absent rather than refused. */
-const present = <Schema extends z.ZodType>(schema: Schema) =>
-	z.preprocess(
-		(value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
-		schema.optional(),
-	);
+import { present, requiredSureName, sureName } from "./fields.ts";
 
 const categoryField = createCategorySchema.shape;
 

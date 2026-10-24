@@ -5,6 +5,7 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import type { Database } from "@archant/data/client";
 
 import { createLogger } from "../lib/logger.ts";
@@ -116,7 +117,10 @@ async function household() {
 	const food = await ownCategory("Alimentation");
 	const bakery = await ownCategory("Boulangerie", { parentId: food });
 	const trip = await created("/api/tags", { name: "Voyage" });
-	const baker = await created("/api/merchants", { name: "Boulanger du coin" });
+	const baker = await created("/api/merchants", {
+		name: "Boulanger du coin",
+		websiteUrl: "boulanger.test",
+	});
 
 	const bread = await postOwn(checking, {
 		date: "2026-09-10",
@@ -284,8 +288,8 @@ async function snapshotOf(db: Database) {
 			order by a.name, s.name, h.date`),
 		categories: await rows(sql`
 			select c.name, c.color, c.icon, p.name as parent from categories c left join categories p on p.id = c.parent_id order by c.name`),
-		tags: await rows(sql`select name from tags order by name`),
-		merchants: await rows(sql`select name from merchants order by name`),
+		tags: await rows(sql`select name, color from tags order by name`),
+		merchants: await rows(sql`select name, color, website_url from merchants order by name`),
 		budgets: await rows(
 			sql`select month, currency, budgeted_spending as spending, expected_income as income from budgets order by month`,
 		),
@@ -541,6 +545,43 @@ describe("importSureArchive", () => {
 			{ category: salary, amount: 1000 },
 			{ category: food, amount: 30000 },
 		]);
+	});
+
+	it("takes a tag's and a merchant's colour as Sure writes it, and draws one it cannot read", async () => {
+		await ownDatabase();
+		const stamp = { created_at: "2026-09-01T00:00:00Z", updated_at: "2026-09-01T00:00:00Z" };
+
+		await importLines([
+			line("Tag", { id: "t1", name: "Vacances", color: "#DB5A54", ...stamp }),
+			line("Tag", { id: "t2", name: "Travaux", ...stamp }),
+			line("Merchant", {
+				id: "m1",
+				name: "Starbucks",
+				color: "#4DA568",
+				website_url: " starbucks.com ",
+				...stamp,
+			}),
+			line("Merchant", { id: "m2", name: "Bar", color: "red", website_url: "", ...stamp }),
+		]);
+
+		const rows = z
+			.array(z.object({ name: z.string(), color: z.string(), website: z.string().nullable() }))
+			.parse(
+				await source().all(
+					sql`select name, color, website_url as website from merchants union all select name, color, null from tags`,
+				),
+			);
+		const byName = new Map(rows.map((row) => [row.name, row]));
+
+		expect(byName.get("Vacances")?.color).toBe("#db5a54");
+		expect(byName.get("Starbucks")).toEqual({
+			name: "Starbucks",
+			color: "#4da568",
+			website: "starbucks.com",
+		});
+		expect(CATEGORY_COLORS).toContain(byName.get("Travaux")?.color);
+		expect(CATEGORY_COLORS).toContain(byName.get("Bar")?.color);
+		expect(byName.get("Bar")?.website).toBeNull();
 	});
 
 	it("imports Sure's rules Archant can hold, and leaves nothing behind for one it skips", async () => {

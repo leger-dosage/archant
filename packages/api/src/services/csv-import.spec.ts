@@ -342,16 +342,27 @@ describe("merchants", () => {
 				"name*,color,website_url",
 				"boulangerie,,",
 				",#e99537,",
-				"Café,#e99537,https://cafe.fr",
+				"Café,#4DA568,https://cafe.fr",
 				"café,,",
+				"Bar,nope,",
 			].join("\n"),
 		);
 
-		expect(result.counts).toEqual({ merchants: 4 });
-		expect(await rows(sql`select name from merchants order by name`)).toEqual([
-			{ name: "Boulangerie" },
-			{ name: "Café" },
+		expect(result.counts).toEqual({ merchants: 5 });
+		const stored = z
+			.array(z.object({ name: z.string(), color: z.string(), website: z.string().nullable() }))
+			.parse(
+				await rows(sql`select name, color, website_url as website from merchants order by name`),
+			);
+
+		expect(stored.map(({ name, website }) => ({ name, website }))).toEqual([
+			{ name: "Bar", website: null },
+			{ name: "Boulangerie", website: null },
+			{ name: "Café", website: "https://cafe.fr" },
 		]);
+		// The file's colour when it reads, else one of Sure's ten, as `MerchantImport`.
+		expect(stored.find((row) => row.name === "Café")?.color).toBe("#4da568");
+		expect(CATEGORY_COLORS).toContain(stored.find((row) => row.name === "Bar")?.color);
 	});
 });
 

@@ -144,6 +144,7 @@ test("a simple list counts its rows in its header", async ({ page }) => {
 						data: ["Travaux", "Vacances", "Voiture"].map((name, index) => ({
 							id: `00000000-0000-4000-8000-00000000000${index}`,
 							name,
+							color: "#e99537",
 							transactionCount: index,
 						})),
 					},
@@ -198,8 +199,8 @@ test("merchants and tags: the add button heads the page at 36 px, the list sits 
 	await expect(create).toBeHidden();
 
 	await tags.getByRole("button", { name: `Actions pour ${tag.name}`, exact: true }).click();
-	await page.getByRole("menuitem", { name: "Renommer" }).click();
-	const rename = page.getByRole("dialog", { name: /^Renommer/u });
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const rename = page.getByRole("dialog", { name: /^Modifier/u });
 	await expect(rename).toBeVisible();
 	await expect(rename).toHaveCSS("width", "550px");
 	await rename.getByRole("button", { name: "Annuler" }).click();

@@ -4,8 +4,8 @@ import { ADMIN_FIRST_NAME } from "./settings.ts";
 // Stories 30.8 and 30.9: Sure's « Zone dangereuse › Réinitialiser le compte »
 // and « Réinitialiser et précharger ». They empty the shared database, so the
 // `reset` project runs them alone, after every `chromium` test and before the
-// password change. Story 32.2's « Supprimer tout » of categories runs here
-// too, for the same reason. The sample-data test runs last on purpose: `password`,
+// password change. The « Supprimer tout » of categories (Story 32.2) and of
+// tags (Story 32.3) run here too, for the same reason. The sample-data test runs last on purpose: `password`,
 // `two-factor` and `ceiling` then run on a filled household, as an owner's.
 
 test("a refused reset keeps its dialog while pending, then toasts the error and deletes nothing", async ({
@@ -156,6 +156,33 @@ test("« Supprimer tout » deletes every category, then the empty page and a row
 			.filter({ hasText: label })
 			.getByRole("button", { name: "Catégorie : Revenus", exact: true }),
 	).toBeVisible();
+});
+
+test("« Supprimer tout » deletes every tag and takes them off their rows", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const label = uniqueName("HOTEL");
+	const tag = await api.createTag(uniqueName("Vacances"));
+	await api.setTags(
+		[await api.addTransaction(account.id, { date: daysAgo(1), label, amount: "-80" })],
+		[tag.id],
+	);
+
+	await page.goto("/settings/tags");
+	await page.getByRole("button", { name: "Plus d'actions sur les étiquettes" }).click();
+	await page.getByRole("menuitem", { name: "Supprimer tout" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Supprimer toutes les étiquettes ?" });
+	await confirm.getByRole("button", { name: "Supprimer toutes les étiquettes" }).click();
+	await expect(page.getByText("Toutes les étiquettes supprimées")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { name: "Aucune étiquette pour l'instant" }),
+	).toBeVisible();
+
+	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
+	await expect(page.getByRole("main").getByText(label)).toBeVisible();
+	await expect(page.getByRole("main").getByText(tag.name)).toHaveCount(0);
 });
 
 test("« Réinitialiser et précharger » asks first, then the dashboard lists Sure's sample accounts without a reload", async ({

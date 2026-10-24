@@ -88,12 +88,15 @@ export const EXPORTED_COLUMNS = {
 	tags: {
 		id: tags.id,
 		name: tags.name,
+		color: tags.color,
 		createdAt: tags.createdAt,
 		updatedAt: tags.updatedAt,
 	},
 	merchants: {
 		id: merchants.id,
 		name: merchants.name,
+		color: merchants.color,
+		websiteUrl: merchants.websiteUrl,
 		createdAt: merchants.createdAt,
 		updatedAt: merchants.updatedAt,
 	},

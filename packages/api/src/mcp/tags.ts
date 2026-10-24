@@ -3,7 +3,7 @@ import { z } from "zod";
 import { listPageInput } from "../schemas/assistants/fields.ts";
 import { createTagInput, updateTagInput } from "../schemas/assistants/tags.ts";
 import { tagIdNamed } from "../services/names.ts";
-import { createTag, listTags, renameTag } from "../services/tags.ts";
+import { createTag, listTags, updateTag } from "../services/tags.ts";
 import {
 	CREATES,
 	READ_ONLY,
@@ -15,14 +15,18 @@ import {
 	validated,
 } from "./tool.ts";
 
-/** A tag as Sure's tools give it; Archant's tags have no colour. */
+/** A tag as Sure's tools give it. */
 const tag = z.object({
 	id: z.string(),
 	name: z.string(),
-	color: z.null().describe("Always null: Archant's tags have no colour."),
+	color: z.string().describe('A hex colour such as "#e99537".'),
 });
 
-const tagOf = ({ id, name }: { id: string; name: string }) => ({ id, name, color: null });
+const tagOf = ({ id, name, color }: { id: string; name: string; color: string }) => ({
+	id,
+	name,
+	color,
+});
 
 const written = z.object({ success: z.literal(true), tag, message: z.string() });
 
@@ -46,17 +50,19 @@ export const createTagTool = defineTool({
 	name: "create_tag",
 	title: "Create a tag",
 	description:
-		"Creates a tag, as Sure's create_tag, and returns its id for a rule's action or condition. Tag names must be unique, case aside. color is taken and ignored: Archant's tags have no colour.",
+		"Creates a tag, as Sure's create_tag, and returns its id for a rule's action or condition. Tag names must be unique, case aside. If color is omitted, one is chosen automatically from the default palette.",
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createTagInput,
 	output: written,
-	run: async (deps, { name }) => {
+	run: async (deps, { name, color }) => {
 		if (name === "") {
 			refuse("name_required", "Please provide a name for the tag.");
 		}
 
-		const created = await validated(async () => createTag(deps, { name }));
+		const created = await validated(async () =>
+			createTag(deps, { name, ...(color === undefined ? {} : { color }) }),
+		);
 
 		return {
 			result: {
@@ -73,7 +79,7 @@ export const updateTagTool = defineTool({
 	name: "update_tag",
 	title: "Update a tag",
 	description:
-		"Renames a tag, as Sure's update_tag: the tag is named by its current name, exactly as get_tags gives it, and every transaction carrying it shows the new name. At least one of new_name or color must be given; color is ignored, Archant's tags having no colour.",
+		"Updates an existing tag's name or color, as Sure's update_tag: the tag is named by its current name, exactly as get_tags gives it, and every transaction carrying it shows the change. At least one of new_name or color must be given.",
 	scope: "archant:write",
 	annotations: REPLACES,
 	fieldPaths: { name: "new_name" },
@@ -90,19 +96,22 @@ export const updateTagTool = defineTool({
 
 		// Sure's `present?`: a blank value changes nothing.
 		const renaming = newName !== undefined && newName !== "";
+		const recolouring = color !== undefined;
 
-		if (!renaming && (color === undefined || color.trim() === "")) {
+		if (!renaming && !recolouring) {
 			refuse("no_changes", "Provide at least one of new_name or color to update.");
 		}
 
-		// A colour alone changes nothing here: Archant's tags have none.
-		const tagNow = renaming
-			? await validated(async () => renameTag(deps, id, { name: newName }))
-			: { id, name: current };
+		const tagNow = await validated(async () =>
+			updateTag(deps, id, {
+				name: renaming ? newName : current,
+				...(recolouring ? { color } : {}),
+			}),
+		);
 
 		return {
 			result: { success: true as const, tag: tagOf(tagNow), message: "Tag updated." },
-			changedRows: renaming ? 1 : 0,
+			changedRows: 1,
 		};
 	},
 });

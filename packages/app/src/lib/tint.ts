@@ -31,7 +31,8 @@ export type TintSubject =
 	/** The transfer indigo, on another icon where a screen needs one, such as the empty dashboard's bank. */
 	| { kind: "transfer"; icon?: LucideIcon }
 	| { kind: "uncategorised" }
-	| { kind: "merchant"; name: string }
+	/** A merchant's first letter, in its colour where the screen has it, as Sure's `color_avatar`. */
+	| { kind: "merchant"; name: string; color?: string }
 	| { kind: "category"; color: string; icon: CategoryIcon }
 	/** Sure's goal avatar: its icon, else its name's initial, else Sure's target. */
 	| { kind: "goal"; color: string; icon: CategoryIcon | null; name: string };
@@ -91,8 +92,12 @@ function adjust(color: string, mode: ResolvedTheme, target: number): string {
 }
 
 function colored(color: string, glyph: Tint["glyph"], mode: ResolvedTheme): Tint {
+	return { glyph, ...colorTint(color, mode) };
+}
+
+/** A colour's tint without a glyph, for a tag's badge: its fill, its dot and its text. */
+export function colorTint(color: string, mode: ResolvedTheme): Omit<Tint, "glyph"> {
 	return {
-		glyph,
 		fill: tintFill(color, mode),
 		icon: adjust(color, mode, ICON_TARGET),
 		text: adjust(color, mode, TEXT_TARGET[mode]),
@@ -129,10 +134,9 @@ export function resolveTint(subject: TintSubject, mode: ResolvedTheme): Tint {
 			return muted({ icon: CircleDashedIcon }, mode);
 		case "merchant": {
 			const letter = initialOf(subject.name);
+			const glyph = letter === undefined ? { icon: CircleDashedIcon } : { letter };
 
-			return letter === undefined
-				? muted({ icon: CircleDashedIcon }, mode)
-				: muted({ letter }, mode);
+			return subject.color === undefined ? muted(glyph, mode) : colored(subject.color, glyph, mode);
 		}
 		case "goal": {
 			if (subject.icon !== null) {
