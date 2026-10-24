@@ -334,7 +334,7 @@ development_status:
   32-9-confirm-a-rule-before-it-runs-sort-the-list-apply-every-rule: done
   32-10-run-rules-over-the-history-after-each-sync-and-list-every-run: done
   32-11-offer-a-rule-after-categorising: done
-  32-12-categorise-uncategorised-lines-in-groups: backlog
+  32-12-categorise-uncategorised-lines-in-groups: done
   32-13-delete-every-rule: backlog
   epic-32-retrospective: optional
 

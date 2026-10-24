@@ -192,6 +192,17 @@ export const queryKeys = {
 		 * of the cross-account list, and the other way round.
 		 */
 		all: ["transactions"] as const,
+		/**
+		 * The quick-categorise wizard, under `all` so a write elsewhere refreshes
+		 * it; its own categorisation refreshes the rest only, keeping the group
+		 * shown, as Sure's page removes the rows it categorised.
+		 */
+		categorize: ["transactions", "categorize"] as const,
+		/** Under `all`, not under `categorize`: the wizard's own write refreshes it. */
+		uncategorisedCount: ["transactions", "uncategorised-count"] as const,
+		categorizeStep: (position: number) => ["transactions", "categorize", position] as const,
+		categorizePreview: (filter: string, type: string) =>
+			["transactions", "categorize", "preview", filter, type] as const,
 		/** A page of the cross-account list under its filters. */
 		list: (filters: TransactionFilters, page: number) =>
 			["transactions", "list", filters, page] as const,

@@ -2049,6 +2049,24 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		expect(errorBody.parse(await prompt.json()).error.code).toBe("FORBIDDEN");
 	});
 
+	it("refuses a viewer's quick categorisation FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const { id: categoryId } = await createCategory(uniqueCategory("Courses"));
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const response = await viewer.request("/api/transactions/categorize", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ ids: [data.id], categoryId }),
+		});
+
+		expect(response.status).toBe(403);
+		expect(errorBody.parse(await response.json()).error.code).toBe("FORBIDDEN");
+		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
+	});
+
 	it("refuses a viewer's activity label FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
 		const account = await openAccount(pea);
 		const created = await postTransaction(account.id, dividend);
@@ -2208,5 +2226,214 @@ describe("GET /api/transactions/:id/rule-prompt", () => {
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
 
 		await expect(offered(data.id)).resolves.toBe(false);
+	});
+});
+
+/** The ids of the expense lines the wizard's rule text previews. */
+async function previewCategorize(filter: string) {
+	const response = await ownRequest(
+		"GET",
+		`/api/transactions/categorize/preview?type=expense&filter=${encodeURIComponent(filter)}`,
+	);
+	expect(response.status).toBe(200);
+
+	return z
+		.object({ data: z.object({ lines: z.array(z.object({ id: z.string() })) }) })
+		.parse(response.body)
+		.data.lines.map((item) => item.id);
+}
+
+/** Posts `label` at `amount` on `date`, in the account of the test's own database. */
+const line = (accountId: string, label: string, amount = "-15,99", date = "2026-09-10") =>
+	postOwn(accountId, { date, label, amount });
+
+// Story 32.12: Sure's `Transactions::CategorizesController`, each test in its own database.
+describe("the quick-categorise wizard", () => {
+	const stepBody = z.object({
+		data: z.object({
+			remaining: z.number(),
+			group: z
+				.object({
+					name: z.string(),
+					type: z.enum(["income", "expense"]),
+					merchantId: z.string().nullable(),
+					lines: z.array(z.object({ id: z.string(), label: z.string(), amount: z.number() })),
+				})
+				.nullable(),
+		}),
+	});
+	const resultBody = z.object({
+		data: z.object({
+			updated: z.number(),
+			remaining: z.number(),
+			rule: z.enum(["created", "failed"]).nullable(),
+		}),
+	});
+
+	const step = async (position = 0) => {
+		const response = await ownRequest("GET", `/api/transactions/categorize?position=${position}`);
+		expect(response.status).toBe(200);
+
+		return stepBody.parse(response.body).data;
+	};
+
+	const categorizeOwn = async (body: unknown) => {
+		const response = await ownRequest("POST", "/api/transactions/categorize", body);
+		expect(response.status, JSON.stringify(response.body)).toBe(200);
+
+		return resultBody.parse(response.body).data;
+	};
+
+	it("shows the largest group first, then by name, each sign apart, and counts every line", async () => {
+		const account = await openOwn();
+		await line(account.id, "Spotify", "-9,99");
+		const older = await line(account.id, "Netflix", "-15,99", "2026-09-01");
+		const newer = await line(account.id, "Netflix", "-15,99", "2026-09-12");
+		await line(account.id, "Netflix", "15,99");
+		await line(account.id, "Spotify", "-9,99");
+		await line(account.id, "Netflix", "-15,99", "2026-09-05");
+
+		const first = await step();
+		const groups = await Promise.all([1, 2, 3].map((position) => step(position)));
+
+		expect(first.remaining).toBe(6);
+		expect(first.group).toMatchObject({ name: "Netflix", type: "expense", merchantId: null });
+		expect(first.group?.lines.map((item) => item.id)).toEqual([newer, expect.any(String), older]);
+		expect(
+			groups.map(({ group }) => group && [group.name, group.type, group.lines.length]),
+		).toEqual([["Spotify", "expense", 2], ["Netflix", "income", 1], null]);
+	});
+
+	it("groups by merchant, and leaves out categorised, excluded lines and split parents", async () => {
+		const account = await openOwn();
+		const merchant = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse((await ownRequest("POST", "/api/merchants", { name: "Amazon" })).body).data.id;
+		const food = await ownCategory("Courses");
+		const amazon = await Promise.all(
+			["CB AMZN 1", "CB AMZN 2"].map((label) => line(account.id, label)),
+		);
+		const linked = await Promise.all(
+			amazon.map((id) => ownRequest("PATCH", `/api/transactions/${id}`, { merchantId: merchant })),
+		);
+		expect(linked.map((response) => response.status)).toEqual([200, 200]);
+		const done = await line(account.id, "Boulangerie");
+		await ownRequest("PATCH", `/api/transactions/${done}`, { categoryId: food });
+		const excluded = await line(account.id, "Retrait");
+		await ownRequest("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+		const parent = await line(account.id, "HYPER", "-100,00");
+		const split = await ownRequest("POST", `/api/transactions/${parent}/split`, {
+			lines: [
+				{ label: "Fruits", amount: "-60,00", categoryId: food },
+				{ label: "Savon", amount: "-40,00", categoryId: null },
+			],
+		});
+		expect(split.status).toBe(201);
+
+		const first = await step();
+		const second = await step(1);
+
+		expect(first.remaining).toBe(3);
+		await expect(ownRequest("GET", "/api/transactions/categorize/count")).resolves.toEqual({
+			status: 200,
+			body: { data: { remaining: 3 } },
+		});
+		expect(first.group).toMatchObject({ name: "Amazon", merchantId: merchant });
+		expect(first.group?.lines.map((item) => item.label).toSorted()).toEqual([
+			"CB AMZN 1",
+			"CB AMZN 2",
+		]);
+		expect(second.group?.lines.map((item) => item.label)).toEqual(["Savon"]);
+		await expect(step(2)).resolves.toMatchObject({ group: null });
+	});
+
+	it("categorises the ticked lines of a group as a hand edit, the others left", async () => {
+		const account = await openOwn();
+		const ids = await Promise.all(
+			["Netflix", "Netflix", "Netflix"].map((label) => line(account.id, label)),
+		);
+		const food = await ownCategory("Abonnements");
+
+		const result = await categorizeOwn({ ids: ids.slice(0, 2), categoryId: food });
+
+		expect(result).toEqual({ updated: 2, remaining: 1, rule: null });
+		await expect(step()).resolves.toMatchObject({
+			remaining: 1,
+			group: { name: "Netflix", lines: [{ id: ids[2] }] },
+		});
+		const locked = await own?.db.all<{ category: string | null; locks: string }>(
+			sql`select category_id as category, locked_fields as locks from transactions where entry_id in (${ids[0]}, ${ids[1]})`,
+		);
+		expect(
+			locked?.map((row) => [
+				row.category,
+				Object.keys(z.record(z.string(), z.unknown()).parse(JSON.parse(row.locks))),
+			]),
+		).toEqual([
+			[food, expect.arrayContaining(["category"])],
+			[food, expect.arrayContaining(["category"])],
+		]);
+	});
+
+	it("creates Sure's enabled rule from the group, and refuses the same rule again", async () => {
+		const account = await openOwn();
+		const ids = await Promise.all(["Netflix", "Netflix"].map((label) => line(account.id, label)));
+		const twin = await line(account.id, "Netflix");
+		const food = await ownCategory("Abonnements");
+
+		const created = await categorizeOwn({
+			ids,
+			categoryId: food,
+			rule: { name: "Netflix", type: "expense" },
+		});
+		const again = await categorizeOwn({
+			ids: [twin],
+			categoryId: food,
+			rule: { name: "Netflix", type: "expense" },
+		});
+
+		expect(created.rule).toBe("created");
+		expect(again).toEqual({ updated: 1, remaining: 0, rule: "failed" });
+		const rules = await ownRequest("GET", "/api/rules");
+		expect(rules.body).toMatchObject({
+			data: [
+				{
+					name: "Netflix",
+					enabled: true,
+					conditions: [
+						{ conditionType: "transaction_name", operator: "like", value: "Netflix" },
+						{ conditionType: "transaction_type", operator: "=", value: "expense" },
+					],
+					actions: [{ actionType: "set_transaction_category", value: food }],
+				},
+			],
+		});
+		expect(z.object({ data: z.array(z.unknown()) }).parse(rules.body).data).toHaveLength(1);
+	});
+
+	it("says the rule failed when its text passes a condition's 200 characters, the lines still categorised", async () => {
+		const account = await openOwn();
+		const id = await line(account.id, "Netflix");
+		const food = await ownCategory("Abonnements");
+
+		const result = await categorizeOwn({
+			ids: [id],
+			categoryId: food,
+			rule: { name: "N".repeat(201), type: "expense" },
+		});
+
+		expect(result).toEqual({ updated: 1, remaining: 0, rule: "failed" });
+	});
+
+	it("previews the uncategorised lines of the sign whose label contains the filter", async () => {
+		const account = await openOwn();
+		const prime = await line(account.id, "Amazon  Prime");
+		const music = await line(account.id, "AMAZON Music", "-9,99", "2026-09-11");
+		await line(account.id, "Amazon remboursement", "20,00");
+		await line(account.id, "Starbucks");
+
+		await expect(previewCategorize("amazon prime")).resolves.toEqual([prime]);
+		await expect(previewCategorize("amazon")).resolves.toEqual([music, prime]);
+		await expect(previewCategorize("  ")).resolves.toEqual([]);
 	});
 });

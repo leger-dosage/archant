@@ -11,6 +11,9 @@ import { convertTradeBodySchema } from "../schemas/trades.ts";
 import {
 	bulkDeleteBodySchema,
 	bulkUpdateBodySchema,
+	categorizeBodySchema,
+	categorizePreviewSchema,
+	categorizeQuerySchema,
 	mergeDuplicateBodySchema,
 	pendingMergeCandidatesSchema,
 	splitBodySchema,
@@ -18,6 +21,12 @@ import {
 	transactionPatchBodySchema,
 	transactionTotalsSchema,
 } from "../schemas/transactions.ts";
+import {
+	categorize,
+	categorizeStep,
+	previewCategorize,
+	uncategorisedCount,
+} from "../services/categorise.ts";
 import { getPreferences } from "../services/preferences.ts";
 import { offersRulePrompt } from "../services/rule-prompt.ts";
 import {
@@ -86,6 +95,17 @@ export function transactionsRoutes(deps: ServiceDeps) {
 			// filter is not a resource path, and a DELETE body is often dropped.
 			.post("/bulk-update", validated("json", bulkUpdateBodySchema), async (c) =>
 				c.json({ data: await bulkUpdateTransactions(deps, c.req.valid("json")) }, 200),
+			)
+			// Sure's quick-categorise wizard, before `/:id`.
+			.get("/categorize", validated("query", categorizeQuerySchema), async (c) =>
+				c.json({ data: await categorizeStep(deps, c.req.valid("query").position) }, 200),
+			)
+			.get("/categorize/count", async (c) => c.json({ data: await uncategorisedCount(deps) }, 200))
+			.get("/categorize/preview", validated("query", categorizePreviewSchema), async (c) =>
+				c.json({ data: { lines: await previewCategorize(deps, c.req.valid("query")) } }, 200),
+			)
+			.post("/categorize", validated("json", categorizeBodySchema), async (c) =>
+				c.json({ data: await categorize(deps, c.req.valid("json")) }, 200),
 			)
 			.post("/bulk-delete", validated("json", bulkDeleteBodySchema), async (c) =>
 				c.json({ data: await bulkDeleteTransactions(deps, c.req.valid("json")) }, 200),

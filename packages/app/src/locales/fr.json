@@ -856,7 +856,49 @@
 			"deleteDescription_other": "Les {{count}} opérations sélectionnées seront supprimées définitivement, et le solde de leurs comptes recalculé sans elles.",
 			"deleteTransactions_one": "Supprimer {{count}} opération",
 			"deleteTransactions_other": "Supprimer {{count}} opérations"
-		}
+		},
+		"categorize_one": "Catégoriser ({{count}})",
+		"categorize_other": "Catégoriser ({{count}})"
+	},
+	"categorize": {
+		"title": "Catégoriser",
+		"remaining_one": "{{count}} opération non catégorisée restante",
+		"remaining_other": "{{count}} opérations non catégorisées restantes",
+		"allDone": "Toutes les opérations sont catégorisées",
+		"skip": "Ignorer",
+		"exit": "Quitter",
+		"lineCount_one": "{{count}} opération",
+		"lineCount_other": "{{count}} opérations",
+		"types": {
+			"expense": "Dépense",
+			"income": "Revenu"
+		},
+		"typesLower": {
+			"expense": "dépense",
+			"income": "revenu"
+		},
+		"createRule": "Créer une règle de catégorisation",
+		"ruleDescriptionPrefix": "Les futures opérations de type {{type}} dont le libellé contient",
+		"ruleDescriptionSuffix": "devraient également recevoir cette catégorie.",
+		"editFilter": "Modifier le texte de la règle",
+		"filterLabel": "Texte de la règle",
+		"confirmFilter": "Valider le texte",
+		"linesHint": "Décochez pour exclure une opération, ou assignez-lui une catégorie différente directement dans sa ligne.",
+		"linesLabel": "Opérations du groupe",
+		"columns": {
+			"label": "Opération",
+			"date": "Date",
+			"amount": "Montant",
+			"category": "Catégorie"
+		},
+		"include": "Inclure {{name}}",
+		"assignLine": "Assigner une catégorie pour {{name}}",
+		"assignPrompt": "→ assigner",
+		"assign": "Assigner une catégorie",
+		"searchCategories": "Rechercher des catégories…",
+		"noCategories": "Aucune catégorie correspondante",
+		"noLines": "Aucune opération non catégorisée ne contient ce texte.",
+		"ruleFailed": "Opérations catégorisées, mais la règle n'a pas pu être créée (elle existe peut-être déjà)."
 	},
 	"snapshots": {
 		"add": "Ajouter un solde",
