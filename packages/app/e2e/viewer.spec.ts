@@ -665,7 +665,7 @@ reader.describe("a viewer", () => {
 		await expect(row).toContainText("Désactivée");
 		await expect(page.getByRole("switch")).toHaveCount(0);
 		await expectNone(page, [
-			{ role: "button", name: "Appliquer toutes les règles" },
+			{ role: "button", name: "Appliquer tout" },
 			{ role: "button", name: "Ajouter une règle" },
 			{ role: "button", name: `Actions pour ${prefix} règle` },
 		]);

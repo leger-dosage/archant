@@ -2688,8 +2688,14 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Elle ne touche les opérations existantes que si vous l'appliquez. Les règles s'appliquent dans l'ordre de la liste et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
-		"list": "Ordre d'application",
+		"description": "Une règle complète les nouvelles opérations à leur arrivée, saisies ou importées : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l'ordre de leur création, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
+		"list": "Règles",
+		"sort": {
+			"label": "Trier par :",
+			"name": "Nom",
+			"updatedAt": "Mis à jour à",
+			"toggle": "Changer le sens du tri"
+		},
 		"empty": {
 			"title": "Aucune règle pour l'instant",
 			"description": "Une règle complète les nouvelles opérations à leur arrivée : catégorie, marchand, étiquette ou libellé."
@@ -2821,15 +2827,19 @@
 			"saved": "Règle enregistrée."
 		},
 		"apply": {
-			"one": "Appliquer aux opérations existantes",
-			"all": "Appliquer toutes les règles",
-			"count_one": "{{count}} opération sera modifiée",
-			"count_other": "{{count}} opérations seront modifiées",
-			"nothing": "Aucune opération ne sera modifiée",
-			"description": "Appliquer « {{name}} » aux opérations existantes. Un champ modifié à la main n'est jamais remplacé.",
-			"descriptionAll": "Appliquer les règles activées aux opérations existantes, dans l'ordre de la liste. Un champ modifié à la main n'est jamais remplacé.",
-			"confirm": "Appliquer",
-			"later": "Plus tard",
+			"one": "Réappliquer la règle",
+			"all": "Appliquer tout",
+			"title": "Confirmer les modifications",
+			"titleNamed": "Confirmez les modifications apportées à « {{name}} »",
+			"description_one": "Vous êtes sur le point d'appliquer cette règle à {{count}} opération qui répond à ses critères. Un champ modifié à la main n'est jamais remplacé.",
+			"description_other": "Vous êtes sur le point d'appliquer cette règle aux {{count}} opérations qui répondent à ses critères. Un champ modifié à la main n'est jamais remplacé.",
+			"confirm": "Confirmer les modifications",
+			"allTitle": "Appliquer toutes les règles",
+			"allDescription_one": "Vous êtes sur le point d'appliquer {{count}} règle affectant {{rows}}. Un champ modifié à la main n'est jamais remplacé.",
+			"allDescription_other": "Vous êtes sur le point d'appliquer {{count}} règles affectant {{rows}}, dans l'ordre de leur création. Un champ modifié à la main n'est jamais remplacé.",
+			"uniqueRows_one": "{{count}} opération unique",
+			"uniqueRows_other": "{{count}} opérations uniques",
+			"allConfirm": "Confirmer et appliquer tout",
 			"done_one": "{{count}} opération modifiée.",
 			"done_other": "{{count}} opérations modifiées.",
 			"doneNothing": "Aucune opération modifiée."

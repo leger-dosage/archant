@@ -92,7 +92,7 @@ export const queryKeys = {
 		all: ["rules"] as const,
 		/** Under `all`: every write to the rules, an application included, refreshes the runs. */
 		runs: (page: number) => ["rules", "runs", page] as const,
-		/** Under `all`, one rule's or, for `null`, every enabled rule's count. */
+		/** Under `all`, one rule's or, for `null`, every rule's count. */
 		preview: (ruleId: string | null) => ["rules", "preview", ruleId] as const,
 	},
 	/**

@@ -228,6 +228,7 @@ async function household() {
 
 	await created("/api/rules", {
 		name: "Boulangerie",
+		enabled: true,
 		conditions: [
 			{ conditionType: "transaction_name", operator: "like", value: "BOULANGERIE" },
 			{ conditionType: "transaction_amount", operator: ">", value: "10,50" },

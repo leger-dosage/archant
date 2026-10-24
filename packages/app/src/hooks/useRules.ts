@@ -70,9 +70,9 @@ export function useDeleteRule() {
 }
 
 /**
- * Returns a function that reads how many transactions applying the rule
- * `ruleId`, or every enabled rule for `null`, would change. Read afresh on
- * each call: the count is what the confirmation states.
+ * Returns a function that reads how many transactions the rule `ruleId`, or
+ * every rule for `null`, matches and would change. Read afresh on each call:
+ * the count is what the confirmation states.
  */
 export function useFetchRulePreview() {
 	const queryClient = useQueryClient();
@@ -93,9 +93,9 @@ export function useFetchRulePreview() {
 }
 
 /**
- * Applies the rule `ruleId`, or every enabled rule for `null`, to existing
- * transactions. Every list, count and balance a bulk edit refreshes goes
- * stale, and the rules with their runs.
+ * Applies the rule `ruleId`, enabling it, or every rule for `null`, enabling
+ * none, to existing transactions. Every list, count and balance a bulk edit
+ * refreshes goes stale, and the rules with their runs.
  */
 export function useApplyRules() {
 	const queryClient = useQueryClient();

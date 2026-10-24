@@ -2105,7 +2105,7 @@ describe("writing rules", () => {
 		expect(Object.keys(created.structuredContent ?? {})).toEqual(["success", "rule", "message"]);
 		expect(created.structuredContent).toMatchObject({
 			success: true,
-			rule: { enabled: true, name: "FLOW1" },
+			rule: { enabled: false, name: "FLOW1" },
 			message: "Rule 'FLOW1' created.",
 		});
 		expect(Object.keys(applied.structuredContent ?? {})).toEqual([
@@ -2372,7 +2372,7 @@ describe("writing rules", () => {
 			],
 		};
 
-		expect(created).toEqual({ id: created.id, enabled: true, effective_date: null, ...read });
+		expect(created).toEqual({ id: created.id, enabled: false, effective_date: null, ...read });
 
 		const page = z
 			.object({

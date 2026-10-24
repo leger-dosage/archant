@@ -506,6 +506,7 @@ describe("pending transactions", () => {
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
 		const category = await newCategory("Boulangerie");
 		const rule = await createRule(deps(), {
+			enabled: true,
 			effectiveDate: null,
 			conditions: [labelLike("boulangerie")],
 			actions: [{ actionType: "set_transaction_category", value: category }],

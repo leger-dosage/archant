@@ -242,7 +242,7 @@ export const setRuleEnabledInput = z.strictObject({
 	enabled: z.boolean().describe("false stops the rule; what it wrote stays."),
 });
 
-/** `preview_rule`: a saved rule, a draft, or every enabled rule when neither is given. */
+/** `preview_rule`: a saved rule, a draft, or every rule when neither is given. */
 export const previewRuleInput = z
 	.strictObject({
 		rule_id: ruleId.optional(),
@@ -257,7 +257,9 @@ export const previewRuleInput = z
 export const applyRulesInput = z.strictObject({
 	rule_id: ruleId
 		.optional()
-		.describe("The rule to apply, enabled or not; absent for every enabled rule."),
+		.describe(
+			"The rule to apply, enabled by it if it was not; absent for every rule, disabled ones included, none enabled.",
+		),
 	expected_changed: z
 		.number()
 		.int()

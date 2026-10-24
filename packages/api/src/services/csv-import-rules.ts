@@ -12,7 +12,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { ruleSchema } from "../schemas/rules.ts";
 import { columnOf, csvIssue } from "./csv-import-format.ts";
 import { oneByOne } from "./ledger/shared.ts";
-import { createRule, listRules, setRuleEnabled, updateRule } from "./rules.ts";
+import { createRule, listRules, updateRule } from "./rules.ts";
 import { createMissing, ruleInputOf, taxonomyOf } from "./sure-rules.ts";
 
 // Sure's `RuleImport` at 00dd977fb: a row per rule, its conditions and
@@ -379,15 +379,12 @@ async function writeRules(tx: Transaction, deps: ServiceDeps, read: readonly Rea
 		// A replacement in the label has no place in Sure's file: an update keeps the rule's own.
 		const saved =
 			found === undefined
-				? await createRule(scoped, input)
+				? await createRule(scoped, { ...input, enabled: active })
 				: await updateRule(scoped, found.id, {
 						...input,
+						enabled: active,
 						actions: [...input.actions, ...replacementsOf(found)],
 					});
-
-		if (saved.enabled !== active) {
-			await setRuleEnabled(scoped, saved.id, { enabled: active });
-		}
 
 		if (saved.name === null) {
 			byKey.set(ruleKey(saved), { ...saved, enabled: active });

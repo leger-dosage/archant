@@ -90,14 +90,15 @@ const grouped: RuleInput = {
 };
 
 describe("createRule", () => {
-	it("stores the rule enabled, trims values and keeps the amount as decimal text", async () => {
+	it("stores the rule disabled, as Sure's `rules.active`, trims values and keeps the amount as decimal text", async () => {
 		const rule = await createRule(deps(), grouped);
 
 		expect(rule).toEqual({
 			id: rule.id,
 			name: "Courses du samedi",
-			enabled: true,
+			enabled: false,
 			effectiveDate: "2026-09-01",
+			updatedAt: rule.updatedAt,
 			conditions: [
 				{ conditionType: "transaction_account", operator: "=", value: "a1", conditions: [] },
 				{
@@ -282,8 +283,7 @@ describe("listRules", () => {
 
 describe("updateRule", () => {
 	it("replaces the name, start date, conditions and actions, keeping the switch", async () => {
-		const rule = await createRule(deps(), grouped);
-		await setRuleEnabled(deps(), rule.id, { enabled: false });
+		const rule = await createRule(deps(), { ...grouped, enabled: true });
 
 		const updated = await updateRule(deps(), rule.id, {
 			conditions: [{ conditionType: "transaction_name", operator: "=", value: "Loyer" }],
@@ -293,8 +293,9 @@ describe("updateRule", () => {
 		expect(updated).toEqual({
 			id: rule.id,
 			name: null,
-			enabled: false,
+			enabled: true,
 			effectiveDate: null,
+			updatedAt: updated.updatedAt,
 			conditions: [
 				{ conditionType: "transaction_name", operator: "=", value: "Loyer", conditions: [] },
 			],
@@ -303,6 +304,14 @@ describe("updateRule", () => {
 		await expect(
 			temp.db.all(sql`select count(*) as count from rule_conditions where rule_id = ${rule.id}`),
 		).resolves.toEqual([{ count: 1 }]);
+	});
+
+	it("sets the switch when the body names it, as Sure's `rule_params` permits `active`", async () => {
+		const rule = await createRule(deps(), { ...grouped, enabled: true });
+
+		await expect(
+			updateRule(deps(), rule.id, { ...grouped, enabled: false }),
+		).resolves.toMatchObject({ enabled: false });
 	});
 
 	it("answers NOT_FOUND for an unknown rule, on every write", async () => {
@@ -329,14 +338,14 @@ describe("deleteRule", () => {
 
 describe("loadEnabledRules", () => {
 	it("gives nothing without an enabled rule", async () => {
-		const rule = await createRule(deps(), grouped);
+		const rule = await createRule(deps(), { ...grouped, enabled: true });
 		await setRuleEnabled(deps(), rule.id, { enabled: false });
 
 		await expect(loadEnabledRules(temp.db)).resolves.toEqual([]);
 	});
 
 	it("reads the enabled rules for the evaluator, groups included", async () => {
-		const rule = await createRule(deps(), grouped);
+		const rule = await createRule(deps(), { ...grouped, enabled: true });
 
 		await expect(loadEnabledRules(temp.db)).resolves.toEqual([
 			{
@@ -360,6 +369,7 @@ describe("loadEnabledRules", () => {
 
 	it("gives a deleted account or category as null", async () => {
 		const rule = await createRule(deps(), {
+			enabled: true,
 			conditions: [{ conditionType: "transaction_account", operator: "=", value: "a2" }],
 			actions: [action("loisirs")],
 		});
@@ -379,6 +389,7 @@ describe("loadEnabledRules", () => {
 
 	it("stores a valueless operator without its value, and reads Sure's negative operators", async () => {
 		const rule = await createRule(deps(), {
+			enabled: true,
 			conditions: [
 				{ conditionType: "transaction_notes", operator: "is_not_null", value: "ignored" },
 				{ conditionType: "transaction_name", operator: "not_like", value: " carte " },
@@ -411,7 +422,7 @@ describe("loadEnabledRules", () => {
 	});
 
 	it("reads Story 8.2's conditions and actions for the evaluator", async () => {
-		const rule = await createRule(deps(), everyKind);
+		const rule = await createRule(deps(), { ...everyKind, enabled: true });
 
 		await expect(loadEnabledRules(temp.db)).resolves.toEqual([
 			{
@@ -438,6 +449,7 @@ describe("loadEnabledRules", () => {
 
 	it("gives a deleted merchant, category, tag or account as null", async () => {
 		const rule = await createRule(deps(), {
+			enabled: true,
 			conditions: [
 				{ conditionType: "transaction_merchant", operator: "=", value: "amazon" },
 				{ conditionType: "transaction_category", operator: "=", value: "courses" },
@@ -465,6 +477,7 @@ describe("loadEnabledRules", () => {
 
 	it("keeps a tag action's tags still there, in order, and none when all are gone", async () => {
 		await createRule(deps(), {
+			enabled: true,
 			conditions: [],
 			actions: [{ actionType: "set_transaction_tags", value: "achats" }],
 		});
@@ -483,6 +496,7 @@ describe("loadEnabledRules", () => {
 
 	it("refuses an action other than an exclusion stored without a value", async () => {
 		await createRule(deps(), {
+			enabled: true,
 			conditions: [],
 			actions: [{ actionType: "set_transaction_name", value: "Amazon" }],
 		});
@@ -493,6 +507,7 @@ describe("loadEnabledRules", () => {
 
 	it("refuses a type stored with a value that is no direction", async () => {
 		const rule = await createRule(deps(), {
+			enabled: true,
 			conditions: [{ conditionType: "transaction_type", operator: "=", value: "income" }],
 			actions: [action()],
 		});
@@ -506,6 +521,7 @@ describe("loadEnabledRules", () => {
 
 	it("refuses a condition stored in a shape the schema never writes", async () => {
 		const rule = await createRule(deps(), {
+			enabled: true,
 			conditions: [{ conditionType: "compound", operator: "and", conditions: [] }],
 			actions: [action()],
 		});
@@ -638,7 +654,9 @@ describe("previewRules and applyRules", () => {
 			actions: [action()],
 		});
 
-		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ changed: 3 });
+		// The confirmation counts every match, the locked row and the one already set
+		// included, as Sure's `affected_resource_count`; the application changes 3.
+		await expect(previewRules(deps(), rule.id)).resolves.toMatchObject({ matched: 5, changed: 3 });
 		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
 			total: 0,
 		});
@@ -719,7 +737,7 @@ describe("previewRules and applyRules", () => {
 		]);
 	});
 
-	it("apply a disabled rule from its own menu, leaving its switch off", async () => {
+	it("apply a disabled rule from « Réappliquer la règle », enabling it as Sure's `rules#apply`", async () => {
 		const [id = ""] = await rowsOf(["CB COMPTE2"]);
 		const rule = await createRule(deps(), {
 			conditions: [labelHas("compte2")],
@@ -732,10 +750,10 @@ describe("previewRules and applyRules", () => {
 			runs: [{ changedCount: 1 }],
 		});
 		await expect(candidatesOf([id])).resolves.toMatchObject([{ categoryId: "courses" }]);
-		await expect(listRules(deps())).resolves.toMatchObject([{ enabled: false }]);
+		await expect(listRules(deps())).resolves.toMatchObject([{ enabled: true }]);
 	});
 
-	it("apply every enabled rule in order, each seeing the earlier ones, one run each", async () => {
+	it("apply every rule in order, a disabled one included and left so, each seeing the earlier ones", async () => {
 		const [id = "", untouched = ""] = await rowsOf(["AMZN COMPTE3", "COMPTE3 LOYER"]);
 		const merchant = await laterRule({
 			conditions: [labelHas("amzn compte3")],
@@ -746,21 +764,29 @@ describe("previewRules and applyRules", () => {
 			actions: [{ actionType: "set_transaction_tags", value: "achats" }],
 		});
 		const disabled = await laterRule({ conditions: [labelHas("compte3")], actions: [action()] });
-		await setRuleEnabled(deps(), disabled.id, { enabled: false });
+		await setRuleEnabled(deps(), merchant.id, { enabled: true });
 
-		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 1 });
+		// Sure's `total_affected_resource_count`: two distinct rows, the first matched by all three.
+		await expect(previewRules(deps())).resolves.toMatchObject({ matched: 2, changed: 2 });
 
 		const { changed, runs } = await applyRules(deps());
 
-		// One row, changed by both rules: counted once overall, once per run.
-		expect(changed).toBe(1);
+		// Rows changed by several rules count once overall, once per run.
+		expect(changed).toBe(2);
 		expect(runs).toMatchObject([
 			{ ruleId: merchant.id, matchedCount: 1, changedCount: 1, position: 0 },
 			{ ruleId: tag.id, matchedCount: 1, changedCount: 1, position: 1 },
+			{ ruleId: disabled.id, matchedCount: 2, changedCount: 2, position: 2 },
 		]);
 		await expect(candidatesOf([id, untouched])).resolves.toMatchObject([
-			{ merchantId: "amazon", tagIds: ["achats"], categoryId: null },
-			{ merchantId: null, tagIds: [], categoryId: null },
+			{ merchantId: "amazon", tagIds: ["achats"], categoryId: "courses" },
+			{ merchantId: null, tagIds: [], categoryId: "courses" },
+		]);
+		// « Appliquer tout » enables none, as `ApplyAllRulesJob`.
+		await expect(listRules(deps())).resolves.toMatchObject([
+			{ enabled: true },
+			{ enabled: false },
+			{ enabled: false },
 		]);
 	});
 
@@ -821,10 +847,7 @@ describe("previewRules and applyRules", () => {
 		]);
 	});
 
-	it("count nothing and record no run without an enabled rule", async () => {
-		const rule = await createRule(deps(), { conditions: [], actions: [action()] });
-		await setRuleEnabled(deps(), rule.id, { enabled: false });
-
+	it("count nothing and record no run without a rule", async () => {
 		await expect(previewRules(deps())).resolves.toMatchObject({ changed: 0 });
 		await expect(applyRules(deps())).resolves.toEqual({ changed: 0, runs: [] });
 		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
@@ -991,6 +1014,8 @@ describe("applyRules with the count a preview gave", () => {
 		await expect(listRuleRuns(deps(), { page: 1, pageSize: 10 })).resolves.toMatchObject({
 			total: 0,
 		});
+		// The refusal rolls the confirmation back: the rule stays off.
+		await expect(listRules(deps())).resolves.toMatchObject([{ enabled: false }]);
 
 		await expect(applyRules(deps(), rule.id, 4)).resolves.toMatchObject({ changed: 4 });
 	});
@@ -1049,6 +1074,7 @@ describe("listRuleRuns' order within one application", () => {
 // Story 8.4: replace in the label.
 const replacing = (value: string | null | undefined, replacement?: string | null) =>
 	({
+		enabled: true,
 		conditions: [],
 		actions: [{ actionType: "replace_in_transaction_name", value, replacement }],
 	}) satisfies RuleInput;

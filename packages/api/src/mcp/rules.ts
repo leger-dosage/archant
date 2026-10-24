@@ -374,7 +374,7 @@ function merged(a: NameBook, b: NameBook): NameBook {
 export const previewRule = defineTool({
 	name: "preview_rule",
 	title: "Preview a rule",
-	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every enabled rule when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each as get_transactions lists it with each changed field's current and new value, by name. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
+	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every rule, disabled ones included, when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each as get_transactions lists it with each changed field's current and new value, by name. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: previewRuleInput,
@@ -446,7 +446,7 @@ const WRITES_RULES =
 export const createRuleTool = defineTool({
 	name: "create_rule",
 	title: "Create a rule",
-	description: `Saves a rule, enabled at once: it applies to every new transaction from then on, as one saved in Archant does, and to existing ones only through apply_rules. Preview it as a draft first. ${WRITES_RULES} ${BANK_TEXT}`,
+	description: `Saves a rule, disabled, as one saved in Archant until the owner confirms it: apply_rules with its rule_id enables it and applies it to existing transactions, as « Confirmer les modifications » does, and set_rule_enabled enables it for new transactions only. Preview it as a draft first. ${WRITES_RULES} ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: ruleToolInput,
@@ -524,7 +524,7 @@ export const deleteRuleTool = defineTool({
 export const applyRulesTool = defineTool({
 	name: "apply_rules",
 	title: "Apply rules to existing transactions",
-	description: `Applies a rule, enabled or not, or every enabled rule in order, to existing transactions, as « Appliquer » does in Archant, and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change. ${BANK_TEXT}`,
+	description: `Applies a rule to existing transactions and enables it, as « Confirmer les modifications » does in Archant, or every rule in order, disabled ones included and none enabled, as « Confirmer et appliquer tout », and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: applyRulesInput,

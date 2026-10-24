@@ -239,6 +239,7 @@ describe("create_transaction", () => {
 		const account = await checking();
 		const market = await ownCategory("Marché");
 		await sendOwn("POST", "/api/rules", {
+			enabled: true,
 			conditions: [{ conditionType: "transaction_name", operator: "like", value: "marché" }],
 			actions: [{ actionType: "set_transaction_category", value: market }],
 		});

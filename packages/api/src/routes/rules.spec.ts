@@ -113,15 +113,19 @@ describe("rules", () => {
 		}),
 	});
 
-	async function createRule(body: unknown) {
-		const { status, body: created } = await request("POST", "/api/rules", body);
+	/** Creates a rule enabled at once, as a confirmed one: these tests run it on new lines. */
+	async function createRule(body: object) {
+		const { status, body: created } = await request("POST", "/api/rules", {
+			enabled: true,
+			...body,
+		});
 
 		expect(status).toBe(201);
 
 		return ruleBody.parse(created).data;
 	}
 
-	it("creates, lists, replaces, switches off and deletes a rule", async () => {
+	it("creates a rule disabled, lists, replaces, switches on and deletes it", async () => {
 		const groceries = await createCategory(uniqueCategory("Courses"));
 		const leisure = await createCategory(uniqueCategory("Loisirs"));
 		const client = testClient(buildApp()).api.rules;
@@ -129,11 +133,13 @@ describe("rules", () => {
 		const created = await client.$post({ json: labelRule("carrefour", groceries.id) });
 		expect(created.status).toBe(201);
 		const { data: rule } = await created.json();
+		// Sure's `rules.active` defaults to false: the owner confirms it first.
 		expect(rule).toEqual({
 			id: rule.id,
 			name: null,
-			enabled: true,
+			enabled: false,
 			effectiveDate: null,
+			updatedAt: rule.updatedAt,
 			conditions: [
 				{ conditionType: "transaction_name", operator: "like", value: "carrefour", conditions: [] },
 			],
@@ -159,9 +165,9 @@ describe("rules", () => {
 
 		const switched = await client[":id"].$patch({
 			param: { id: rule.id },
-			json: { enabled: false },
+			json: { enabled: true },
 		});
-		expect((await switched.json()).data.enabled).toBe(false);
+		expect((await switched.json()).data.enabled).toBe(true);
 
 		const list = await client.$get();
 		expect((await list.json()).data.map((item) => item.id)).toEqual([rule.id]);
@@ -605,6 +611,7 @@ describe("rules", () => {
 		});
 		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
 		const { status, body } = await request("POST", "/api/rules", {
+			enabled: true,
 			conditions: [ruleLeaf("transaction_name", "like", "pizzeria")],
 			actions: [
 				{ actionType: "set_transaction_tags", value: ` ${trip.id} , ,${italy.id},${trip.id}` },
@@ -703,9 +710,19 @@ describe("rules", () => {
 		await temp.db.run(
 			sql`update transactions set category_id = ${groceries.id}, category_origin = 'rule' where entry_id = ${already}`,
 		);
-		const rule = await createRule({ name: "Courses", ...labelRule("orphee", groceries.id) });
+		// Saved as the form saves it: disabled until « Confirmer les modifications ».
+		const rule = await createRule({
+			name: "Courses",
+			enabled: undefined,
+			...labelRule("orphee", groceries.id),
+		});
+		expect(rule.enabled).toBe(false);
 
 		await expect(previewOf(`/api/rules/${rule.id}/preview`)).resolves.toBe(3);
+		// The dialog states every match, the locked line included, as `affected_resource_count`.
+		await expect(request("GET", `/api/rules/${rule.id}/preview`)).resolves.toMatchObject({
+			body: { data: { matched: 5 } },
+		});
 		const { status, body } = await request("POST", `/api/rules/${rule.id}/apply`);
 		expect(status).toBe(200);
 		expect(applicationBody.parse(body).data).toMatchObject({
@@ -723,6 +740,10 @@ describe("rules", () => {
 			sql`select (select json_group_array(key) from json_each(t.locked_fields)) as locked from transactions t join entries e on e.id = t.entry_id where e.account_id = ${account.id} and t.entry_id != ${locked}`,
 		);
 		expect(locks.every(({ locked: fields }) => !fields.includes("category"))).toBe(true);
+		// Confirmed, it runs on the lines to come, as Sure's `rules#apply` enables it.
+		await expect(request("GET", "/api/rules")).resolves.toMatchObject({
+			body: { data: [{ id: rule.id, enabled: true }] },
+		});
 	});
 
 	it("matches the bank's details on applying to history, a line typed by hand only on « Est vide »", async () => {
@@ -795,7 +816,7 @@ describe("rules", () => {
 		]);
 	});
 
-	it("applies every enabled rule in order, the later seeing the earlier's merchant, one run each", async () => {
+	it("applies every rule in order, a disabled one included and left so, as Sure's `ApplyAllRulesJob`", async () => {
 		const account = await openAccount();
 		const amazon = await createMerchant(uniqueCategory("Amazon"));
 		const purchases = await createTag(uniqueCategory("Achats"));
@@ -826,10 +847,14 @@ describe("rules", () => {
 		).toEqual([
 			{ ruleId: first.id, matchedCount: 1, changedCount: 1 },
 			{ ruleId: second.id, matchedCount: 1, changedCount: 1 },
+			{ ruleId: disabled.id, matchedCount: 1, changedCount: 1 },
 		]);
 		await expect(detailsOf(account.id)).resolves.toMatchObject([
-			{ merchant: amazon.id, tags: purchases.id, category: null },
+			{ merchant: amazon.id, tags: purchases.id, category: groceries.id },
 		]);
+		await expect(request("GET", "/api/rules")).resolves.toMatchObject({
+			body: { data: [{ enabled: true }, { enabled: true }, { enabled: false }] },
+		});
 	});
 
 	it("tags a row already in a transfer on « Type est Virement »", async () => {
@@ -917,12 +942,7 @@ describe("rules", () => {
 		).resolves.toEqual([{ inflow: near }]);
 	});
 
-	it("counts nothing and records no run without an enabled rule", async () => {
-		const rule = await createRule(
-			labelRule("pegase", (await createCategory(uniqueCategory("C"))).id),
-		);
-		await request("PATCH", `/api/rules/${rule.id}`, { enabled: false });
-
+	it("counts nothing and records no run without a rule", async () => {
 		await expect(previewOf("/api/rules/preview")).resolves.toBe(0);
 		await expect(applied("/api/rules/apply")).resolves.toEqual([]);
 		await expect(request("GET", "/api/rules/runs")).resolves.toMatchObject({
