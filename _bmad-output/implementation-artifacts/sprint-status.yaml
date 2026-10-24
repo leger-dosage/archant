@@ -311,14 +311,14 @@ development_status:
   30-9-reset-with-sample-data: done
   epic-30-retrospective: optional
 
-  epic-31: in-progress
+  epic-31: done
   31-1-filter-transactions-by-status-and-amount: done
   31-2-edit-several-transactions-at-once-as-sure: done
   31-3-split-lines-as-sure-shows-and-edits-them: done
   31-4-download-an-attachment: done
   31-5-create-a-transfer-between-two-accounts: done
   31-6-open-a-transfer-in-its-own-drawer: done
-  31-7-categorise-investment-contributions: backlog
+  31-7-categorise-investment-contributions: done
   31-8-edit-a-split-by-recreating-its-lines: done
   epic-31-retrospective: optional
 

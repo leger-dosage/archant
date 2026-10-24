@@ -81,6 +81,7 @@ export function useTransactionTotals(filters: TransactionFilters) {
 }
 
 export function useCreateTransaction(accountId: string) {
+	const queryClient = useQueryClient();
 	const invalidate = useInvalidateAccount(accountId);
 
 	return useMutation({
@@ -90,7 +91,13 @@ export function useCreateTransaction(accountId: string) {
 					api.accounts[":id"].transactions.$post({ param: { id: accountId }, json: input }),
 				)
 			).data,
-		onSuccess: invalidate,
+		// The matcher may pair the line as a contribution and create
+		// « Contributions aux investissements ».
+		onSuccess: () =>
+			Promise.all([
+				invalidate(),
+				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+			]),
 	});
 }
 

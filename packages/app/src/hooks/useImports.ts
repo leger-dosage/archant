@@ -87,11 +87,13 @@ export function useConfirmImport(accountId: string) {
 	return useMutation({
 		mutationFn: async (id: string) =>
 			(await unwrap(api.imports[":id"].confirm.$post({ param: { id } }))).data,
-		// The server runs recurring detection after a confirm, so series change too.
+		// The server runs recurring detection after a confirm, so series change
+		// too, and the matcher may create « Contributions aux investissements ».
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			]),
 	});
 }

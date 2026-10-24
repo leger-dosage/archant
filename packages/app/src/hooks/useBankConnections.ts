@@ -147,6 +147,8 @@ function invalidateSynced(queryClient: QueryClient) {
 		queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
 		queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 		queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+		// The matcher may create « Contributions aux investissements ».
+		queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 	]);
 }
 

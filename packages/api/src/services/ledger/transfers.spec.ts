@@ -1,7 +1,8 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
+import { categories } from "@archant/data/schema/categories";
 import { transfers } from "@archant/data/schema/transfers";
 
 import {
@@ -9,6 +10,8 @@ import {
 	addStandard,
 	asUser,
 	categoryOf,
+	categoryOriginOf,
+	contributionOf,
 	confirm,
 	bankDeps,
 	deps,
@@ -22,6 +25,8 @@ import {
 	newTag,
 	openChecking,
 	openHousehold,
+	openLoan,
+	openPea,
 	preview,
 	rejectedRows,
 	revert,
@@ -35,6 +40,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { updateAccount } from "../accounts.ts";
+import { createCategory, deleteCategory } from "../categories.ts";
 import { deleteAccount } from "./accounts.ts";
 import {
 	bulkDeleteTransactions,
@@ -43,6 +49,7 @@ import {
 	updateTransaction,
 } from "./edits.ts";
 import { findTransaction, listTransactions } from "./queries.ts";
+import { oneByOne } from "./shared.ts";
 import {
 	confirmTransfer,
 	matchTransfer,
@@ -922,5 +929,150 @@ describe("transfer matching and a split", () => {
 		await expect(transferRows(inflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), inflow)).resolves.toEqual([]);
 		await expect(transferCandidates(deps(), parent)).resolves.toEqual([]);
+	});
+});
+
+/** « Contributions aux investissements » as stored, or `undefined` when the household has none. */
+async function contributionsCategory() {
+	return temp.db
+		.select({ id: categories.id, color: categories.color, icon: categories.icon })
+		.from(categories)
+		.where(eq(sql`lower(${categories.name})`, "contributions aux investissements"))
+		.get();
+}
+
+/** Deletes « Contributions aux investissements », as its owner may: the file's tests share one database. */
+async function deleteContributionsCategory() {
+	const found = await contributionsCategory();
+
+	if (found !== undefined) {
+		await deleteCategory(deps(), found.id, undefined);
+	}
+}
+
+describe("the investment contributions category", () => {
+	it("goes on a proposed contribution's outflow, created as Sure's, the inflow and the locks untouched", async () => {
+		await deleteContributionsCategory();
+		const { checking: joint } = await openHousehold();
+		const pea = await openPea();
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		const locks = await lockedFields(outflow);
+
+		const inflow = await add(pea.id, { date: "2026-09-12", amount: toMinorUnits(amount) });
+
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ kind: "investment_contribution", status: "pending" },
+		]);
+		const created = await contributionsCategory();
+		expect(created).toMatchObject({ color: "#0d9488", icon: "trending-up" });
+		await expect(categoryOf(outflow)).resolves.toBe(created?.id);
+		await expect(categoryOriginOf(outflow)).resolves.toBe("rule");
+		await expect(lockedFields(outflow)).resolves.toEqual(locks);
+		await expect(categoryOf(inflow)).resolves.toBeNull();
+
+		const [proposal] = await transferRows(outflow);
+		await rejectTransfer(deps(), proposal?.id ?? "", asUser);
+		await expect(categoryOf(outflow)).resolves.toBe(created?.id);
+	});
+
+	it("goes on a contribution paired by hand, found again case aside and kept once the pair is refused", async () => {
+		const { checking: joint } = await openHousehold();
+		const pea = await openPea();
+		await deleteContributionsCategory();
+		const existing = await createCategory(deps(), {
+			name: "contributions aux investissements",
+			color: "#e99537",
+			icon: "tag",
+			parentId: null,
+		});
+		const amount = transferAmount();
+		const outflow = await add(joint.id, { date: "2026-09-01", amount: toMinorUnits(-amount) });
+		const inflow = await add(pea.id, { date: "2026-09-21", amount: toMinorUnits(amount) });
+
+		const transfer = await matchTransfer(deps(), inflow, outflow, asUser);
+
+		expect(transfer.kind).toBe("investment_contribution");
+		await expect(categoryOf(outflow)).resolves.toBe(existing.id);
+		await expect(categoryOriginOf(outflow)).resolves.toBe("user");
+		await expect(categoryOf(inflow)).resolves.toBeNull();
+
+		// Sure's `Transfer#destroy!` resets the kind alone.
+		await rejectTransfer(deps(), transfer.id, asUser);
+		await expect(categoryOf(outflow)).resolves.toBe(existing.id);
+	});
+
+	it("keeps an outflow's own category, proposed or paired by hand", async () => {
+		const { checking: joint } = await openHousehold();
+		const pea = await openPea();
+		const savings = await newCategory("Épargne");
+		const amount = transferAmount();
+		const proposed = await add(joint.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+		await updateTransaction(deps(), proposed, { categoryId: savings }, asUser);
+		await add(pea.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+		const other = transferAmount();
+		const byHand = await add(joint.id, { date: "2026-09-01", amount: toMinorUnits(-other) });
+		await updateTransaction(deps(), byHand, { categoryId: savings }, asUser);
+		const inflow = await add(pea.id, { date: "2026-09-21", amount: toMinorUnits(other) });
+
+		await matchTransfer(deps(), byHand, inflow, asUser);
+
+		await expect(transferRows(proposed)).resolves.toMatchObject([
+			{ kind: "investment_contribution" },
+		]);
+		await expect(categoryOf(proposed)).resolves.toBe(savings);
+		await expect(categoryOf(byHand)).resolves.toBe(savings);
+		await expect(categoryOriginOf(byHand)).resolves.toBe("user");
+	});
+
+	it("is created again after the owner deleted it", async () => {
+		const { checking: joint } = await openHousehold();
+		const pea = await openPea();
+		const first = await contributionOf(joint.id, pea.id);
+		const deleted = await categoryOf(first.outflow);
+
+		await deleteContributionsCategory();
+		await expect(categoryOf(first.outflow)).resolves.toBeNull();
+		const second = await contributionOf(joint.id, pea.id);
+
+		const created = await contributionsCategory();
+		expect(created).toMatchObject({ color: "#0d9488", icon: "trending-up" });
+		expect(created?.id).not.toBe(deleted);
+		await expect(categoryOf(second.outflow)).resolves.toBe(created?.id);
+	});
+
+	it("goes on no other kind, an investment to investment move included", async () => {
+		await deleteContributionsCategory();
+		const { checking: joint, livret, card } = await openHousehold();
+		const pea = await openPea();
+		const otherPea = await openPea({ name: "PEA-PME" });
+		const wallet = await openChecking({ name: "Portefeuille", type: "crypto", subtype: "wallet" });
+		const loan = await openLoan();
+		const pairs = [
+			[joint.id, livret.id],
+			[joint.id, card.id],
+			[joint.id, loan.id],
+			[pea.id, otherPea.id],
+			[pea.id, wallet.id],
+		] as const;
+
+		const outflows: string[] = [];
+
+		await oneByOne(pairs, async ([from, to]) => {
+			const amount = transferAmount();
+			const outflow = await add(from, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+			await add(to, { date: "2026-09-10", amount: toMinorUnits(amount) });
+			await expect(transferRows(outflow)).resolves.toHaveLength(1);
+			outflows.push(outflow);
+		});
+
+		await expect(Promise.all(outflows.map(categoryOf))).resolves.toEqual([
+			null,
+			null,
+			null,
+			null,
+			null,
+		]);
+		await expect(contributionsCategory()).resolves.toBeUndefined();
 	});
 });

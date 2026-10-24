@@ -648,10 +648,12 @@ describe("cashFlowByCategory", () => {
 		});
 
 		expect(byCategoryAndAmount(rows)).toEqual(byCategoryAndAmount([...expected.values()]));
-		// Courses: both signs of three counted expenses and one refund, and
+		// Courses: both signs of three counted expenses and one refund,
 		// uncategorised: the income and the PEA's dividend, then the expense,
-		// the zero and two outflows. The four internal movements count nowhere.
-		expect(rows).toHaveLength(4);
+		// the zero and two outflows, and the contribution's outflow in
+		// « Contributions aux investissements ». The four internal movements
+		// count nowhere.
+		expect(rows).toHaveLength(5);
 		await expect(
 			cashFlowByCategory(deps(), { from: "2026-09-01", to: "2026-09-30", accountIds: [] }),
 		).resolves.toEqual([]);
@@ -659,15 +661,16 @@ describe("cashFlowByCategory", () => {
 });
 
 describe("cashFlowByCategory and transfers", () => {
-	it("counts a contribution's outflow as an expense and its PEA side nowhere", async () => {
+	it("counts a contribution's outflow as an expense in its category and its PEA side nowhere", async () => {
 		const joint = await openChecking({ name: "Courant versement", openingDate: "2026-08-01" });
 		const pea = await openPea({ name: "PEA versement", openingDate: "2026-08-01" });
 		const { outflow } = await contributionOf(joint.id, pea.id);
 		const contributed = await findTransaction(deps(), outflow);
 
+		expect(contributed?.categoryId).toEqual(expect.any(String));
 		await expect(
 			cashFlowByCategory(deps(), { ...monthRange("2026-09"), accountIds: [joint.id, pea.id] }),
-		).resolves.toEqual([{ categoryId: null, amount: contributed?.amount }]);
+		).resolves.toEqual([{ categoryId: contributed?.categoryId, amount: contributed?.amount }]);
 	});
 });
 

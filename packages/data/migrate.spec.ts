@@ -908,6 +908,65 @@ const insertRejectedTransfer = (database: Database, id: string, outflow: string,
 		sql`insert into rejected_transfers (id, outflow_transaction_id, inflow_transaction_id, created_at) values (${id}, ${outflow}, ${inflow}, 0)`,
 	);
 
+/** Three transfers, two contributions, one of them already categorised, before 0093. */
+async function contributionsBefore0093(withCategory: boolean) {
+	const before = await migratedBefore("0093");
+	await insertAccount(before, "a1", "depository", "checking");
+	await insertAccount(before, "a2", "investment", "pea");
+	await insertCategory(before, "c2", "Épargne");
+	if (withCategory) {
+		await insertCategory(before, "c1", "Contributions aux investissements");
+	}
+	await Promise.all(
+		["e1", "e3", "e5"].map((id) => insertEntry(before, id, "transaction", null, "2026-09-01")),
+	);
+	await Promise.all(
+		["e2", "e4", "e6"].map((id) =>
+			insertEntry(before, id, "transaction", null, "2026-09-01", "a2"),
+		),
+	);
+	await before.run(
+		sql`insert into transactions (entry_id, label) values ('e1', 'A'), ('e2', 'B'), ('e4', 'D'), ('e5', 'E'), ('e6', 'F')`,
+	);
+	await before.run(
+		sql`insert into transactions (entry_id, label, category_id, category_origin) values ('e3', 'C', 'c2', 'user')`,
+	);
+	await insertTransfer(before, "t1", "e1", "e2", "investment_contribution");
+	await insertTransfer(before, "t2", "e3", "e4", "investment_contribution");
+	await insertTransfer(before, "t3", "e5", "e6");
+	before.$client.close();
+
+	const database = await migrated();
+
+	return database.all(
+		sql`select entry_id as id, category_id as categoryId, category_origin as origin from transactions order by entry_id`,
+	);
+}
+
+describe("investment contributions", () => {
+	it("gives 0093 every uncategorised contribution's outflow the household's category, as Sure's backfill", async () => {
+		await expect(contributionsBefore0093(true)).resolves.toEqual([
+			{ id: "e1", categoryId: "c1", origin: "rule" },
+			{ id: "e2", categoryId: null, origin: null },
+			{ id: "e3", categoryId: "c2", origin: "user" },
+			{ id: "e4", categoryId: null, origin: null },
+			{ id: "e5", categoryId: null, origin: null },
+			{ id: "e6", categoryId: null, origin: null },
+		]);
+	});
+
+	it("leaves 0093 every line as it was when the household has no such category", async () => {
+		await expect(contributionsBefore0093(false)).resolves.toEqual([
+			{ id: "e1", categoryId: null, origin: null },
+			{ id: "e2", categoryId: null, origin: null },
+			{ id: "e3", categoryId: "c2", origin: "user" },
+			{ id: "e4", categoryId: null, origin: null },
+			{ id: "e5", categoryId: null, origin: null },
+			{ id: "e6", categoryId: null, origin: null },
+		]);
+	});
+});
+
 describe("rejected transfers", () => {
 	it("keeps every transfer when 0016 adds rejected pairs, and holds each pair once", async () => {
 		const before = await migratedBefore("0016");
