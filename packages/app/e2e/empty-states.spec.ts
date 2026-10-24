@@ -16,12 +16,16 @@ async function emptyList(page: Page, path: string) {
 	);
 }
 
-async function expectEmptyState(scope: Page | Locator, heading: string): Promise<Locator> {
+async function expectEmptyState(
+	scope: Page | Locator,
+	heading: string,
+	buttons = 1,
+): Promise<Locator> {
 	const empty = scope.locator('[data-slot="empty-state"]');
 
 	await expect(empty.getByRole("heading", { name: heading, exact: true })).toBeVisible();
 	await expect(empty.locator('[data-slot="tinted-icon"]')).toBeVisible();
-	await expect(empty.getByRole("button")).toHaveCount(1);
+	await expect(empty.getByRole("button")).toHaveCount(buttons);
 
 	return empty;
 }
@@ -63,8 +67,13 @@ test("categories: the one list's empty state opens the form, with no « Type »"
 	const empty = await expectEmptyState(
 		page.getByRole("region", { name: "Catégories", exact: true }),
 		"Aucune catégorie pour l'instant",
+		2,
 	);
 	await expect(page.getByRole("region", { name: "Revenus", exact: true })).toHaveCount(0);
+	// Sure's empty list offers its defaults first.
+	await expect(empty.getByRole("button").first()).toHaveText(
+		"Utiliser les valeurs par défaut (recommandé)",
+	);
 
 	await empty.getByRole("button", { name: "Ajouter une catégorie" }).click();
 	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });

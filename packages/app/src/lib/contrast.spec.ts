@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { adjustToContrast, contrastRatio, hexToOklch, oklchToHex } from "./contrast.ts";
+import {
+	adjustToContrast,
+	contrastRatio,
+	darkenToSureContrast,
+	hasSureContrast,
+	hexToOklch,
+	oklchToHex,
+} from "./contrast.ts";
 
 const HOVER_LIGHT = "#f4f4f4";
 const HOVER_DARK = "#2b2d30";
@@ -76,5 +83,20 @@ describe("adjustToContrast", () => {
 		expect(contrastRatio(adjusted, HOVER_DARK)).toBeGreaterThanOrEqual(6.5);
 		expect(hexToOklch(adjusted).c).toBeLessThan(hexToOklch("#0000ff").c);
 		expect(hexToOklch(adjusted).h).toBeCloseTo(hexToOklch("#0000ff").h, 0);
+	});
+});
+
+describe("Sure's custom colour check", () => {
+	it("passes a dark colour and refuses a pale one, as Sure's 4.5 against its tint", () => {
+		expect(hasSureContrast("#1d4ed8")).toBe(true);
+		expect(hasSureContrast("#f5f5f5")).toBe(false);
+	});
+
+	it("darkens a pale colour until it passes, and leaves a passing one as it is", () => {
+		const darkened = darkenToSureContrast("#f5f5f5");
+
+		expect(hasSureContrast(darkened)).toBe(true);
+		expect(darkened).not.toBe("#f5f5f5");
+		expect(darkenToSureContrast("#1d4ed8")).toBe("#1d4ed8");
 	});
 });

@@ -10,8 +10,9 @@ import { toast } from "sonner";
 
 import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
+import { sampleCategoryColor } from "@archant/data/category-presets";
 import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
-import { GOAL_KINDS, GOAL_TARGET_MODES, sampleGoalColor } from "@archant/data/goals";
+import { GOAL_KINDS, GOAL_TARGET_MODES } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -75,7 +76,8 @@ function blank(): GoalFormInput {
 		targetAmount: "",
 		targetMonths: "",
 		targetDate: "",
-		color: sampleGoalColor(),
+		// Sure's `GoalsController#new`: one of the ten at random.
+		color: sampleCategoryColor(),
 		icon: null,
 		notes: "",
 		accounts: [],

@@ -590,6 +590,20 @@ export async function recategorise(
 }
 
 /**
+ * Leaves every transaction uncategorised, for Sure's `destroy_all` of
+ * categories. Maintenance only, as `recategorise`: a lock stays. Returns how
+ * many rows lost their category.
+ */
+export async function uncategoriseAll(deps: ServiceDeps): Promise<number> {
+	const result = await deps.db
+		.update(transactions)
+		.set({ categoryId: null, categoryOrigin: null })
+		.where(isNotNull(transactions.categoryId));
+
+	return result.rowsAffected;
+}
+
+/**
  * How many transactions each category holds, by category id. A category
  * absent from the map holds none. Counted in children and parents alike:
  * rolling children up into their parent is the reports' business (Epic 6).

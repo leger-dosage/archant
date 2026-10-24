@@ -5,6 +5,7 @@ import { unzipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
 import type { Database } from "@archant/data/client";
 
 import { AppError } from "../lib/errors.ts";
@@ -70,6 +71,11 @@ async function exported(name: string): Promise<string> {
 }
 
 const rows = <Row>(query: ReturnType<typeof sql>) => db().all<Row>(query);
+
+/** One of Sure's ten, drawn at random as `COLORS.sample`. */
+const sampledColor: unknown = expect.stringMatching(
+	new RegExp(`^(${CATEGORY_COLORS.join("|")})$`, "u"),
+);
 
 describe("accounts", () => {
 	const file = [
@@ -235,9 +241,9 @@ describe("categories", () => {
 				parent: "Food & Drink",
 			},
 			{ name: "Prime", color: "#27a644", icon: "tag", parent: "Salaire" },
-			{ name: "Restaurants", color: "#fc7840", icon: "tag", parent: "Sorties" },
+			{ name: "Restaurants", color: sampledColor, icon: "tag", parent: "Sorties" },
 			{ name: "Salaire", color: "#27a644", icon: "tag", parent: null },
-			{ name: "Sorties", color: "#fc7840", icon: "tag", parent: null },
+			{ name: "Sorties", color: sampledColor, icon: "tag", parent: null },
 		]);
 	});
 

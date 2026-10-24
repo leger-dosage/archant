@@ -5,14 +5,10 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import type { CategoryColor } from "@archant/data/category-presets";
-import {
-	CATEGORY_COLORS,
-	CATEGORY_NAME_MAX_LENGTH,
-	newCategory,
-} from "@archant/data/category-presets";
+import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 
 import { TintedIcon } from "@/components/TintedIcon";
+import { Button } from "@/components/ui/button";
 import {
 	Command,
 	CommandEmpty,
@@ -21,7 +17,7 @@ import {
 	CommandItem,
 	CommandList,
 } from "@/components/ui/command";
-import { useCreateCategory } from "@/hooks/useCategories";
+import { useBootstrapCategories, useCreateCategory } from "@/hooks/useCategories";
 import { categoryTree } from "@/lib/category-tree";
 import { isNewName, nameKey } from "@/lib/name-key";
 import { filterByName } from "@/lib/search-match";
@@ -56,13 +52,13 @@ type CategoryComboboxProps = {
 	noneLabel?: string;
 	/**
 	 * Offers « Créer « … » » and « Ajouter comme sous-catégorie… » last, as
-	 * Sure's `DS::CategorySelect` and quick picker: a top-level category, or
-	 * a child of the parent picked next, which takes that parent's colour.
-	 * « Réglages › Catégories » edits the rest later.
+	 * Sure's `DS::CategorySelect` and quick picker: a top-level category in one
+	 * of the ten colours at random, or a child of the parent picked next,
+	 * which takes that parent's colour. « Réglages › Catégories » edits the
+	 * rest later. Without any category, also offers Sure's « Générer les
+	 * catégories par défaut ».
 	 */
 	allowCreate?: boolean;
-	/** A new top-level category's colour: the first swatch, as Sure's form, unless the caller picks. */
-	createColor?: () => CategoryColor;
 	/**
 	 * Receives the id of a category created here, `onSelect` otherwise. Picked
 	 * again with the same name and parent, « Créer » passes the same id again
@@ -88,12 +84,12 @@ export function CategoryCombobox({
 	allowNone = true,
 	noneLabel,
 	allowCreate = false,
-	createColor = () => CATEGORY_COLORS[0],
 	onCreate = onSelect,
 	error = null,
 }: CategoryComboboxProps) {
 	const { t } = useTranslation();
 	const createCategory = useCreateCategory();
+	const bootstrap = useBootstrapCategories();
 	const [search, setSearch] = useState("");
 	const [choosingParent, setChoosingParent] = useState(false);
 	const [created, setCreated] = useState<Created | null>(null);
@@ -144,7 +140,7 @@ export function CategoryCombobox({
 		}
 
 		createCategory.mutate(
-			{ ...newCategory(typed), color: createColor(), parentId },
+			{ ...newCategory(typed), parentId },
 			{
 				onSuccess: (category) => {
 					setCreated({ name: typed, parentId, id: category.id });
@@ -187,6 +183,23 @@ export function CategoryCombobox({
 				<p role="alert" className="px-3 pt-2 text-sm text-destructive">
 					{error}
 				</p>
+			)}
+			{/* Sure's dropdown without any category: its defaults, one click away. */}
+			{allowCreate && categories.length === 0 && typed === "" && (
+				<div className="flex justify-center px-3 pt-3">
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={bootstrap.isPending}
+						onClick={() =>
+							bootstrap.mutate(undefined, {
+								onError: () => toast.error(t("categories.bootstrapError")),
+							})
+						}
+					>
+						{t("transactions.category.bootstrap")}
+					</Button>
+				</div>
 			)}
 			<CommandList>
 				<CommandEmpty>{t("transactions.category.empty")}</CommandEmpty>

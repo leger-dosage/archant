@@ -23,27 +23,24 @@ async function pick(dialog: Locator, name: string) {
 	await expect(dialog.getByRole("radio", { name, exact: true })).toBeChecked();
 }
 
-async function openAction(
-	page: Page,
-	name: string,
-	action: "Modifier" | "Fusionner" | "Supprimer",
-) {
+async function openAction(page: Page, name: string, action: "Modifier" | "Supprimer") {
 	await page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).click();
 	await page.getByRole("menuitem", { name: action }).click();
 }
 
-/** DESIGN.md's palette, in the order the form offers it. */
+/** Sure's `Category::COLORS`, in the order the form offers them, then its custom colour. */
 const SWATCHES = [
 	"Orange",
-	"Jaune",
-	"Bleu",
-	"Turquoise",
 	"Vert",
-	"Indigo",
+	"Bleu",
 	"Rouge",
-	"Violet",
 	"Rose",
-	"Magenta",
+	"Mauve",
+	"Vermillon",
+	"Bleu ciel",
+	"Violet",
+	"Vert clair",
+	"Couleur personnalisée",
 ];
 
 /** The dialog's live tinted icon of the category being edited. */
@@ -53,22 +50,30 @@ const preview = (dialog: Locator) =>
 /** A tinted icon's colour in light mode: the category's, adjusted to 3:1 on the hover row. */
 const iconColor = (hex: string) => rgb(adjustToContrast(hex, "#f4f4f4", 3));
 
+/** Sure's 22 `default_categories`, Archant's French names for the fifteen it had. */
 const DEFAULTS = [
 	"Revenus",
-	"Courses",
 	"Restaurants",
+	"Courses",
+	"Achats",
 	"Transports",
+	"Voyages",
+	"Loisirs",
+	"Santé",
+	"Soins personnels",
+	"Amélioration de l'habitat",
 	"Logement",
 	"Énergie et eau",
 	"Abonnements",
 	"Assurances",
-	"Santé",
-	"Impôts et taxes",
-	"Frais bancaires",
-	"Loisirs",
-	"Voyages",
+	"Sports et remise en forme",
 	"Cadeaux et dons",
+	"Impôts et taxes",
+	"Paiements du prêt",
+	"Prestations",
+	"Frais bancaires",
 	"Épargne et placements",
+	"Contributions aux investissements",
 ];
 
 test("a fresh instance lists the defaults in one list, each with its colour and icon", async ({
@@ -95,6 +100,9 @@ test("a fresh instance lists the defaults in one list, each with its colour and 
 		iconColor("#407706"),
 	);
 	await expect(row(categories, "Courses").locator("svg.lucide-shopping-bag")).toBeVisible();
+	await expect(
+		row(categories, "Contributions aux investissements").locator("svg.lucide-trending-up"),
+	).toBeVisible();
 
 	// French order: « Énergie et eau » sorts under E, before « Frais bancaires ».
 	const energy = names.indexOf("Actions pour Énergie et eau");
@@ -123,12 +131,13 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 			radios.map((radio) => radio.parentElement?.textContent ?? ""),
 		),
 	).toEqual(SWATCHES);
-	await expect(swatches.first()).toBeChecked();
-	await expect(preview(dialog)).toHaveCSS("color", iconColor("#fc7840"));
+	// One of the ten at random, as Sure's `COLORS.sample`.
+	await expect(swatches.and(page.locator(":checked"))).toHaveCount(1);
+	await expect(swatches.last()).not.toBeChecked();
 	await pick(dialog, "Rouge");
 	await pick(dialog, "Chien");
 	await expect(preview(dialog).locator("svg.lucide-dog")).toBeVisible();
-	await expect(preview(dialog)).toHaveCSS("color", iconColor("#eb5757"));
+	await expect(preview(dialog)).toHaveCSS("color", iconColor("#db5a54"));
 	await dialog.getByRole("button", { name: "Ajouter une catégorie" }).click();
 	await expect(page.getByText(`Catégorie « ${name} » ajoutée.`)).toBeVisible();
 
@@ -136,7 +145,7 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await expect(row(list(page), name).locator("svg.lucide-dog")).toBeVisible();
 	await expect(row(page, name).locator('[data-slot="tinted-icon"]')).toHaveCSS(
 		"color",
-		iconColor("#eb5757"),
+		iconColor("#db5a54"),
 	);
 
 	await openAction(page, name, "Modifier");
@@ -150,7 +159,7 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	await expect(row(page, name)).toHaveCount(0);
 	await expect(row(page, renamed).locator('[data-slot="tinted-icon"]')).toHaveCSS(
 		"color",
-		iconColor("#4ea7fc"),
+		iconColor("#6471eb"),
 	);
 
 	await openAction(page, renamed, "Modifier");
@@ -171,7 +180,7 @@ test("a created, renamed, recoloured and moved category shows its changes after 
 	);
 });
 
-test("a default's colour outside the palette is offered first, selected, and previewed", async ({
+test("a default's colour outside the ten shows as Sure's custom colour, previewed", async ({
 	page,
 }) => {
 	await page.goto(PAGE);
@@ -179,15 +188,66 @@ test("a default's colour outside the palette is offered first, selected, and pre
 	const edit = page.getByRole("dialog", { name: "Modifier la catégorie" });
 	const swatches = edit.getByRole("group", { name: "Couleur" }).getByRole("radio");
 
-	await expect(swatches).toHaveCount(SWATCHES.length + 1);
-	await expect(swatches.first()).toBeChecked();
-	await expect(edit.getByRole("radio", { name: "Couleur actuelle" })).toBeChecked();
+	await expect(swatches).toHaveCount(SWATCHES.length);
+	await expect(edit.getByRole("radio", { name: "Couleur personnalisée" })).toBeChecked();
+	await expect(edit.getByRole("textbox", { name: "Code de la couleur" })).toHaveValue("#22c55e");
 	await expect(preview(edit)).toHaveCSS("color", iconColor("#22c55e"));
 	await expect(preview(edit).locator("svg.lucide-circle-dollar-sign")).toBeVisible();
+	// An untouched colour is never refused, even one Sure would warn about.
+	await expect(edit.getByText("Mauvais contraste")).toHaveCount(0);
 
 	// Closed without saving: the defaults stay as they are for every other test.
 	await edit.getByRole("button", { name: "Annuler" }).click();
 	await expect(edit).toBeHidden();
+});
+
+test("a category keeps its own pale colour through a rename, never refused for contrast", async ({
+	page,
+	api,
+}) => {
+	const own = await api.createCategory({ name: uniqueName("Vert"), color: "#22c55e" });
+	const renamed = uniqueName("Prairie");
+
+	await page.goto(PAGE);
+	await openAction(page, own.name, "Modifier");
+	const edit = page.getByRole("dialog", { name: "Modifier la catégorie" });
+	await edit.getByLabel("Nom").fill(renamed);
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(page.getByText(`Catégorie « ${renamed} » enregistrée.`)).toBeVisible();
+	await expect(row(page, renamed).locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor("#22c55e"),
+	);
+});
+
+test("a pale custom colour warns of poor contrast and saves once adjusted", async ({ page }) => {
+	const name = uniqueName("Pâle");
+
+	await page.goto(PAGE);
+	await page.getByRole("button", { name: "Ajouter une catégorie" }).click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter une catégorie" });
+	await dialog.getByLabel("Nom").fill(name);
+	await pick(dialog, "Couleur personnalisée");
+	const code = dialog.getByRole("textbox", { name: "Code de la couleur" });
+	await code.fill("#f5f5f5");
+	await expect(dialog).toContainText("Mauvais contraste, choisissez une couleur plus foncée ou");
+	await dialog.getByRole("button", { name: "Ajouter une catégorie" }).click();
+	await expect(
+		dialog.getByText("Mauvais contraste, choisissez une couleur plus foncée."),
+	).toBeVisible();
+
+	await dialog.getByRole("button", { name: "réglage automatique." }).click();
+	await expect(dialog.getByText("Mauvais contraste")).toHaveCount(0);
+	const adjusted = await code.inputValue();
+	expect(adjusted).toMatch(/^#[0-9a-f]{6}$/u);
+	expect(adjusted).not.toBe("#f5f5f5");
+	await dialog.getByRole("button", { name: "Ajouter une catégorie" }).click();
+	await expect(page.getByText(`Catégorie « ${name} » ajoutée.`)).toBeVisible();
+	await expect(row(page, name).locator('[data-slot="tinted-icon"]')).toHaveCSS(
+		"color",
+		iconColor(adjusted),
+	);
 });
 
 test("the delete dialog shows the transaction count and where they can go", async ({
@@ -234,12 +294,13 @@ test("an unused category is deleted with no destination to choose", async ({ pag
 	await expect(row(page, unused.name)).toHaveCount(0);
 });
 
-test("merging moves the source's transactions into the target and removes the source", async ({
+test("« Fusionner les catégories » moves several sources into a target and removes them", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount();
 	const source = await api.createCategory({ name: uniqueName("Resto") });
+	const other = await api.createCategory({ name: uniqueName("Bar") });
 	const target = await api.createCategory({ name: uniqueName("Repas") });
 	await api.categorise(
 		[
@@ -249,24 +310,63 @@ test("merging moves the source's transactions into the target and removes the so
 		source.id,
 	);
 	await api.categorise(
+		[await api.addTransaction(account.id, { date: daysAgo(3), label: "Apéritif", amount: "-7" })],
+		other.id,
+	);
+	await api.categorise(
 		[await api.addTransaction(account.id, { date: daysAgo(5), label: "Traiteur", amount: "-9" })],
 		target.id,
 	);
 
 	await page.goto(PAGE);
 	await expect(row(page, target.name)).toContainText("1 opération");
-	await openAction(page, source.name, "Fusionner");
-	const dialog = page.getByRole("dialog", {
-		name: `Fusionner « ${source.name} » dans une autre catégorie`,
-	});
-	await expect(dialog.getByRole("button", { name: "Fusionner" })).toBeDisabled();
-	await dialog.getByRole("combobox", { name: "Fusionner dans" }).click();
-	await page.getByRole("option", { name: target.name }).click();
-	await dialog.getByRole("button", { name: "Fusionner" }).click();
+	// Sure's row menu has no merge: the page's menu merges one or several.
+	await page.getByRole("button", { name: `Actions pour ${source.name}`, exact: true }).click();
+	await expect(page.getByRole("menuitem", { name: "Fusionner" })).toHaveCount(0);
+	await page.keyboard.press("Escape");
 
-	await expect(
-		page.getByText(`« ${source.name} » fusionnée dans « ${target.name} ».`),
-	).toBeVisible();
+	await page.getByRole("button", { name: "Plus d'actions sur les catégories" }).click();
+	await page.getByRole("menuitem", { name: "Fusionner les catégories" }).click();
+	const dialog = page.getByRole("dialog", { name: "Fusionner les catégories" });
+	const submit = dialog.getByRole("button", { name: "Fusionner la sélection" });
+	await expect(submit).toBeDisabled();
+	await dialog.getByRole("combobox", { name: "Fusionner dans (cible)" }).click();
+	await page.getByRole("option", { name: target.name, exact: true }).click();
+	const sources = dialog.getByRole("group", { name: "Catégories à fusionner" });
+	await expect(sources.getByRole("checkbox", { name: target.name, exact: true })).toBeDisabled();
+	await sources.getByRole("checkbox", { name: source.name, exact: true }).check();
+	await sources.getByRole("checkbox", { name: other.name, exact: true }).check();
+	await submit.click();
+
+	await expect(page.getByText(`2 catégories fusionnées dans « ${target.name} ».`)).toBeVisible();
+	await expect(dialog).toBeHidden();
 	await expect(row(page, source.name)).toHaveCount(0);
-	await expect(row(page, target.name)).toContainText("3 opérations");
+	await expect(row(page, other.name)).toHaveCount(0);
+	await expect(row(page, target.name)).toContainText("4 opérations");
+});
+
+test("« Fusionner les catégories » refuses a parent into its own subcategory", async ({
+	page,
+	api,
+}) => {
+	const parent = await api.createCategory({ name: uniqueName("Maison") });
+	const child = await api.createCategory({ name: uniqueName("Loyer"), parentId: parent.id });
+
+	await page.goto(PAGE);
+	await page.getByRole("button", { name: "Plus d'actions sur les catégories" }).click();
+	await page.getByRole("menuitem", { name: "Fusionner les catégories" }).click();
+	const dialog = page.getByRole("dialog", { name: "Fusionner les catégories" });
+	await dialog.getByRole("combobox", { name: "Fusionner dans (cible)" }).click();
+	await page.getByRole("option", { name: `${parent.name} > ${child.name}`, exact: true }).click();
+	await dialog
+		.getByRole("group", { name: "Catégories à fusionner" })
+		.getByRole("checkbox", { name: parent.name, exact: true })
+		.check();
+	await dialog.getByRole("button", { name: "Fusionner la sélection" }).click();
+
+	await expect(dialog.getByRole("alert")).toHaveText(
+		"Impossible entre une catégorie et sa sous-catégorie.",
+	);
+	await dialog.getByRole("button", { name: "Annuler" }).click();
+	await expect(row(page, parent.name)).toBeVisible();
 });

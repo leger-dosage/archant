@@ -336,7 +336,7 @@ describe("goals", () => {
 			{ targetDate: "2027-02-30" },
 			[{ path: "targetDate", code: "invalid_format" }],
 		],
-		["a colour off the swatches", { color: "#000000" }, [{ path: "color", code: "invalid_value" }]],
+		["a colour that is not #rrggbb", { color: "bleu" }, [{ path: "color", code: "invalid_value" }]],
 		["an unknown icon", { icon: "rocket" }, [{ path: "icon", code: "invalid_value" }]],
 	])("refuses %s", async (_label, overrides, fields) => {
 		await expect(

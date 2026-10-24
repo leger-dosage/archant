@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { CATEGORY_COLORS, CATEGORY_ICONS } from "@archant/data/category-presets";
+import { CATEGORY_ICONS } from "@archant/data/category-presets";
 import {
 	GOAL_EVENTS,
 	GOAL_KINDS,
@@ -12,6 +12,7 @@ import {
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 
 import { amountIn } from "./budgets.ts";
+import { categoryColor } from "./categories.ts";
 
 // What the route checks before the service parses the amounts in the goal's
 // currency, which the first linked account decides on creation: every field
@@ -136,7 +137,7 @@ export function goalSchema(currency: CurrencyCode) {
 					.nullable()
 					.transform(blankAsNull)
 					.pipe(z.iso.date().nullable()),
-				color: z.enum(CATEGORY_COLORS),
+				color: categoryColor,
 				// None until one is picked: the cards then show the goal's initial, as Sure's.
 				icon: z.enum(CATEGORY_ICONS).nullable(),
 				notes: z

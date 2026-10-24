@@ -28,7 +28,7 @@ export const createCategoryInput = z.strictObject({
 		"Category name, which no other category holds, case aside.",
 	),
 	color: present(categoryColor).describe(
-		"Hex color code such as \"#e99537\", the picker's first one by default. Ignored for subcategories, which take their parent's.",
+		'Hex color code such as "#e99537", a palette color at random by default. Ignored for subcategories, which take their parent\'s.',
 	),
 	icon: present(categoryIcon).describe(
 		`A Lucide icon name, "tag" by default, one of: ${CATEGORY_ICONS.join(", ")}.`,

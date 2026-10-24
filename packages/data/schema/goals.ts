@@ -1,4 +1,4 @@
-import type { CategoryColor, CategoryIcon } from "../category-presets.ts";
+import type { CategoryIcon } from "../category-presets.ts";
 import type { GoalKind, GoalState, GoalTargetMode } from "../goals.ts";
 
 import { sql } from "drizzle-orm";
@@ -26,10 +26,10 @@ export const goals = sqliteTable(
 		currency: text("currency").notNull(),
 		/** `YYYY-MM-DD`; `null` for a goal without a date. */
 		targetDate: text("target_date"),
-		// Category swatches and icons, as Sure takes `Category::COLORS`. Checked
+		// Any `#rrggbb`, as Sure's goal validates its colour's format only. Checked
 		// by the API, not here, as a category's: a swatch added later needs no
 		// rebuilt table.
-		color: text("color").$type<CategoryColor>().notNull(),
+		color: text("color").notNull(),
 		// Sure leaves a goal's icon empty until one is picked, and shows its initial.
 		icon: text("icon").$type<CategoryIcon>(),
 		notes: text("notes"),

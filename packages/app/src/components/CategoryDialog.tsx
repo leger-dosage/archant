@@ -13,7 +13,7 @@ import { newCategory } from "@archant/data/category-presets";
 import { ChoiceField } from "@/components/ChoiceField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { TintedIcon } from "@/components/TintedIcon";
-import { ColorPicker, IconPicker } from "@/components/TintPickers";
+import { ColorPicker, IconPicker, poorCustomContrast } from "@/components/TintPickers";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -77,7 +77,7 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 	);
 	// A child shows in its parent's colour, as the API stores it.
 	const previewColor =
-		parents.find((parent) => parent.id === parentId.field.value)?.color ?? color.field.value;
+		parents.find((parent) => parent.id === parentId.field.value)?.color ?? color.field.value ?? "";
 
 	// Keyed on the id: the page hands over the category from the current list,
 	// a new object on every refetch, which must not wipe what is being typed.
@@ -92,6 +92,18 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 	}, [open, categoryId, form]);
 
 	const submit = form.handleSubmit(async (values) => {
+		// Sure's picker refuses a custom colour it warns about, never one the
+		// category already had.
+		if (
+			values.parentId === null &&
+			form.formState.dirtyFields.color === true &&
+			poorCustomContrast(values.color ?? "")
+		) {
+			form.setError("color", { type: "poor_contrast", message: "poor_contrast" });
+
+			return;
+		}
+
 		try {
 			if (category === undefined) {
 				const created = await createCategory.mutateAsync(values);
@@ -175,9 +187,11 @@ export function CategoryDialog({ open, onOpenChange, category, categories }: Cat
 
 					{!hasParent && (
 						<ColorPicker
+							key={categoryId ?? "new"}
 							form="category"
+							custom
 							legend={t("categories.form.color")}
-							value={color.field.value}
+							value={color.field.value ?? ""}
 							onChange={color.field.onChange}
 							error={errors.color}
 						/>

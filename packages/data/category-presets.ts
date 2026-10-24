@@ -7,70 +7,183 @@
 export const CATEGORY_NAME_MAX_LENGTH = 60;
 
 /**
- * DESIGN.md's ten swatches, Linear's register, the only colours the form
- * offers. Existing categories keep theirs: see `CATEGORY_COLOR_PATTERN`.
+ * Sure's `Category::COLORS`, which its goals share as `Goal::COLORS`. The
+ * form offers them and a custom colour; existing rows keep theirs: see
+ * `CATEGORY_COLOR_PATTERN`.
  */
 export const CATEGORY_COLORS = [
-	"#fc7840",
-	"#f0bf00",
-	"#4ea7fc",
-	"#00b8cc",
-	"#27a644",
-	"#5e6ad2",
-	"#eb5757",
-	"#9d6fe8",
-	"#e2609c",
-	"#c95fd8",
+	"#e99537",
+	"#4da568",
+	"#6471eb",
+	"#db5a54",
+	"#df4e92",
+	"#c44fe9",
+	"#eb5429",
+	"#61c9ea",
+	"#805dee",
+	"#6ad28a",
 ] as const;
 
-export type CategoryColor = (typeof CATEGORY_COLORS)[number];
-
 /**
- * Any `#rrggbb`, not only a swatch: the defaults carry Sure's own colours,
- * and editing one must not force the user to recolour it.
+ * Any `#rrggbb`, not only one of the ten, as Sure's `validates :color,
+ * format:`: the defaults carry Sure's own colours, the form takes a custom
+ * one, and editing must not force the user to recolour.
  */
 export const CATEGORY_COLOR_PATTERN = /^#[0-9a-f]{6}$/u;
 
-/** Lucide names: the ones the defaults use, then a choice for the user's own. */
+/** One of the ten at random, as Sure's `COLORS.sample` for a new category or goal. */
+export function sampleCategoryColor(random: () => number = Math.random): string {
+	return CATEGORY_COLORS[Math.floor(random() * CATEGORY_COLORS.length)] ?? CATEGORY_COLORS[0];
+}
+
+/**
+ * Sure's `Category.icon_codes`, in its order, which its goals share as
+ * `Goal::ICONS`. `train-front` comes last: Archant offered it before
+ * adopting Sure's list, and a category or a goal that has it keeps it.
+ */
 export const CATEGORY_ICONS = [
-	"circle-dollar-sign",
-	"shopping-bag",
-	"utensils",
-	"bus",
-	"house",
-	"lightbulb",
-	"wifi",
-	"shield",
-	"pill",
-	"landmark",
-	"receipt",
-	"drama",
-	"plane",
-	"hand-helping",
-	"piggy-bank",
-	"tag",
-	"shopping-cart",
-	"car",
-	"fuel",
-	"train-front",
-	"bike",
+	"ambulance",
+	"apple",
+	"award",
 	"baby",
-	"dog",
-	"graduation-cap",
-	"dumbbell",
-	"shirt",
-	"gift",
-	"heart",
-	"briefcase",
-	"wrench",
-	"smartphone",
-	"tv",
-	"music",
-	"book-open",
-	"coffee",
+	"badge-dollar-sign",
 	"banknote",
+	"barcode",
+	"bar-chart-3",
+	"bath",
+	"battery",
+	"bed-single",
+	"beer",
+	"bike",
+	"bluetooth",
+	"bone",
+	"book",
+	"book-open",
+	"briefcase",
+	"building",
+	"bus",
+	"cake",
+	"calculator",
+	"calendar-heart",
+	"calendar-range",
+	"camera",
+	"car",
+	"cat",
+	"chart-line",
+	"circle-dollar-sign",
+	"circle-parking",
+	"coffee",
 	"coins",
+	"compass",
+	"cookie",
+	"cooking-pot",
 	"credit-card",
+	"dices",
+	"dog",
+	"drama",
+	"drill",
+	"droplet",
+	"drum",
+	"dumbbell",
+	"film",
+	"flame",
+	"flower",
+	"flower-2",
+	"fuel",
+	"gamepad-2",
+	"gem",
+	"gift",
+	"glasses",
+	"globe",
+	"graduation-cap",
+	"hammer",
+	"hand-heart",
+	"hand-helping",
+	"heart-handshake",
+	"handshake",
+	"headphones",
+	"heart",
+	"heart-pulse",
+	"home",
+	"hotel",
+	"house",
+	"ice-cream-cone",
+	"key",
+	"landmark",
+	"laptop",
+	"leaf",
+	"lightbulb",
+	"luggage",
+	"mail",
+	"map-pin",
+	"martini",
+	"mic",
+	"monitor",
+	"moon",
+	"music",
+	"package",
+	"palette",
+	"party-popper",
+	"paw-print",
+	"pen",
+	"pencil",
+	"percent",
+	"phone",
+	"pie-chart",
+	"piggy-bank",
+	"pill",
+	"pizza",
+	"plane",
+	"plug",
+	"popcorn",
+	"power",
+	"printer",
+	"puzzle",
+	"receipt",
+	"receipt-text",
+	"ribbon",
+	"scale",
+	"scissors",
+	"settings",
+	"shield",
+	"shield-plus",
+	"shirt",
+	"shopping-bag",
+	"shopping-basket",
+	"shopping-cart",
+	"smartphone",
+	"sparkles",
+	"sprout",
+	"stethoscope",
+	"store",
+	"sun",
+	"tablet-smartphone",
+	"tag",
+	"target",
+	"tent",
+	"thermometer",
+	"ticket",
+	"train",
+	"trees",
+	"tree-palm",
+	"trending-up",
+	"trophy",
+	"truck",
+	"tv",
+	"umbrella",
+	"undo-2",
+	"unplug",
+	"users",
+	"utensils",
+	"video",
+	"wallet",
+	"wallet-cards",
+	"waves",
+	"wifi",
+	"wine",
+	"wrench",
+	"zap",
+	"train-front",
 ] as const;
 
 export type CategoryIcon = (typeof CATEGORY_ICONS)[number];
@@ -78,17 +191,17 @@ export type CategoryIcon = (typeof CATEGORY_ICONS)[number];
 /** A category as the form or a picker creates it, before the API checks it. */
 export type CategoryPreset = {
 	name: string;
-	color: CategoryColor;
+	color: string;
 	icon: CategoryIcon;
 	parentId: string | null;
 };
 
 /**
  * What a new category starts from, in the form, when a picker creates one by
- * name and when an assistant creates one: a top-level category, the first
- * swatch, a plain icon. Neither a picker nor an assistant has room for the
+ * name and when an assistant creates one: a top-level category, one of the
+ * ten colours at random as Sure's `COLORS.sample`, a plain icon. Neither a picker nor an assistant has room for the
  * rest, which « Réglages › Catégories » edits later.
  */
 export function newCategory(name = ""): CategoryPreset {
-	return { name, color: CATEGORY_COLORS[0], icon: "tag", parentId: null };
+	return { name, color: sampleCategoryColor(), icon: "tag", parentId: null };
 }

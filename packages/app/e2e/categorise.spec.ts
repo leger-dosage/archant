@@ -3,6 +3,8 @@ import type { Page, Route } from "@playwright/test";
 
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
+
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
 // Story 4.2: categorise transactions and filter by category. One database
@@ -144,10 +146,8 @@ test("« Créer » creates « Voyages » from the sheet, then a row's picker cre
 	await sheet.getByRole("button", { name: "Enregistrer" }).click();
 	await expect(sheet).toBeHidden();
 	await expect(chipOf(page, ticket, parent)).toBeVisible();
-	await expect(categoryNamed(page, parent)).resolves.toMatchObject({
-		parentId: null,
-		color: "#fc7840",
-	});
+	// One of Sure's ten at random, as its quick picker's `COLORS.sample`.
+	expect(CATEGORY_COLORS).toContain((await categoryNamed(page, parent))?.color);
 
 	await chipOf(page, pass, "Sans catégorie").click();
 	await categorySearch(page).fill(child);
@@ -165,7 +165,7 @@ test("« Créer » creates « Voyages » from the sheet, then a row's picker cre
 	await expect(toast(page, "Catégorie modifiée")).toBeVisible();
 	const created = await categoryNamed(page, child);
 	const createdParent = await categoryNamed(page, parent);
-	expect(created).toMatchObject({ parentId: createdParent?.id, color: "#fc7840" });
+	expect(created).toMatchObject({ parentId: createdParent?.id, color: createdParent?.color });
 });
 
 test("a category created in a row's picker but not set says so, and « Créer » again sets it without a second one", async ({

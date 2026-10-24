@@ -406,7 +406,7 @@ describe("importSureArchive", () => {
 			expect(after.valuations).toEqual(before.valuations);
 			expect(after.trades).toEqual(before.trades);
 			expect(after.holdings).toEqual(before.holdings);
-			// The fifteen default categories are reused, never doubled.
+			// The default categories are reused, never doubled.
 			expect(after.categories).toEqual(before.categories);
 			expect(after.tags).toEqual(before.tags);
 			expect(after.merchants).toEqual(before.merchants);

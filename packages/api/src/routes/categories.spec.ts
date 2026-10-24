@@ -3,6 +3,8 @@ import { testClient } from "hono/testing";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
+import { CATEGORY_COLORS } from "@archant/data/category-presets";
+
 import {
 	buildApp,
 	categorise,
@@ -45,6 +47,19 @@ describe("categories", () => {
 			["Frais", 0],
 		]);
 		expect(list[0]).not.toHaveProperty("kind");
+	});
+
+	it("creates a category without a colour in one of Sure's ten, at random", async () => {
+		const { status, body } = await request("POST", "/api/categories", {
+			name: uniqueCategory("Sans couleur"),
+			icon: "tag",
+			parentId: null,
+		});
+
+		expect(status).toBe(201);
+		expect(CATEGORY_COLORS).toContain(
+			z.object({ data: z.object({ color: z.string() }) }).parse(body).data.color,
+		);
 	});
 
 	it("creates a child with its parent's colour", async () => {
@@ -243,41 +258,75 @@ describe("categories", () => {
 		]);
 	});
 
-	it("merges a category into a target, whose count then includes its transactions", async () => {
+	it("merges several categories into a target, whose count then includes their transactions", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 		const source = await createCategory(uniqueCategory("Restaurants"));
+		const other = await createCategory(uniqueCategory("Bars"));
 		const target = await createCategory(uniqueCategory("Sorties"));
 		await categorise(account.id, source.id);
 
-		const response = await testClient(buildApp()).api.categories[":id"].merge.$post({
-			param: { id: source.id },
-			json: { targetId: target.id },
+		const response = await testClient(buildApp()).api.categories.merge.$post({
+			json: { targetId: target.id, sourceIds: [source.id, other.id] },
 		});
 
 		expect(response.status).toBe(200);
 		expect((await response.json()).data).toMatchObject({ id: target.id, transactionCount: 1 });
-		expect((await categoryList()).find((item) => item.id === source.id)).toBeUndefined();
+		const ids = (await categoryList()).map((item) => item.id);
+		expect(ids).not.toContain(source.id);
+		expect(ids).not.toContain(other.id);
 	});
 
 	it("refuses to merge a parent into its own child", async () => {
 		const parent = await createCategory(uniqueCategory("Logement"));
 		const child = await createCategory(uniqueCategory("Loyer"), { parentId: parent.id });
 
-		const { status, body } = await request("POST", `/api/categories/${parent.id}/merge`, {
+		const { status, body } = await request("POST", "/api/categories/merge", {
 			targetId: child.id,
+			sourceIds: [parent.id],
 		});
 
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual([
-			{ path: "targetId", code: "invalid_value" },
+			{ path: "targetId", code: "parent_child" },
 		]);
+	});
+
+	it("refuses a merge without a source", async () => {
+		const target = await createCategory(uniqueCategory("Sorties"));
+
+		const { status, body } = await request("POST", "/api/categories/merge", {
+			targetId: target.id,
+			sourceIds: [],
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toEqual([{ path: "sourceIds", code: "too_small" }]);
+	});
+
+	it("deletes every category, then restores the defaults", async () => {
+		const own = await ownDatabase();
+		const client = testClient(buildApp(own.db)).api.categories;
+		await client.$post({ json: category("Frais") });
+
+		const deleted = await client.$delete();
+
+		expect(deleted.status).toBe(200);
+		expect((await deleted.json()).data.deleted).toBeGreaterThan(0);
+		await expect(categoryList(own.db)).resolves.toEqual([]);
+
+		const restored = await client.bootstrap.$post();
+
+		expect(restored.status).toBe(200);
+		expect((await restored.json()).data).toEqual({ created: 22 });
+		expect((await categoryList(own.db)).map((item) => item.name)).toContain(
+			"Contributions aux investissements",
+		);
 	});
 
 	it.each([
 		["PATCH", "/api/categories/nope", { name: "Autre" }],
 		["DELETE", "/api/categories/nope", undefined],
-		["POST", "/api/categories/nope/merge", { targetId: "other" }],
 	])("answers %s %s with NOT_FOUND", async (method, path, body) => {
 		const response = await request(method, path, body);
 
