@@ -4,7 +4,7 @@ import { createInstance } from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
 
 import fr from "../locales/fr.json";
-import { operatorKey, ruleSummary } from "./rule-summary.ts";
+import { operatorKey, operatorMenuKey, ruleSummary } from "./rule-summary.ts";
 
 const i18n = createInstance();
 
@@ -39,6 +39,11 @@ const summary = (conditions: SummaryCondition[], category = "c1") =>
 		names,
 		i18n.t,
 	);
+
+const valueless = (
+	conditionType: SummaryCondition["conditionType"],
+	operator: SummaryCondition["operator"],
+): SummaryCondition => ({ conditionType, operator, value: null, conditions: [] });
 
 describe("ruleSummary", () => {
 	it("names the first condition and the action", () => {
@@ -128,6 +133,24 @@ describe("ruleSummary with Story 8.2's conditions and actions", () => {
 		).toBe("Si Étiquette est vide, alors Catégorie Courses");
 	});
 
+	it("reads Sure's negative and empty operators", () => {
+		expect(summary([leaf("transaction_name", "not_like", "CARTE")])).toBe(
+			"Si Libellé ne contient pas CARTE, alors Catégorie Courses",
+		);
+		expect(summary([leaf("transaction_notes", "!=", "Cadeau")])).toBe(
+			"Si Notes est différent de Cadeau, alors Catégorie Courses",
+		);
+		expect(summary([leaf("transaction_merchant", "!=", "m1")])).toBe(
+			"Si Marchand n'est pas Amazon, alors Catégorie Courses",
+		);
+		expect(summary([valueless("transaction_category", "is_not_null")])).toBe(
+			"Si Catégorie n'est pas vide, alors Catégorie Courses",
+		);
+		expect(summary([valueless("transaction_name", "is_null")])).toBe(
+			"Si Libellé est vide, alors Catégorie Courses",
+		);
+	});
+
 	it("names the first action, then counts the others", () => {
 		const label = leaf("transaction_name", "like", "amzn");
 
@@ -209,9 +232,23 @@ describe("operatorKey", () => {
 	it("reads each operator in its type's words, and refuses one of another type", () => {
 		expect(operatorKey("transaction_name", "=")).toBe("rules.operators.equals");
 		expect(operatorKey("transaction_amount", "!=")).toBe("rules.operators.ne");
-		expect(operatorKey("transaction_account", "!=")).toBeNull();
+		expect(operatorKey("transaction_account", "!=")).toBe("rules.operators.isNot");
+		expect(operatorKey("transaction_tag", "!=")).toBeNull();
 		expect(operatorKey("compound", "or")).toBe("rules.operators.any");
 		expect(operatorKey("transaction_notes", "is_null")).toBe("rules.operators.isNull");
-		expect(operatorKey("transaction_name", "is_null")).toBeNull();
+		expect(operatorKey("transaction_name", "is_not_null")).toBe("rules.operators.isNotNull");
+		expect(operatorKey("transaction_type", "!=")).toBeNull();
+	});
+});
+
+describe("operatorMenuKey", () => {
+	it("offers Sure's words on a text, a choice and a type, and the symbols on an amount", () => {
+		expect(operatorMenuKey("transaction_name", "not_like")).toBe(
+			"rules.operatorLabels.doesNotContain",
+		);
+		expect(operatorMenuKey("transaction_category", "!=")).toBe("rules.operatorLabels.notEqualTo");
+		expect(operatorMenuKey("transaction_type", "=")).toBe("rules.operatorLabels.equalTo");
+		expect(operatorMenuKey("transaction_amount", "!=")).toBe("rules.operators.ne");
+		expect(operatorMenuKey("transaction_tag", "is_not_null")).toBeNull();
 	});
 });

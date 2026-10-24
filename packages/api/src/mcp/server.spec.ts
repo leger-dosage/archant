@@ -542,6 +542,8 @@ describe("tools/list", () => {
 		expect(createRule).toContain('"transaction_name"');
 		expect(createRule).toContain('"replace_in_transaction_name"');
 		expect(createRule).toContain('"is_null"');
+		expect(createRule).toContain('"not_like"');
+		expect(createRule).toContain('"is_not_null"');
 		expect(createRule).toContain('"additionalProperties":false');
 	});
 
@@ -2299,6 +2301,9 @@ describe("writing rules", () => {
 			},
 			{ condition_type: "transaction_account", operator: "=", value: account.id },
 			{ condition_type: "transaction_category", operator: "is_null" },
+			{ condition_type: "transaction_name", operator: "is_not_null" },
+			{ condition_type: "transaction_notes", operator: "not_like", value: "remboursé" },
+			{ condition_type: "transaction_merchant", operator: "!=", value: shop.id },
 		];
 		const actions = [
 			{ action_type: "set_transaction_category", value: food.id },
@@ -2327,6 +2332,9 @@ describe("writing rules", () => {
 				},
 				{ condition_type: "transaction_account", operator: "=", value: "Règles lues" },
 				{ condition_type: "transaction_category", operator: "is_null", value: null },
+				{ condition_type: "transaction_name", operator: "is_not_null", value: null },
+				{ condition_type: "transaction_notes", operator: "not_like", value: "remboursé" },
+				{ condition_type: "transaction_merchant", operator: "!=", value: shop.name },
 			],
 			actions: [
 				{ action_type: "set_transaction_category", value: food.name },

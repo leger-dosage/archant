@@ -255,8 +255,8 @@ describe("createRule with Story 8.2's conditions and actions", () => {
 			"too_small",
 		],
 		[
-			"« est vide » on the label",
-			{ conditionType: "transaction_name", operator: "is_null" },
+			"« N'est pas vide » on a tag, which Sure's TransactionTag never applies",
+			{ conditionType: "transaction_tag", operator: "is_not_null" },
 			"operator",
 			"invalid_value",
 		],
@@ -343,7 +343,7 @@ describe("loadEnabledRules", () => {
 				id: rule.id,
 				effectiveDate: "2026-09-01",
 				conditions: [
-					{ type: "transaction_account", operator: "=", accountId: "a1" },
+					{ type: "transaction_account", operator: "=", id: "a1" },
 					{
 						type: "compound",
 						operator: "or",
@@ -371,8 +371,41 @@ describe("loadEnabledRules", () => {
 
 		await expect(loadEnabledRules(temp.db)).resolves.toMatchObject([
 			{
-				conditions: [{ type: "transaction_account", accountId: null }],
+				conditions: [{ type: "transaction_account", id: null }],
 				actions: [{ categoryId: null }],
+			},
+		]);
+	});
+
+	it("stores a valueless operator without its value, and reads Sure's negative operators", async () => {
+		const rule = await createRule(deps(), {
+			conditions: [
+				{ conditionType: "transaction_notes", operator: "is_not_null", value: "ignored" },
+				{ conditionType: "transaction_name", operator: "not_like", value: " carte " },
+				{ conditionType: "transaction_category", operator: "!=", value: "courses" },
+				{ conditionType: "transaction_merchant", operator: "is_not_null" },
+			],
+			actions: [action("loisirs")],
+		});
+
+		await expect(
+			temp.db.all(
+				sql`select operator, value from rule_conditions where rule_id = ${rule.id} order by position`,
+			),
+		).resolves.toEqual([
+			{ operator: "is_not_null", value: null },
+			{ operator: "not_like", value: "carte" },
+			{ operator: "!=", value: "courses" },
+			{ operator: "is_not_null", value: null },
+		]);
+		await expect(loadEnabledRules(temp.db)).resolves.toMatchObject([
+			{
+				conditions: [
+					{ type: "transaction_notes", operator: "is_not_null" },
+					{ type: "transaction_name", operator: "not_like", value: "carte" },
+					{ type: "transaction_category", operator: "!=", id: "courses" },
+					{ type: "transaction_merchant", operator: "is_not_null", id: null },
+				],
 			},
 		]);
 	});

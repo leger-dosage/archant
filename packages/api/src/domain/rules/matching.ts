@@ -4,7 +4,7 @@ import type { LabelPattern } from "./label-pattern.ts";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
-import type { RuleOperatorOf } from "@archant/data/rules";
+import type { RuleOperatorOf, ValuelessRuleOperator } from "@archant/data/rules";
 import type { LockableField, LockedFields } from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
@@ -13,14 +13,20 @@ import { squishLabel } from "../normalize-label.ts";
 import { replaceInLabel } from "./label-pattern.ts";
 
 /**
- * `like` contains, case aside; `=` is the whole label, case included. Accents
- * count either way, as with Sure's `ILIKE`.
+ * The label or the notes, as Sure's text conditions. `like` contains, case
+ * aside; `=` is the whole text, case included. Accents count either way, as
+ * with Sure's `ILIKE`. `not_like` and `!=` also match an empty field, as
+ * Sure's `OR field IS NULL` and `IS DISTINCT FROM`; a label is never empty.
  */
-type LabelCondition = {
-	type: "transaction_name";
-	operator: RuleOperatorOf<"transaction_name">;
-	value: string;
-};
+type TextType = "transaction_name" | "transaction_notes";
+
+type TextCondition =
+	| { type: TextType; operator: ValuelessRuleOperator }
+	| {
+			type: TextType;
+			operator: Exclude<RuleOperatorOf<TextType>, ValuelessRuleOperator>;
+			value: string;
+	  };
 
 /** Compared with the transaction's absolute amount, in the reporting currency only. */
 type AmountCondition = {
@@ -29,35 +35,18 @@ type AmountCondition = {
 	value: MinorUnits;
 };
 
-/** `accountId` is `null` once the account is deleted: the condition then matches nothing. */
-type AccountCondition = {
-	type: "transaction_account";
-	operator: RuleOperatorOf<"transaction_account">;
-	accountId: string | null;
-};
-
 /**
- * A merchant, a category or a tag. `=` compares with `id`, which is `null`
- * once that row is deleted: the condition then matches nothing. `is_null`
- * reads no id. A category is that category only, never one of its children,
- * and a tag is one the row carries among others, as in Sure.
+ * An account, a merchant, a category or a tag. `id` is `null` once that row
+ * is deleted: `=` then matches nothing and `!=` everything, since no row
+ * holds it, as in Sure. A valueless operator reads no id. A category is that
+ * category only, never one of its children, and a tag is one the row carries
+ * among others, as in Sure. An account is never empty.
  */
-type ReferenceType = "transaction_merchant" | "transaction_category" | "transaction_tag";
+type ReferenceType = "transaction_account" | "transaction_merchant" | "transaction_category";
 
-type ReferenceCondition = {
-	type: ReferenceType;
-	operator: RuleOperatorOf<ReferenceType>;
-	id: string | null;
-};
-
-/** Compared as the label is; `is_null` matches a row without notes. */
-type NotesCondition =
-	| { type: "transaction_notes"; operator: "is_null" }
-	| {
-			type: "transaction_notes";
-			operator: Exclude<RuleOperatorOf<"transaction_notes">, "is_null">;
-			value: string;
-	  };
+type ReferenceCondition =
+	| { type: ReferenceType; operator: RuleOperatorOf<ReferenceType>; id: string | null }
+	| { type: "transaction_tag"; operator: RuleOperatorOf<"transaction_tag">; id: string | null };
 
 /** The row's `direction`, the rule the list's type filter uses. */
 type TypeCondition = {
@@ -66,13 +55,7 @@ type TypeCondition = {
 	value: Direction;
 };
 
-export type LeafCondition =
-	| LabelCondition
-	| AmountCondition
-	| AccountCondition
-	| ReferenceCondition
-	| NotesCondition
-	| TypeCondition;
+export type LeafCondition = TextCondition | AmountCondition | ReferenceCondition | TypeCondition;
 
 /** One level deep: `and` matches on all of its conditions, `or` on any. */
 type GroupCondition = {
@@ -147,21 +130,43 @@ export type RuleCandidate = {
 	lockedFields: LockedFields;
 };
 
-function textMatches(operator: "like" | "=", expected: string, actual: string): boolean {
-	const value = squishLabel(expected);
-	const text = squishLabel(actual);
+function textMatches(condition: TextCondition, field: string | null): boolean {
+	switch (condition.operator) {
+		case "is_null":
+			return field === null;
+		case "is_not_null":
+			return field !== null;
+		case "not_like":
+			return field === null || !textMatches({ ...condition, operator: "like" }, field);
+		case "!=":
+			return field === null || !textMatches({ ...condition, operator: "=" }, field);
+		default: {
+			if (field === null) {
+				return false;
+			}
 
-	// Sure's `ILIKE` folds case beyond ASCII, which SQLite's `LIKE` does not:
-	// this is why rules are evaluated here rather than in SQL.
-	return operator === "like" ? text.toLowerCase().includes(value.toLowerCase()) : text === value;
+			const value = squishLabel(condition.value);
+			const text = squishLabel(field);
+
+			// Sure's `ILIKE` folds case beyond ASCII, which SQLite's `LIKE` does not:
+			// this is why rules are evaluated here rather than in SQL.
+			return condition.operator === "like"
+				? text.toLowerCase().includes(value.toLowerCase())
+				: text === value;
+		}
+	}
 }
 
-function notesMatch(condition: NotesCondition, notes: string | null): boolean {
-	if (condition.operator === "is_null") {
-		return notes === null;
+/** What a reference condition reads of the row: tags apart, since a row carries several. */
+function referenceOf(type: ReferenceType, row: RuleCandidate) {
+	switch (type) {
+		case "transaction_account":
+			return row.accountId;
+		case "transaction_merchant":
+			return row.merchantId;
+		default:
+			return row.categoryId;
 	}
-
-	return notes !== null && textMatches(condition.operator, condition.value, notes);
 }
 
 function referenceMatches(condition: ReferenceCondition, row: RuleCandidate): boolean {
@@ -171,11 +176,18 @@ function referenceMatches(condition: ReferenceCondition, row: RuleCandidate): bo
 			: condition.id !== null && row.tagIds.includes(condition.id);
 	}
 
-	const current = condition.type === "transaction_merchant" ? row.merchantId : row.categoryId;
+	const current = referenceOf(condition.type, row);
 
-	return condition.operator === "is_null"
-		? current === null
-		: condition.id !== null && current === condition.id;
+	switch (condition.operator) {
+		case "is_null":
+			return current === null;
+		case "is_not_null":
+			return current !== null;
+		case "!=":
+			return condition.id === null || current !== condition.id;
+		default:
+			return condition.id !== null && current === condition.id;
+	}
 }
 
 const COMPARE: Record<
@@ -204,14 +216,6 @@ function amountMatches(
 	return COMPARE[condition.operator](toMinorUnits(Math.abs(candidate.amount)), condition.value);
 }
 
-function accountMatches(condition: AccountCondition, accountId: string): boolean {
-	if (condition.accountId === null) {
-		return false;
-	}
-
-	return accountId === condition.accountId;
-}
-
 function leafMatches(
 	condition: LeafCondition,
 	row: RuleCandidate,
@@ -219,13 +223,11 @@ function leafMatches(
 ): boolean {
 	switch (condition.type) {
 		case "transaction_name":
-			return textMatches(condition.operator, condition.value, row.label);
+			return textMatches(condition, row.label);
+		case "transaction_notes":
+			return textMatches(condition, row.notes);
 		case "transaction_amount":
 			return amountMatches(condition, row, reportingCurrency);
-		case "transaction_account":
-			return accountMatches(condition, row.accountId);
-		case "transaction_notes":
-			return notesMatch(condition, row.notes);
 		case "transaction_type":
 			return direction(row) === condition.value;
 		default:

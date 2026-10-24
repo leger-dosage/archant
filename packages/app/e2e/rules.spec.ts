@@ -286,7 +286,7 @@ async function optionsOf(page: Page, name: string) {
 	return options;
 }
 
-test("the form offers the merchant, category, tag, notes and type fields, and « est vide » hides the value", async ({
+test("the form offers Sure's operators per field, and « Est vide » and « N'est pas vide » hide the value", async ({
 	page,
 }) => {
 	await visit(page);
@@ -303,30 +303,63 @@ test("the form offers the merchant, category, tag, notes and type fields, and «
 		"Type",
 	]);
 
+	const text = [
+		"Contient",
+		"Ne contient pas",
+		"Égal à",
+		"Différent de",
+		"Est vide",
+		"N'est pas vide",
+	];
+	const select = ["Égal à", "Différent de", "Est vide", "N'est pas vide"];
+
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(text);
+
+	await choose(page, "Champ de la condition 1", "Compte");
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(select);
 	await choose(page, "Champ de la condition 1", "Marchand");
-	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["est", "est vide"]);
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(select);
 	await choose(page, "Champ de la condition 1", "Catégorie");
-	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["est", "est vide"]);
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(select);
+
 	await choose(page, "Champ de la condition 1", "Étiquette");
-	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["est", "est vide"]);
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["Égal à", "Est vide"]);
 
 	await choose(page, "Champ de la condition 1", "Notes");
-	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual([
-		"contient",
-		"est égal à",
-		"est vide",
-	]);
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(text);
 	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toBeVisible();
-	await choose(page, "Opérateur de la condition 1", "est vide");
+	await choose(page, "Opérateur de la condition 1", "Est vide");
+	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveCount(0);
+	await choose(page, "Opérateur de la condition 1", "Ne contient pas");
+	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toBeVisible();
+	await choose(page, "Opérateur de la condition 1", "N'est pas vide");
 	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveCount(0);
 
 	await choose(page, "Champ de la condition 1", "Type");
-	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["est"]);
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["Égal à"]);
 	expect(await optionsOf(page, "Valeur de la condition 1")).toEqual([
 		"Revenu",
 		"Dépense",
 		"Virement",
 	]);
+});
+
+test("a rule « Libellé » « Ne contient pas » reads so in the list", async ({ page }) => {
+	const marker = uniqueName("virement");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await choose(page, "Opérateur de la condition 1", "Ne contient pas");
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(marker);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: "Courses", exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(
+		ruleRow(page, `Si Libellé ne contient pas ${marker}, alors Catégorie Courses`),
+	).toBeVisible();
 });
 
 test("a merchant condition saved through its picker reads « Marchand est … » in the list", async ({

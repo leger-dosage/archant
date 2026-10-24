@@ -15,6 +15,7 @@ import {
 	RULE_OPERATORS,
 	RULE_VALUE_MAX_LENGTH,
 	isRuleOperatorOf,
+	isValuelessOperator,
 	isValuelessAction,
 } from "@archant/data/rules";
 
@@ -104,7 +105,7 @@ export const RULE_TYPE_VALUES = DIRECTIONS;
 
 const isDirection = (value: string) => RULE_TYPE_VALUES.some((known) => known === value);
 
-/** A leaf condition's operator and value, reported under `path`. `is_null` reads no value. */
+/** A leaf condition's operator and value, reported under `path`. A valueless operator reads none. */
 function checkLeaf(
 	leaf: Leaf,
 	path: (string | number)[],
@@ -115,7 +116,7 @@ function checkLeaf(
 		issue(context, [...path, "operator"], "invalid_value");
 	}
 
-	if (leaf.operator === "is_null") {
+	if (isValuelessOperator(leaf.operator)) {
 		return;
 	}
 
@@ -172,9 +173,9 @@ function checkReplacement(
 	}
 }
 
-/** One stored value: the trimmed text, the amount in minor units, null for `is_null`. */
+/** One stored value: the trimmed text, the amount in minor units, null for a valueless operator. */
 function storedValue(leaf: Leaf, currency: CurrencyCode): string | null {
-	if (leaf.operator === "is_null") {
+	if (isValuelessOperator(leaf.operator)) {
 		return null;
 	}
 
@@ -186,7 +187,7 @@ function storedValue(leaf: Leaf, currency: CurrencyCode): string | null {
 export type RuleLeafRequest = {
 	conditionType: Exclude<RuleConditionType, "compound">;
 	operator: RuleOperator;
-	/** `null` for `is_null`. */
+	/** `null` for a valueless operator. */
 	value: string | null;
 };
 

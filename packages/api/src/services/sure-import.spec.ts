@@ -631,6 +631,43 @@ describe("importSureArchive", () => {
 		).toEqual([]);
 	});
 
+	it("imports Sure's negative and empty operators, and skips a tag one Sure never applies", async () => {
+		await ownDatabase();
+		const actions = [{ action_type: "set_transaction_merchant", value: "Netflix" }];
+
+		await importLines([
+			line("Rule", {
+				id: "r1",
+				name: "Négatifs",
+				active: true,
+				conditions: [
+					{ condition_type: "transaction_name", operator: "not_like", value: "NETFLIX" },
+					{ condition_type: "transaction_notes", operator: "is_not_null", value: "" },
+					{ condition_type: "transaction_merchant", operator: "!=", value: "Netflix" },
+				],
+				actions,
+			}),
+			line("Rule", {
+				id: "r2",
+				name: "Étiquette",
+				active: true,
+				conditions: [{ condition_type: "transaction_tag", operator: "!=", value: "Voyage" }],
+				actions,
+			}),
+		]);
+
+		expect(await source().all(sql`select name from rules`)).toEqual([{ name: "Négatifs" }]);
+		expect(
+			await source().all(
+				sql`select condition_type as type, operator, value is null as empty from rule_conditions order by position`,
+			),
+		).toEqual([
+			{ type: "transaction_name", operator: "not_like", empty: 0 },
+			{ type: "transaction_notes", operator: "is_not_null", empty: 1 },
+			{ type: "transaction_merchant", operator: "!=", empty: 0 },
+		]);
+	});
+
 	it("skips a transfer whose sides carry the wrong signs, and refuses a dividend without a security", async () => {
 		await ownDatabase();
 		const accounts = [

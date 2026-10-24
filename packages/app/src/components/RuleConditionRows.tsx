@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { RULE_TYPE_VALUES } from "@archant/api/schemas/rules";
 import type { RuleConditionType } from "@archant/data/rules";
-import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
+import { RULE_OPERATORS_BY_TYPE, isValuelessOperator } from "@archant/data/rules";
 
 import { FieldMessage } from "@/components/FieldMessage";
 import { LEAF_REFERENCES, ReferenceField } from "@/components/RuleReferenceField";
@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { errorAt } from "@/lib/form-errors";
 import { LEAF_TYPES, described, errorId, newLeaf } from "@/lib/rule-form";
-import { operatorKey } from "@/lib/rule-summary";
+import { operatorMenuKey } from "@/lib/rule-summary";
 
 /** One condition on a label, an amount, an account, a merchant, a category, a tag, notes or a type. */
 export function LeafRow({
@@ -146,8 +146,9 @@ export function LeafRow({
 				<Select
 					value={operator.field.value ?? ""}
 					onValueChange={(next) => {
-						// « est vide » reads no value: the field goes, and so does what it held.
-						if (next === "is_null") {
+						// « Est vide » and « N'est pas vide » read no value: the field goes,
+						// and so does what it held.
+						if (isValuelessOperator(next)) {
 							value.field.onChange(null);
 						}
 
@@ -163,7 +164,7 @@ export function LeafRow({
 					</SelectTrigger>
 					<SelectContent>
 						{RULE_OPERATORS_BY_TYPE[leafType].map((option) => {
-							const key = operatorKey(leafType, option);
+							const key = operatorMenuKey(leafType, option);
 
 							return (
 								<SelectItem key={option} value={option}>
@@ -173,7 +174,9 @@ export function LeafRow({
 						})}
 					</SelectContent>
 				</Select>
-				<div className="min-w-0 flex-1">{operator.field.value !== "is_null" && valueField()}</div>
+				<div className="min-w-0 flex-1">
+					{!isValuelessOperator(operator.field.value ?? "") && valueField()}
+				</div>
 				<Button
 					type="button"
 					variant="ghost"

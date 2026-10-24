@@ -5,7 +5,7 @@ import { asc, eq, inArray } from "drizzle-orm";
 
 import { toMinorUnits } from "@archant/data/money";
 import type { RuleConditionType } from "@archant/data/rules";
-import { isRuleOperatorOf, isValuelessAction } from "@archant/data/rules";
+import { isRuleOperatorOf, isValuelessAction, isValuelessOperator } from "@archant/data/rules";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
@@ -125,23 +125,17 @@ function toLeaf(condition: RuleConditionRow, known: Known): LeafCondition {
 	const value = condition.value ?? "";
 	const { conditionType, operator } = condition;
 
-	if (conditionType === "transaction_name" && isRuleOperatorOf(conditionType, operator)) {
-		return { type: conditionType, operator, value };
+	if (
+		(conditionType === "transaction_name" || conditionType === "transaction_notes") &&
+		isRuleOperatorOf(conditionType, operator)
+	) {
+		return isValuelessOperator(operator)
+			? { type: conditionType, operator }
+			: { type: conditionType, operator, value };
 	}
 
 	if (conditionType === "transaction_amount" && isRuleOperatorOf(conditionType, operator)) {
 		return { type: conditionType, operator, value: toMinorUnits(Number(value)) };
-	}
-
-	if (conditionType === "transaction_account" && isRuleOperatorOf(conditionType, operator)) {
-		// A deleted account makes the condition match nothing, as in Sure.
-		return { type: conditionType, operator, accountId: known.account.has(value) ? value : null };
-	}
-
-	if (conditionType === "transaction_notes" && isRuleOperatorOf(conditionType, operator)) {
-		return operator === "is_null"
-			? { type: conditionType, operator }
-			: { type: conditionType, operator, value };
 	}
 
 	const direction = DIRECTIONS.find((candidate) => candidate === value);
@@ -152,19 +146,24 @@ function toLeaf(condition: RuleConditionRow, known: Known): LeafCondition {
 
 	const reference = CONDITION_REFERENCES[conditionType];
 
+	if (reference === undefined) {
+		throw malformed();
+	}
+
+	// A deleted row makes `=` match nothing and `!=` everything, as in Sure.
+	const id = !isValuelessOperator(operator) && known[reference].has(value) ? value : null;
+
+	if (conditionType === "transaction_tag" && isRuleOperatorOf(conditionType, operator)) {
+		return { type: conditionType, operator, id };
+	}
+
 	if (
-		(conditionType === "transaction_merchant" ||
-			conditionType === "transaction_category" ||
-			conditionType === "transaction_tag") &&
-		reference !== undefined &&
+		(conditionType === "transaction_account" ||
+			conditionType === "transaction_merchant" ||
+			conditionType === "transaction_category") &&
 		isRuleOperatorOf(conditionType, operator)
 	) {
-		// A deleted row makes `=` match nothing, as in Sure.
-		return {
-			type: conditionType,
-			operator,
-			id: operator === "=" && known[reference].has(value) ? value : null,
-		};
+		return { type: conditionType, operator, id };
 	}
 
 	throw malformed();

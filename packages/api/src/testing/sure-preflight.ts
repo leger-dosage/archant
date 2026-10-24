@@ -7,9 +7,10 @@ import {
 	MILEAGE_UNITS,
 	TAX_TREATMENTS,
 } from "@archant/data/account-types";
+import { isValuelessOperator } from "@archant/data/rules";
 
 // What Sure's `SureImport` checks before it imports an `all.ndjson`, written
-// from its code at 14638a7: `SureImport::Preflight`, the validations of the
+// from its code at 14638a7, its rule operators at 00dd977fb: `SureImport::Preflight`, the validations of the
 // models `Family::DataImporter` saves (`Transfer`, `Rule`, `Category`), and
 // the `SUBTYPES` of each accountable. A line it would refuse fails the whole
 // import, so the archive's spec runs every line through this.
@@ -180,7 +181,8 @@ type Condition = {
 	sub_conditions?: Condition[] | undefined;
 };
 
-// `Rule::Condition`: a value unless a group or a valueless operator.
+// `Rule::Condition`: a value unless a group or one of Sure's `VALUELESS_OPERATORS`
+// at 00dd977fb, which added `is_not_null`.
 const condition: z.ZodType<Condition> = z
 	.strictObject({
 		condition_type: z.enum(CONDITION_TYPES),
@@ -194,7 +196,7 @@ const condition: z.ZodType<Condition> = z
 	.refine(
 		(row) =>
 			row.condition_type === "compound" ||
-			row.operator === "is_null" ||
+			isValuelessOperator(row.operator) ||
 			(row.value ?? "").trim() !== "",
 		"a condition without a value",
 	);

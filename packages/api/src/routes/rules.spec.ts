@@ -527,8 +527,8 @@ describe("rules", () => {
 			[{ path: "conditions.0.value", code: "invalid_value" }],
 		],
 		[
-			"« est vide » on the label",
-			[ruleLeaf("transaction_name", "is_null", null)],
+			"« Différent de » on a tag, which Sure's TransactionTag never applies",
+			[ruleLeaf("transaction_tag", "!=", "nope")],
 			[{ actionType: "exclude_transaction" }],
 			[{ path: "conditions.0.operator", code: "invalid_value" }],
 		],

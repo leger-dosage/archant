@@ -8,16 +8,20 @@ import type {
 	RuleOperator,
 	RuleOperatorOf,
 } from "@archant/data/rules";
-import { isRuleOperatorOf } from "@archant/data/rules";
+import { isRuleOperatorOf, isValuelessOperator } from "@archant/data/rules";
 
 const isRuleTypeValue = (value: string): value is (typeof RULE_TYPE_VALUES)[number] =>
 	RULE_TYPE_VALUES.some((known) => known === value);
 
 type OperatorKey = `rules.operators.${
 	| "contains"
+	| "notContains"
 	| "equals"
+	| "notEquals"
 	| "is"
+	| "isNot"
 	| "isNull"
+	| "isNotNull"
 	| "gt"
 	| "gte"
 	| "lt"
@@ -27,13 +31,30 @@ type OperatorKey = `rules.operators.${
 	| "all"
 	| "any"}`;
 
+const TEXT_KEYS = {
+	like: "rules.operators.contains",
+	not_like: "rules.operators.notContains",
+	"=": "rules.operators.equals",
+	"!=": "rules.operators.notEquals",
+	is_null: "rules.operators.isNull",
+	is_not_null: "rules.operators.isNotNull",
+} as const;
+
+const SELECT_KEYS = {
+	"=": "rules.operators.is",
+	"!=": "rules.operators.isNot",
+	is_null: "rules.operators.isNull",
+	is_not_null: "rules.operators.isNotNull",
+} as const;
+
 /**
- * The words each operator reads as, per condition type: « contient » or
- * « est égal à » on a text, a symbol on an amount, « est » on a choice,
- * « est vide » for `is_null`.
+ * The words each operator reads as in a rule's summary, per condition type:
+ * « contient », « ne contient pas », « est égal à » or « est différent de »
+ * on a text, a symbol on an amount, « est » or « n'est pas » on a choice,
+ * « est vide » and « n'est pas vide » for the valueless operators.
  */
 const OPERATOR_KEYS = {
-	transaction_name: { like: "rules.operators.contains", "=": "rules.operators.equals" },
+	transaction_name: TEXT_KEYS,
 	transaction_amount: {
 		">": "rules.operators.gt",
 		">=": "rules.operators.gte",
@@ -42,15 +63,11 @@ const OPERATOR_KEYS = {
 		"=": "rules.operators.eq",
 		"!=": "rules.operators.ne",
 	},
-	transaction_account: { "=": "rules.operators.is" },
-	transaction_merchant: { "=": "rules.operators.is", is_null: "rules.operators.isNull" },
-	transaction_category: { "=": "rules.operators.is", is_null: "rules.operators.isNull" },
+	transaction_account: SELECT_KEYS,
+	transaction_merchant: SELECT_KEYS,
+	transaction_category: SELECT_KEYS,
 	transaction_tag: { "=": "rules.operators.is", is_null: "rules.operators.isNull" },
-	transaction_notes: {
-		like: "rules.operators.contains",
-		"=": "rules.operators.equals",
-		is_null: "rules.operators.isNull",
-	},
+	transaction_notes: TEXT_KEYS,
 	transaction_type: { "=": "rules.operators.is" },
 	compound: { and: "rules.operators.all", or: "rules.operators.any" },
 } as const satisfies { [Type in RuleConditionType]: Record<RuleOperatorOf<Type>, OperatorKey> };
@@ -61,6 +78,45 @@ export function operatorKey(type: RuleConditionType, operator: RuleOperator): Op
 	}
 
 	const keys: Partial<Record<RuleOperator, OperatorKey>> = OPERATOR_KEYS[type];
+
+	return keys[operator] ?? null;
+}
+
+type MenuKey = `rules.operatorLabels.${
+	| "contains"
+	| "doesNotContain"
+	| "equalTo"
+	| "notEqualTo"
+	| "isEmpty"
+	| "isNotEmpty"}`;
+
+/** Sure's `rules.condition_filters.operators` on a text or a choice. */
+const MENU_KEYS = {
+	like: "rules.operatorLabels.contains",
+	not_like: "rules.operatorLabels.doesNotContain",
+	"=": "rules.operatorLabels.equalTo",
+	"!=": "rules.operatorLabels.notEqualTo",
+	is_null: "rules.operatorLabels.isEmpty",
+	is_not_null: "rules.operatorLabels.isNotEmpty",
+} as const satisfies Record<RuleOperatorOf<"transaction_name">, MenuKey>;
+
+/**
+ * The words the form's operator menu shows: Sure's on a text, a choice or a
+ * type, the summary's symbols on an amount.
+ */
+export function operatorMenuKey(
+	type: Exclude<RuleConditionType, "compound">,
+	operator: RuleOperator,
+): MenuKey | OperatorKey | null {
+	if (type === "transaction_amount") {
+		return operatorKey(type, operator);
+	}
+
+	if (!isRuleOperatorOf(type, operator)) {
+		return null;
+	}
+
+	const keys: Partial<Record<RuleOperator, MenuKey>> = MENU_KEYS;
 
 	return keys[operator] ?? null;
 }
@@ -198,7 +254,7 @@ export function ruleSummary(rule: SummaryRule, names: SummaryNames, t: TFunction
 	const summary =
 		condition === null || key === null
 			? t("rules.summary.all", { action: actions })
-			: condition.operator === "is_null"
+			: isValuelessOperator(condition.operator)
 				? t("rules.summary.emptyCondition", {
 						field: t(`rules.fields.${condition.conditionType}`),
 						operator: t(key),

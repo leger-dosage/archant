@@ -55,7 +55,7 @@ const leafOutput = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'The account, merchant, category or tag by name, an amount formatted such as "12,50 €", else the text or type compared; null for is_null.',
+			'The account, merchant, category or tag by name, an amount formatted such as "12,50 €", else the text or type compared; null for is_null and is_not_null.',
 		),
 });
 

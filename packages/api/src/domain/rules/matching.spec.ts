@@ -33,7 +33,7 @@ const rule = (conditions: Condition[], overrides: Partial<Rule> = {}): Rule => (
 	...overrides,
 });
 
-const label = (operator: "like" | "=", value: string): LeafCondition => ({
+const label = (operator: "like" | "not_like" | "=" | "!=", value: string): LeafCondition => ({
 	type: "transaction_name",
 	operator,
 	value,
@@ -45,11 +45,10 @@ const amount = (operator: "=" | ">" | ">=" | "<" | "<=" | "!=", value: number): 
 	value: toMinorUnits(value),
 });
 
-const account = (operator: "=", accountId: string | null): LeafCondition => ({
-	type: "transaction_account",
-	operator,
-	accountId,
-});
+const account = (
+	operator: "=" | "!=" | "is_null" | "is_not_null",
+	id: string | null,
+): LeafCondition => ({ type: "transaction_account", operator, id });
 
 const matching = (conditions: Condition[], overrides: Partial<RuleCandidate> = {}) =>
 	matches(rule(conditions), candidate(overrides), "EUR");
@@ -199,7 +198,7 @@ describe("matches on the merchant, the category and a tag", () => {
 	});
 });
 
-const notes = (operator: "like" | "=", value: string): LeafCondition => ({
+const notes = (operator: "like" | "not_like" | "=" | "!=", value: string): LeafCondition => ({
 	type: "transaction_notes",
 	operator,
 	value,
@@ -220,6 +219,75 @@ describe("matches on the notes", () => {
 
 		expect(matching([isNull])).toBe(true);
 		expect(matching([isNull], { notes: "Cadeau" })).toBe(false);
+	});
+});
+
+const notAmazon = (type: "transaction_merchant" | "transaction_category"): LeafCondition => ({
+	type,
+	operator: "!=",
+	id: "amazon",
+});
+
+const isSet = (type: "transaction_merchant" | "transaction_category"): LeafCondition => ({
+	type,
+	operator: "is_not_null",
+	id: null,
+});
+
+describe("Sure's negative and empty operators", () => {
+	const notEmpty: LeafCondition = { type: "transaction_notes", operator: "is_not_null" };
+
+	it("does not contain, on the label and on notes, an empty field included", () => {
+		expect(matching([label("not_like", "carrefour")])).toBe(false);
+		expect(matching([label("not_like", "auchan")])).toBe(true);
+		expect(matching([notes("not_like", "cadeau")], { notes: "Un CADEAU" })).toBe(false);
+		expect(matching([notes("not_like", "cadeau")], { notes: "Loyer" })).toBe(true);
+		expect(matching([notes("not_like", "cadeau")])).toBe(true);
+	});
+
+	it("is different from the whole text, an empty field included, as IS DISTINCT FROM", () => {
+		expect(matching([label("!=", "Loyer")], { label: "Loyer" })).toBe(false);
+		expect(matching([label("!=", "Loyer")], { label: "loyer" })).toBe(true);
+		expect(matching([notes("!=", "Cadeau")], { notes: " Cadeau" })).toBe(false);
+		expect(matching([notes("!=", "Cadeau")], { notes: "Loyer" })).toBe(true);
+		expect(matching([notes("!=", "Cadeau")])).toBe(true);
+	});
+
+	it("is not empty, on notes and on the label", () => {
+		expect(matching([notEmpty])).toBe(false);
+		expect(matching([notEmpty], { notes: "Cadeau" })).toBe(true);
+		expect(matching([{ type: "transaction_name", operator: "is_not_null" }])).toBe(true);
+		expect(matching([{ type: "transaction_name", operator: "is_null" }])).toBe(false);
+	});
+
+	it("is a different merchant or category, none included", () => {
+		expect(matching([notAmazon("transaction_merchant")], { merchantId: "amazon" })).toBe(false);
+		expect(matching([notAmazon("transaction_merchant")], { merchantId: "fnac" })).toBe(true);
+		expect(matching([notAmazon("transaction_merchant")])).toBe(true);
+		expect(matching([notAmazon("transaction_category")], { categoryId: "amazon" })).toBe(false);
+		expect(matching([notAmazon("transaction_category")])).toBe(true);
+	});
+
+	it("is a different deleted row for every row, since none holds it", () => {
+		const deleted: LeafCondition = { type: "transaction_category", operator: "!=", id: null };
+
+		expect(matching([deleted])).toBe(true);
+		expect(matching([deleted], { categoryId: "food" })).toBe(true);
+		expect(matching([account("!=", null)])).toBe(true);
+	});
+
+	it("has a merchant or a category with « N'est pas vide »", () => {
+		expect(matching([isSet("transaction_merchant")])).toBe(false);
+		expect(matching([isSet("transaction_merchant")], { merchantId: "amazon" })).toBe(true);
+		expect(matching([isSet("transaction_category")])).toBe(false);
+		expect(matching([isSet("transaction_category")], { categoryId: "food" })).toBe(true);
+	});
+
+	it("reads an account as never empty, as Sure's entries.account_id", () => {
+		expect(matching([account("!=", "a")])).toBe(false);
+		expect(matching([account("!=", "b")])).toBe(true);
+		expect(matching([account("is_null", null)])).toBe(false);
+		expect(matching([account("is_not_null", null)])).toBe(true);
 	});
 });
 
