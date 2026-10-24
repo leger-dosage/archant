@@ -1,4 +1,5 @@
 import type { RuleData, RuleRunData } from "@/hooks/useRules";
+import type { FormValues } from "@/lib/rule-form";
 import type { RuleSort, SortDirection } from "@/lib/rule-sort";
 import type { SummaryNames } from "@/lib/rule-summary";
 
@@ -63,7 +64,7 @@ import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { pageSearch } from "@/lib/page-search";
-import { amountStep } from "@/lib/rule-form";
+import { amountStep, presetValues } from "@/lib/rule-form";
 import { RULE_SORTS, SORT_DIRECTIONS, isRuleSort, sortRules } from "@/lib/rule-sort";
 import { ruleSummary } from "@/lib/rule-summary";
 
@@ -74,6 +75,10 @@ const searchSchema = z.object({
 	// Sure's `sort_by` and `direction`: name ascending unless the link says otherwise.
 	sortBy: z.enum(RULE_SORTS).optional().catch(undefined),
 	direction: z.enum(SORT_DIRECTIONS).optional().catch(undefined),
+	// Sure's `new_rule_path(name:, action_value:)` from the rule prompt: the
+	// form opens preset with the line's label and the category chosen.
+	name: z.string().optional().catch(undefined),
+	categoryId: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_authed/rules")({
@@ -90,7 +95,7 @@ const DESKTOP_QUERY = "(min-width: 768px)";
  * mid-animation. An id, not the rule: the dialog reads it from the current
  * list, so a rule edited elsewhere since opening is fresh.
  */
-type Opened = { action: "add" } | { action: "edit" | "delete"; id: string };
+type Opened = { action: "add"; preset?: FormValues } | { action: "edit" | "delete"; id: string };
 
 /**
  * An application waiting for its confirmation: one rule, or every rule for a
@@ -399,7 +404,14 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 function RulesPage() {
 	const { t } = useTranslation();
 	const admin = useIsAdmin();
-	const { runsPage = 1, sortBy = "name", direction = "asc" } = Route.useSearch();
+	const {
+		runsPage = 1,
+		sortBy = "name",
+		direction = "asc",
+		name: presetName,
+		categoryId: presetCategory,
+	} = Route.useSearch();
+	const navigate = Route.useNavigate();
 	const desktop = useMediaQuery(DESKTOP_QUERY);
 	const rules = useRules();
 	const accounts = useAccounts();
@@ -460,6 +472,27 @@ function RulesPage() {
 			setOpened(null);
 		}
 	}, [gone]);
+
+	// Opened once from the prompt's link, which then leaves the address: a
+	// reload or « Précédent » does not open it again.
+	useEffect(() => {
+		if (presetName === undefined || presetCategory === undefined) {
+			return;
+		}
+
+		if (!ready && failed === undefined) {
+			return;
+		}
+
+		if (desktop && admin && failed === undefined) {
+			setOpened({ action: "add", preset: presetValues(presetName, presetCategory) });
+			setOpen(true);
+		}
+		void navigate({
+			replace: true,
+			search: ({ name: _name, categoryId: _categoryId, ...rest }) => rest,
+		});
+	}, [presetName, presetCategory, ready, failed, desktop, admin, navigate]);
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("rules.title"), app: t("app.name") });
@@ -594,6 +627,7 @@ function RulesPage() {
 					open={open}
 					onOpenChange={setOpen}
 					rule={rule}
+					preset={opened.action === "add" ? opened.preset : undefined}
 					options={options}
 					// Sure confirms a new rule only; an edit keeps the switch and asks nothing.
 					onSaved={opened.action === "add" ? (saved) => void askToApply(saved) : undefined}

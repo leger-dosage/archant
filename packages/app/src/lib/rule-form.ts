@@ -10,7 +10,7 @@ import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { CurrencyCode } from "@archant/data/money";
 import { minorUnitsOf } from "@archant/data/money";
 import type { RuleActionType, RuleConditionType } from "@archant/data/rules";
-import { isValuelessAction } from "@archant/data/rules";
+import { RULE_NAME_MAX_LENGTH, isValuelessAction } from "@archant/data/rules";
 
 export type FormValues = RuleFormInput;
 type ConditionValues = FormValues["conditions"][number];
@@ -66,6 +66,18 @@ export const defaults = (): FormValues => ({
 	effectiveDate: null,
 	conditions: [newLeaf()],
 	actions: [newAction()],
+});
+
+/**
+ * Sure's `rules#new` from the rule prompt: named after the line's label, cut
+ * to the name's limit, a « Libellé » « Contient » condition on the whole
+ * label and the category just chosen.
+ */
+export const presetValues = (label: string, categoryId: string): FormValues => ({
+	name: label.slice(0, RULE_NAME_MAX_LENGTH),
+	effectiveDate: null,
+	conditions: [{ conditionType: "transaction_name", operator: "like", value: label }],
+	actions: [{ ...newAction("set_transaction_category"), value: categoryId }],
 });
 
 // An amount is stored as the number field gives it, Sure's decimal text.

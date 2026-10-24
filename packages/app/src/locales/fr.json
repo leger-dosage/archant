@@ -2690,6 +2690,15 @@
 		"title": "Règles",
 		"description": "Après chaque synchronisation ou importation, chaque règle activée complète toutes les opérations qu'elle vise, anciennes comprises : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l'ordre de leur création, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
 		"list": "Règles",
+		"prompt": {
+			"message": "Catégorie changée en {{name}}",
+			"description": "Vous pouvez créer une règle pour catégoriser automatiquement les opérations comme celle-ci",
+			"dontShowAgain": "Ne plus afficher",
+			"hideForToday": "Masquer pour aujourd'hui",
+			"hideForTodayHint": "« Masquer pour aujourd'hui » suspend ces suggestions pendant 24 heures.",
+			"create": "Créer une règle",
+			"region": "Suggestion de règle"
+		},
 		"sort": {
 			"label": "Trier par :",
 			"name": "Nom",

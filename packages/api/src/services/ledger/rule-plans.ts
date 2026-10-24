@@ -211,11 +211,12 @@ export async function applyRulePlan(
  * rules read `family.transactions.visible` while its recurring identifier,
  * which also reads these rows, reads every account. Tags are
  * read `KEYS_PER_LOOKUP` rows per query, below SQLite's parameter cap.
+ * `entryId` reads that one row only.
  */
 export async function ruleCandidates(
 	db: Pick<Transaction, "select">,
 	from: IsoDate | null,
-	{ activeAccountsOnly }: { activeAccountsOnly: boolean },
+	{ activeAccountsOnly, entryId }: { activeAccountsOnly: boolean; entryId?: string },
 ): Promise<RuleCandidate[]> {
 	const rows = await db
 		.select({
@@ -236,6 +237,7 @@ export async function ruleCandidates(
 				notSplitParent,
 				activeAccountsOnly ? eq(accounts.active, true) : undefined,
 				from === null ? undefined : gte(entries.date, from),
+				entryId === undefined ? undefined : eq(entries.id, entryId),
 			),
 		)
 		.orderBy(entries.date, entries.createdAt, entries.id);

@@ -2037,6 +2037,18 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 	});
 
+	it("refuses a viewer the rule prompt FORBIDDEN: a viewer writes no rule", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		const prompt = await viewer.request(`/api/transactions/${data.id}/rule-prompt`);
+
+		expect(prompt.status).toBe(403);
+		expect(errorBody.parse(await prompt.json()).error.code).toBe("FORBIDDEN");
+	});
+
 	it("refuses a viewer's activity label FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
 		const account = await openAccount(pea);
 		const created = await postTransaction(account.id, dividend);
@@ -2116,5 +2128,85 @@ describe("PATCH /api/transactions/:id and the investment activity label", () => 
 		expect(error.code).toBe("VALIDATION_ERROR");
 		expect(error.fields?.map((field) => field.path)).toEqual(["investmentActivityLabel"]);
 		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
+	});
+});
+
+/** A line labelled `label`, set by hand to a category of its own. */
+async function categorisedByHand(label: string) {
+	const account = await openAccount();
+	const created = await postTransaction(account.id, { ...expense, label });
+	const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+	const { id: categoryId } = await createCategory(uniqueCategory("Courses"));
+	const patched = await request("PATCH", `/api/transactions/${data.id}`, { categoryId });
+	expect(patched.status).toBe(200);
+
+	return { id: data.id, categoryId };
+}
+
+async function categoryRule(value: string, categoryId: string, enabled = true) {
+	const created = await request("POST", "/api/rules", {
+		enabled,
+		conditions: [{ conditionType: "transaction_name", operator: "like", value }],
+		actions: [{ actionType: "set_transaction_category", value: categoryId }],
+	});
+	expect(created.status).toBe(201);
+}
+
+// Story 32.11: Sure's `Transaction::Ruleable#eligible_for_category_rule?`.
+describe("GET /api/transactions/:id/rule-prompt", () => {
+	const promptBody = z.object({ data: z.object({ offered: z.boolean() }) });
+
+	const offered = async (id: string) => {
+		const response = await request("GET", `/api/transactions/${id}/rule-prompt`);
+		expect(response.status).toBe(200);
+
+		return promptBody.parse(response.body).data.offered;
+	};
+
+	it("offers a rule when no rule sets the category", async () => {
+		const { id } = await categorisedByHand("AMZN Mktp UK");
+
+		await expect(offered(id)).resolves.toBe(true);
+	});
+
+	it("offers none when an enabled rule for the category already matches the line", async () => {
+		const { id, categoryId } = await categorisedByHand("AMZN Mktp UK");
+		await categoryRule("amzn", categoryId);
+
+		await expect(offered(id)).resolves.toBe(false);
+	});
+
+	it("offers one when the category's only rule does not match the line", async () => {
+		const { id, categoryId } = await categorisedByHand("AMZN Mktp UK");
+		await categoryRule("AMAZON.CO.UK", categoryId);
+
+		await expect(offered(id)).resolves.toBe(true);
+	});
+
+	it("offers one when the matching rule is disabled", async () => {
+		const { id, categoryId } = await categorisedByHand("AMZN Mktp UK");
+		await categoryRule("AMZN", categoryId, false);
+
+		await expect(offered(id)).resolves.toBe(true);
+	});
+
+	it("offers one on a deactivated account's line, which rules no longer reach", async () => {
+		const { id, categoryId } = await categorisedByHand("AMZN Mktp UK");
+		await categoryRule("amzn", categoryId);
+		const { accountId } = z
+			.object({ accountId: z.string() })
+			.parse(await temp.db.get(sql`select account_id as accountId from entries where id = ${id}`));
+		const deactivated = await request("PATCH", `/api/accounts/${accountId}`, { active: false });
+		expect(deactivated.status).toBe(200);
+
+		await expect(offered(id)).resolves.toBe(true);
+	});
+
+	it("offers none for a line without a category", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
+
+		await expect(offered(data.id)).resolves.toBe(false);
 	});
 });

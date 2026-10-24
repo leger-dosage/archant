@@ -14,3 +14,6 @@ export const preferencesSchema = z.object({
 });
 
 export type PreferencesInput = z.infer<typeof preferencesSchema>;
+
+/** Sure's rule prompt form: « Ne plus afficher » ticked or not. */
+export const rulePromptDismissalSchema = z.object({ disabled: z.boolean() });

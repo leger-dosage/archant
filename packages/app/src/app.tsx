@@ -1,11 +1,13 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
+import { t } from "i18next";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import "./styles.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { RULE_PROMPT_TOASTER } from "@/hooks/useOfferRule";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { initI18n } from "@/lib/i18n";
@@ -119,6 +121,13 @@ createRoot(container).render(
 			<TooltipProvider>
 				<RouterProvider router={router} />
 				<Toaster />
+				<Toaster
+					id={RULE_PROMPT_TOASTER}
+					position="top-center"
+					containerAriaLabel={t("rules.prompt.region")}
+					// Wide enough for its two buttons side by side.
+					style={{ "--width": "420px" }}
+				/>
 			</TooltipProvider>
 		</QueryClientProvider>
 	</StrictMode>,
