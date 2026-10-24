@@ -545,3 +545,38 @@ export type BulkUpdateInput = z.input<typeof bulkUpdateBodySchema>;
 export type BulkUpdateRequest = z.output<typeof bulkUpdateBodySchema>;
 export type BulkDeleteInput = z.input<typeof bulkDeleteBodySchema>;
 export type BulkDeleteRequest = z.output<typeof bulkDeleteBodySchema>;
+
+/**
+ * The most lines the quick-categorise wizard lists in a group and sends back
+ * at once: a thousand ids stay under the request body's limit.
+ */
+export const MAX_CATEGORIZE_IDS = 1000;
+
+const groupTypeSchema = z.enum(["income", "expense"]);
+
+/** The wizard's group, by its place in Sure's order: `position` as Sure's. */
+export const categorizeQuerySchema = z.object({
+	position: z.coerce.number().int().min(0).default(0),
+});
+
+/** Sure's `preview_rule`: the text the rule's « Contient » would read, and the group's sign. */
+export const categorizePreviewSchema = z.object({
+	filter: z.string().default(""),
+	type: groupTypeSchema,
+});
+
+/**
+ * Sure's categorisation of a group: the ticked lines, the category, and
+ * the rule when « Créer une règle de catégorisation » is ticked.
+ */
+export const categorizeBodySchema = z.object({
+	ids: z
+		.array(z.string().min(1))
+		.transform((ids) => [...new Set(ids)])
+		.pipe(z.array(z.string()).min(1).max(MAX_CATEGORIZE_IDS)),
+	categoryId: z.string().min(1),
+	rule: z.object({ name: z.string().trim().min(1), type: groupTypeSchema }).optional(),
+});
+
+export type CategorizeInput = z.input<typeof categorizeBodySchema>;
+export type CategorizeRequest = z.output<typeof categorizeBodySchema>;

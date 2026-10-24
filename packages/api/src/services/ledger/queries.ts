@@ -1,4 +1,5 @@
 import type { CashFlowRow } from "../../domain/cash-flow.ts";
+import type { UncategorisedLine } from "../../domain/categorise-groups.ts";
 import type { IsoDate, IsoMonth } from "../../domain/dates.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { TransactionFilter } from "./filter.ts";
@@ -33,6 +34,7 @@ import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
+import { merchants } from "@archant/data/schema/merchants";
 import { transactions } from "@archant/data/schema/transactions";
 import type { LockedFields, PostedMatchConfidence } from "@archant/data/schema/transactions";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
@@ -48,6 +50,7 @@ import {
 	counterpartEntry,
 	counterpartIdOf,
 	inSequence,
+	notSplitParent,
 	transferColumns,
 } from "./shared.ts";
 
@@ -485,6 +488,55 @@ export async function listTransactions(
 	const items = await listTransactionPage(deps, filter, page);
 
 	return { items, total: await countTransactions(deps, filter) };
+}
+
+// The list's « Sans catégorie » (`filterCondition` with `uncategorised`), written
+// out since it can never match nothing, plus Sure's `excluded: false`.
+const uncategorisedWhere = and(
+	eq(entries.kind, "transaction"),
+	notSplitParent,
+	sql`${entries.accountId} in (select ${accounts.id} from ${accounts} where ${accounts.active} = 1)`,
+	isNull(transactions.categoryId),
+	not(joinedTransferSide.uncounted),
+	eq(transactions.excluded, false),
+);
+
+/**
+ * Every line of « Sans catégorie » that Sure's `uncategorized_transactions`
+ * keeps, an excluded one aside, with its merchant's name, most recent first:
+ * what the quick-categorise wizard groups.
+ */
+export async function uncategorisedLines(deps: ServiceDeps): Promise<UncategorisedLine[]> {
+	const rows = await deps.db
+		.select({
+			id: entries.id,
+			label: transactions.label,
+			amount: entries.amount,
+			merchantId: transactions.merchantId,
+			merchantName: merchants.name,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(merchants, eq(merchants.id, transactions.merchantId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(uncategorisedWhere)
+		.orderBy(...listOrder);
+
+	return rows.map(toRecord);
+}
+
+/** How many lines `uncategorisedLines` reads: « Catégoriser (N) ». */
+export async function countUncategorised(deps: ServiceDeps): Promise<number> {
+	const rows = await deps.db
+		.select({ total: count() })
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(uncategorisedWhere);
+
+	return rows.reduce((total, row) => total + row.total, 0);
 }
 
 /**

@@ -4,7 +4,7 @@ import type { AccountListData } from "@/hooks/useAccounts";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind, OperationsSearch } from "@/lib/transaction-filters";
 
-import { createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -34,6 +34,7 @@ import { UpcomingRecurring } from "@/components/UpcomingRecurring";
 import { useAccount } from "@/hooks/useAccount";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
+import { useUncategorisedCount } from "@/hooks/useCategorize";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
@@ -207,6 +208,7 @@ function OperationsPage() {
 	const merchants = useMerchants();
 	const tags = useTags();
 	const admin = useIsAdmin();
+	const uncategorised = useUncategorisedCount(admin).data ?? 0;
 	const data = transactions.data;
 	const figures = totals.data;
 	// The previous filter's figures may stay in the strip while the new ones
@@ -288,8 +290,20 @@ function OperationsPage() {
 		<Page
 			title={t("operations.title")}
 			actions={
-				admin && choice !== null ? (
-					<Button onClick={() => setAdding(true)}>{t("transactions.add")}</Button>
+				admin ? (
+					<>
+						{/* Sure's « Categorize (N) », in its page menu, while a line has no category. */}
+						{uncategorised > 0 && (
+							<Button variant="outline" asChild>
+								<Link to="/transactions/categorize">
+									{t("operations.categorize", { count: uncategorised })}
+								</Link>
+							</Button>
+						)}
+						{choice !== null && (
+							<Button onClick={() => setAdding(true)}>{t("transactions.add")}</Button>
+						)}
+					</>
 				) : undefined
 			}
 		>

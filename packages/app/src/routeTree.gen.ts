@@ -40,6 +40,7 @@ import { Route as AuthedSettingsPreferencesRouteImport } from './routes/_authed.
 import { Route as AuthedSettingsRecurringRouteImport } from './routes/_authed.settings.recurring'
 import { Route as AuthedSettingsSecurityRouteImport } from './routes/_authed.settings.security'
 import { Route as AuthedSettingsTagsRouteImport } from './routes/_authed.settings.tags'
+import { Route as AuthedTransactionsCategorizeRouteImport } from './routes/_authed.transactions_.categorize'
 import { Route as AuthedBudgetsMonthCategoriesRouteImport } from './routes/_authed.budgets.$month_.categories'
 import { Route as AuthedBudgetsMonthEditRouteImport } from './routes/_authed.budgets.$month_.edit'
 import { Route as AuthedSettingsBanksConnectionIdRouteImport } from './routes/_authed.settings.banks_.$connectionId'
@@ -205,6 +206,12 @@ const AuthedSettingsTagsRoute = AuthedSettingsTagsRouteImport.update({
   path: '/tags',
   getParentRoute: () => AuthedSettingsRoute,
 } as any)
+const AuthedTransactionsCategorizeRoute =
+  AuthedTransactionsCategorizeRouteImport.update({
+    id: '/transactions_/categorize',
+    path: '/transactions/categorize',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedBudgetsMonthCategoriesRoute =
   AuthedBudgetsMonthCategoriesRouteImport.update({
     id: '/budgets/$month_/categories',
@@ -268,6 +275,7 @@ export interface FileRoutesByFullPath {
   '/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
+  '/transactions/categorize': typeof AuthedTransactionsCategorizeRoute
   '/accounts/': typeof AuthedAccountsIndexRoute
   '/budgets/': typeof AuthedBudgetsIndexRoute
   '/goals/': typeof AuthedGoalsIndexRoute
@@ -305,6 +313,7 @@ export interface FileRoutesByTo {
   '/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/settings/security': typeof AuthedSettingsSecurityRoute
   '/settings/tags': typeof AuthedSettingsTagsRoute
+  '/transactions/categorize': typeof AuthedTransactionsCategorizeRoute
   '/accounts': typeof AuthedAccountsIndexRoute
   '/budgets': typeof AuthedBudgetsIndexRoute
   '/goals': typeof AuthedGoalsIndexRoute
@@ -345,6 +354,7 @@ export interface FileRoutesById {
   '/_authed/settings/recurring': typeof AuthedSettingsRecurringRoute
   '/_authed/settings/security': typeof AuthedSettingsSecurityRoute
   '/_authed/settings/tags': typeof AuthedSettingsTagsRoute
+  '/_authed/transactions_/categorize': typeof AuthedTransactionsCategorizeRoute
   '/_authed/accounts/': typeof AuthedAccountsIndexRoute
   '/_authed/budgets/': typeof AuthedBudgetsIndexRoute
   '/_authed/goals/': typeof AuthedGoalsIndexRoute
@@ -385,6 +395,7 @@ export interface FileRouteTypes {
     | '/settings/recurring'
     | '/settings/security'
     | '/settings/tags'
+    | '/transactions/categorize'
     | '/accounts/'
     | '/budgets/'
     | '/goals/'
@@ -422,6 +433,7 @@ export interface FileRouteTypes {
     | '/settings/recurring'
     | '/settings/security'
     | '/settings/tags'
+    | '/transactions/categorize'
     | '/accounts'
     | '/budgets'
     | '/goals'
@@ -461,6 +473,7 @@ export interface FileRouteTypes {
     | '/_authed/settings/recurring'
     | '/_authed/settings/security'
     | '/_authed/settings/tags'
+    | '/_authed/transactions_/categorize'
     | '/_authed/accounts/'
     | '/_authed/budgets/'
     | '/_authed/goals/'
@@ -700,6 +713,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedSettingsTagsRouteImport
       parentRoute: typeof AuthedSettingsRoute
     }
+    '/_authed/transactions_/categorize': {
+      id: '/_authed/transactions_/categorize'
+      path: '/transactions/categorize'
+      fullPath: '/transactions/categorize'
+      preLoaderRoute: typeof AuthedTransactionsCategorizeRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/budgets/$month_/categories': {
       id: '/_authed/budgets/$month_/categories'
       path: '/budgets/$month/categories'
@@ -811,6 +831,7 @@ interface AuthedRouteChildren {
   AuthedAccountsAccountIdRoute: typeof AuthedAccountsAccountIdRoute
   AuthedBudgetsMonthRoute: typeof AuthedBudgetsMonthRoute
   AuthedGoalsGoalIdRoute: typeof AuthedGoalsGoalIdRoute
+  AuthedTransactionsCategorizeRoute: typeof AuthedTransactionsCategorizeRoute
   AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
   AuthedBudgetsIndexRoute: typeof AuthedBudgetsIndexRoute
   AuthedGoalsIndexRoute: typeof AuthedGoalsIndexRoute
@@ -828,6 +849,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAccountsAccountIdRoute: AuthedAccountsAccountIdRoute,
   AuthedBudgetsMonthRoute: AuthedBudgetsMonthRoute,
   AuthedGoalsGoalIdRoute: AuthedGoalsGoalIdRoute,
+  AuthedTransactionsCategorizeRoute: AuthedTransactionsCategorizeRoute,
   AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
   AuthedBudgetsIndexRoute: AuthedBudgetsIndexRoute,
   AuthedGoalsIndexRoute: AuthedGoalsIndexRoute,

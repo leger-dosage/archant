@@ -264,14 +264,25 @@ export function useDeleteTransaction(accountId: string) {
  * Refreshes what a bulk action or a rule application can change: every
  * transaction list, the category, merchant and tag counts, and, with
  * `balances`, every account. No optimistic update: the rows a filter or a
- * rule selects are not all on screen.
+ * rule selects are not all on screen. `keep` leaves out the queries under
+ * that key.
  */
-export function useInvalidateBulk() {
+export function useInvalidateBulk(scope: { keep?: readonly unknown[] } = {}) {
 	const queryClient = useQueryClient();
+	const { keep } = scope;
 
 	return (options: { balances: boolean }) =>
 		Promise.all([
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.transactions.all,
+				// A page that refreshes itself on its own terms, as the wizard's group.
+				...(keep === undefined
+					? {}
+					: {
+							predicate: (query: { queryKey: readonly unknown[] }) =>
+								keep.some((part, index) => query.queryKey[index] !== part),
+						}),
+			}),
 			queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
