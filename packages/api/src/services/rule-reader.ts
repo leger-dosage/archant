@@ -139,6 +139,12 @@ function toLeaf(condition: RuleConditionRow, known: Known): LeafCondition {
 			: { type: conditionType, operator, value };
 	}
 
+	if (conditionType === "transaction_details" && isRuleOperatorOf(conditionType, operator)) {
+		return operator === "is_null"
+			? { type: conditionType, operator }
+			: { type: conditionType, operator, value };
+	}
+
 	if (conditionType === "transaction_amount" && isRuleOperatorOf(conditionType, operator)) {
 		const decimal = parseUnsignedDecimal(value);
 

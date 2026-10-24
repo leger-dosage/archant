@@ -460,3 +460,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-32-4-every-rule-operator.md`
   summary: The rule form's amount operator menu shows « > », « ≥ », « = », « ≠ » where Sure's `rules.condition_filters.operators` show « Supérieur à », « Supérieur ou égal à », « Est égal à », « Différent de ».
   evidence: Story 32.4 gave text and select conditions Sure's words and left amount operators untouched; Sure `00dd977fb` `OPERATORS_MAP["number"]` labels them with words.
+
+## Deferred from: review of spec-32-7-filter-rules-by-provider-details (2026-10-24)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-32-7-filter-rules-by-provider-details.md`
+  summary: The transaction drawer does not show a line's bank details, which Sure prints raw under « Détails supplémentaires », so the owner cannot read a merchant category code before writing a « Détails bancaires » rule.
+  evidence: Sure `00dd977fb` `app/views/transactions/show.html.erb` renders `build_transaction_extra_details`, whose Enable Banking branch shows `extra` as JSON; Archant's transaction routes do not return `extra`.

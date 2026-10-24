@@ -24,6 +24,7 @@ export const LEAF_TYPES: readonly LeafType[] = [
 	"transaction_merchant",
 	"transaction_category",
 	"transaction_tag",
+	"transaction_details",
 	"transaction_notes",
 	"transaction_type",
 ];

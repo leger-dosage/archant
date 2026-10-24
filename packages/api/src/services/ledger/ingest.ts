@@ -14,6 +14,7 @@ import type { TransactionPatch } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
 import { and, asc, eq, inArray, lte, ne, notExists } from "drizzle-orm";
+import { isDeepStrictEqual } from "node:util";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -26,7 +27,7 @@ import type { ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
 import { taggings } from "@archant/data/schema/taggings";
-import type { LockableField } from "@archant/data/schema/transactions";
+import type { LockableField, TransactionExtra } from "@archant/data/schema/transactions";
 import { transactions } from "@archant/data/schema/transactions";
 
 import { snapshotRejectionFor } from "../../domain/balances/snapshot.ts";
@@ -36,6 +37,7 @@ import { fingerprintOf, lineKeys, pairLines, previewDigest, tripleOf } from "../
 import { MAX_IDENTICAL_LINES, absorbPending, assignIdentical } from "../../domain/pending.ts";
 import { planActions } from "../../domain/rules/matching.ts";
 import { rejectionFor } from "../../domain/statement.ts";
+import { mergeExtra } from "../../domain/transaction-extra.ts";
 import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { loadEnabledRules } from "../rule-reader.ts";
@@ -337,6 +339,45 @@ async function updateMatched(
 			await tx
 				.insert(taggings)
 				.values(change.next.tagIds.map((tagId) => ({ transactionId: entryId, tagId })));
+		}
+	});
+}
+
+/**
+ * Merges the bank's details into each entry a sync reads again, as Sure's
+ * `apply_provider_extra` on every import, so a line stored before the bank
+ * sent them, or before Archant kept them, gets them. Writes only what changes.
+ * A pending line found on an entry is the old copy of a booked one, which it
+ * leaves alone, as `groupLines` does.
+ */
+async function refreshDetails(tx: Transaction, found: readonly Paired[]): Promise<void> {
+	const lines = found.filter(
+		({ line }) => !line.pending && line.extra !== null && line.extra !== undefined,
+	);
+	const stored = new Map<string, TransactionExtra | null>();
+
+	await inSequence(lines, KEYS_PER_LOOKUP, async (chunk) => {
+		const rows = await tx
+			.select({ entryId: transactions.entryId, extra: transactions.extra })
+			.from(transactions)
+			.where(
+				inArray(
+					transactions.entryId,
+					chunk.map(({ entryId }) => entryId),
+				),
+			);
+
+		for (const row of rows) {
+			stored.set(row.entryId, row.extra);
+		}
+	});
+
+	await oneByOne(lines, async ({ entryId, line }) => {
+		const current = stored.get(entryId);
+		const extra = mergeExtra(current, line.extra, line.pending);
+
+		if (!isDeepStrictEqual(current, extra)) {
+			await tx.update(transactions).set({ extra }).where(eq(transactions.entryId, entryId));
 		}
 	});
 }
@@ -1138,6 +1179,7 @@ export async function ingest(
 						reference: line.reference,
 						possibleDuplicate: duplicate,
 						pending: line.pending,
+						extra: line.extra ?? null,
 						excluded: isSplit({ line, duplicate }),
 						lockedFields: isSplit({ line, duplicate })
 							? lockedBy("user", locksOf(line), ["excluded"], now)
@@ -1192,6 +1234,8 @@ export async function ingest(
 			if (options.updateMatched === true) {
 				await updateMatched(tx, [...grouped.present, ...grouped.matched], options.origin, now);
 			}
+
+			await refreshDetails(tx, [...grouped.present, ...grouped.matched]);
 
 			// A new booked line may repeat a pending entry at another amount, a
 			// tip added: suggested on that entry, never merged (Sure's fuzzy match).
@@ -1253,6 +1297,7 @@ export async function ingest(
 								currency: line.currency,
 								label: line.label,
 								notes: line.notes,
+								extra: line.extra ?? null,
 								merchantId,
 								categoryId,
 								tagIds,
@@ -1266,6 +1311,7 @@ export async function ingest(
 							currency: line.currency,
 							label: split.label,
 							notes: split.notes,
+							extra: null,
 							merchantId,
 							categoryId: split.categoryId,
 							tagIds: [...new Set(split.tagIds)],

@@ -1027,7 +1027,54 @@ describe("toTransaction", () => {
 			notes: "CB BOULANGERIE\n20/09",
 			pending: false,
 			merchant: "Boulangerie",
+			extra: null,
 		});
+	});
+
+	it("keeps Sure's details of a line paid abroad, each a trimmed string, and flags a pending one", () => {
+		expect(
+			toTransaction(
+				line({
+					exchange_rate: {
+						exchange_rate: " 1.0849 ",
+						unit_currency: "USD",
+						rate_type: "AGRD",
+						instructed_amount: { amount: "54.25", currency: "USD" },
+					},
+					merchant_category_code: "5411",
+				}),
+				SINCE,
+				[],
+			),
+		).toMatchObject({
+			extra: {
+				enable_banking: {
+					fx_rate: "1.0849",
+					fx_unit_currency: "USD",
+					fx_instructed_amount: "54.25",
+					merchant_category_code: "5411",
+				},
+			},
+		});
+		expect(toTransaction(line({ status: "PDNG" }), SINCE, [])).toMatchObject({
+			extra: { enable_banking: { pending: true } },
+		});
+	});
+
+	it("drops a detail that is blank, not a string or too long, and keeps the line", () => {
+		const mapped = toTransaction(
+			line({
+				exchange_rate: { exchange_rate: 1.08, unit_currency: "", instructed_amount: "54.25" },
+				merchant_category_code: "5".repeat(65),
+			}),
+			SINCE,
+			[],
+		);
+
+		expect(mapped).toMatchObject({ amount: -1000, extra: null });
+		expect(
+			toTransaction(line({ exchange_rate: "1.08", merchant_category_code: 5411 }), SINCE, []),
+		).toMatchObject({ amount: -1000, extra: null });
 	});
 
 	it("names a card placeholder's line and merchant from its cleaned remittance", () => {

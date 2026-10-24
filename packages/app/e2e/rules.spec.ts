@@ -331,6 +331,7 @@ test("the form offers Sure's operators per field, and « Est vide » and « N'es
 		"Marchand",
 		"Catégorie",
 		"Étiquette",
+		"Détails bancaires",
 		"Notes",
 		"Type",
 	]);
@@ -356,6 +357,13 @@ test("the form offers Sure's operators per field, and « Est vide » and « N'es
 
 	await choose(page, "Champ de la condition 1", "Étiquette");
 	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(["Égal à", "Est vide"]);
+
+	await choose(page, "Champ de la condition 1", "Détails bancaires");
+	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual([
+		"Contient",
+		"Égal à",
+		"Est vide",
+	]);
 
 	await choose(page, "Champ de la condition 1", "Notes");
 	expect(await optionsOf(page, "Opérateur de la condition 1")).toEqual(text);
@@ -392,6 +400,30 @@ test("a rule « Libellé » « Ne contient pas » reads so in the list", async (
 	await expect(
 		ruleRow(page, `Si Libellé ne contient pas ${marker}, alors Catégorie Courses`),
 	).toBeVisible();
+});
+
+test("a rule « Détails bancaires » « Contient » is saved, read in the list and reopened as typed", async ({
+	page,
+}) => {
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await choose(page, "Champ de la condition 1", "Détails bancaires");
+	await dialog(page).getByLabel("Valeur de la condition 1").fill("5411");
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: "Courses", exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	const row = ruleRow(page, "Si Détails bancaires contient 5411, alors Catégorie Courses");
+	await expect(row).toBeVisible();
+
+	await row.getByRole("button", { name: /^Actions pour /u }).click();
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	await expect(dialog(page).getByLabel("Champ de la condition 1")).toHaveText("Détails bancaires");
+	await expect(dialog(page).getByLabel("Opérateur de la condition 1")).toHaveText("Contient");
+	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveValue("5411");
 });
 
 test("a merchant condition saved through its picker reads « Marchand est … » in the list", async ({

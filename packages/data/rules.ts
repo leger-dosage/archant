@@ -13,6 +13,7 @@ export const RULE_CONDITION_TYPES = [
 	"transaction_merchant",
 	"transaction_category",
 	"transaction_tag",
+	"transaction_details",
 	"transaction_notes",
 	"transaction_type",
 	"compound",
@@ -40,8 +41,9 @@ export type RuleOperator = (typeof RULE_OPERATORS)[number];
 /**
  * The operators each condition type accepts, in the order the form offers
  * them: Sure's `OPERATORS_MAP["text"]` and `OPERATORS_MAP["select"]`. A tag
- * keeps the two operators Sure's `TransactionTag#apply` reads, and a type
- * its single one. A compound condition is a group: `and` matches on all of
+ * keeps the two operators Sure's `TransactionTag#apply` reads, the bank's
+ * details the three `TransactionDetails#operators` overrides them with, and a
+ * type its single one. A compound condition is a group: `and` matches on all of
  * its conditions, `or` on any.
  */
 export const RULE_OPERATORS_BY_TYPE = {
@@ -51,6 +53,7 @@ export const RULE_OPERATORS_BY_TYPE = {
 	transaction_merchant: ["=", "!=", "is_null", "is_not_null"],
 	transaction_category: ["=", "!=", "is_null", "is_not_null"],
 	transaction_tag: ["=", "is_null"],
+	transaction_details: ["like", "=", "is_null"],
 	transaction_notes: ["like", "not_like", "=", "!=", "is_null", "is_not_null"],
 	transaction_type: ["="],
 	compound: ["and", "or"],
@@ -106,10 +109,11 @@ export function isRuleOperatorOf<Type extends RuleConditionType>(
 }
 
 /**
- * A condition as the API returns it. `value` is stored text: the label or the
- * notes, the amount as decimal text in major units of any currency, a direction,
- * or an account, merchant, category or tag id; `null` for a valueless operator and for
- * a group, whose conditions follow.
+ * A condition as the API returns it. `value` is stored text: the label, the
+ * notes or the text searched in the bank's details, the amount as decimal
+ * text in major units of any currency, a direction, or an account, merchant,
+ * category or tag id; `null` for a valueless operator and for a group, whose
+ * conditions follow.
  */
 export type RuleConditionSnapshot = {
 	conditionType: RuleConditionType;

@@ -67,6 +67,11 @@ const OPERATOR_KEYS = {
 	transaction_merchant: SELECT_KEYS,
 	transaction_category: SELECT_KEYS,
 	transaction_tag: { "=": "rules.operators.is", is_null: "rules.operators.isNull" },
+	transaction_details: {
+		like: "rules.operators.contains",
+		"=": "rules.operators.equals",
+		is_null: "rules.operators.isNull",
+	},
 	transaction_notes: TEXT_KEYS,
 	transaction_type: { "=": "rules.operators.is" },
 	compound: { and: "rules.operators.all", or: "rules.operators.any" },

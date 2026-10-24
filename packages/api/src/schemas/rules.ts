@@ -130,7 +130,9 @@ function checkLeaf(leaf: Leaf, path: (string | number)[], context: z.core.$Refin
 	}
 
 	const text =
-		leaf.conditionType === "transaction_name" || leaf.conditionType === "transaction_notes";
+		leaf.conditionType === "transaction_name" ||
+		leaf.conditionType === "transaction_notes" ||
+		leaf.conditionType === "transaction_details";
 
 	if (text && value.length > RULE_VALUE_MAX_LENGTH) {
 		issue(context, [...path, "value"], "too_big");

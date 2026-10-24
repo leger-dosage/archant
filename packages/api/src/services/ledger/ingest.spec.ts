@@ -1298,6 +1298,37 @@ describe("rules at ingestion", () => {
 		await expect(merchantOf(id)).resolves.toBe(other);
 	});
 
+	it("runs a « Détails bancaires » rule on the details a synced line carries, « Est vide » on the others", async () => {
+		const { account, bank } = await linkedChecking();
+		const groceries = await newCategory("Supermarchés");
+		const other = await newCategory("Sans détails");
+		const label = `DETAILS ${crypto.randomUUID()}`;
+		await newRuleWith(
+			[{ actionType: "set_transaction_category", value: groceries }],
+			[labelLike(label), { conditionType: "transaction_details", operator: "like", value: "5411" }],
+		);
+		await newRuleWith(
+			[{ actionType: "set_transaction_category", value: other }],
+			[
+				labelLike(label),
+				{ conditionType: "transaction_details", operator: "is_null", value: null },
+			],
+		);
+
+		const synced = await sync(account.id, bank.connectionId, [
+			newBankLine({
+				externalId: "DETAILS-1",
+				label,
+				extra: { enable_banking: { merchant_category_code: "5411" } },
+			}),
+			newBankLine({ externalId: "DETAILS-2", label, amount: toMinorUnits(-777) }),
+		]);
+
+		const [withDetails = "", without = ""] = synced.created;
+		await expect(categoryOf(withDetails)).resolves.toBe(groceries);
+		await expect(categoryOf(without)).resolves.toBe(other);
+	});
+
 	it("leaves no merchant behind that a rule replaced on every line", async () => {
 		const { account, bank } = await linkedChecking();
 		const other = await newMerchant("Remplaçant");

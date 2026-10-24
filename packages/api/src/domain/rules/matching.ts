@@ -5,7 +5,11 @@ import type { LabelPattern } from "./label-pattern.ts";
 import type { Decimal, MinorUnits } from "@archant/data/money";
 import { compareWithDecimal, toMinorUnits } from "@archant/data/money";
 import type { RuleOperatorOf, ValuelessRuleOperator } from "@archant/data/rules";
-import type { LockableField, LockedFields } from "@archant/data/schema/transactions";
+import type {
+	LockableField,
+	LockedFields,
+	TransactionExtra,
+} from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
 import { direction } from "../cash-flow.ts";
@@ -51,6 +55,16 @@ type ReferenceCondition =
 	| { type: ReferenceType; operator: RuleOperatorOf<ReferenceType>; id: string | null }
 	| { type: "transaction_tag"; operator: RuleOperatorOf<"transaction_tag">; id: string | null };
 
+/**
+ * The bank's details, as Sure's `TransactionDetails`: `like` finds the value
+ * in any string or number at any depth, case aside, and `=` the same with
+ * case, as Sure's `ILIKE` and `LIKE '%value%'`; neither reads a key or a
+ * boolean. `is_null` matches a row without details.
+ */
+type DetailsCondition =
+	| { type: "transaction_details"; operator: "is_null" }
+	| { type: "transaction_details"; operator: "like" | "="; value: string };
+
 /** The row's `direction`, the rule the list's type filter uses. */
 type TypeCondition = {
 	type: "transaction_type";
@@ -58,7 +72,12 @@ type TypeCondition = {
 	value: Direction;
 };
 
-export type LeafCondition = TextCondition | AmountCondition | ReferenceCondition | TypeCondition;
+export type LeafCondition =
+	| TextCondition
+	| AmountCondition
+	| ReferenceCondition
+	| DetailsCondition
+	| TypeCondition;
 
 /** One level deep: `and` matches on all of its conditions, `or` on any. */
 type GroupCondition = {
@@ -127,6 +146,8 @@ export type RuleCandidate = {
 	currency: string;
 	label: string;
 	notes: string | null;
+	/** What the bank sent beside the line; `null` for a line no bank sent. */
+	extra: TransactionExtra | null;
 	merchantId: string | null;
 	categoryId: string | null;
 	tagIds: readonly string[];
@@ -162,6 +183,39 @@ function textMatches(condition: TextCondition, field: string | null): boolean {
 				: text === value;
 		}
 	}
+}
+
+/**
+ * The string and number values of `node` at any depth, as Sure's
+ * `jsonb_path_query(extra, 'strict $.**')` kept to `string` and `number`.
+ */
+function* searchedValues(node: unknown): Generator<string> {
+	if (typeof node === "string") {
+		yield node;
+	} else if (typeof node === "number") {
+		yield String(node);
+	} else if (typeof node === "object" && node !== null) {
+		for (const child of Object.values(node)) {
+			yield* searchedValues(child);
+		}
+	}
+}
+
+function detailsMatch(condition: DetailsCondition, extra: TransactionExtra | null): boolean {
+	if (condition.operator === "is_null") {
+		return extra === null || Object.keys(extra).length === 0;
+	}
+
+	const { value } = condition;
+	const wanted = condition.operator === "like" ? value.toLowerCase() : value;
+
+	for (const text of searchedValues(extra)) {
+		if ((condition.operator === "like" ? text.toLowerCase() : text).includes(wanted)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 /** What a reference condition reads of the row: tags apart, since a row carries several. */
@@ -223,6 +277,8 @@ function leafMatches(condition: LeafCondition, row: RuleCandidate): boolean {
 			return textMatches(condition, row.notes);
 		case "transaction_amount":
 			return amountMatches(condition, row);
+		case "transaction_details":
+			return detailsMatch(condition, row.extra);
 		case "transaction_type":
 			return direction(row) === condition.value;
 		default:

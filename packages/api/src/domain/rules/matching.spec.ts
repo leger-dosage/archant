@@ -1,8 +1,10 @@
 import type { Condition, LeafCondition, Rule, RuleCandidate } from "./matching.ts";
 
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { parseUnsignedDecimal, toMinorUnits } from "@archant/data/money";
+import type { TransactionExtra } from "@archant/data/schema/transactions";
 
 import { compileLabelPattern } from "./label-pattern.ts";
 import { matches, planActions } from "./matching.ts";
@@ -15,6 +17,7 @@ const candidate = (overrides: Partial<RuleCandidate> = {}): RuleCandidate => ({
 	currency: "EUR",
 	label: "CB CARREFOUR CITY 12/09",
 	notes: null,
+	extra: null,
 	merchantId: null,
 	categoryId: null,
 	tagIds: [],
@@ -53,6 +56,12 @@ const account = (
 	operator: "=" | "!=" | "is_null" | "is_not_null",
 	id: string | null,
 ): LeafCondition => ({ type: "transaction_account", operator, id });
+
+const details = (operator: "like" | "=", value: string): LeafCondition => ({
+	type: "transaction_details",
+	operator,
+	value,
+});
 
 const matching = (conditions: Condition[], overrides: Partial<RuleCandidate> = {}) =>
 	matches(rule(conditions), candidate(overrides));
@@ -261,6 +270,59 @@ const isSet = (type: "transaction_merchant" | "transaction_category"): LeafCondi
 	type,
 	operator: "is_not_null",
 	id: null,
+});
+
+describe("matches on the bank's details", () => {
+	const noDetails: LeafCondition = { type: "transaction_details", operator: "is_null" };
+	const abroad = {
+		extra: {
+			enable_banking: {
+				fx_rate: "1.0849",
+				fx_unit_currency: "USD",
+				merchant_category_code: "5411",
+				pending: true as const,
+			},
+		},
+	};
+
+	it("contains a value, case aside, with « Contient »", () => {
+		expect(matching([details("like", "usd")], abroad)).toBe(true);
+		expect(matching([details("like", "541")], abroad)).toBe(true);
+		expect(matching([details("like", "5812")], abroad)).toBe(false);
+	});
+
+	it("contains a value, case kept, with « Égal à », as Sure's LIKE '%value%'", () => {
+		expect(matching([details("=", "USD")], abroad)).toBe(true);
+		expect(matching([details("=", "usd")], abroad)).toBe(false);
+		expect(matching([details("=", "1.08")], abroad)).toBe(true);
+	});
+
+	it("never matches a word that only names a key, nor a boolean", () => {
+		expect(matching([details("like", "merchant")], abroad)).toBe(false);
+		expect(matching([details("like", "enable_banking")], abroad)).toBe(false);
+		expect(matching([details("like", "true")], abroad)).toBe(false);
+	});
+
+	it("reads string and number values at any depth, as `strict $.**`", () => {
+		// Wider than Enable Banking's strings, as Sure's walk reads any provider's shape.
+		const extra = z
+			.custom<TransactionExtra>()
+			.parse(JSON.parse('{"enable_banking":{"rates":[{"value":1.5},"EUR"]}}'));
+
+		expect(matching([details("like", "1.5")], { extra })).toBe(true);
+		expect(matching([details("like", "eur")], { extra })).toBe(true);
+	});
+
+	it("is empty without details, or with an empty object, and only then", () => {
+		expect(matching([noDetails])).toBe(true);
+		expect(matching([noDetails], { extra: {} })).toBe(true);
+		expect(matching([noDetails], abroad)).toBe(false);
+	});
+
+	it("leaves a line without details to « Est vide » alone, as a hand-typed one", () => {
+		expect(matching([details("like", "5411")])).toBe(false);
+		expect(matching([details("=", "5411")])).toBe(false);
+	});
 });
 
 describe("Sure's negative and empty operators", () => {

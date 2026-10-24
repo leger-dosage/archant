@@ -693,6 +693,57 @@ describe("rules", () => {
 		expect(locks.every(({ locked: fields }) => !fields.includes("category"))).toBe(true);
 	});
 
+	it("matches the bank's details on applying to history, a line typed by hand only on « Est vide »", async () => {
+		const account = await openAccount();
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const leisure = await createCategory(uniqueCategory("Loisirs"));
+		const synced = await typed(account.id, { ...expense, label: "CB DETAILS SUPERMARCHE" });
+		await typed(account.id, { ...expense, label: "CB DETAILS A LA MAIN" });
+		await temp.db.run(
+			sql`update transactions set extra = ${JSON.stringify({ enable_banking: { merchant_category_code: "5411" } })} where entry_id = ${synced}`,
+		);
+		const details = await createRule({
+			conditions: [
+				ruleLeaf("transaction_name", "like", "cb details"),
+				ruleLeaf("transaction_details", "like", "5411"),
+			],
+			actions: [categoryAction(groceries.id)],
+		});
+		const empty = await createRule({
+			conditions: [
+				ruleLeaf("transaction_name", "like", "cb details"),
+				ruleLeaf("transaction_details", "is_null", null),
+			],
+			actions: [categoryAction(leisure.id)],
+		});
+
+		expect(details.conditions).toContainEqual(
+			expect.objectContaining({ conditionType: "transaction_details", value: "5411" }),
+		);
+		await expect(previewOf(`/api/rules/${details.id}/preview`)).resolves.toBe(1);
+		await expect(previewOf(`/api/rules/${empty.id}/preview`)).resolves.toBe(1);
+		await request("POST", "/api/rules/apply");
+
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB DETAILS A LA MAIN", category: leisure.id, origin: "rule" },
+			{ label: "CB DETAILS SUPERMARCHE", category: groceries.id, origin: "rule" },
+		]);
+	});
+
+	it("refuses an operator Sure's details condition does not offer", async () => {
+		const groceries = await createCategory(uniqueCategory("Courses"));
+		const { status, body } = await request("POST", "/api/rules", {
+			conditions: [ruleLeaf("transaction_details", "!=", "5411")],
+			actions: [categoryAction(groceries.id)],
+		});
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.fields).toContainEqual({
+			path: "conditions.0.operator",
+			code: "invalid_value",
+		});
+	});
+
 	it("reaches only the rows dated on or after the rule's start date", async () => {
 		const account = await openAccount({ openingDate: "2026-05-01" });
 		const groceries = await createCategory(uniqueCategory("Courses"));

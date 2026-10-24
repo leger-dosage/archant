@@ -687,6 +687,13 @@
       "when": 1792845217721,
       "tag": "0097_one_tag_action_per_rule",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "6",
+      "when": 1792848198426,
+      "tag": "0098_provider_details",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import type { IsoDate } from "./dates.ts";
 
 import type { MinorUnits } from "@archant/data/money";
+import type { TransactionExtra } from "@archant/data/schema/transactions";
 
 import { addDays } from "./dates.ts";
 
@@ -31,6 +32,11 @@ export type NormalizedTransaction = {
 	 * connector sets it.
 	 */
 	merchant?: string | null | undefined;
+	/**
+	 * What the bank sent beside the line, Sure's `extra`; `null` or absent
+	 * when nothing. Only a bank connector sets it.
+	 */
+	extra?: TransactionExtra | null | undefined;
 	/**
 	 * What the fingerprint hashes instead of `label` (AD-7): a bank line's
 	 * label as read before Sure's clean-ups, so a label that changes with the
