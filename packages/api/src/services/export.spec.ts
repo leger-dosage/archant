@@ -376,7 +376,7 @@ async function household() {
 		actions: [
 			{ actionType: "set_transaction_category", value: bakery },
 			{ actionType: "set_transaction_merchant", value: baker },
-			{ actionType: "set_transaction_tags", value: trip },
+			{ actionType: "set_transaction_tags", value: `${trip},${odd}` },
 			{ actionType: "replace_in_transaction_name", value: "^CB ", replacement: "" },
 		],
 	});
@@ -2390,8 +2390,11 @@ describe("exportArchive", () => {
 				},
 				{
 					action_type: "set_transaction_tags",
-					value: '"Voyage, été"',
-					value_ref: { type: "Tag", id: trip, name: "Voyage, été" },
+					value: '"Voyage, été",A\\B|C',
+					value_ref: [
+						{ type: "Tag", id: trip, name: "Voyage, été" },
+						{ type: "Tag", id: odd, name: "A\\B|C" },
+					],
 				},
 			],
 			archant: {

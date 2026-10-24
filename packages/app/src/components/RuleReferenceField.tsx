@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { RuleActionType } from "@archant/data/rules";
+import { tagIdsOf } from "@archant/data/rules";
 
 import { CategoryCombobox } from "@/components/CategoryCombobox";
 import { CategoryPill } from "@/components/CategoryPill";
@@ -98,7 +99,6 @@ export const LEAF_REFERENCES = {
 export const ACTION_REFERENCES = {
 	set_transaction_category: "category",
 	set_transaction_merchant: "merchant",
-	set_transaction_tags: "tag",
 	set_as_transfer_or_payment: "account",
 } as const satisfies Partial<Record<RuleActionType, ReferenceKind>>;
 
@@ -222,4 +222,64 @@ export function ReferenceField({
 				</PickerField>
 			);
 	}
+}
+
+/**
+ * The tags one action adds, as Sure's `DS::TagSelect`: the picker stays open
+ * and ticks several, kept comma-separated as Sure stores them. The button
+ * names the tags still there, then « Étiquette supprimée » for any gone,
+ * which the first tick drops, since the API refuses a deleted tag on save.
+ */
+export function RuleTagsField({
+	id,
+	label,
+	value,
+	onPick,
+	invalid,
+	describedBy,
+	options,
+}: {
+	id: string;
+	label: string;
+	/** The picked ids, comma-separated, `""` for none. */
+	value: string;
+	onPick: (value: string) => void;
+	invalid: boolean;
+	describedBy: { "aria-describedby"?: string };
+	options: Options;
+}) {
+	const { t } = useTranslation();
+	const picked = tagIdsOf(value);
+	const live = picked.filter((tagId) => options.tags.some((tag) => tag.id === tagId));
+	const names = [
+		...live.flatMap((tagId) => options.tags.find((tag) => tag.id === tagId)?.name ?? []),
+		...(live.length < picked.length ? [t("rules.summary.deletedTag")] : []),
+	];
+
+	return (
+		<PickerField
+			id={id}
+			label={label}
+			invalid={invalid}
+			describedBy={describedBy}
+			chosen={live.length === 0 ? undefined : { name: names.join(", ") }}
+			placeholder={t("rules.form.tagsPlaceholder")}
+			deleted={deletedText(value, t("rules.summary.deletedTag"))}
+		>
+			{() => (
+				<TagCombobox
+					tags={options.tags}
+					value={live}
+					onToggle={(tagId) =>
+						onPick(
+							(live.includes(tagId)
+								? live.filter((other) => other !== tagId)
+								: [...live, tagId]
+							).join(","),
+						)
+					}
+				/>
+			)}
+		</PickerField>
+	);
 }

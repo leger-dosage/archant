@@ -14,6 +14,7 @@ import { asc, count, desc, eq } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import type { RuleActionType, RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
+import { tagIdsOf } from "@archant/data/rules";
 import { ruleActions, ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import type {
 	RuleAction as RuleActionRow,
@@ -142,7 +143,12 @@ async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest):
 	}
 
 	for (const [index, action] of rule.actions.entries()) {
-		name(ACTION_REFERENCES[action.actionType], action.value, `actions.${index}.value`);
+		const ids =
+			action.actionType === "set_transaction_tags" ? tagIdsOf(action.value) : [action.value];
+
+		for (const id of ids) {
+			name(ACTION_REFERENCES[action.actionType], id, `actions.${index}.value`);
+		}
 	}
 
 	const missing = (
@@ -167,9 +173,10 @@ async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest):
 
 	if (missing.length > 0) {
 		// In the body's order, conditions before actions, as the form lists them.
-		const fields = named
-			.filter((item) => missing.includes(item.path))
-			.map(({ path }) => ({ path, code: "invalid_value" }));
+		// A tag action names several ids under one path: report it once.
+		const fields = [
+			...new Set(named.map(({ path }) => path).filter((path) => missing.includes(path))),
+		].map((path) => ({ path, code: "invalid_value" }));
 
 		throw new AppError("VALIDATION_ERROR", "The request is invalid.", fields);
 	}

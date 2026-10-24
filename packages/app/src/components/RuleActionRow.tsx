@@ -10,7 +10,7 @@ import type { RuleActionType } from "@archant/data/rules";
 import { RULE_ACTION_TYPES } from "@archant/data/rules";
 
 import { FieldMessage } from "@/components/FieldMessage";
-import { ACTION_REFERENCES, ReferenceField } from "@/components/RuleReferenceField";
+import { ACTION_REFERENCES, ReferenceField, RuleTagsField } from "@/components/RuleReferenceField";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -71,9 +71,10 @@ export function ActionRow({
 
 	const valueField = (): ReactNode => {
 		switch (actionType) {
+			case "set_transaction_tags":
+				return <RuleTagsField {...pickerProps} value={current} onPick={pick} options={options} />;
 			case "set_transaction_category":
 			case "set_transaction_merchant":
-			case "set_transaction_tags":
 			case "set_as_transfer_or_payment":
 				return (
 					<ReferenceField

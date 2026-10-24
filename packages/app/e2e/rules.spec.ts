@@ -421,13 +421,14 @@ test("a merchant condition saved through its picker reads « Marchand est … »
 	).toBeVisible();
 });
 
-test("a rule with four actions sets the merchant, a tag and the label of an imported line and excludes it", async ({
+test("a rule with four actions sets the merchant, two tags and the label of an imported line and excludes it", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount();
 	const merchant = await api.createMerchant(uniqueName("Amazon"));
 	const tag = await api.createTag(uniqueName("Achats"));
+	const other = await api.createTag(uniqueName("Livres"));
 	const marker = uniqueName("AMZN").replace(" ", "-");
 	const renamed = uniqueName("Amazon");
 	await visit(page);
@@ -438,9 +439,21 @@ test("a rule with four actions sets the merchant, a tag and the label of an impo
 	await dialog(page).getByRole("button", { name: "Marchand", exact: true }).click();
 	await page.getByRole("option", { name: merchant.name, exact: true }).click();
 	await dialog(page).getByRole("button", { name: "Ajouter une action" }).click();
-	await choose(page, "Action 2", "Ajouter une étiquette");
-	await dialog(page).getByRole("button", { name: "Ajouter une étiquette", exact: true }).click();
+	await choose(page, "Action 2", "Ajouter des étiquettes");
+	const tags = dialog(page).getByRole("button", { name: "Ajouter des étiquettes", exact: true });
+	await expect(tags).toHaveText("Choisir des étiquettes");
+	await tags.click();
+	// One picker ticks several tags, as Sure's tag select, and stays open.
+	const otherOption = page.getByRole("option", { name: other.name, exact: true });
 	await page.getByRole("option", { name: tag.name, exact: true }).click();
+	await otherOption.click();
+	await expect(otherOption).toHaveAttribute("aria-checked", "true");
+	// A second tick takes the tag off again.
+	await otherOption.click();
+	await expect(otherOption).toHaveAttribute("aria-checked", "false");
+	await otherOption.click();
+	await page.keyboard.press("Escape");
+	await expect(tags).toHaveText(`${tag.name}, ${other.name}`);
 	await dialog(page).getByRole("button", { name: "Ajouter une action" }).click();
 	await choose(page, "Action 3", "Renommer");
 	await dialog(page).getByRole("textbox", { name: "Renommer", exact: true }).fill(renamed);
@@ -465,6 +478,7 @@ test("a rule with four actions sets the merchant, a tag and the label of an impo
 	const row = page.getByRole("main").getByRole("listitem").filter({ hasText: renamed });
 	await expect(row).toContainText(merchant.name);
 	await expect(row).toContainText(tag.name);
+	await expect(row).toContainText(other.name);
 	await expect(row).toContainText("Exclue des rapports");
 });
 
@@ -987,9 +1001,9 @@ for (const refused of [
 	},
 	{
 		path: "tags",
-		field: "Ajouter une étiquette",
+		field: "Ajouter des étiquettes",
 		search: "Rechercher une étiquette",
-		placeholder: "Choisir une étiquette",
+		placeholder: "Choisir des étiquettes",
 	},
 ] as const) {
 	test(`a ${refused.path} creation the server refuses shows a destructive toast and keeps the picker open`, async ({

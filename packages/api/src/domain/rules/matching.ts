@@ -77,8 +77,12 @@ type CategoryAction = { type: "set_transaction_category"; categoryId: string | n
 
 type MerchantAction = { type: "set_transaction_merchant"; merchantId: string | null };
 
-/** Adds one tag and keeps the others; Sure's `set_transaction_tags` adds several at once. */
-type TagAction = { type: "set_transaction_tags"; tagId: string | null };
+/**
+ * Adds every tag the row lacks and keeps the others, as Sure's
+ * `set_transaction_tags`; deleted tags are already left out, so an empty list
+ * writes nothing.
+ */
+type TagAction = { type: "set_transaction_tags"; tagIds: readonly string[] };
 
 type RenameAction = { type: "set_transaction_name"; label: string };
 
@@ -287,13 +291,18 @@ function applyAction(
 			return action.merchantId === null || locked("merchant")
 				? {}
 				: { merchantId: action.merchantId };
-		case "set_transaction_tags":
-			return action.tagId === null ||
-				locked("tags") ||
-				row.tagIds.includes(action.tagId) ||
-				row.tagIds.length >= maxTagsPerRow
-				? {}
-				: { tagIds: [...row.tagIds, action.tagId] };
+		case "set_transaction_tags": {
+			if (locked("tags")) {
+				return {};
+			}
+
+			// Past the cap a tag is skipped, as a transaction holds no more.
+			const added = action.tagIds
+				.filter((tagId) => !row.tagIds.includes(tagId))
+				.slice(0, Math.max(0, maxTagsPerRow - row.tagIds.length));
+
+			return added.length === 0 ? {} : { tagIds: [...row.tagIds, ...added] };
+		}
 		case "set_transaction_name":
 			return locked("label") ? {} : { label: action.label };
 		case "replace_in_transaction_name":

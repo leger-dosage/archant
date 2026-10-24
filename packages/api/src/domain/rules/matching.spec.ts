@@ -407,7 +407,7 @@ describe("planActions", () => {
 			plan([
 				withActions([
 					{ type: "set_transaction_merchant", merchantId: "amazon" },
-					{ type: "set_transaction_tags", tagId: "achats" },
+					{ type: "set_transaction_tags", tagIds: ["achats"] },
 					{ type: "set_transaction_name", label: "Amazon" },
 					{ type: "exclude_transaction" },
 					{ type: "set_as_transfer_or_payment", accountId: "livret" },
@@ -434,7 +434,7 @@ describe("planActions", () => {
 				[label("like", "amzn")],
 			),
 			withActions(
-				[{ type: "set_transaction_tags", tagId: "achats" }],
+				[{ type: "set_transaction_tags", tagIds: ["achats"] }],
 				[reference("transaction_merchant", "amazon")],
 				"r2",
 			),
@@ -455,7 +455,7 @@ describe("planActions", () => {
 			withActions([
 				{ type: "set_transaction_category", categoryId: "courses" },
 				{ type: "set_transaction_merchant", merchantId: "amazon" },
-				{ type: "set_transaction_tags", tagId: "achats" },
+				{ type: "set_transaction_tags", tagIds: ["achats"] },
 				{ type: "set_transaction_name", label: "Amazon" },
 				{ type: "exclude_transaction" },
 			]),
@@ -475,11 +475,26 @@ describe("planActions", () => {
 	});
 
 	it("adds a tag beside the others, once, and skips it at the cap", () => {
-		const addB = withActions([{ type: "set_transaction_tags", tagId: "b" }]);
+		const addB = withActions([{ type: "set_transaction_tags", tagIds: ["b"] }]);
 
 		expect(plan([addB], [candidate({ tagIds: ["a"] })])).toEqual([["e1", { addTagIds: ["b"] }]]);
 		expect(plan([addB], [candidate({ tagIds: ["a", "b"] })])).toEqual([]);
 		expect(plan([addB], [candidate({ tagIds: ["a", "c"] })], 2)).toEqual([]);
+	});
+
+	it("adds every tag of one action after the row's own, keeping those it holds", () => {
+		const addAB = withActions([{ type: "set_transaction_tags", tagIds: ["a", "b"] }]);
+
+		expect(plan([addAB], [candidate({ tagIds: ["c"] })])).toEqual([
+			["e1", { addTagIds: ["a", "b"] }],
+		]);
+		expect(plan([addAB], [candidate({ tagIds: ["b"] })])).toEqual([["e1", { addTagIds: ["a"] }]]);
+		expect(plan([addAB], [candidate({ tagIds: ["a", "b"] })])).toEqual([]);
+		expect(plan([addAB], [candidate({ tagIds: ["c"], lockedFields: { tags: 1 } })])).toEqual([]);
+		// One place left: the first tag takes it.
+		expect(plan([addAB], [candidate({ tagIds: ["c"] })], 2)).toEqual([
+			["e1", { addTagIds: ["a"] }],
+		]);
 	});
 
 	it("plans nothing for a value the row already holds, or a deleted reference", () => {
@@ -503,7 +518,7 @@ describe("planActions", () => {
 					withActions(
 						[
 							{ type: "set_transaction_merchant", merchantId: null },
-							{ type: "set_transaction_tags", tagId: null },
+							{ type: "set_transaction_tags", tagIds: [] },
 							{ type: "set_as_transfer_or_payment", accountId: null },
 						],
 						[],
@@ -629,7 +644,7 @@ describe("planActions' per-rule tallies", () => {
 				[label("like", "amzn")],
 			),
 			withActions(
-				[{ type: "set_transaction_tags", tagId: "achats" }],
+				[{ type: "set_transaction_tags", tagIds: ["achats"] }],
 				[reference("transaction_merchant", "amazon")],
 				"r2",
 			),

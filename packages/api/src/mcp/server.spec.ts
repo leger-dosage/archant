@@ -2290,6 +2290,7 @@ describe("writing rules", () => {
 		const food = await createCategory(uniqueCategory("Alimentation"));
 		const shop = await createMerchant(`Carrefour ${food.id.slice(0, 6)}`);
 		const tag = await createTag(`Courses ${food.id.slice(0, 6)}`);
+		const trip = await createTag(`Vacances ${food.id.slice(0, 6)}`);
 		const conditions = [
 			{
 				condition_type: "compound",
@@ -2308,7 +2309,7 @@ describe("writing rules", () => {
 		const actions = [
 			{ action_type: "set_transaction_category", value: food.id },
 			{ action_type: "set_transaction_merchant", value: shop.id },
-			{ action_type: "set_transaction_tags", value: tag.id },
+			{ action_type: "set_transaction_tags", value: `${tag.id},${trip.id}` },
 			{ action_type: "set_as_transfer_or_payment", value: account.id },
 		];
 		const created = savedRule.parse(
@@ -2339,7 +2340,7 @@ describe("writing rules", () => {
 			actions: [
 				{ action_type: "set_transaction_category", value: food.name },
 				{ action_type: "set_transaction_merchant", value: shop.name },
-				{ action_type: "set_transaction_tags", value: tag.name },
+				{ action_type: "set_transaction_tags", value: `${tag.name}, ${trip.name}` },
 				{ action_type: "set_as_transfer_or_payment", value: "Règles lues" },
 			],
 		};

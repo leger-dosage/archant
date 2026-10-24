@@ -1660,6 +1660,33 @@ describe("rules", () => {
 		expect(JSON.parse(run?.rule ?? "")).toEqual(JSON.parse(runSnapshot("50.00", "0.99")));
 	});
 
+	it("folds 0097 a rule's tag actions into the first, holding every tag once in order", async () => {
+		const before = await migratedBefore("0097");
+		await insertRule(before, "r1");
+		await insertRule(before, "r2");
+		const action = (id: string, ruleId: string, position: number, type: string, value: string) =>
+			before.run(
+				sql`insert into rule_actions (id, rule_id, position, action_type, value) values (${id}, ${ruleId}, ${position}, ${type}, ${value})`,
+			);
+		await action("a1", "r1", 0, "set_transaction_category", "c");
+		await action("a2", "r1", 1, "set_transaction_tags", "t1");
+		await action("a3", "r1", 2, "set_transaction_name", "Amazon");
+		await action("a4", "r1", 3, "set_transaction_tags", "t2, t3,t1");
+		await action("b1", "r2", 0, "set_transaction_tags", "t3,t2");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, position, value from rule_actions order by id`),
+		).resolves.toEqual([
+			{ id: "a1", position: 0, value: "c" },
+			{ id: "a2", position: 1, value: "t1,t2,t3" },
+			{ id: "a3", position: 2, value: "Amazon" },
+			{ id: "b1", position: 0, value: "t3,t2" },
+		]);
+	});
+
 	it("starts a transaction expecting no counterpart, and forgets the account once it goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

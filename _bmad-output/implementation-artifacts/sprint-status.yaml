@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-21-2026 17:05
-last_updated: 10-24-2026 21:00
+last_updated: 10-24-2026 22:30
 project: archant
 project_key: NOKEY
 tracking_system: file-system
@@ -328,7 +328,7 @@ development_status:
   32-3-merchants-and-tags-as-sure: done
   32-4-every-rule-operator: done
   32-5-match-an-amount-in-any-currency: done
-  32-6-add-several-tags-in-one-rule-action: backlog
+  32-6-add-several-tags-in-one-rule-action: done
   32-7-filter-rules-by-provider-details: backlog
   32-8-set-an-investment-activity-label-by-rule: backlog
   32-9-confirm-a-rule-before-it-runs-sort-the-list-apply-every-rule: backlog

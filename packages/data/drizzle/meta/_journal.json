@@ -680,6 +680,13 @@
       "when": 1792841779442,
       "tag": "0096_rule_amounts_as_decimals",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "6",
+      "when": 1792845217721,
+      "tag": "0097_one_tag_action_per_rule",
+      "breakpoints": true
     }
   ]
 }
