@@ -1133,21 +1133,23 @@ describe("rules at ingestion", () => {
 		await expect(categoryOf(miss)).resolves.toBeNull();
 	});
 
-	it("matches an amount above 50,00 in the reporting currency only", async () => {
+	it("matches an amount above 50 in any currency, as Sure", async () => {
 		const account = await openChecking();
 		const dollars = await openChecking({ name: "USD", currency: "USD" });
 		const big = await newCategory("Gros achats");
-		await newRule(big, [{ conditionType: "transaction_amount", operator: ">", value: "50,00" }]);
+		await newRule(big, [{ conditionType: "transaction_amount", operator: ">", value: "50" }]);
 
 		const expense = await add(account.id, { amount: toMinorUnits(-6000) });
 		const small = await add(account.id, { amount: toMinorUnits(4000) });
 		const income = await add(account.id, { amount: toMinorUnits(6000) });
 		const foreign = await add(dollars.id, { amount: toMinorUnits(-6000), currency: "USD" });
+		const smallForeign = await add(dollars.id, { amount: toMinorUnits(-4000), currency: "USD" });
 
 		await expect(categoryOf(expense)).resolves.toBe(big);
 		await expect(categoryOf(small)).resolves.toBeNull();
 		await expect(categoryOf(income)).resolves.toBe(big);
-		await expect(categoryOf(foreign)).resolves.toBeNull();
+		await expect(categoryOf(foreign)).resolves.toBe(big);
+		await expect(categoryOf(smallForeign)).resolves.toBeNull();
 	});
 
 	it("lets the later of two matching rules win, and skips a disabled one", async () => {

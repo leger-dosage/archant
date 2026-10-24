@@ -136,7 +136,7 @@ describe("rules", () => {
 			json: {
 				name: "Sorties",
 				effectiveDate: "2026-09-01",
-				conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1 234,5" }],
+				conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1234,5" }],
 				actions: [{ actionType: "set_transaction_category", value: leisure.id }],
 			},
 		});
@@ -144,7 +144,7 @@ describe("rules", () => {
 		expect((await replaced.json()).data).toMatchObject({
 			name: "Sorties",
 			effectiveDate: "2026-09-01",
-			conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "123450" }],
+			conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1234.5" }],
 			actions: [{ value: leisure.id }],
 		});
 
@@ -192,7 +192,19 @@ describe("rules", () => {
 		],
 		[
 			"an unreadable amount",
-			[ruleLeaf("transaction_amount", ">", "50,001")],
+			[ruleLeaf("transaction_amount", ">", "1 234")],
+			"once",
+			[{ path: "conditions.0.value", code: "invalid_amount" }],
+		],
+		[
+			"an amount over 200 characters",
+			[ruleLeaf("transaction_amount", ">", "1".repeat(201))],
+			"once",
+			[{ path: "conditions.0.value", code: "invalid_amount" }],
+		],
+		[
+			"an amount with more than eight decimals",
+			[ruleLeaf("transaction_amount", ">", "0.000000001")],
 			"once",
 			[{ path: "conditions.0.value", code: "invalid_amount" }],
 		],

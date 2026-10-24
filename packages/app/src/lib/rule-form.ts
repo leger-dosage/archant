@@ -7,11 +7,9 @@ import type { Path } from "react-hook-form";
 
 import type { RuleFormInput } from "@archant/api/schemas/rules";
 import type { CurrencyCode } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
+import { minorUnitsOf } from "@archant/data/money";
 import type { RuleActionType, RuleConditionType } from "@archant/data/rules";
 import { isValuelessAction } from "@archant/data/rules";
-
-import { amountToText } from "@/lib/amount-sign";
 
 export type FormValues = RuleFormInput;
 type ConditionValues = FormValues["conditions"][number];
@@ -63,21 +61,23 @@ export const defaults = (): FormValues => ({
 	actions: [newAction()],
 });
 
-function leafValues(condition: RuleData["conditions"][number], currency: CurrencyCode): LeafValues {
-	const value = condition.value ?? "";
-
+// An amount is stored as the number field gives it, Sure's decimal text.
+function leafValues(condition: RuleData["conditions"][number]): LeafValues {
 	return {
 		conditionType: condition.conditionType,
 		operator: condition.operator,
-		// Stored in minor units; the field shows it as typed: `5000` is `50,00`.
-		value:
-			condition.conditionType === "transaction_amount"
-				? amountToText(toMinorUnits(Number(value)), currency)
-				: value,
+		value: condition.value ?? "",
 	};
 }
 
-export function valuesOf(rule: RuleData, currency: CurrencyCode): FormValues {
+/** Sure's `number_step`: the reporting currency's minor unit, `0.01` in euros, `1` in yen. */
+export function amountStep(currency: CurrencyCode): string {
+	const decimals = minorUnitsOf(currency);
+
+	return decimals === 0 ? "1" : `0.${"1".padStart(decimals, "0")}`;
+}
+
+export function valuesOf(rule: RuleData): FormValues {
 	return {
 		name: rule.name ?? "",
 		effectiveDate: rule.effectiveDate,
@@ -87,9 +87,9 @@ export function valuesOf(rule: RuleData, currency: CurrencyCode): FormValues {
 						conditionType: "compound",
 						operator: condition.operator,
 						value: null,
-						conditions: condition.conditions.map((child) => leafValues(child, currency)),
+						conditions: condition.conditions.map((child) => leafValues(child)),
 					}
-				: leafValues(condition, currency),
+				: leafValues(condition),
 		),
 		actions: rule.actions.map((action) => ({
 			actionType: action.actionType,
@@ -131,6 +131,8 @@ type AccountOption = { id: string; name: string };
 
 /** Every list a value picker offers, loaded by the page. */
 export type Options = {
+	/** The amount field's `step`, from `amountStep`. */
+	amountStep: string;
 	accounts: readonly AccountOption[];
 	categories: readonly CategoryData[];
 	merchants: readonly MerchantData[];

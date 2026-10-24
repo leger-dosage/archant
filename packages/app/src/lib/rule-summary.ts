@@ -1,7 +1,7 @@
 import type { TFunction } from "i18next";
 
 import { RULE_TYPE_VALUES } from "@archant/api/schemas/rules";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { isDecimalString } from "@archant/data/money";
 import type {
 	RuleActionType,
 	RuleConditionType,
@@ -121,7 +121,7 @@ export function operatorMenuKey(
 	return keys[operator] ?? null;
 }
 
-/** A condition as the API lists it: an amount's `value` is minor units of the reporting currency. */
+/** A condition as the API lists it: an amount's `value` is decimal text, in no currency. */
 export type SummaryCondition = {
 	conditionType: RuleConditionType;
 	operator: RuleOperator;
@@ -144,8 +144,25 @@ export type SummaryNames = {
 	categories: ReadonlyMap<string, string>;
 	merchants: ReadonlyMap<string, string>;
 	tags: ReadonlyMap<string, string>;
-	reportingCurrency: string;
 };
+
+/**
+ * An amount as Sure's `value_display` prints it, with no currency since it
+ * matches a line in any, written the French way with the decimals stored:
+ * `"1234.50"` reads « 1 234,50 ».
+ */
+function amountText(value: string): string {
+	if (!isDecimalString(value)) {
+		return value;
+	}
+
+	const decimals = value.split(".")[1]?.length ?? 0;
+
+	return new Intl.NumberFormat("fr-FR", {
+		minimumFractionDigits: decimals,
+		maximumFractionDigits: decimals,
+	}).format(value);
+}
 
 /**
  * The condition the summary names, as in Sure: the first top-level one, or
@@ -166,10 +183,7 @@ function valueText(condition: SummaryCondition, names: SummaryNames, t: TFunctio
 
 	switch (condition.conditionType) {
 		case "transaction_amount":
-			return formatMoney({
-				amount: toMinorUnits(Number(value)),
-				currency: names.reportingCurrency,
-			});
+			return amountText(value);
 		case "transaction_account":
 			return names.accounts.get(value) ?? t("rules.summary.deletedAccount");
 		case "transaction_merchant":

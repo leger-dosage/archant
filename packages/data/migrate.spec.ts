@@ -970,6 +970,31 @@ describe("investment contributions", () => {
 	});
 });
 
+const snapshotLeaf = (conditionType: string, value: string | null) => ({
+	conditionType,
+	operator: ">",
+	value,
+	conditions: [],
+});
+
+const runSnapshot = (amount: string, nested: string) =>
+	JSON.stringify({
+		name: "Gros achat",
+		conditions: [
+			snapshotLeaf("transaction_amount", amount),
+			{
+				conditionType: "compound",
+				operator: "or",
+				value: null,
+				conditions: [
+					snapshotLeaf("transaction_name", "5000"),
+					snapshotLeaf("transaction_amount", nested),
+				],
+			},
+		],
+		actions: [{ actionType: "exclude_transaction", value: null }],
+	});
+
 describe("merchant and tag colours", () => {
 	it("gives 0094 each existing merchant and tag one of Sure's ten colours, and no website", async () => {
 		const before = await migratedBefore("0094");
@@ -1599,6 +1624,40 @@ describe("rules", () => {
 			insertCondition(database, "m1", "transaction_amount", "not_like"),
 		).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("turns 0096 every amount condition and run snapshot from euro cents into decimal text", async () => {
+		const before = await migratedBefore("0096");
+		await insertRule(before, "r1");
+		const amountCondition = (id: string, value: string, parentId: string | null = null) =>
+			before.run(
+				sql`insert into rule_conditions (id, rule_id, parent_id, position, condition_type, operator, value) values (${id}, 'r1', ${parentId}, 0, 'transaction_amount', '>', ${value})`,
+			);
+		await amountCondition("c1", "5000");
+		await amountCondition("c2", "5");
+		await insertCondition(before, "c3", "compound", "or");
+		await amountCondition("c4", "123456", "c3");
+		await insertCondition(before, "c5", "transaction_name", "like");
+		await before.run(
+			sql`insert into rule_runs (id, rule_id, rule, matched_count, changed_count, executed_at, position) values ('u1', 'r1', ${runSnapshot("5000", "99")}, 1, 1, 0, 0)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, value from rule_conditions order by id`),
+		).resolves.toEqual([
+			{ id: "c1", value: "50.00" },
+			{ id: "c2", value: "0.05" },
+			{ id: "c3", value: "x" },
+			{ id: "c4", value: "1234.56" },
+			{ id: "c5", value: "x" },
+		]);
+
+		const [run] = await database.all<{ rule: string }>(sql`select rule from rule_runs`);
+
+		expect(JSON.parse(run?.rule ?? "")).toEqual(JSON.parse(runSnapshot("50.00", "0.99")));
 	});
 
 	it("starts a transaction expecting no counterpart, and forgets the account once it goes", async () => {

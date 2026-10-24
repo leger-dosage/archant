@@ -28,6 +28,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-8-1-create-a-categorisation-rule.md`
   summary: Rule amount conditions store minor units of the reporting currency without the currency code.
   evidence: `getReportingCurrency()` returns a constant today; if it becomes a `settings` row, stored amounts would be read at another scale (EUR to JPY) without warning. Store the currency beside the value or migrate them when the setting ships.
+  resolved: Story 32.5. An amount condition is now Sure's decimal text in major units, read the same whatever the reporting currency.
 - source_spec: `_bmad-output/implementation-artifacts/spec-10-1-connect-a-bank.md`
   summary: The CI `image` job does not check that `docker-compose.yml` passes the Enable Banking variables and `ENCRYPTION_KEY` to the container.
   evidence: The job sets only `BETTER_AUTH_SECRET` and never calls `GET /api/bank-connections/setup`; a typo in one of the three pass-through lines stays green.

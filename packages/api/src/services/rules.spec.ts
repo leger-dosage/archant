@@ -90,7 +90,7 @@ const grouped: RuleInput = {
 };
 
 describe("createRule", () => {
-	it("stores the rule enabled, trims values and keeps the amount in minor units", async () => {
+	it("stores the rule enabled, trims values and keeps the amount as decimal text", async () => {
 		const rule = await createRule(deps(), grouped);
 
 		expect(rule).toEqual({
@@ -111,7 +111,7 @@ describe("createRule", () => {
 							value: "carrefour",
 							conditions: [],
 						},
-						{ conditionType: "transaction_amount", operator: "=", value: "1000", conditions: [] },
+						{ conditionType: "transaction_amount", operator: "=", value: "10.00", conditions: [] },
 					],
 				},
 			],
@@ -349,7 +349,7 @@ describe("loadEnabledRules", () => {
 						operator: "or",
 						conditions: [
 							{ type: "transaction_name", operator: "like", value: "carrefour" },
-							{ type: "transaction_amount", operator: "=", value: 1000 },
+							{ type: "transaction_amount", operator: "=", value: { units: 1000n, exponent: 2 } },
 						],
 					},
 				],

@@ -3,8 +3,6 @@ import type { NameBook } from "../services/names.ts";
 
 import { z } from "zod";
 
-import type { CurrencyCode } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
 import type { RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
 import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, RULE_OPERATORS } from "@archant/data/rules";
 
@@ -30,7 +28,6 @@ import {
 	setRuleEnabled,
 	updateRule,
 } from "../services/rules.ts";
-import { getReportingCurrency } from "../services/settings.ts";
 import { transactionsById } from "../services/transactions.ts";
 import {
 	BANK_TEXT,
@@ -40,7 +37,6 @@ import {
 	REPLACES,
 	SETS,
 	defineTool,
-	formatMoney,
 	pageFieldsOf,
 	pageOf,
 	pageOutput,
@@ -55,7 +51,7 @@ const leafOutput = z.object({
 		.string()
 		.nullable()
 		.describe(
-			'The account, merchant, category or tag by name, an amount formatted such as "12,50 €", else the text or type compared; null for is_null and is_not_null.',
+			'The account, merchant, category or tag by name, an amount as a decimal string such as "12.5", compared in any currency, else the text or type compared; null for is_null and is_not_null.',
 		),
 });
 
@@ -139,26 +135,21 @@ function idsIn(rules: readonly RuleSnapshot[]) {
 
 /**
  * How a rule read names what it points to, as Sure's `get_transactions`
- * names a transaction's account, category, merchant and tags; its amounts
- * formatted in the reporting currency, which they are stored in.
+ * names a transaction's account, category, merchant and tags.
  */
-type Reader = { names: NameBook; currency: CurrencyCode };
+type Reader = { names: NameBook };
 
 async function readerFor(deps: ServiceDeps, rules: readonly RuleSnapshot[]): Promise<Reader> {
-	return { names: await namesOf(deps, idsIn(rules)), currency: getReportingCurrency() };
+	return { names: await namesOf(deps, idsIn(rules)) };
 }
 
-/** A stored value as a rule read gives it: a row by its name, an amount formatted. */
+/** A stored value as a rule read gives it: a row by its name, else as stored, as Sure's `condition.value`. */
 function valueOf(condition: RuleConditionSnapshot, reader: Reader): string | null {
 	const { value, conditionType } = condition;
 	const kind = CONDITION_KINDS[conditionType];
 
 	if (value === null) {
 		return null;
-	}
-
-	if (conditionType === "transaction_amount") {
-		return formatMoney({ amount: toMinorUnits(Number(value)), currency: reader.currency });
 	}
 
 	return kind === undefined ? value : nameOf(reader.names[kind], value);
@@ -211,7 +202,7 @@ function ruleOf(rule: RuleData, reader: Reader) {
 }
 
 const READS =
-	"Each condition and action names the account, merchant, category or tag it points to, and gives an amount formatted in the reporting currency; create_rule, update_rule and preview_rule take ids and decimal strings instead, from get_accounts, get_merchants, get_categories and get_tags.";
+	"Each condition and action names the account, merchant, category or tag it points to, and gives an amount as a decimal string that matches a transaction in any currency; create_rule, update_rule and preview_rule take ids and decimal strings instead, from get_accounts, get_merchants, get_categories and get_tags.";
 
 export const getRules = defineTool({
 	name: "get_rules",

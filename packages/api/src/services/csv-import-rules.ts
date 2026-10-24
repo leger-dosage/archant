@@ -13,7 +13,6 @@ import { ruleSchema } from "../schemas/rules.ts";
 import { columnOf, csvIssue } from "./csv-import-format.ts";
 import { oneByOne } from "./ledger/shared.ts";
 import { createRule, listRules, setRuleEnabled, updateRule } from "./rules.ts";
-import { getReportingCurrency } from "./settings.ts";
 import { createMissing, ruleInputOf, taxonomyOf } from "./sure-rules.ts";
 
 // Sure's `RuleImport` at 00dd977fb: a row per rule, its conditions and
@@ -267,7 +266,6 @@ export async function analyseRules(
 ): Promise<RulesAnalysis> {
 	const errors: SureIssue[] = [];
 	const read: ReadRule[] = [];
-	const schema = ruleSchema(getReportingCurrency());
 	const taxonomy = await taxonomyOf(db);
 	const household = await accountsById(db);
 
@@ -326,7 +324,7 @@ export async function analyseRules(
 		const input =
 			Array.isArray(conditions) && Array.isArray(actions) ? ruleInputOf(context, data) : null;
 
-		if (input === null || !schema.safeParse(input).success) {
+		if (input === null || !ruleSchema.safeParse(input).success) {
 			errors.push(csvIssue("unsupported_rule", { line }));
 			continue;
 		}
@@ -354,7 +352,6 @@ const replacementsOf = (rule: RuleData): RuleInput["actions"] =>
  */
 async function writeRules(tx: Transaction, deps: ServiceDeps, read: readonly ReadRule[]) {
 	const scoped = { ...deps, db: tx };
-	const schema = ruleSchema(getReportingCurrency());
 	const taxonomy: Taxonomy = await taxonomyOf(tx);
 	const household = await accountsById(tx);
 	const existing = await listRules(scoped);
@@ -374,7 +371,7 @@ async function writeRules(tx: Transaction, deps: ServiceDeps, read: readonly Rea
 			return;
 		}
 
-		const parsed = schema.parse(input);
+		const parsed = ruleSchema.parse(input);
 
 		await createMissing(tx, taxonomy, context.missing.values(), now);
 

@@ -39,7 +39,6 @@ import { rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { loadEnabledRules } from "../rule-reader.ts";
-import { getReportingCurrency } from "../settings.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
@@ -1278,7 +1277,6 @@ export async function ingest(
 						transfer: null,
 						expectedTransferAccountId: null,
 					})),
-					getReportingCurrency(),
 					MAX_TAGS_PER_TRANSACTION,
 				);
 

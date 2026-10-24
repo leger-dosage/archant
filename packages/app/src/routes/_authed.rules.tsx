@@ -56,6 +56,7 @@ import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { pageSearch } from "@/lib/page-search";
+import { amountStep } from "@/lib/rule-form";
 import { ruleSummary } from "@/lib/rule-summary";
 
 // Absent means the first page of runs; a value from an old or hand-edited
@@ -300,26 +301,26 @@ function RulesPage() {
 		() => (accounts.data === undefined ? [] : accountsByName(accounts.data)),
 		[accounts.data],
 	);
+	const reported = accounts.data?.reportingCurrency ?? DEFAULT_CURRENCY;
+	const reportingCurrency = isCurrencyCode(reported) ? reported : DEFAULT_CURRENCY;
 	const options = useMemo(
 		() => ({
+			amountStep: amountStep(reportingCurrency),
 			accounts: accountList,
 			categories: categories.data ?? [],
 			merchants: merchants.data ?? [],
 			tags: tags.data ?? [],
 		}),
-		[accountList, categories.data, merchants.data, tags.data],
+		[reportingCurrency, accountList, categories.data, merchants.data, tags.data],
 	);
-	const reported = accounts.data?.reportingCurrency ?? DEFAULT_CURRENCY;
-	const reportingCurrency = isCurrencyCode(reported) ? reported : DEFAULT_CURRENCY;
 	const names: SummaryNames = useMemo(
 		() => ({
 			accounts: new Map(accountList.map((account) => [account.id, account.name])),
 			categories: new Map(options.categories.map((category) => [category.id, category.name])),
 			merchants: new Map(options.merchants.map((merchant) => [merchant.id, merchant.name])),
 			tags: new Map(options.tags.map((tag) => [tag.id, tag.name])),
-			reportingCurrency,
 		}),
-		[accountList, options, reportingCurrency],
+		[accountList, options],
 	);
 	const rule =
 		opened === null || opened.action === "add"
@@ -469,7 +470,6 @@ function RulesPage() {
 					onOpenChange={setOpen}
 					rule={rule}
 					options={options}
-					reportingCurrency={reportingCurrency}
 					onSaved={(saved) => void askToApply(saved, true)}
 				/>
 			)}

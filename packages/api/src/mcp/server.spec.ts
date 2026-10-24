@@ -2284,7 +2284,7 @@ describe("writing rules", () => {
 		expect(await callsRecorded()).toEqual([]);
 	});
 
-	it("reads a rule's rows by name and its amounts formatted, while its writes take ids and decimal strings", async () => {
+	it("reads a rule's rows by name and its amounts as stored, while its writes take ids and decimal strings", async () => {
 		const token = await writer();
 		const account = await openAccount({ name: "Règles lues" });
 		const food = await createCategory(uniqueCategory("Alimentation"));
@@ -2325,7 +2325,7 @@ describe("writing rules", () => {
 						{
 							condition_type: "transaction_amount",
 							operator: ">",
-							value: formatMoney({ amount: toMinorUnits(1250), currency: "EUR" }),
+							value: "12.50",
 						},
 						labelLike("amount6"),
 					],

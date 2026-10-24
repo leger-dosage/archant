@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-import type { CurrencyCode } from "@archant/data/money";
-import { parseAmount } from "@archant/data/money";
+import { parseUnsignedDecimal, toPlainDecimal } from "@archant/data/money";
 import type {
 	RuleActionType,
 	RuleConditionType,
@@ -23,12 +22,18 @@ import { DIRECTIONS } from "../domain/cash-flow.ts";
 import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
 import { LABEL_MAX_LENGTH } from "./transactions.ts";
 
+/**
+ * The decimals an amount condition may carry: twice the four of ISO 4217's
+ * finest currency. Sure sets no limit; the summary's `Intl.NumberFormat`
+ * refuses past 100.
+ */
+const AMOUNT_MAX_DECIMALS = 8;
+
 /** Past this a rule is no longer read at a glance; Sure sets no limit. */
 export const MAX_RULE_CONDITIONS = 50;
 
 // What the route checks: the body's shape, every value as text, so the typed
-// client knows it. The service parses it afterwards with `ruleSchema`, in the
-// reporting currency.
+// client knows it. The service parses it afterwards with `ruleSchema`.
 const conditionBody = z.object({
 	conditionType: z.string(),
 	operator: z.string(),
@@ -106,12 +111,7 @@ export const RULE_TYPE_VALUES = DIRECTIONS;
 const isDirection = (value: string) => RULE_TYPE_VALUES.some((known) => known === value);
 
 /** A leaf condition's operator and value, reported under `path`. A valueless operator reads none. */
-function checkLeaf(
-	leaf: Leaf,
-	path: (string | number)[],
-	currency: CurrencyCode,
-	context: z.core.$RefinementCtx,
-) {
+function checkLeaf(leaf: Leaf, path: (string | number)[], context: z.core.$RefinementCtx) {
 	if (!isRuleOperatorOf(leaf.conditionType, leaf.operator)) {
 		issue(context, [...path, "operator"], "invalid_value");
 	}
@@ -140,10 +140,15 @@ function checkLeaf(
 	}
 
 	if (leaf.conditionType === "transaction_amount") {
-		const amount = parseAmount(value, currency);
+		const amount = parseUnsignedDecimal(value);
 
-		// Compared with the absolute amount: a sign would never match.
-		if (amount === null || amount < 0) {
+		// Compared with the absolute amount, a sign would never match; past
+		// `AMOUNT_MAX_DECIMALS` no currency has a meaning for the digits.
+		if (
+			value.length > RULE_VALUE_MAX_LENGTH ||
+			amount === null ||
+			amount.exponent > AMOUNT_MAX_DECIMALS
+		) {
 			issue(context, [...path, "value"], "invalid_amount");
 		}
 	}
@@ -173,15 +178,19 @@ function checkReplacement(
 	}
 }
 
-/** One stored value: the trimmed text, the amount in minor units, null for a valueless operator. */
-function storedValue(leaf: Leaf, currency: CurrencyCode): string | null {
+/**
+ * One stored value: the trimmed text, the amount as Sure's decimal text in
+ * major units with a dot, null for a valueless operator.
+ */
+function storedValue(leaf: Leaf): string | null {
 	if (isValuelessOperator(leaf.operator)) {
 		return null;
 	}
 
 	const value = leaf.value?.trim() ?? "";
+	const amount = leaf.conditionType === "transaction_amount" ? parseUnsignedDecimal(value) : null;
 
-	return leaf.conditionType === "transaction_amount" ? String(parseAmount(value, currency)) : value;
+	return amount === null ? value : toPlainDecimal(amount);
 }
 
 export type RuleLeafRequest = {
@@ -212,121 +221,116 @@ export type RuleRequest = {
 
 /**
  * The full check of a rule, shared with the interface's form resolver so the
- * form reports the API's field codes. Built per currency: the amount is typed
- * in the reporting currency and stored in its minor units. Groups nest one
+ * form reports the API's field codes. The amount belongs to no currency, as
+ * in Sure: it is matched against a line in any. Groups nest one
  * level deep, a rule needs one action at least, and no action type twice, as
  * in Sure. An exclusion takes no value; every other action needs one, a
  * rename its new label. A replacement in the label keeps its pattern and its
  * replacement as typed, spaces included, since a pattern may be a single
  * space; the pattern must be one RE2 accepts.
  */
-export function ruleSchema(currency: CurrencyCode) {
-	return z
-		.object(fields)
-		.superRefine((rule, context) => {
-			for (const [index, condition] of rule.conditions.entries()) {
-				const path = ["conditions", index];
+export const ruleSchema = z
+	.object(fields)
+	.superRefine((rule, context) => {
+		for (const [index, condition] of rule.conditions.entries()) {
+			const path = ["conditions", index];
 
-				if (condition.conditionType !== "compound") {
-					checkLeaf(condition, path, currency, context);
-					continue;
-				}
-
-				if (!isRuleOperatorOf("compound", condition.operator)) {
-					issue(context, [...path, "operator"], "invalid_value");
-				}
-
-				for (const [position, child] of (condition.conditions ?? []).entries()) {
-					if (child.conditionType === "compound") {
-						issue(context, [...path, "conditions", position], "nested_group");
-					} else {
-						checkLeaf(child, [...path, "conditions", position], currency, context);
-					}
-				}
+			if (condition.conditionType !== "compound") {
+				checkLeaf(condition, path, context);
+				continue;
 			}
 
-			if (rule.actions.length === 0) {
-				issue(context, ["actions"], "action_required");
+			if (!isRuleOperatorOf("compound", condition.operator)) {
+				issue(context, [...path, "operator"], "invalid_value");
 			}
 
-			const seen = new Set<string>();
-
-			for (const [index, action] of rule.actions.entries()) {
-				if (seen.has(action.actionType)) {
-					issue(context, ["actions", index], "duplicate_action");
-				}
-
-				seen.add(action.actionType);
-
-				const value = action.value?.trim() ?? "";
-				const path = ["actions", index, "value"];
-
-				if (action.actionType === "replace_in_transaction_name") {
-					checkReplacement(action, ["actions", index], context);
-					continue;
-				}
-
-				if (action.replacement !== undefined && action.replacement !== null) {
-					issue(context, ["actions", index, "replacement"], "invalid_value");
-				}
-
-				if (isValuelessAction(action.actionType)) {
-					if (action.value !== undefined && action.value !== null) {
-						issue(context, path, "invalid_value");
-					}
-				} else if (value === "") {
-					issue(context, path, "too_small");
-				} else if (
-					action.actionType === "set_transaction_name" &&
-					value.length > LABEL_MAX_LENGTH
-				) {
-					issue(context, path, "too_big");
+			for (const [position, child] of (condition.conditions ?? []).entries()) {
+				if (child.conditionType === "compound") {
+					issue(context, [...path, "conditions", position], "nested_group");
+				} else {
+					checkLeaf(child, [...path, "conditions", position], context);
 				}
 			}
-		})
-		.transform((rule): RuleRequest => ({
-			name: rule.name,
-			effectiveDate: rule.effectiveDate,
-			conditions: rule.conditions.map((condition): RuleConditionRequest => {
-				if (condition.conditionType === "compound") {
-					return {
-						conditionType: "compound",
-						operator: condition.operator === "or" ? "or" : "and",
-						// A nested group is refused above; the filter only narrows the type.
-						conditions: (condition.conditions ?? []).flatMap((child) =>
-							child.conditionType === "compound"
-								? []
-								: [
-										{
-											conditionType: child.conditionType,
-											operator: child.operator,
-											value: storedValue(child, currency),
-										},
-									],
-						),
-					};
-				}
+		}
 
+		if (rule.actions.length === 0) {
+			issue(context, ["actions"], "action_required");
+		}
+
+		const seen = new Set<string>();
+
+		for (const [index, action] of rule.actions.entries()) {
+			if (seen.has(action.actionType)) {
+				issue(context, ["actions", index], "duplicate_action");
+			}
+
+			seen.add(action.actionType);
+
+			const value = action.value?.trim() ?? "";
+			const path = ["actions", index, "value"];
+
+			if (action.actionType === "replace_in_transaction_name") {
+				checkReplacement(action, ["actions", index], context);
+				continue;
+			}
+
+			if (action.replacement !== undefined && action.replacement !== null) {
+				issue(context, ["actions", index, "replacement"], "invalid_value");
+			}
+
+			if (isValuelessAction(action.actionType)) {
+				if (action.value !== undefined && action.value !== null) {
+					issue(context, path, "invalid_value");
+				}
+			} else if (value === "") {
+				issue(context, path, "too_small");
+			} else if (action.actionType === "set_transaction_name" && value.length > LABEL_MAX_LENGTH) {
+				issue(context, path, "too_big");
+			}
+		}
+	})
+	.transform((rule): RuleRequest => ({
+		name: rule.name,
+		effectiveDate: rule.effectiveDate,
+		conditions: rule.conditions.map((condition): RuleConditionRequest => {
+			if (condition.conditionType === "compound") {
 				return {
-					conditionType: condition.conditionType,
-					operator: condition.operator,
-					value: storedValue(condition, currency),
+					conditionType: "compound",
+					operator: condition.operator === "or" ? "or" : "and",
+					// A nested group is refused above; the filter only narrows the type.
+					conditions: (condition.conditions ?? []).flatMap((child) =>
+						child.conditionType === "compound"
+							? []
+							: [
+									{
+										conditionType: child.conditionType,
+										operator: child.operator,
+										value: storedValue(child),
+									},
+								],
+					),
 				};
-			}),
-			actions: rule.actions.map((action) =>
-				action.actionType === "replace_in_transaction_name"
-					? {
-							actionType: action.actionType,
-							value: action.value ?? "",
-							replacement: action.replacement ?? "",
-						}
-					: {
-							actionType: action.actionType,
-							value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
-							replacement: null,
-						},
-			),
-		}));
-}
+			}
 
-export type RuleFormInput = z.input<ReturnType<typeof ruleSchema>>;
+			return {
+				conditionType: condition.conditionType,
+				operator: condition.operator,
+				value: storedValue(condition),
+			};
+		}),
+		actions: rule.actions.map((action) =>
+			action.actionType === "replace_in_transaction_name"
+				? {
+						actionType: action.actionType,
+						value: action.value ?? "",
+						replacement: action.replacement ?? "",
+					}
+				: {
+						actionType: action.actionType,
+						value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
+						replacement: null,
+					},
+		),
+	}));
+
+export type RuleFormInput = z.input<typeof ruleSchema>;

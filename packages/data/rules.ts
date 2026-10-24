@@ -107,7 +107,7 @@ export function isRuleOperatorOf<Type extends RuleConditionType>(
 
 /**
  * A condition as the API returns it. `value` is stored text: the label or the
- * notes, the amount in minor units of the reporting currency, a direction,
+ * notes, the amount as decimal text in major units of any currency, a direction,
  * or an account, merchant, category or tag id; `null` for a valueless operator and for
  * a group, whose conditions follow.
  */

@@ -3,7 +3,7 @@ import type { ServiceDeps } from "./deps.ts";
 
 import { asc, eq, inArray } from "drizzle-orm";
 
-import { toMinorUnits } from "@archant/data/money";
+import { parseUnsignedDecimal } from "@archant/data/money";
 import type { RuleConditionType } from "@archant/data/rules";
 import { isRuleOperatorOf, isValuelessAction, isValuelessOperator } from "@archant/data/rules";
 import { accounts } from "@archant/data/schema/accounts";
@@ -135,7 +135,13 @@ function toLeaf(condition: RuleConditionRow, known: Known): LeafCondition {
 	}
 
 	if (conditionType === "transaction_amount" && isRuleOperatorOf(conditionType, operator)) {
-		return { type: conditionType, operator, value: toMinorUnits(Number(value)) };
+		const decimal = parseUnsignedDecimal(value);
+
+		if (decimal === null) {
+			throw malformed();
+		}
+
+		return { type: conditionType, operator, value: decimal };
 	}
 
 	const direction = DIRECTIONS.find((candidate) => candidate === value);

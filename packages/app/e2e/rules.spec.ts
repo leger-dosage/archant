@@ -196,14 +196,14 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 		conditions: [{ conditionType: "transaction_amount", operator: ">", value: "50,00" }],
 		actions: [categoryAction(category.id)],
 	});
-	const summary = `Si Montant > 50,00\u00a0€, alors Catégorie ${category.name}`;
+	const summary = `Si Montant > 50,00, alors Catégorie ${category.name}`;
 	await visit(page);
 
 	await ruleRow(page, summary)
 		.getByRole("button", { name: /^Actions pour / })
 		.click();
 	await page.getByRole("menuitem", { name: "Modifier" }).click();
-	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveValue("50,00");
+	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveValue("50.00");
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
@@ -212,6 +212,38 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 		page.locator("[data-sonner-toast]").filter({ hasText: "Règle enregistrée." }),
 	).toBeVisible();
 	await expect(ruleRow(page, summary)).toBeVisible();
+});
+
+test("an amount rule saved from the form steps by the cent and categorises a line in dollars", async ({
+	page,
+	api,
+}) => {
+	const dollars = await api.openAccount({ name: uniqueName("Compte en dollars"), currency: "USD" });
+	const category = await api.createCategory();
+	// The label keeps the rule off the lines other test files add meanwhile.
+	const marker = uniqueName("AMAZON");
+	await visit(page);
+
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	await choose(page, "Champ de la condition 1", "Montant");
+	await choose(page, "Opérateur de la condition 1", ">");
+	const amount = dialog(page).getByLabel("Valeur de la condition 1");
+	await expect(amount).toHaveAttribute("type", "number");
+	await expect(amount).toHaveAttribute("step", "0.01");
+	await amount.fill("50");
+	await dialog(page).getByRole("button", { name: "Ajouter une condition" }).click();
+	await dialog(page).getByLabel("Valeur de la condition 2").fill(marker);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: category.name, exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(dialog(page)).toBeHidden();
+	await later(page);
+	await expect(ruleRow(page, `Si Montant > 50, alors Catégorie ${category.name}`)).toBeVisible();
+
+	const label = `${marker} US`;
+	await api.addTransaction(dollars.id, { date: daysAgo(2), label, amount: "-60,00" });
+	await expectCategory(page, label, category.name);
 });
 
 test("« À partir du » is saved with the rule and shown again by « Modifier »", async ({ page }) => {

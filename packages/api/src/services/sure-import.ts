@@ -377,13 +377,12 @@ async function importRules(
 	shared: { taxonomy: Taxonomy; accounts: ReadonlyMap<string, ImportedAccount>; now: number },
 ): Promise<void> {
 	const scoped = { ...deps, db: tx };
-	const schema = ruleSchema(getReportingCurrency());
 
 	await oneByOne(plan.rules, async (data) => {
 		const context: RuleContext = { ...shared, missing: new Map() };
 		const input = ruleInputOf(context, data);
 
-		if (input === null || !schema.safeParse(input).success) {
+		if (input === null || !ruleSchema.safeParse(input).success) {
 			return;
 		}
 

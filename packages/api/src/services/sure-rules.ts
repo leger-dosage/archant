@@ -4,7 +4,6 @@ import type { Transaction } from "./ledger/shared.ts";
 import Papa from "papaparse";
 
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
-import { parseDecimalAmount, toDecimalString } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, isValuelessOperator } from "@archant/data/rules";
 import { categories } from "@archant/data/schema/categories";
@@ -12,7 +11,6 @@ import { merchants } from "@archant/data/schema/merchants";
 import { tags } from "@archant/data/schema/tags";
 
 import { oneByOne } from "./ledger/shared.ts";
-import { getReportingCurrency } from "./settings.ts";
 import { cut } from "./sure-import-plan.ts";
 import { foldName } from "./sure-import-preflight.ts";
 
@@ -216,19 +214,6 @@ function conditionOf(context: RuleContext, data: unknown): ConditionInput | null
 		return account === undefined
 			? null
 			: { conditionType: type, operator: data.operator, value: account.id };
-	}
-
-	if (type === "transaction_amount") {
-		const currency = getReportingCurrency();
-		const amount = parseDecimalAmount(value, currency);
-
-		return amount === null
-			? null
-			: {
-					conditionType: type,
-					operator: data.operator,
-					value: toDecimalString({ amount, currency }),
-				};
 	}
 
 	const reference =
