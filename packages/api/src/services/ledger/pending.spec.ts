@@ -7,6 +7,7 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import { rules } from "@archant/data/schema/rules";
 
 import { lineKeys } from "../../domain/keys.ts";
+import { createLogger } from "../../lib/logger.ts";
 import {
 	add,
 	addStandard,
@@ -45,7 +46,7 @@ import {
 	valuationsOf,
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
-import { createRule } from "../rules.ts";
+import { createRule, runRulesAfterSync } from "../rules.ts";
 import { deleteTransaction, updateTransaction } from "./edits.ts";
 import { cashFlowByCategory, findTransaction, listTransactions } from "./queries.ts";
 
@@ -500,7 +501,7 @@ describe("pending transactions", () => {
 		await expect(transactionCount(account.id)).resolves.toBe(2);
 	});
 
-	it("runs no rule again on the entry a booked line absorbs", async () => {
+	it("reaches the entry a booked line absorbs at the run after the sync, as Sure's", async () => {
 		const { account, bank } = await linkedChecking();
 		const amount = -transferAmount();
 		const [id = ""] = await createdBySync(account.id, bank.connectionId, [pendingLine(amount)]);
@@ -517,10 +518,11 @@ describe("pending transactions", () => {
 				bookedLine(amount, { date: "2026-09-20" }),
 				bookedLine(-transferAmount(), { externalId: "ref-2", date: "2026-09-20" }),
 			]);
+			await expect(categoryOf(id)).resolves.toBeNull();
+			await runRulesAfterSync({ ...deps(), logger: createLogger("silent") });
 
 			await expect(rowOf(id)).resolves.toMatchObject({ pending: false, label: "BOULANGERIE" });
-			await expect(categoryOf(id)).resolves.toBeNull();
-			// The rule is live: the new row beside it gets its category.
+			await expect(categoryOf(id)).resolves.toBe(category);
 			await expect(categoryOf(synced.created[0] ?? "")).resolves.toBe(category);
 			await expect(lockedFields(id)).resolves.toEqual([]);
 		} finally {

@@ -3,6 +3,8 @@ import { testClient } from "hono/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createLogger } from "../lib/logger.ts";
+import { runRulesAfterSync } from "../services/rules.ts";
 import {
 	buildApp,
 	createCategory,
@@ -36,6 +38,10 @@ const ruleLeaf = (conditionType: string, operator: string, value: string | null)
 });
 
 const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
+
+/** What the household's next sync or import runs once it is done. */
+const nextSync = () =>
+	runRulesAfterSync({ db: temp.db, timeZone: "Europe/Paris", logger: createLogger("silent") });
 
 async function categoriesOf(accountId: string) {
 	const rows = await temp.db.all<{
@@ -113,7 +119,7 @@ describe("rules", () => {
 		}),
 	});
 
-	/** Creates a rule enabled at once, as a confirmed one: these tests run it on new lines. */
+	/** Creates a rule enabled at once, as a confirmed one: these tests run it after a sync. */
 	async function createRule(body: object) {
 		const { status, body: created } = await request("POST", "/api/rules", {
 			enabled: true,
@@ -342,14 +348,18 @@ describe("rules", () => {
 		expect(errorBody.parse(response.body).error.code).toBe("NOT_FOUND");
 	});
 
-	it("categorises a transaction typed by hand, and leaves it when the rule is off", async () => {
+	it("categorises a transaction typed by hand at the next sync, and leaves it when the rule is off", async () => {
 		const account = await openAccount();
 		const groceries = await createCategory(uniqueCategory("Courses"));
 		const rule = await createRule(labelRule("carrefour", groceries.id));
 
 		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+		// A line typed by hand meets the rules at the household's next sync, as Sure's.
+		await expect(categoriesOf(account.id)).resolves.toMatchObject([{ category: null }]);
+		await nextSync();
 		await request("PATCH", `/api/rules/${rule.id}`, { enabled: false });
 		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR CITY" });
+		await nextSync();
 
 		await expect(categoriesOf(account.id)).resolves.toEqual([
 			{ label: "CB CARREFOUR", category: groceries.id, origin: "rule" },
@@ -366,6 +376,7 @@ describe("rules", () => {
 		await createRule(labelRule("carrefour", leisure.id));
 
 		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+		await nextSync();
 
 		await expect(categoriesOf(account.id)).resolves.toEqual([
 			{ label: "CB CARREFOUR", category: leisure.id, origin: "rule" },
@@ -455,6 +466,7 @@ describe("rules", () => {
 			notes: "Anniversaire Léa",
 		});
 		await postTransaction(account.id, { ...expense, label: "Sans notes", notes: "" });
+		await nextSync();
 
 		await expect(detailsOf(account.id)).resolves.toMatchObject([
 			{ label: "Fnac", category: gifts.id },
@@ -472,6 +484,7 @@ describe("rules", () => {
 
 		await postTransaction(account.id, { ...expense, label: "DIVIDENDE TTE", notes: "" });
 		await postTransaction(account.id, { ...expense, label: "Fnac", notes: "" });
+		await nextSync();
 
 		await expect(
 			temp.db.all(
@@ -505,14 +518,16 @@ describe("rules", () => {
 		const joint = await openAccount();
 		const livret = await openAccount({ name: "Livret A", subtype: "savings" });
 		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
-		await postTransaction(livret.id, { ...expense, label: "VIR RECU", amount: "777,31" });
-		await postTransaction(card.id, { ...expense, label: "REMBOURSEMENT", amount: "777,31" });
 		await createRule({
 			conditions: [ruleLeaf("transaction_name", "like", "epargne")],
 			actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 		});
-
+		// Alone at first: transfers match before rules run, as Sure's post-sync.
 		await postTransaction(joint.id, { ...expense, label: "VIR EPARGNE", amount: "-777,31" });
+		await nextSync();
+
+		await postTransaction(card.id, { ...expense, label: "REMBOURSEMENT", amount: "777,31" });
+		await postTransaction(livret.id, { ...expense, label: "VIR RECU", amount: "777,31" });
 
 		const pairs = await temp.db.all<{ outflow: string; inflow: string; kind: string }>(
 			sql`select eo.account_id as outflow, ei.account_id as inflow, t.kind as kind from transfers t join entries eo on eo.id = t.outflow_transaction_id join entries ei on ei.id = t.inflow_transaction_id where eo.account_id = ${joint.id}`,
@@ -624,6 +639,7 @@ describe("rules", () => {
 		});
 
 		await postTransaction(account.id, { ...expense, label: "Pizzeria Roma" });
+		await nextSync();
 
 		const [row] = await detailsOf(account.id);
 		expect(row?.tags?.split(",").toSorted()).toEqual([kept.id, trip.id, italy.id].toSorted());
@@ -668,8 +684,8 @@ describe("rules", () => {
 				z.object({
 					ruleId: z.string().nullable(),
 					rule: z.object({ name: z.string().nullable() }),
-					matchedCount: z.number(),
-					changedCount: z.number(),
+					transactionsQueued: z.number(),
+					transactionsModified: z.number(),
 				}),
 			),
 		}),
@@ -727,7 +743,14 @@ describe("rules", () => {
 		expect(status).toBe(200);
 		expect(applicationBody.parse(body).data).toMatchObject({
 			changed: 3,
-			runs: [{ ruleId: rule.id, rule: { name: "Courses" }, matchedCount: 5, changedCount: 3 }],
+			runs: [
+				{
+					ruleId: rule.id,
+					rule: { name: "Courses" },
+					transactionsQueued: 5,
+					transactionsModified: 3,
+				},
+			],
 		});
 
 		const rows = await categoriesOf(account.id);
@@ -839,15 +862,15 @@ describe("rules", () => {
 		const runs = await applied("/api/rules/apply");
 
 		expect(
-			runs.map(({ ruleId, matchedCount, changedCount }) => ({
+			runs.map(({ ruleId, transactionsQueued, transactionsModified }) => ({
 				ruleId,
-				matchedCount,
-				changedCount,
+				transactionsQueued,
+				transactionsModified,
 			})),
 		).toEqual([
-			{ ruleId: first.id, matchedCount: 1, changedCount: 1 },
-			{ ruleId: second.id, matchedCount: 1, changedCount: 1 },
-			{ ruleId: disabled.id, matchedCount: 1, changedCount: 1 },
+			{ ruleId: first.id, transactionsQueued: 1, transactionsModified: 1 },
+			{ ruleId: second.id, transactionsQueued: 1, transactionsModified: 1 },
+			{ ruleId: disabled.id, transactionsQueued: 1, transactionsModified: 1 },
 		]);
 		await expect(detailsOf(account.id)).resolves.toMatchObject([
 			{ merchant: amazon.id, tags: purchases.id, category: groceries.id },
@@ -933,7 +956,7 @@ describe("rules", () => {
 		});
 
 		await expect(applied(`/api/rules/${rule.id}/apply`)).resolves.toMatchObject([
-			{ changedCount: 1 },
+			{ transactionsModified: 1 },
 		]);
 		await expect(
 			temp.db.all(

@@ -1,5 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { Rule, RowPlan, RuleCandidate } from "../domain/rules/matching.ts";
+import type { ErrorCode } from "../lib/errors.ts";
+import type { Logger } from "../lib/logger.ts";
 import type {
 	RuleConditionRequest,
 	RuleEnabledInput,
@@ -14,7 +16,13 @@ import { and, asc, count, desc, eq } from "drizzle-orm";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
-import type { RuleActionType, RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
+import type {
+	RuleActionType,
+	RuleConditionSnapshot,
+	RuleRunExecutionType,
+	RuleRunStatus,
+	RuleSnapshot,
+} from "@archant/data/rules";
 import { tagIdsOf } from "@archant/data/rules";
 import { ruleActions, ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import type {
@@ -22,12 +30,13 @@ import type {
 	RuleCondition as RuleConditionRow,
 } from "@archant/data/types";
 
-import { planActions } from "../domain/rules/matching.ts";
+import { planActions, plannedRow } from "../domain/rules/matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
-import { applyRulePlanToHistory, ruleCandidates } from "./ledger/rule-plans.ts";
+import { applyRulePlan, ruleCandidates } from "./ledger/rule-plans.ts";
+import { matchTransfers } from "./ledger/transfers.ts";
 import {
 	CONDITION_REFERENCES,
 	existing,
@@ -557,15 +566,23 @@ export async function previewRules(
 	return { matched, changed: plan.size, samples: samplesOf(candidates, plan) };
 }
 
+const codeOf = (error: unknown): ErrorCode =>
+	error instanceof AppError ? error.code : "INTERNAL_ERROR";
+
 type RuleRunData = {
 	id: string;
 	/** `null` once the rule is deleted; `rule` still says what ran. */
 	ruleId: string | null;
 	rule: RuleSnapshot;
-	matchedCount: number;
-	changedCount: number;
+	executionType: RuleRunExecutionType;
+	status: RuleRunStatus;
+	transactionsQueued: number;
+	transactionsProcessed: number;
+	transactionsModified: number;
+	/** The error's code when the run failed. */
+	errorMessage: string | null;
 	executedAt: number;
-	/** The rule's place in its application, which shares `executedAt`. */
+	/** The rule's place in its run, whose rules share `executedAt`. */
 	position: number;
 };
 
@@ -573,14 +590,89 @@ type RuleRunData = {
 export type RuleApplication = { changed: number; runs: RuleRunData[] };
 
 /**
+ * Runs `applied` in turn over `candidates`, as Sure's `RuleJob` runs one rule
+ * after another, and records one run per rule. Each rule, in a savepoint,
+ * plans over the rows as earlier rules left them, its queued count being the
+ * rows it matches, then writes through the ledger with a rule origin, so no
+ * lock is added and none is crossed. A rule that throws rolls back its own
+ * writes and records `failed` with the error's code, never its message, which
+ * may embed bound amounts; the next rule still runs. Transfer matching then
+ * pairs the rows a transfer action marked. No balance moves: no rule action
+ * changes an amount. Answers the rows changed, each once, and the runs.
+ */
+async function runInTurn(
+	tx: Transaction,
+	applied: readonly Applied[],
+	candidates: readonly RuleCandidate[],
+	executionType: RuleRunExecutionType,
+): Promise<RuleApplication> {
+	const executedAt = Date.now();
+	const changed = new Set<string>();
+	const runs: RuleRunData[] = [];
+	let rows = candidates;
+
+	await applied.reduce<Promise<void>>(async (previous, { rule, snapshot }, position) => {
+		await previous;
+
+		const run = {
+			id: crypto.randomUUID(),
+			ruleId: rule.id,
+			rule: snapshot,
+			executionType,
+			executedAt,
+			position,
+		};
+		let queued = 0;
+
+		try {
+			const { plan, perRule } = planActions([rule], rows, MAX_TAGS_PER_TRANSACTION);
+			queued = perRule[0]?.matched ?? 0;
+			const written = await tx.transaction(
+				async (savepoint) => (await applyRulePlan(savepoint, plan, { origin: "rule" })).changed,
+			);
+
+			for (const id of written) {
+				changed.add(id);
+			}
+
+			rows = rows.map((row) => {
+				const planned = plan.get(row.id);
+
+				return planned === undefined ? row : plannedRow(row, planned);
+			});
+			runs.push({
+				...run,
+				status: "success",
+				transactionsQueued: queued,
+				transactionsProcessed: queued,
+				transactionsModified: written.length,
+				errorMessage: null,
+			});
+		} catch (error) {
+			runs.push({
+				...run,
+				status: "failed",
+				transactionsQueued: queued,
+				transactionsProcessed: 0,
+				transactionsModified: 0,
+				errorMessage: codeOf(error),
+			});
+		}
+	}, Promise.resolve());
+
+	await tx.insert(ruleRuns).values(runs);
+	await matchTransfers(tx, Date.now());
+
+	return { changed: changed.size, runs };
+}
+
+/**
  * Applies the rule `id`, enabling it as Sure's `rules#apply` does, or every
  * rule in application order, enabling none, as Sure's `ApplyAllRulesJob`, to
- * existing transactions, as `previewRules` counted them. One immediate
- * transaction plans again, writes through the ledger with a rule origin, so
- * no lock is added and none is crossed, pairs the rows a transfer action
- * marked, and records one run per rule. No balance moves: no rule action
- * changes an amount. Answers how many rows it changed, a row several rules
- * change counted once, and the runs; none without a rule to apply.
+ * existing transactions, as `previewRules` counted them, and records each
+ * run as `manual`. Runs in one immediate transaction, rule after rule
+ * (`runInTurn`). Answers how many rows it changed, a row several rules change
+ * counted once, and the runs; none without a rule to apply.
  *
  * With `expectedChanged`, the count a preview gave, it writes nothing and
  * answers `RULE_PREVIEW_STALE` when the rows to change now number otherwise.
@@ -608,41 +700,49 @@ export async function applyRules(
 				return { changed: 0, runs: [] };
 			}
 
-			const { plan, perRule } = await planOver(tx, applied);
+			const { plan, candidates } = await planOver(tx, applied);
 			assertExpected(expectedChanged, plan.size);
-			const now = Date.now();
-			// Inside this transaction, the ledger's own becomes a savepoint: the
-			// writes and the runs commit together.
-			const changed = await applyRulePlanToHistory({ ...deps, db: tx }, plan, {
-				origin: "rule",
-			});
 
-			const snapshotOf = new Map(applied.map(({ rule, snapshot }) => [rule.id, snapshot]));
-			const runs = perRule.map((tally, position) => {
-				const snapshot = snapshotOf.get(tally.ruleId);
-
-				// `planActions` tallies the rules it was given, so this is a bug, not a state.
-				if (snapshot === undefined) {
-					throw new Error("A rule tally names no applied rule.");
-				}
-
-				return {
-					id: crypto.randomUUID(),
-					ruleId: tally.ruleId,
-					rule: snapshot,
-					matchedCount: tally.matched,
-					changedCount: tally.changed,
-					executedAt: now,
-					position,
-				};
-			});
-
-			await tx.insert(ruleRuns).values(runs);
-
-			return { changed, runs };
+			return runInTurn(tx, applied, candidates, "manual");
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * Sure's `Family::Syncer#perform_post_sync`, once a sync or an import has
+ * committed and matched transfers: every enabled rule, in creation order,
+ * over every transaction from its effective date, respecting locks, each
+ * run recorded as `scheduled`. Never throws: the sync or import stands, and
+ * a failure, a rule's or the whole run's, is logged by its code only.
+ */
+export async function runRulesAfterSync(deps: ServiceDeps & { logger: Logger }): Promise<void> {
+	try {
+		const { runs } = await deps.db.transaction(
+			async (tx) => {
+				const applied = await appliedOf(tx, await readRules(tx, { enabled: true }));
+
+				if (applied.length === 0) {
+					return { changed: 0, runs: [] };
+				}
+
+				const candidates = await ruleCandidates(
+					tx,
+					earliestStart(applied.map(({ rule }) => rule)),
+					{ activeAccountsOnly: true },
+				);
+
+				return runInTurn(tx, applied, candidates, "scheduled");
+			},
+			{ behavior: "immediate" },
+		);
+
+		for (const run of runs.filter(({ status }) => status === "failed")) {
+			deps.logger.error({ ruleId: run.ruleId, code: run.errorMessage }, "rule run failed");
+		}
+	} catch (error) {
+		deps.logger.error({ code: codeOf(error) }, "rules after sync failed");
+	}
 }
 
 function assertExpected(expected: number | undefined, changed: number): void {

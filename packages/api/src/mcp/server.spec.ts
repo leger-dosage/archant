@@ -2127,8 +2127,12 @@ describe("writing rules", () => {
 							{ action_type: "replace_in_transaction_name", value: "^CB ", replacement: "" },
 						],
 					},
-					matched_count: 2,
-					changed_count: 2,
+					execution_type: "manual",
+					status: "success",
+					transactions_queued: 2,
+					transactions_processed: 2,
+					transactions_modified: 2,
+					error_message: null,
 				},
 			],
 			message: "Applied 1 rule: 2 transactions changed.",
@@ -2151,7 +2155,15 @@ describe("writing rules", () => {
 			"total_pages",
 		]);
 		expect(runs.structuredContent).toMatchObject({
-			rule_runs: [{ rule_id: ruleId, rule: { name: "FLOW1" }, matched_count: 2, changed_count: 2 }],
+			rule_runs: [
+				{
+					rule_id: ruleId,
+					rule: { name: "FLOW1" },
+					execution_type: "manual",
+					transactions_queued: 2,
+					transactions_modified: 2,
+				},
+			],
 			page: 1,
 			page_size: 50,
 		});

@@ -12,6 +12,7 @@ import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../../domain/balances/forward.ts";
 import { addDays } from "../../domain/dates.ts";
+import { createLogger } from "../../lib/logger.ts";
 import {
 	add,
 	addStandard,
@@ -66,7 +67,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
-import { createRule, setRuleEnabled } from "../rules.ts";
+import { createRule, runRulesAfterSync, setRuleEnabled } from "../rules.ts";
 import { createAccount, deleteAccount } from "./accounts.ts";
 import { balanceOn, openingAnchorOf, openingDateOf } from "./balances.ts";
 import { updateTransaction } from "./edits.ts";
@@ -1084,8 +1085,40 @@ describe("ingest the statement balance", () => {
 	});
 });
 
-describe("rules at ingestion", () => {
-	// Every rule reaches every new transaction: none may outlive its test.
+// Story 32.10: rules run over the history once a write is done, as after a
+// sync or an import, never inside `ingest`.
+const runRules = () => runRulesAfterSync({ ...deps(), logger: createLogger("silent") });
+
+const addThenRun = async (...args: Parameters<typeof add>) => {
+	const id = await add(...args);
+	await runRules();
+
+	return id;
+};
+
+const importThenRun = async (...args: Parameters<typeof importStatement>) => {
+	const imported = await importStatement(...args);
+	await runRules();
+
+	return imported;
+};
+
+const syncThenRun = async (...args: Parameters<typeof sync>) => {
+	const synced = await sync(...args);
+	await runRules();
+
+	return synced;
+};
+
+const confirmThenRun = async (...args: Parameters<typeof confirm>) => {
+	const confirmed = await confirm(...args);
+	await runRules();
+
+	return confirmed;
+};
+
+describe("rules after a sync", () => {
+	// Every rule reaches every transaction: none may outlive its test.
 	afterEach(async () => {
 		await temp.db.delete(rules);
 	});
@@ -1124,8 +1157,8 @@ describe("rules at ingestion", () => {
 		const groceries = await newCategory("Courses");
 		await newRule(groceries, [labelLike("carrefour  city")]);
 
-		const hit = await add(account.id, { label: "CB CARREFOUR CITY 12/09" });
-		const miss = await add(account.id, { label: "CB AUCHAN" });
+		const hit = await addThenRun(account.id, { label: "CB CARREFOUR CITY 12/09" });
+		const miss = await addThenRun(account.id, { label: "CB AUCHAN" });
 
 		await expect(categoryOf(hit)).resolves.toBe(groceries);
 		await expect(categoryOriginOf(hit)).resolves.toBe("rule");
@@ -1139,11 +1172,14 @@ describe("rules at ingestion", () => {
 		const big = await newCategory("Gros achats");
 		await newRule(big, [{ conditionType: "transaction_amount", operator: ">", value: "50" }]);
 
-		const expense = await add(account.id, { amount: toMinorUnits(-6000) });
-		const small = await add(account.id, { amount: toMinorUnits(4000) });
-		const income = await add(account.id, { amount: toMinorUnits(6000) });
-		const foreign = await add(dollars.id, { amount: toMinorUnits(-6000), currency: "USD" });
-		const smallForeign = await add(dollars.id, { amount: toMinorUnits(-4000), currency: "USD" });
+		const expense = await addThenRun(account.id, { amount: toMinorUnits(-6000) });
+		const small = await addThenRun(account.id, { amount: toMinorUnits(4000) });
+		const income = await addThenRun(account.id, { amount: toMinorUnits(6000) });
+		const foreign = await addThenRun(dollars.id, { amount: toMinorUnits(-6000), currency: "USD" });
+		const smallForeign = await addThenRun(dollars.id, {
+			amount: toMinorUnits(-4000),
+			currency: "USD",
+		});
 
 		await expect(categoryOf(expense)).resolves.toBe(big);
 		await expect(categoryOf(small)).resolves.toBeNull();
@@ -1162,7 +1198,7 @@ describe("rules at ingestion", () => {
 		const disabled = await newRule(other);
 		await setRuleEnabled(deps(), disabled.id, { enabled: false });
 
-		const id = await add(account.id);
+		const id = await addThenRun(account.id);
 
 		await expect(categoryOf(id)).resolves.toBe(leisure);
 	});
@@ -1172,8 +1208,8 @@ describe("rules at ingestion", () => {
 		const groceries = await newCategory("Courses");
 		await newRule(groceries, [], "2026-09-10");
 
-		const before = await add(account.id, { date: "2026-09-09" });
-		const on = await add(account.id, { date: "2026-09-10" });
+		const before = await addThenRun(account.id, { date: "2026-09-09" });
+		const on = await addThenRun(account.id, { date: "2026-09-10" });
 
 		await expect(categoryOf(before)).resolves.toBeNull();
 		await expect(categoryOf(on)).resolves.toBe(groceries);
@@ -1191,19 +1227,19 @@ describe("rules at ingestion", () => {
 		await temp.db.delete(categories).where(eq(categories.id, deleted));
 		await deleteAccount(deps(), gone.id, { origin: "user" });
 
-		const id = await add(account.id);
+		const id = await addThenRun(account.id);
 
 		await expect(categoryOf(id)).resolves.toBeNull();
 	});
 
 	it("categorises a possible duplicate an import creates", async () => {
 		const account = await openChecking();
-		await add(account.id, { date: "2026-09-04", amount: toMinorUnits(-1000) });
-		await add(account.id, { date: "2026-09-06", amount: toMinorUnits(-1000) });
+		await addThenRun(account.id, { date: "2026-09-04", amount: toMinorUnits(-1000) });
+		await addThenRun(account.id, { date: "2026-09-06", amount: toMinorUnits(-1000) });
 		const tolls = await newCategory("Péages");
 		await newRule(tolls, [labelLike("péage")]);
 
-		const { result } = await importStatement(
+		const { result } = await importThenRun(
 			account.id,
 			statementOf(line({ date: "2026-09-05", amount: toMinorUnits(-1000), label: "Péage" })),
 		);
@@ -1228,7 +1264,7 @@ describe("rules at ingestion", () => {
 
 		const { importId } = await preview(account.id, statement);
 		await expect(transactionCount(account.id)).resolves.toBe(0);
-		const result = await confirm(account.id, importId, statement);
+		const result = await confirmThenRun(account.id, importId, statement);
 
 		const categorised = await Promise.all(result.created.map(categoryOf));
 		expect(categorised).toEqual([groceries, null, groceries, null, null]);
@@ -1253,7 +1289,7 @@ describe("rules at ingestion", () => {
 			[{ conditionType: "transaction_merchant", operator: "=", value: amazon }],
 		);
 
-		const { result } = await importStatement(
+		const { result } = await importThenRun(
 			account.id,
 			statementOf(
 				line({ externalId: "1", label: "CB AMZN MKTP" }),
@@ -1289,7 +1325,7 @@ describe("rules at ingestion", () => {
 			[{ conditionType: "transaction_merchant", operator: "=", value: shop }],
 		);
 
-		const synced = await sync(account.id, bank.connectionId, [
+		const synced = await syncThenRun(account.id, bank.connectionId, [
 			newBankLine({ externalId: "RULE-1", merchant: name.toUpperCase() }),
 		]);
 
@@ -1315,7 +1351,7 @@ describe("rules at ingestion", () => {
 			],
 		);
 
-		const synced = await sync(account.id, bank.connectionId, [
+		const synced = await syncThenRun(account.id, bank.connectionId, [
 			newBankLine({
 				externalId: "DETAILS-1",
 				label,
@@ -1329,7 +1365,9 @@ describe("rules at ingestion", () => {
 		await expect(categoryOf(without)).resolves.toBe(other);
 	});
 
-	it("leaves no merchant behind that a rule replaced on every line", async () => {
+	// Sure keeps the provider merchant too; its list shows it only once a
+	// transaction holds it, Archant's shows every merchant (deferred-work.md).
+	it("keeps the bank's merchant a rule replaced on every line", async () => {
 		const { account, bank } = await linkedChecking();
 		const other = await newMerchant("Remplaçant");
 		const name = `Remplacé ${crypto.randomUUID()}`;
@@ -1338,12 +1376,12 @@ describe("rules at ingestion", () => {
 			[labelLike("remplace moi")],
 		);
 
-		const synced = await sync(account.id, bank.connectionId, [
+		const synced = await syncThenRun(account.id, bank.connectionId, [
 			newBankLine({ externalId: "RULE-2", label: "REMPLACE MOI", merchant: name }),
 		]);
 
 		await expect(merchantOf(synced.created[0] ?? "")).resolves.toBe(other);
-		await expect(merchantsNamed(name)).resolves.toEqual([]);
+		await expect(merchantsNamed(name)).resolves.toEqual([name]);
 	});
 
 	it("keeps the merchant a rule set on a pending entry once the bank books it", async () => {
@@ -1356,26 +1394,25 @@ describe("rules at ingestion", () => {
 			[labelLike("boulangerie en attente")],
 		);
 		const [id = ""] = (
-			await sync(account.id, bank.connectionId, [
+			await syncThenRun(account.id, bank.connectionId, [
 				pendingLine(amount, { externalId: "p-rule", merchant: name }),
 			])
 		).created;
 		await expect(merchantOf(id)).resolves.toBe(chosen);
 
-		await sync(account.id, bank.connectionId, [
+		await syncThenRun(account.id, bank.connectionId, [
 			bookedLine(amount, { externalId: "p-rule", merchant: name }),
 		]);
 
 		await expect(merchantOf(id)).resolves.toBe(chosen);
-		await expect(merchantsNamed(name)).resolves.toEqual([]);
 	});
 
 	it("never renames a line typed by hand, whose label is locked", async () => {
 		const account = await openChecking();
 		await newRuleWith([{ actionType: "set_transaction_name", value: "Boulangerie Paul" }]);
 
-		const typed = await add(account.id, { label: "CB PAUL" });
-		const synced = await add(account.id, { label: "CB PAUL" }, "sync");
+		const typed = await addThenRun(account.id, { label: "CB PAUL" });
+		const synced = await addThenRun(account.id, { label: "CB PAUL" }, "sync");
 
 		await expect(findTransaction(deps(), typed)).resolves.toMatchObject({ label: "CB PAUL" });
 		await expect(findTransaction(deps(), synced)).resolves.toMatchObject({
@@ -1383,7 +1420,7 @@ describe("rules at ingestion", () => {
 		});
 	});
 
-	it("matches on notes and type, and sees no transfer on a new line", async () => {
+	it("matches on notes and type", async () => {
 		const account = await openChecking();
 		const gifts = await newCategory("Cadeaux");
 		const moves = await newCategory("Virements");
@@ -1393,8 +1430,16 @@ describe("rules at ingestion", () => {
 		]);
 		await newRule(moves, [{ conditionType: "transaction_type", operator: "=", value: "transfer" }]);
 
-		const gift = await add(account.id, { amount: toMinorUnits(-1000), notes: "Cadeau Léa" });
-		const refund = await add(account.id, { amount: toMinorUnits(1000), notes: "Cadeau Léa" });
+		// An amount of its own, so no line of another test pairs with either.
+		const amount = transferAmount();
+		const gift = await addThenRun(account.id, {
+			amount: toMinorUnits(-amount),
+			notes: "Cadeau Léa",
+		});
+		const refund = await addThenRun(account.id, {
+			amount: toMinorUnits(amount),
+			notes: "Cadeau Léa",
+		});
 
 		await expect(categoryOf(gift)).resolves.toBe(gifts);
 		await expect(categoryOf(refund)).resolves.toBeNull();
@@ -1407,7 +1452,7 @@ describe("rules at ingestion", () => {
 			[labelLike("epargne")],
 		);
 
-		const id = await add(joint.id, {
+		const id = await addThenRun(joint.id, {
 			amount: toMinorUnits(-transferAmount()),
 			label: "VIR EPARGNE",
 		});
@@ -1417,30 +1462,40 @@ describe("rules at ingestion", () => {
 		await expect(transactionCount(livret.id)).resolves.toBe(0);
 	});
 
-	it("never links a line a rule excludes, step 5 running before step 6", async () => {
+	it("excludes a line the matcher linked first, as Sure matches transfers before its rules", async () => {
 		const { checking: joint, livret } = await openHousehold();
 		const amount = transferAmount();
-		const inflow = await add(livret.id, { amount: toMinorUnits(amount) });
+		const inflow = await addThenRun(livret.id, { amount: toMinorUnits(amount) });
 		await newRuleWith([{ actionType: "exclude_transaction" }], [labelLike("interne")]);
 
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR INTERNE" });
+		const outflow = await addThenRun(joint.id, {
+			amount: toMinorUnits(-amount),
+			label: "VIR INTERNE",
+		});
 
 		await expect(excludedOf(outflow)).resolves.toBe(true);
-		await expect(transferRows(outflow)).resolves.toEqual([]);
-		await expect(transferRows(inflow)).resolves.toEqual([]);
+		await expect(transferRows(outflow)).resolves.toMatchObject([
+			{ outflowTransactionId: outflow, inflowTransactionId: inflow },
+		]);
 	});
 
 	it("pairs a line with the one candidate on the expected account, whatever other accounts hold", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		const onLivret = await add(livret.id, { amount: toMinorUnits(amount) });
-		await add(card.id, { amount: toMinorUnits(amount) });
 		await newRuleWith(
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
+		// Alone when it arrives, so the matcher, which runs before the rules,
+		// leaves it free for the expectation they set.
+		const outflow = await addThenRun(joint.id, {
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
 
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
+		await addThenRun(card.id, { amount: toMinorUnits(amount) });
+		await expect(transferRows(outflow)).resolves.toEqual([]);
+		const onLivret = await addThenRun(livret.id, { amount: toMinorUnits(amount) });
 
 		await expect(transferRows(outflow)).resolves.toMatchObject([
 			{ outflowTransactionId: outflow, inflowTransactionId: onLivret, kind: "internal_move" },
@@ -1450,26 +1505,27 @@ describe("rules at ingestion", () => {
 	it("pairs the closest of the expected account's candidates, though another account holds a closer one", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		const near = await add(livret.id, {
-			date: "2026-09-11",
-			amount: toMinorUnits(amount),
-			label: "A",
-		});
-		await add(livret.id, { date: "2026-09-13", amount: toMinorUnits(amount), label: "B" });
-		await add(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
 		await newRuleWith(
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
-
-		const outflow = await add(joint.id, {
+		const outflow = await addThenRun(joint.id, {
 			date: "2026-09-10",
 			amount: toMinorUnits(-amount),
 			label: "VIR EPARGNE",
 		});
+		await addThenRun(card.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
+
+		const { result } = await importThenRun(
+			livret.id,
+			statementOf(
+				line({ date: "2026-09-13", amount: toMinorUnits(amount), label: "B" }),
+				line({ date: "2026-09-11", amount: toMinorUnits(amount), label: "A" }),
+			),
+		);
 
 		await expect(transferRows(outflow)).resolves.toMatchObject([
-			{ outflowTransactionId: outflow, inflowTransactionId: near, status: "pending" },
+			{ outflowTransactionId: outflow, inflowTransactionId: result.created[1], status: "pending" },
 		]);
 	});
 
@@ -1479,7 +1535,7 @@ describe("rules at ingestion", () => {
 		await newRuleWith([{ actionType: "set_transaction_name", value: "Paul" }]);
 		await newRule(bakery, [{ conditionType: "transaction_name", operator: "=", value: "Paul" }]);
 
-		const typed = await add(account.id, { label: "CB PAUL" });
+		const typed = await addThenRun(account.id, { label: "CB PAUL" });
 
 		await expect(findTransaction(deps(), typed)).resolves.toMatchObject({ label: "CB PAUL" });
 		await expect(categoryOf(typed)).resolves.toBeNull();
@@ -1488,19 +1544,22 @@ describe("rules at ingestion", () => {
 	it("narrows the candidate's own list too, so its line with two candidates still pairs", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
-		const onLivret = await add(livret.id, { date: "2026-09-10", amount: toMinorUnits(amount) });
-		// A second candidate for the Livret A line, the same day, unlinked from
-		// it: without narrowing the Livret A line's list, it would win as closer.
-		await addStandard(card.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
 		await newRuleWith(
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
-
-		const outflow = await add(joint.id, {
+		const outflow = await addThenRun(joint.id, {
 			date: "2026-09-12",
 			amount: toMinorUnits(-amount),
 			label: "VIR EPARGNE",
+		});
+		// A second candidate for the Livret A line, on its own day: without
+		// narrowing the Livret A line's list, it would win as closer.
+		await addStandard(card.id, { date: "2026-09-10", amount: toMinorUnits(-amount) });
+
+		const onLivret = await addThenRun(livret.id, {
+			date: "2026-09-10",
+			amount: toMinorUnits(amount),
 		});
 
 		await expect(transferRows(outflow)).resolves.toMatchObject([
@@ -1515,14 +1574,17 @@ describe("rules at ingestion", () => {
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
-		const outflow = await add(joint.id, { amount: toMinorUnits(-amount), label: "VIR EPARGNE" });
-		const inflow = await add(livret.id, { amount: toMinorUnits(amount) });
+		const outflow = await addThenRun(joint.id, {
+			amount: toMinorUnits(-amount),
+			label: "VIR EPARGNE",
+		});
+		const inflow = await addThenRun(livret.id, { amount: toMinorUnits(amount) });
 		const [linked] = await transferRows(outflow);
 		await rejectTransfer(deps(), linked?.id ?? "", { origin: "user" });
 
 		// A new line makes the expecting side a candidate again: its list is
 		// read anew, and the rejected Livret A line must stay out of it.
-		await add(card.id, { amount: toMinorUnits(amount) });
+		await addThenRun(card.id, { amount: toMinorUnits(amount) });
 
 		await expect(rejectedRows(outflow)).resolves.toEqual([{ outflow, inflow }]);
 		await expect(transferRows(outflow)).resolves.toEqual([]);
@@ -1536,16 +1598,20 @@ describe("rules at ingestion", () => {
 			[{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 			[labelLike("epargne")],
 		);
-		const outflow = await add(joint.id, {
+		const outflow = await addThenRun(joint.id, {
 			date: "2026-09-12",
 			amount: toMinorUnits(-amount),
 			label: "VIR EPARGNE",
 		});
 		// A second candidate for the inflow, on another account and the
 		// inflow's own day: without the expectation, it would win as closer.
-		await add(card.id, { date: "2026-09-10", amount: toMinorUnits(-amount), label: "Autre" });
+		await addThenRun(card.id, {
+			date: "2026-09-10",
+			amount: toMinorUnits(-amount),
+			label: "Autre",
+		});
 
-		const { result } = await importStatement(
+		const { result } = await importThenRun(
 			livret.id,
 			statementOf(line({ date: "2026-09-10", amount: toMinorUnits(amount), label: "VIR RECU" })),
 		);
@@ -2042,6 +2108,7 @@ describe("ingest of a split record", () => {
 			account.id,
 			statementOf({ ...cafe, splitLines: splitLines(categoryId, tagId) }),
 		);
+		await runRules();
 		const [parent = ""] = result.created;
 		const children = await temp.db
 			.select({ id: entries.id, amount: entries.amount, date: entries.date })

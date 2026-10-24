@@ -138,8 +138,8 @@ const isSyncing = (connections: BankConnectionData[] | undefined) =>
 
 /**
  * What a sync changes: the connections' state, every account and
- * transaction list, and the recurring patterns, which the sync detects once
- * its lines are in.
+ * transaction list, the rules' runs and the recurring patterns, which the
+ * sync runs and detects once its lines are in.
  */
 function invalidateSynced(queryClient: QueryClient) {
 	return Promise.all([
@@ -147,6 +147,7 @@ function invalidateSynced(queryClient: QueryClient) {
 		queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all }),
 		queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 		queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+		queryClient.invalidateQueries({ queryKey: queryKeys.rules.all }),
 		// The matcher may create « Contributions aux investissements ».
 		queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 	]);

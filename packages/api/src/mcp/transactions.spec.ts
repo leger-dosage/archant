@@ -235,7 +235,7 @@ async function merchantId(name: string) {
 const sure = (error: string, message: string) => ({ success: false, error, message });
 
 describe("create_transaction", () => {
-	it("records a line as the sheet does, in Sure's sign, the rule matching its label setting its category", async () => {
+	it("records a line as the sheet does, in Sure's sign, the rule matching its label waiting for the next sync", async () => {
 		const account = await checking();
 		const market = await ownCategory("Marché");
 		await sendOwn("POST", "/api/rules", {
@@ -272,7 +272,8 @@ describe("create_transaction", () => {
 			currency: "EUR",
 			type: "expense",
 			notes: "Espèces",
-			category: { id: market, name: "Marché" },
+			// Sure's account sync runs no rule: the household's next sync does.
+			category: null,
 			merchant: null,
 			tags: [],
 			created: true,

@@ -134,6 +134,19 @@ export type RuleSnapshot = {
 	actions: { actionType: RuleActionType; value: string | null; replacement?: string | null }[];
 };
 
+/**
+ * Sure's `RuleRun.execution_type`: `manual` for an application the owner
+ * confirmed, `scheduled` for the run after a sync or an import.
+ */
+export const RULE_RUN_EXECUTION_TYPES = ["manual", "scheduled"] as const;
+
+export type RuleRunExecutionType = (typeof RULE_RUN_EXECUTION_TYPES)[number];
+
+/** Sure's `RuleRun.status`. */
+export const RULE_RUN_STATUSES = ["pending", "success", "failed"] as const;
+
+export type RuleRunStatus = (typeof RULE_RUN_STATUSES)[number];
+
 /** Past this a rule's label condition is no longer a shop's name. */
 export const RULE_VALUE_MAX_LENGTH = 200;
 

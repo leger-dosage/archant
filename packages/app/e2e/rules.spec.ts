@@ -1,10 +1,12 @@
 import type { Page } from "@playwright/test";
 
+import { FAKE_ACCOUNTS, FAKE_LINES } from "./fake-enable-banking.ts";
 import { daysAgo, expect, sgml, test, typed, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Stories 8.1, 8.2 and 8.3: rules at `/rules`. One database serves the whole
-// run, and a rule reaches every transaction added after it, so each test
-// deletes its rules before the next one starts.
+// run, and an enabled rule reaches every transaction at each sync or import,
+// so each test deletes its rules before the next one starts.
 
 test.afterEach(async ({ api }) => {
 	await api.deleteRules();
@@ -74,7 +76,7 @@ test("the rail opens Règles, empty at first", async ({ page }) => {
 	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toBeVisible();
 });
 
-test("a rule saved from the form categorises the next matching transaction", async ({
+test("a rule saved from the form categorises the next imported transaction it matches", async ({
 	page,
 	api,
 }) => {
@@ -93,8 +95,12 @@ test("a rule saved from the form categorises the next matching transaction", asy
 	await expect(row).toBeVisible();
 	await expect(row.getByRole("switch")).toBeChecked();
 
+	// An import ends with every enabled rule over the history, as Sure's sync after it.
 	const label = uniqueName("CB CARREFOUR");
-	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-42,90" });
+	await api.importFile(
+		account.id,
+		sgml([{ daysAgo: 2, amount: "-42,90", label, fitid: label.replaceAll(" ", "-") }]),
+	);
 	await expectCategory(page, label, "Courses");
 });
 
@@ -224,7 +230,7 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 	await expect(ruleRow(page, summary)).toBeVisible();
 });
 
-test("an amount rule saved from the form steps by the cent and categorises a line in dollars", async ({
+test("an amount rule saved from the form steps by the cent and categorises a line in dollars once confirmed", async ({
 	page,
 	api,
 }) => {
@@ -232,6 +238,8 @@ test("an amount rule saved from the form steps by the cent and categorises a lin
 	const category = await api.createCategory();
 	// The label keeps the rule off the lines other test files add meanwhile.
 	const marker = uniqueName("AMAZON");
+	const label = `${marker} US`;
+	await api.addTransaction(dollars.id, { date: daysAgo(2), label, amount: "-60,00" });
 	await visit(page);
 
 	await page.getByRole("button", { name: "Ajouter une règle" }).click();
@@ -248,11 +256,10 @@ test("an amount rule saved from the form steps by the cent and categorises a lin
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog(page)).toBeHidden();
-	await later(page);
+	await applyDialog(page).getByRole("button", { name: "Confirmer les modifications" }).click();
+	await expect(applyDialog(page)).toBeHidden();
 	await expect(ruleRow(page, `Si Montant > 50, alors Catégorie ${category.name}`)).toBeVisible();
 
-	const label = `${marker} US`;
-	await api.addTransaction(dollars.id, { date: daysAgo(2), label, amount: "-60,00" });
 	await expectCategory(page, label, category.name);
 });
 
@@ -575,22 +582,22 @@ test("a rule « Virement avec » pairs a matching line with the one opposite lin
 	const other = await api.openAccount({ name: uniqueName("Compte joint") });
 	const marker = uniqueName("EPARGNE").replace(" ", "-");
 	const amount = "613,47";
-	await api.addTransaction(livret.id, {
-		date: daysAgo(5),
-		label: `${marker} arrivée`,
-		amount,
-	});
-	// A second opposite line elsewhere: without the rule, neither would pair.
-	await api.addTransaction(other.id, { date: daysAgo(4), label: `${marker} autre`, amount });
 	await api.createRule({
 		conditions: [labelLike(`${marker} départ`)],
 		actions: [{ actionType: "set_as_transfer_or_payment", value: livret.id }],
 	});
-
-	await api.addTransaction(checking.id, {
-		date: daysAgo(3),
-		label: `${marker} départ`,
-		amount: `-${amount}`,
+	// Imported alone, so the matcher, which runs before the rules as Sure's
+	// post-sync, leaves it free for the expectation the rule then sets.
+	await api.importFile(
+		checking.id,
+		sgml([{ daysAgo: 3, amount: `-${amount}`, label: `${marker} départ`, fitid: uniqueName("F") }]),
+	);
+	// A closer opposite line elsewhere: without the rule, it would pair.
+	await api.addTransaction(other.id, { date: daysAgo(4), label: `${marker} autre`, amount });
+	await api.addTransaction(livret.id, {
+		date: daysAgo(5),
+		label: `${marker} arrivée`,
+		amount,
 	});
 
 	await page.goto(`/transactions?q=${encodeURIComponent(marker)}`);
@@ -852,8 +859,18 @@ test("« Réappliquer la règle » asks the same confirmation and records a run 
 	await expect(applyDialog(page)).toBeHidden();
 
 	const cells = runRow(page, summary).getByRole("cell");
-	await expect(cells).toHaveText([/\S/u, summary, "2", "1"]);
+	await expect(cells).toHaveText([/\S/u, "Manuel", "Réussi", summary, "2", "1"]);
 });
+
+/** The cells of a manual run that succeeded, its time aside. */
+const manual = (name: string, processed: string, modified: string) => [
+	/\S/u,
+	"Manuel",
+	"Réussi",
+	name,
+	processed,
+	modified,
+];
 
 test("« Appliquer tout » counts distinct rows over every rule, a disabled one included and left so", async ({
 	page,
@@ -905,14 +922,11 @@ test("« Appliquer tout » counts distinct rows over every rule, a disabled one 
 	await applyDialog(page).getByRole("button", { name: "Confirmer et appliquer tout" }).click();
 	await expect(applyDialog(page)).toBeHidden();
 
-	await expect(runRow(page, disabledName).getByRole("cell")).toHaveText([
-		/\S/u,
-		disabledName,
-		"2",
-		"2",
-	]);
-	await expect(runRow(page, first).getByRole("cell")).toHaveText([/\S/u, first, "2", "2"]);
-	await expect(runRow(page, second).getByRole("cell")).toHaveText([/\S/u, second, "1", "1"]);
+	await expect(runRow(page, disabledName).getByRole("cell")).toHaveText(
+		manual(disabledName, "2", "2"),
+	);
+	await expect(runRow(page, first).getByRole("cell")).toHaveText(manual(first, "2", "2"));
+	await expect(runRow(page, second).getByRole("cell")).toHaveText(manual(second, "1", "1"));
 	await expect(ruleRow(page, disabledName).getByRole("switch")).not.toBeChecked();
 });
 
@@ -985,6 +999,69 @@ test("the runs table pages to older runs", async ({ page, api }) => {
 
 	await expect(page).toHaveURL(/runsPage=2/u);
 	await expect(runRow(page, older)).toBeVisible();
+});
+
+// Story 32.10: every enabled rule runs over the history after each sync.
+
+const CONNECTION_URL = /\/settings\/banks\/([0-9a-f-]{36})$/u;
+
+test("a bank sync runs every enabled rule over the history and lists its run as « Planifié »", async ({
+	page,
+	request,
+	api,
+}) => {
+	await page.goto("/settings/banks");
+	await page
+		.getByRole("region", { name: "Connecter une banque" })
+		.getByRole("button", { name: "Choisir une banque" })
+		.click();
+	await page
+		.getByRole("dialog", { name: "Choisir une banque" })
+		.getByRole("button", { name: "Connecter Banque Démo" })
+		.click();
+	await expect(toast(page, "Banque Démo est connectée.")).toBeVisible();
+	await expect(page).toHaveURL(CONNECTION_URL);
+	const connectionId = CONNECTION_URL.exec(page.url())?.[1] ?? "";
+
+	try {
+		await page.getByRole("combobox", { name: `Que faire de ${FAKE_ACCOUNTS.card.name}` }).click();
+		await page.getByRole("option", { name: "Ignorer", exact: true }).click();
+		await page.getByRole("button", { name: "Valider" }).click();
+		await expect(toast(page, "1 compte relié à la banque.")).toBeVisible();
+		await expect(page.getByText("Dernière synchronisation : à l'instant")).toBeVisible();
+
+		// Saved after the lines came in: only the next sync reaches them.
+		const category = await api.createCategory();
+		const name = uniqueName("Supermarché");
+		await api.createRule({
+			name,
+			conditions: [labelLike(FAKE_LINES.groceries.label)],
+			actions: [categoryAction(category.id)],
+		});
+
+		await page.getByRole("button", { name: "Synchroniser" }).click();
+		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
+		await visit(page);
+
+		await expect(runRow(page, name).getByRole("cell")).toHaveText([
+			/\S/u,
+			"Planifié",
+			"Réussi",
+			name,
+			/^[1-9]\d*$/u,
+			/^[1-9]\d*$/u,
+		]);
+		// Other files' connections may list the same line: the rule reaches them all.
+		await page.goto(`/transactions?q=${encodeURIComponent(FAKE_LINES.groceries.label)}`);
+		await expect(
+			page
+				.getByRole("main")
+				.getByRole("button", { name: `Catégorie : ${category.name}`, exact: true })
+				.first(),
+		).toBeVisible();
+	} finally {
+		await request.delete(`/api/bank-connections/${connectionId}`, { headers: { origin: WEB_URL } });
+	}
 });
 
 // Story 11.12: the rule dialog's pickers create what they cannot find.

@@ -274,21 +274,3 @@ export function toRule({ row, conditions, actions }: ReadRule, known: Known): Ru
 		actions: actions.map((action) => toAction(action, known)),
 	};
 }
-
-/**
- * The enabled rules as the evaluator reads them, in application order, with
- * deleted accounts, merchants, categories and tags resolved to `null`. Step
- * 5 of `ingest` in `ledger/ingest.ts` calls it once per ingest, inside its
- * transaction.
- */
-export async function loadEnabledRules(db: Pick<Db, "select">): Promise<Rule[]> {
-	const found = await readRules(db, { enabled: true });
-
-	if (found.length === 0) {
-		return [];
-	}
-
-	const known = await knownReferences(db);
-
-	return found.map((rule) => toRule(rule, known));
-}

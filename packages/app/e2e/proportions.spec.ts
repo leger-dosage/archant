@@ -96,7 +96,9 @@ test.describe("rules", () => {
 
 		await page.goto("/rules");
 
-		await expect(pageHeader(page)).toContainText("Une règle complète les nouvelles opérations");
+		await expect(pageHeader(page)).toContainText(
+			"Après chaque synchronisation ou importation, chaque règle activée complète",
+		);
 		const rules = await expectListGroup(page, "Règles");
 		await expectRowAtLeast56(
 			rules.getByRole("list", { name: "Règles" }).getByRole("listitem").filter({ hasText: name }),

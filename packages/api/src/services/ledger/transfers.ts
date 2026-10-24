@@ -92,8 +92,8 @@ const BY_HAND: Search = { windowDays: HAND_TRANSFER_WINDOW_DAYS, rejected: "allo
  * proposal, the user never rejected the pair. The query adds the source's
  * kind and `matchableSide` on both sides, which reads the transaction and
  * account rows this condition does not join. One search serves the picker,
- * `matchTransfer`'s re-check, step 6 of `ingest` and
- * `applyRulePlanToHistory`, so none of them can offer a pair another refuses.
+ * `matchTransfer`'s re-check, step 5 of `ingest` and
+ * a run of rules, so none of them can offer a pair another refuses.
  */
 function candidateOf(
 	source: SideRef,
@@ -326,7 +326,7 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
 });
 
 /**
- * Step 6 of `ingest`, the end of `applyRulePlanToHistory` and of each split
+ * Step 5 of `ingest`, the end of a run of rules and of each split
  * write in `splits.ts`: proposes a `pending` transfer for the pairs Sure's
  * `auto_match_transfers!` would make, over every unmatched transaction of
  * the household, so a line left free before is weighed again (AD-11). A

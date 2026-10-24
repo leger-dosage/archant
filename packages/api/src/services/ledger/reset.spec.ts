@@ -376,8 +376,11 @@ async function household({ syncStartedAt = null }: { syncStartedAt?: number | nu
 		id: crypto.randomUUID(),
 		ruleId,
 		rule: { name: "Boulangerie", conditions: [], actions: [] },
-		matchedCount: 1,
-		changedCount: 1,
+		executionType: "manual",
+		status: "success",
+		transactionsQueued: 1,
+		transactionsProcessed: 1,
+		transactionsModified: 1,
 		executedAt: now,
 		position: 0,
 	});
@@ -386,8 +389,11 @@ async function household({ syncStartedAt = null }: { syncStartedAt?: number | nu
 		// A run whose rule was deleted since: it goes too.
 		ruleId: null,
 		rule: { name: "Boulangerie", conditions: [], actions: [] },
-		matchedCount: 1,
-		changedCount: 1,
+		executionType: "manual",
+		status: "success",
+		transactionsQueued: 1,
+		transactionsProcessed: 1,
+		transactionsModified: 1,
 		executedAt: now,
 		position: 0,
 	});

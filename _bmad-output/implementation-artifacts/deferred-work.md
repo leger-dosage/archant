@@ -466,3 +466,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-32-7-filter-rules-by-provider-details.md`
   summary: The transaction drawer does not show a line's bank details, which Sure prints raw under « Détails supplémentaires », so the owner cannot read a merchant category code before writing a « Détails bancaires » rule.
   evidence: Sure `00dd977fb` `app/views/transactions/show.html.erb` renders `build_transaction_extra_details`, whose Enable Banking branch shows `extra` as JSON; Archant's transaction routes do not return `extra`.
+
+## Deferred from: spec-32-10-run-rules-over-the-history-after-each-sync-and-list-every-run (2026-10-24)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-32-10-run-rules-over-the-history-after-each-sync-and-list-every-run.md`
+  summary: A merchant a bank sync created stays in « Réglages › Marchands » once a rule replaces it on every line, where Sure lists a provider's merchant only while a transaction holds it.
+  evidence: Rules now run after `ingest`, which deleted such a merchant when the rule ran inside it; Archant's merchants have no source column to tell a bank's merchant from one the owner created with no line yet.
+- source_spec: `_bmad-output/implementation-artifacts/spec-32-10-run-rules-over-the-history-after-each-sync-and-list-every-run.md`
+  summary: No browser test shows a failed rule run's « Échoué » badge and its reason in « Exécutions récentes ».
+  evidence: Producing a failed run end to end needs a database fault in the e2e server; the service test covers the recorded code.

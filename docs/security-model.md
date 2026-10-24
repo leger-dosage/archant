@@ -130,7 +130,7 @@ The one secret a log prints is the setup token, while no user exists: it only le
 
 ## Patterns in rules
 
-The rule action « Remplacer dans le libellé » takes a pattern written by the administrator and runs it on the label of every new transaction, text the bank sends and which whoever pays you partly chooses. A pattern runs in RE2, through `re2js` in `packages/api/src/domain/rules/label-pattern.ts`, never in the built-in `RegExp`: RE2 reads a label in time linear in its length, where a backtracking engine can need exponential time on a pattern such as `(a+)+$` and, on Node's single thread, hold every request and the day's first synchronisation. A pattern RE2 refuses, back references and lookaheads included, is refused when the rule is saved.
+The rule action « Remplacer dans le libellé » takes a pattern written by the administrator and runs it on the label of every transaction it reaches after each sync or import, text the bank sends and which whoever pays you partly chooses. A pattern runs in RE2, through `re2js` in `packages/api/src/domain/rules/label-pattern.ts`, never in the built-in `RegExp`: RE2 reads a label in time linear in its length, where a backtracking engine can need exponential time on a pattern such as `(a+)+$` and, on Node's single thread, hold every request and the day's first synchronisation. A pattern RE2 refuses, back references and lookaheads included, is refused when the rule is saved.
 
 ## Sign-in limits
 

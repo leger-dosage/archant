@@ -51,11 +51,13 @@ export function useRevertImport(accountId: string) {
 		mutationFn: async (id: string) =>
 			(await unwrap(api.imports[":id"].revert.$post({ param: { id } }))).data,
 		// On failure too: a 409 means another tab reverted it, and the row must say so.
-		// The server runs recurring detection after a revert, so series change too.
+		// The server runs the rules and recurring detection after a revert, so
+		// their runs and the series change too.
 		onSettled: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.rules.all }),
 			]),
 	});
 }
@@ -87,12 +89,14 @@ export function useConfirmImport(accountId: string) {
 	return useMutation({
 		mutationFn: async (id: string) =>
 			(await unwrap(api.imports[":id"].confirm.$post({ param: { id } }))).data,
-		// The server runs recurring detection after a confirm, so series change
-		// too, and the matcher may create « Contributions aux investissements ».
+		// The server runs the rules and recurring detection after a confirm, so
+		// their runs and the series change too, and the matcher may create
+		// « Contributions aux investissements ».
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.rules.all }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
 			]),
 	});

@@ -38,7 +38,8 @@ import { updateAccount } from "../accounts.ts";
 import { updateTransaction } from "./edits.ts";
 import { ingest } from "./ingest.ts";
 import { findTransaction } from "./queries.ts";
-import { applyRulePlan, applyRulePlanToHistory, ruleCandidates } from "./rule-plans.ts";
+import { applyRulePlan, ruleCandidates } from "./rule-plans.ts";
+import { matchTransfers } from "./transfers.ts";
 
 useLedgerDatabase();
 
@@ -363,7 +364,7 @@ describe("ruleCandidates", () => {
 	});
 });
 
-describe("applyRulePlanToHistory", () => {
+describe("applyRulePlan, then matchTransfers", () => {
 	it("pairs an existing row with the expected account's line, though another account holds a closer one", async () => {
 		const { checking: joint, livret, card } = await openHousehold();
 		const amount = transferAmount();
@@ -386,13 +387,18 @@ describe("applyRulePlanToHistory", () => {
 		await expect(transferRows(outflow)).resolves.toMatchObject([{ inflowTransactionId: refund }]);
 		await unpair(outflow);
 
-		const changed = await applyRulePlanToHistory(
-			deps(),
-			new Map([[outflow, { expectedTransferAccountId: livret.id }]]),
-			{ origin: "rule" },
-		);
+		const { changed } = await deps().db.transaction(async (tx) => {
+			const applied = await applyRulePlan(
+				tx,
+				new Map([[outflow, { expectedTransferAccountId: livret.id }]]),
+				{ origin: "rule" },
+			);
+			await matchTransfers(tx, Date.now());
 
-		expect(changed).toBe(1);
+			return applied;
+		});
+
+		expect(changed).toEqual([outflow]);
 		await expect(transferRows(outflow)).resolves.toMatchObject([
 			{ outflowTransactionId: outflow, inflowTransactionId: inflow, kind: "internal_move" },
 		]);

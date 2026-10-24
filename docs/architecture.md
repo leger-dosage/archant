@@ -99,16 +99,17 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 ### AD-4 — Ingestion pipeline
 
 - **Binds:** Epics 1, 2, 5, 8, 9, 10; FR16, FR18, FR22, FR31, FR37, FR40, FR50
-- **Prevents:** rules seeing transfers before matching in one path and after in another, balances computed before rules exclude a transaction, and preview and confirm writing different sets.
+- **Prevents:** rules seeing transfers before matching in one path and after in another, a rule reaching a line in one path and not in another, and preview and confirm writing different sets.
 - **Rule:** `ingest(accountId, statement, { importId | connectionId | manual, dryRun })`, in `services/ledger/ingest.ts`, runs per account, in one transaction, in this order:
   1. Reject lines dated more than 366 days after today with `DATE_TOO_LATE`, or in another currency than the account's with `CURRENCY_MISMATCH`. A line before the opening anchor goes in, as in Sure. A QIF import whose earliest line precedes the anchor moves the anchor to the day before that line, its amount kept, as Sure's `adjust_opening_anchor_if_needed!`; no other source moves it.
   2. Key matching, with key lookups batched per statement (AD-7).
   3. Pending reconciliation (AD-17).
   4. Insert new entries, attach keys to matched ones.
-  5. Rules (Epic 8; a no-op until then).
-  6. Transfer matching (Epic 5; a no-op until then).
-  7. Statement balance (AD-8).
-  8. Balance recompute.
+  5. Transfer matching (AD-11).
+  6. Statement balance (AD-8).
+  7. Balance recompute.
+
+  No rule runs inside `ingest`. Once a write has committed, `runRulesAfterSync` in `services/rules.ts` runs every enabled rule, in creation order, over every transaction from its effective date, respecting locks (AD-10), as Sure's `Family::Syncer#perform_post_sync` after `auto_match_transfers!`: once a sync of the household ends, the button's one connection or every connection of the cron, the schedule or the day's first visit, when it read at least one account, and after an import's confirm, a CSV or QIF publish, a revert and a Sure archive import, before recurring detection. A line typed by hand or created by an assistant meets the rules at the household's next sync or import, as Sure's account sync runs none. Each rule runs in a savepoint of one immediate transaction and records a `rule_runs` row as Sure's `RuleJob`: `execution_type` `scheduled` (an application the owner confirms records `manual`), `status`, `transactions_queued`, `transactions_processed`, `transactions_modified` and, when it throws, `failed` with the error's code in `error_message`, its writes rolled back and the next rule run. Transfer matching then runs once more, for the expectations rules set.
 
   With `dryRun`, it returns the preview grouped as to create, already present, matched to an existing entry, possible duplicates and rejected, then rolls back. An account's own « Importer » shows that grouped preview: a file preview stores the bytes and options in `imports` with status `previewed` and returns its id. Confirming takes that id, re-runs `ingest` without `dryRun`, and answers `409 IMPORT_PREVIEW_STALE` when the groups differ from the preview. Previewed imports older than 24 hours are purged at start. « Importer les opérations », Sure's CSV `TransactionImport`, reads the file in the request it publishes in: in one transaction it inserts one `imports` row per account and runs `ingest` with `stateless`, which skips the stored-preview check, and `updateMatched`, which gives a line found present or matched the file's category, tags and notes unless the user locked the field (AD-10); its lines carry the category and tags « Mapper » chose. The CSV imports of « Réglages › Importations » show no grouped preview: Sure's « Nettoyer » table, each row's refusals on its cells, the user's cell edits sent with every request and read before the file's cells, then « Confirmer » with Sure's `dry_run` counts. Manual creation goes through the same function with a one-line statement and no key. « Importer depuis Quicken (QIF) », Sure's `QifImport`, publishes the same way, under imports of `source` `qif`; a split record's line carries `splitLines`, which `ingest` writes as the children of the line it creates, the parent excluded and locked so (AD-20), a possible duplicate left whole, and no rule runs on the parent.
 
@@ -367,7 +368,7 @@ packages/
 | Classification (Epic 4)                    | `services/classification.ts`, through the ledger                                         | AD-2, AD-10, AD-12                           |
 | Transfers (Epic 5)                         | `domain/transfer-matching.ts`, ledger                                                    | AD-4, AD-9, AD-11                            |
 | Dashboard (Epic 6)                         | `services/reports.ts`, `domain/cash-flow.ts`                                             | AD-6, AD-8, AD-9                             |
-| Rules (Epic 8)                             | `domain/rules/`, step 5 of the pipeline                                                  | AD-4, AD-10                                  |
+| Rules (Epic 8)                             | `domain/rules/`, `services/rules.ts` after each sync or import                           | AD-4, AD-10                                  |
 | Recurring and bills (Epics 9, 23)          | `domain/recurring/`, `services/recurring/`, after commit                                 | AD-1, AD-4, AD-17, AD-24                     |
 | Loans (Epics 7, 24)                        | `domain/loans/`, computed on read                                                        | AD-6, AD-25                                  |
 | Enable Banking (Epic 10)                   | `connectors/enable-banking/`, `services/sync.ts`                                         | AD-3, AD-7, AD-8, AD-13, AD-14, AD-17, AD-18 |
@@ -381,7 +382,7 @@ packages/
 
 ## Deferred
 
-- **Rules data model.** Follows Sure's, as Epic 8 describes; its tables are settled by Story 8.1. Fixed now: rules run at step 5 of AD-4, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the step-6 matcher reads; it never creates a transfer itself.
+- **Rules data model.** Follows Sure's, as Epic 8 describes; its tables are settled by Story 8.1. Fixed now: rules run after each sync or import, as AD-4 says, write with `origin: "rule"`, and respect AD-10. A "mark as transfer" action may only set an expectation that the transfer matcher reads; it never creates a transfer itself.
 - **Currency conversion.** No exchange rates until a non-euro account exists; AD-6 keeps the door open.
 - **Roles beyond `admin` and `viewer`.** Epic 20 brings `viewer` (AD-21); per-account sharing stays out.
 - **Full-text search.** `LIKE` on label and notes until NFR10's target fails: the first page of the list in under 150 ms at 100,000 transactions. SQLite FTS5 then arrives through one migration and one query helper in `services/`, the only place raw SQL is then allowed.

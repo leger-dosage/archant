@@ -1,6 +1,5 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { RowPlan, RuleCandidate } from "../../domain/rules/matching.ts";
-import type { ServiceDeps } from "../deps.ts";
 import type { EditableRow, TransactionDetail } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 
@@ -29,7 +28,6 @@ import {
 	oneByOne,
 	transferColumns,
 } from "./shared.ts";
-import { matchTransfers } from "./transfers.ts";
 
 /** Which of `ids` `find` still finds, looked up 500 per query. */
 async function stillThere(
@@ -73,8 +71,9 @@ function plannedRows(tx: Transaction, ids: string[]) {
  * already holds, and a category, merchant, tag or account deleted since the
  * plan. A tag is added beside the others while the row holds fewer than
  * `MAX_TAGS_PER_TRANSACTION`; the expected counterpart account is set only on
- * a row in no transfer. Returns the ids of the rows it changed. Step 5 of
- * `ingest` calls it; applying rules to history reuses it.
+ * a row in no transfer. Returns the ids of the rows it changed. A run of rules
+ * calls it once per rule, then `matchTransfers`, so a row whose expected
+ * counterpart account it set finds its pair.
  */
 export async function applyRulePlan(
 	tx: Transaction,
@@ -200,30 +199,6 @@ export async function applyRulePlan(
 	await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
 
 	return { changed: [...writes.values()].flatMap(({ ids: group }) => group) };
-}
-
-/**
- * Applying rules to existing transactions: writes `plan` through
- * `applyRulePlan`, then proposes transfers over every unmatched line, as
- * step 6 of `ingest` does, so a row whose expected counterpart account it
- * set finds its pair. No balance moves: no rule action changes an amount.
- * Returns how many rows changed, each once.
- */
-export async function applyRulePlanToHistory(
-	deps: ServiceDeps,
-	plan: ReadonlyMap<string, RowPlan>,
-	options: { origin: "rule" },
-): Promise<number> {
-	return deps.db.transaction(
-		async (tx) => {
-			const { changed } = await applyRulePlan(tx, plan, options);
-
-			await matchTransfers(tx, Date.now());
-
-			return changed.length;
-		},
-		{ behavior: "immediate" },
-	);
 }
 
 /**
