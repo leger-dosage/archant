@@ -63,7 +63,6 @@ import {
 	transactionPages,
 } from "./ledger/export.ts";
 import { parseAliases, parseSignals } from "./recurring/hints.ts";
-import { getReportingCurrency } from "./settings.ts";
 
 export type ExportDeps = ServiceDeps & {
 	/** `$client` too: the archive reads one snapshot, a libSQL transaction of its own. */
@@ -390,14 +389,6 @@ function conditionOperand(condition: RuleCondition, operands: Operands): Operand
 			return operandOf(condition.value, "Merchant", operands.merchants);
 		case "transaction_tag":
 			return operandOf(condition.value, "Tag", operands.tags);
-		// Minor units of the reporting currency (`schemas/rules.ts`), a decimal for Sure.
-		case "transaction_amount":
-			return {
-				value:
-					condition.value === null
-						? null
-						: decimal(toMinorUnits(Number(condition.value)), getReportingCurrency()),
-			};
 		default:
 			return { value: condition.value };
 	}

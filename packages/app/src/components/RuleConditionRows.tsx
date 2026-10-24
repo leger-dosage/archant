@@ -104,7 +104,13 @@ export function LeafRow({
 						aria-invalid={valueError !== undefined}
 						{...described(`${name}.value`, valueError)}
 						{...(leafType === "transaction_amount"
-							? { inputMode: "decimal" as const, className: "text-right tabular-nums" }
+							? {
+									type: "number",
+									min: "0",
+									step: options.amountStep,
+									inputMode: "decimal" as const,
+									className: "text-right tabular-nums",
+								}
 							: {})}
 						value={current}
 						onChange={value.field.onChange}

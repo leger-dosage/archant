@@ -306,6 +306,53 @@ function decimalsOf(currency: string): number {
 }
 
 /**
+ * A non-negative decimal in major units, held as `units / 10^exponent`: a
+ * rule's amount, which belongs to no currency, as Sure's `value.to_d`.
+ */
+export type Decimal = { units: bigint; exponent: number };
+
+const UNSIGNED_DECIMAL_PATTERN = /^(\d+)(?:[.,](\d+))?$/u;
+
+/**
+ * Reads `"50"`, `"12.5"` or `"12,5"` from its digits, never through a float,
+ * keeping every decimal typed. `null` for anything else, a sign included.
+ */
+export function parseUnsignedDecimal(text: string): Decimal | null {
+	const match = UNSIGNED_DECIMAL_PATTERN.exec(text.trim());
+
+	if (match === null) {
+		return null;
+	}
+
+	const [, integerPart = "", fraction = ""] = match;
+
+	return { units: BigInt(`${integerPart}${fraction}`), exponent: fraction.length };
+}
+
+/** The decimal as stored: a dot, no leading zero, its decimals kept, such as `"12.50"`. */
+export function toPlainDecimal(decimal: Decimal): string {
+	const digits = decimal.units.toString().padStart(decimal.exponent + 1, "0");
+
+	return decimal.exponent === 0
+		? digits
+		: `${digits.slice(0, -decimal.exponent)}.${digits.slice(-decimal.exponent)}`;
+}
+
+/**
+ * Below zero when `money` is less than `decimal`, zero when equal, above zero
+ * when greater. Both sides are scaled in integers to the larger of the two
+ * exponents, so neither is rounded.
+ */
+export function compareWithDecimal(money: Money, decimal: Decimal): number {
+	const own = decimalsOf(money.currency);
+	const exponent = Math.max(own, decimal.exponent);
+	const amount = BigInt(money.amount) * 10n ** BigInt(exponent - own);
+	const value = decimal.units * 10n ** BigInt(exponent - decimal.exponent);
+
+	return amount === value ? 0 : amount < value ? -1 : 1;
+}
+
+/**
  * The exact decimal string of an amount, such as `"-12.50"`, with as many
  * decimals as its currency has: what crosses a boundary where a JSON number
  * would round, and what `Intl.NumberFormat` formats without a float division.

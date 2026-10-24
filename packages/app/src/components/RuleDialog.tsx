@@ -3,13 +3,12 @@ import type { FormValues, Options } from "@/lib/rule-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { PlusIcon } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useController, useFieldArray, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ruleSchema } from "@archant/api/schemas/rules";
-import type { CurrencyCode } from "@archant/data/money";
 import { RULE_ACTION_TYPES } from "@archant/data/rules";
 
 import { DateField } from "@/components/DateField";
@@ -48,7 +47,6 @@ type RuleDialogProps = {
 	/** The rule to edit; absent to create one. */
 	rule?: RuleData | undefined;
 	options: Options;
-	reportingCurrency: CurrencyCode;
 	/** Called with the rule once saved, after the dialog closes. */
 	onSaved?: ((rule: RuleData) => void) | undefined;
 };
@@ -58,23 +56,14 @@ type RuleDialogProps = {
  * optional, then « Si » its conditions and groups, then « Alors » its
  * actions, one per type.
  */
-export function RuleDialog({
-	open,
-	onOpenChange,
-	rule,
-	options,
-	reportingCurrency,
-	onSaved,
-}: RuleDialogProps) {
+export function RuleDialog({ open, onOpenChange, rule, options, onSaved }: RuleDialogProps) {
 	const { t } = useTranslation();
 	const createRule = useCreateRule();
 	const updateRule = useUpdateRule();
-	const schema = useMemo(() => ruleSchema(reportingCurrency), [reportingCurrency]);
 	const form = useForm<FormValues>({
-		// `raw` hands the typed text to the API as is: the same schema parses the
-		// amount there, into minor units of the reporting currency.
-		resolver: zodResolver(schema, undefined, { raw: true }),
-		defaultValues: rule === undefined ? defaults() : valuesOf(rule, reportingCurrency),
+		// `raw` hands the typed text to the API as is: the same schema parses it there.
+		resolver: zodResolver(ruleSchema, undefined, { raw: true }),
+		defaultValues: rule === undefined ? defaults() : valuesOf(rule),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const conditions = useFieldArray({ control: form.control, name: "conditions" });
@@ -94,11 +83,9 @@ export function RuleDialog({
 
 	useEffect(() => {
 		if (open) {
-			form.reset(
-				latest.current === undefined ? defaults() : valuesOf(latest.current, reportingCurrency),
-			);
+			form.reset(latest.current === undefined ? defaults() : valuesOf(latest.current));
 		}
-	}, [open, ruleId, form, reportingCurrency]);
+	}, [open, ruleId, form]);
 
 	const submit = form.handleSubmit(async (values) => {
 		try {

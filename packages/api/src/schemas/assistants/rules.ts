@@ -42,7 +42,7 @@ const leafConditions = [
 		value: z
 			.string()
 			.describe(
-				'A decimal string such as "12.50", without a sign. Only transactions in the reporting currency match.',
+				'A decimal string such as "12.50", without a sign and with at most eight decimals, in major units of whatever currency each transaction is in.',
 			),
 	}),
 	z.strictObject({

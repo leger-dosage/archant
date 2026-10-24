@@ -422,7 +422,7 @@ describe("importSureArchive", () => {
 			expect(after.actions).toEqual(before.actions);
 			expect(after.conditions).toEqual(before.conditions);
 			expect(before.conditions).toContainEqual(
-				expect.objectContaining({ type: "transaction_amount", operator: ">", value: "1050" }),
+				expect.objectContaining({ type: "transaction_amount", operator: ">", value: "10.50" }),
 			);
 			expect(before.actions).toContainEqual(
 				expect.objectContaining({ type: "set_transaction_category", value: "Boulangerie" }),

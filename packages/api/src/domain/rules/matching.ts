@@ -2,8 +2,8 @@ import type { Direction } from "../cash-flow.ts";
 import type { IsoDate } from "../dates.ts";
 import type { LabelPattern } from "./label-pattern.ts";
 
-import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
+import type { Decimal, MinorUnits } from "@archant/data/money";
+import { compareWithDecimal, toMinorUnits } from "@archant/data/money";
 import type { RuleOperatorOf, ValuelessRuleOperator } from "@archant/data/rules";
 import type { LockableField, LockedFields } from "@archant/data/schema/transactions";
 import type { TransferKind } from "@archant/data/transfer-kinds";
@@ -28,11 +28,14 @@ type TextCondition =
 			value: string;
 	  };
 
-/** Compared with the transaction's absolute amount, in the reporting currency only. */
+/**
+ * Compared with the transaction's absolute amount whatever its currency, as
+ * Sure's `ABS(entries.amount)` with `value.to_d`: 50 is 50 € as much as 50 ¥.
+ */
 type AmountCondition = {
 	type: "transaction_amount";
 	operator: RuleOperatorOf<"transaction_amount">;
-	value: MinorUnits;
+	value: Decimal;
 };
 
 /**
@@ -190,44 +193,32 @@ function referenceMatches(condition: ReferenceCondition, row: RuleCandidate): bo
 	}
 }
 
-const COMPARE: Record<
-	AmountCondition["operator"],
-	(amount: MinorUnits, value: MinorUnits) => boolean
-> = {
-	"=": (amount, value) => amount === value,
-	">": (amount, value) => amount > value,
-	">=": (amount, value) => amount >= value,
-	"<": (amount, value) => amount < value,
-	"<=": (amount, value) => amount <= value,
-	"!=": (amount, value) => amount !== value,
+/** Each operator on the sign of the amount compared with the value. */
+const COMPARE: Record<AmountCondition["operator"], (order: number) => boolean> = {
+	"=": (order) => order === 0,
+	">": (order) => order > 0,
+	">=": (order) => order >= 0,
+	"<": (order) => order < 0,
+	"<=": (order) => order <= 0,
+	"!=": (order) => order !== 0,
 };
 
-function amountMatches(
-	condition: AmountCondition,
-	candidate: RuleCandidate,
-	reportingCurrency: string,
-): boolean {
-	// Minor units mean different amounts across currencies, and there are no
-	// exchange rates (AD-6): another currency never matches.
-	if (candidate.currency !== reportingCurrency) {
-		return false;
-	}
+function amountMatches(condition: AmountCondition, candidate: RuleCandidate): boolean {
+	const amount = toMinorUnits(Math.abs(candidate.amount));
 
-	return COMPARE[condition.operator](toMinorUnits(Math.abs(candidate.amount)), condition.value);
+	return COMPARE[condition.operator](
+		compareWithDecimal({ amount, currency: candidate.currency }, condition.value),
+	);
 }
 
-function leafMatches(
-	condition: LeafCondition,
-	row: RuleCandidate,
-	reportingCurrency: string,
-): boolean {
+function leafMatches(condition: LeafCondition, row: RuleCandidate): boolean {
 	switch (condition.type) {
 		case "transaction_name":
 			return textMatches(condition, row.label);
 		case "transaction_notes":
 			return textMatches(condition, row.notes);
 		case "transaction_amount":
-			return amountMatches(condition, row, reportingCurrency);
+			return amountMatches(condition, row);
 		case "transaction_type":
 			return direction(row) === condition.value;
 		default:
@@ -235,13 +226,9 @@ function leafMatches(
 	}
 }
 
-function conditionMatches(
-	condition: Condition,
-	candidate: RuleCandidate,
-	reportingCurrency: string,
-): boolean {
+function conditionMatches(condition: Condition, candidate: RuleCandidate): boolean {
 	if (condition.type !== "compound") {
-		return leafMatches(condition, candidate, reportingCurrency);
+		return leafMatches(condition, candidate);
 	}
 
 	// An empty group matches everything, as in Sure.
@@ -249,7 +236,7 @@ function conditionMatches(
 		return true;
 	}
 
-	const holds = (leaf: LeafCondition) => leafMatches(leaf, candidate, reportingCurrency);
+	const holds = (leaf: LeafCondition) => leafMatches(leaf, candidate);
 
 	return condition.operator === "and"
 		? condition.conditions.every(holds)
@@ -261,14 +248,12 @@ function conditionMatches(
  * every top-level condition holding. A rule without conditions matches every
  * transaction, as in Sure.
  */
-export function matches(rule: Rule, candidate: RuleCandidate, reportingCurrency: string): boolean {
+export function matches(rule: Rule, candidate: RuleCandidate): boolean {
 	if (rule.effectiveDate !== null && candidate.date < rule.effectiveDate) {
 		return false;
 	}
 
-	return rule.conditions.every((condition) =>
-		conditionMatches(condition, candidate, reportingCurrency),
-	);
+	return rule.conditions.every((condition) => conditionMatches(condition, candidate));
 }
 
 /**
@@ -371,7 +356,6 @@ export type RuleTally = {
 export function planActions(
 	rules: readonly Rule[],
 	candidates: readonly RuleCandidate[],
-	reportingCurrency: string,
 	maxTagsPerRow: number,
 ): { plan: Map<string, RowPlan>; perRule: RuleTally[]; matched: number } {
 	const plan = new Map<string, RowPlan>();
@@ -387,7 +371,7 @@ export function planActions(
 		let reached = false;
 
 		for (const { rule, tally } of tallied) {
-			if (matches(rule, row, reportingCurrency)) {
+			if (matches(rule, row)) {
 				const before = row;
 				reached = true;
 

@@ -24,7 +24,6 @@ const names: SummaryNames = {
 	categories: new Map([["c1", "Courses"]]),
 	merchants: new Map([["m1", "Amazon"]]),
 	tags: new Map([["t1", "Achats"]]),
-	reportingCurrency: "EUR",
 };
 
 const leaf = (
@@ -52,12 +51,12 @@ describe("ruleSummary", () => {
 		);
 	});
 
-	it("formats an amount in the reporting currency and names an account", () => {
-		expect(summary([leaf("transaction_amount", ">", "5000")])).toBe(
-			"Si Montant > 50,00 €, alors Catégorie Courses",
+	it("writes an amount without a currency, the French way, and names an account", () => {
+		expect(summary([leaf("transaction_amount", ">", "50")])).toBe(
+			"Si Montant > 50, alors Catégorie Courses",
 		);
-		expect(summary([leaf("transaction_amount", "!=", "5000")])).toBe(
-			"Si Montant ≠ 50,00\u00a0€, alors Catégorie Courses",
+		expect(summary([leaf("transaction_amount", "!=", "1234.50")])).toBe(
+			"Si Montant ≠ 1\u202f234,50, alors Catégorie Courses",
 		);
 		expect(summary([leaf("transaction_account", "=", "a1")])).toBe(
 			"Si Compte est Compte joint, alors Catégorie Courses",

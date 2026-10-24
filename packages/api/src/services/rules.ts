@@ -33,7 +33,6 @@ import {
 	readRules,
 	toRule,
 } from "./rule-reader.ts";
-import { getReportingCurrency } from "./settings.ts";
 
 /**
  * An action's `value` is a category, merchant, tag or account id, which may
@@ -99,7 +98,7 @@ async function getRule(db: Pick<Db, "select">, id: string): Promise<RuleData> {
 }
 
 function parse(input: RuleInput): RuleRequest {
-	const parsed = ruleSchema(getReportingCurrency()).safeParse(input);
+	const parsed = ruleSchema.safeParse(input);
 
 	if (!parsed.success) {
 		throw validationError(parsed.error);
@@ -405,7 +404,7 @@ async function planOver(db: Pick<Db, "select">, applied: readonly Applied[]) {
 	});
 
 	return {
-		...planActions(evaluated, candidates, getReportingCurrency(), MAX_TAGS_PER_TRANSACTION),
+		...planActions(evaluated, candidates, MAX_TAGS_PER_TRANSACTION),
 		candidates,
 	};
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
 	CURRENCY_CODES,
+	compareWithDecimal,
 	formatMoney,
 	isCurrencyCode,
 	isDecimalString,
@@ -9,8 +10,10 @@ import {
 	minorUnitsOf,
 	parseAmount,
 	parseDecimalAmount,
+	parseUnsignedDecimal,
 	toDecimalString,
 	toMinorUnits,
+	toPlainDecimal,
 } from "./money.ts";
 
 const NNBSP = " ";
@@ -223,5 +226,56 @@ describe("isDecimalString", () => {
 
 	it.each(["", "12,5", "1e3", ".5", "12.", "+1", " 1", "abc"])("refuses %j", (value) => {
 		expect(isDecimalString(value)).toBe(false);
+	});
+});
+
+describe("parseUnsignedDecimal", () => {
+	it.each([
+		["50", { units: 50n, exponent: 0 }],
+		[" 12.5 ", { units: 125n, exponent: 1 }],
+		["12,50", { units: 1250n, exponent: 2 }],
+		["0.001", { units: 1n, exponent: 3 }],
+	])("reads %j from its digits", (text, expected) => {
+		expect(parseUnsignedDecimal(text)).toEqual(expected);
+	});
+
+	it.each(["", "-5", "+5", "1e3", "1 000", "12.", ".5", "1.2.3", "abc"])("refuses %j", (text) => {
+		expect(parseUnsignedDecimal(text)).toBeNull();
+	});
+});
+
+describe("toPlainDecimal", () => {
+	it.each([
+		["50", "50"],
+		["12,50", "12.50"],
+		["007.5", "7.5"],
+		["0.05", "0.05"],
+		["0", "0"],
+	])("writes %j as %j", (text, expected) => {
+		const decimal = parseUnsignedDecimal(text);
+
+		expect(decimal === null ? null : toPlainDecimal(decimal)).toBe(expected);
+	});
+});
+
+const order = (amount: number, currency: string, text: string) => {
+	const decimal = parseUnsignedDecimal(text);
+
+	if (decimal === null) {
+		throw new Error(text);
+	}
+
+	return compareWithDecimal({ amount: toMinorUnits(amount), currency }, decimal);
+};
+
+describe("compareWithDecimal", () => {
+	it("scales both sides to the larger exponent, rounding neither", () => {
+		expect(order(1235, "EUR", "12.345")).toBeGreaterThan(0);
+		expect(order(1234, "EUR", "12.345")).toBeLessThan(0);
+		expect(order(1250, "EUR", "12.5")).toBe(0);
+		expect(order(50, "JPY", "50")).toBe(0);
+		expect(order(50, "JPY", "50.5")).toBeLessThan(0);
+		expect(order(12_345, "KWD", "12.345")).toBe(0);
+		expect(order(5000, "XXX", "50")).toBe(0);
 	});
 });

@@ -2,7 +2,7 @@ import type { Condition, LeafCondition, Rule, RuleCandidate } from "./matching.t
 
 import { describe, expect, it } from "vitest";
 
-import { toMinorUnits } from "@archant/data/money";
+import { parseUnsignedDecimal, toMinorUnits } from "@archant/data/money";
 
 import { compileLabelPattern } from "./label-pattern.ts";
 import { matches, planActions } from "./matching.ts";
@@ -39,11 +39,15 @@ const label = (operator: "like" | "not_like" | "=" | "!=", value: string): LeafC
 	value,
 });
 
-const amount = (operator: "=" | ">" | ">=" | "<" | "<=" | "!=", value: number): LeafCondition => ({
-	type: "transaction_amount",
-	operator,
-	value: toMinorUnits(value),
-});
+const amount = (operator: "=" | ">" | ">=" | "<" | "<=" | "!=", value: string): LeafCondition => {
+	const decimal = parseUnsignedDecimal(value);
+
+	if (decimal === null) {
+		throw new Error(`Not a decimal: ${value}`);
+	}
+
+	return { type: "transaction_amount", operator, value: decimal };
+};
 
 const account = (
 	operator: "=" | "!=" | "is_null" | "is_not_null",
@@ -51,7 +55,7 @@ const account = (
 ): LeafCondition => ({ type: "transaction_account", operator, id });
 
 const matching = (conditions: Condition[], overrides: Partial<RuleCandidate> = {}) =>
-	matches(rule(conditions), candidate(overrides), "EUR");
+	matches(rule(conditions), candidate(overrides));
 
 describe("matches on the label", () => {
 	it("contains, case aside, once both sides are squished", () => {
@@ -73,33 +77,58 @@ describe("matches on the label", () => {
 	});
 });
 
+const eur = (minor: number) => ({ amount: toMinorUnits(-minor), currency: "EUR" });
+const jpy = (yen: number) => ({ amount: toMinorUnits(-yen), currency: "JPY" });
+
 describe("matches on the amount", () => {
 	it("compares the absolute amount, whatever its sign", () => {
-		expect(matching([amount(">", 5000)], { amount: toMinorUnits(-6000) })).toBe(true);
-		expect(matching([amount(">", 5000)], { amount: toMinorUnits(6000) })).toBe(true);
-		expect(matching([amount(">", 5000)], { amount: toMinorUnits(4000) })).toBe(false);
-		expect(matching([amount(">", 5000)], { amount: toMinorUnits(5000) })).toBe(false);
+		expect(matching([amount(">", "50")], { amount: toMinorUnits(-6000) })).toBe(true);
+		expect(matching([amount(">", "50")], { amount: toMinorUnits(6000) })).toBe(true);
+		expect(matching([amount(">", "50")], { amount: toMinorUnits(4000) })).toBe(false);
+		expect(matching([amount(">", "50")], { amount: toMinorUnits(5000) })).toBe(false);
 	});
 
-	it.each([
-		["=", 5000, true],
-		["=", 5001, false],
-		[">=", 5000, true],
-		[">=", 5001, false],
-		["<", 5001, true],
-		["<", 5000, false],
-		["<=", 5000, true],
-		["<=", 4999, false],
-		["!=", 5001, true],
-		["!=", 5000, false],
-	] as const)("%s %i against 50,00", (operator, value, expected) => {
-		expect(matching([amount(operator, value)], { amount: toMinorUnits(-5000) })).toBe(expected);
+	// 50 in each currency's minor units: cents for EUR and USD, yen for JPY.
+	const fifty = { EUR: 5000, USD: 5000, JPY: 50 } as const;
+
+	describe.each(["EUR", "USD", "JPY"] as const)("on a line in %s, against 50", (currency) => {
+		it.each([
+			["=", "50", true],
+			["=", "51", false],
+			[">", "49", true],
+			[">", "50", false],
+			[">=", "50", true],
+			[">=", "51", false],
+			["<", "51", true],
+			["<", "50", false],
+			["<=", "50", true],
+			["<=", "49", false],
+			["!=", "51", true],
+			["!=", "50", false],
+		] as const)("%s %s", (operator, value, expected) => {
+			const line = { amount: toMinorUnits(-fifty[currency]), currency };
+
+			expect(matching([amount(operator, value)], line)).toBe(expected);
+		});
 	});
 
-	it("never matches a transaction in another currency", () => {
-		expect(matching([amount(">", 5000)], { amount: toMinorUnits(-6000), currency: "USD" })).toBe(
-			false,
-		);
+	it("matches a line in any currency, as Sure", () => {
+		for (const currency of ["EUR", "USD", "JPY", "XXX"]) {
+			const line = { amount: toMinorUnits(currency === "JPY" ? -60 : -6000), currency };
+
+			expect(matching([amount(">", "50")], line)).toBe(true);
+		}
+	});
+
+	it("compares a value with more decimals than the line's currency without rounding either", () => {
+		expect(matching([amount("<", "12.345")], eur(1235))).toBe(false);
+		expect(matching([amount("<", "12.345")], eur(1234))).toBe(true);
+		expect(matching([amount("=", "12.50")], eur(1250))).toBe(true);
+		expect(matching([amount("=", "50.5")], jpy(50))).toBe(false);
+		expect(matching([amount("=", "50.5")], jpy(51))).toBe(false);
+		expect(matching([amount("!=", "50.5")], jpy(50))).toBe(true);
+		expect(matching([amount("!=", "50.5")], jpy(51))).toBe(true);
+		expect(matching([amount(">", "50.5")], jpy(51))).toBe(true);
 	});
 });
 
@@ -118,7 +147,7 @@ describe("matches with groups", () => {
 	const anyOf: Condition = {
 		type: "compound",
 		operator: "or",
-		conditions: [label("like", "boulangerie"), amount("=", 1000)],
+		conditions: [label("like", "boulangerie"), amount("=", "10")],
 	};
 
 	it("needs every top-level condition, and any condition of an `or` group", () => {
@@ -144,9 +173,9 @@ describe("matches on the start date", () => {
 	it("reaches transactions dated on or after it, and every date without one", () => {
 		const dated = rule([], { effectiveDate: "2026-09-01" });
 
-		expect(matches(dated, candidate({ date: "2026-08-31" }), "EUR")).toBe(false);
-		expect(matches(dated, candidate({ date: "2026-09-01" }), "EUR")).toBe(true);
-		expect(matches(rule([]), candidate({ date: "2000-01-01" }), "EUR")).toBe(true);
+		expect(matches(dated, candidate({ date: "2026-08-31" }))).toBe(false);
+		expect(matches(dated, candidate({ date: "2026-09-01" }))).toBe(true);
+		expect(matches(rule([]), candidate({ date: "2000-01-01" }))).toBe(true);
 	});
 });
 
@@ -328,11 +357,11 @@ const withActions = (actions: Rule["actions"], conditions: Condition[] = [], id 
 });
 
 const plan = (rules: Rule[], candidates: RuleCandidate[] = [candidate()], maxTags = 20) => [
-	...planActions(rules, candidates, "EUR", maxTags).plan,
+	...planActions(rules, candidates, maxTags).plan,
 ];
 
 const tallies = (rules: Rule[], candidates: RuleCandidate[]) =>
-	planActions(rules, candidates, "EUR", 20).perRule;
+	planActions(rules, candidates, 20).perRule;
 
 describe("planActions", () => {
 	it("gives every candidate to a rule without conditions", () => {
@@ -589,10 +618,8 @@ describe("planActions' per-rule tallies", () => {
 			candidate({ id: "e2", categoryId: "courses", merchantId: "amazon" }),
 		];
 
-		expect(planActions(rules, rows, "EUR", 20).matched).toBe(2);
-		expect(
-			planActions([withActions([], [label("like", "nothing")])], rows, "EUR", 20).matched,
-		).toBe(0);
+		expect(planActions(rules, rows, 20).matched).toBe(2);
+		expect(planActions([withActions([], [label("like", "nothing")])], rows, 20).matched).toBe(0);
 	});
 
 	it("tallies a rule against what earlier rules planned, one tally per rule in order", () => {

@@ -30,7 +30,7 @@ export const rules = sqliteTable("rules", {
 /**
  * Sure's `Rule::Condition`. A `compound` condition is a group whose
  * sub-conditions point at it through `parent_id`, one level deep. `value` is
- * text as in Sure: the label or the notes, the amount in minor units, a
+ * text as in Sure: the label or the notes, the amount as decimal text, a
  * direction, or an account, merchant, category or tag id, with no foreign
  * key, so a deleted one leaves the condition inert rather than blocking the
  * delete. A valueless operator stores null.
