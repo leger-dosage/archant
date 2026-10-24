@@ -4,7 +4,7 @@ import type { RuleSort, SortDirection } from "@/lib/rule-sort";
 import type { SummaryNames } from "@/lib/rule-summary";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { ArrowUpDownIcon, EllipsisIcon, ListFilterIcon } from "lucide-react";
+import { ArrowUpDownIcon, EllipsisIcon, ListFilterIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -53,6 +53,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMerchants } from "@/hooks/useMerchants";
 import {
 	useApplyRules,
+	useDeleteAllRules,
 	useDeleteRule,
 	useFetchRulePreview,
 	useRuleRuns,
@@ -95,7 +96,10 @@ const DESKTOP_QUERY = "(min-width: 768px)";
  * mid-animation. An id, not the rule: the dialog reads it from the current
  * list, so a rule edited elsewhere since opening is fresh.
  */
-type Opened = { action: "add"; preset?: FormValues } | { action: "edit" | "delete"; id: string };
+type Opened =
+	| { action: "add"; preset?: FormValues }
+	| { action: "deleteAll" }
+	| { action: "edit" | "delete"; id: string };
 
 /**
  * An application waiting for its confirmation: one rule, or every rule for a
@@ -419,6 +423,7 @@ function RulesPage() {
 	const merchants = useMerchants();
 	const tags = useTags();
 	const deleteRule = useDeleteRule();
+	const deleteAll = useDeleteAllRules();
 	const fetchPreview = useFetchRulePreview();
 	const applyRules = useApplyRules();
 	const [opened, setOpened] = useState<Opened | null>(null);
@@ -457,11 +462,11 @@ function RulesPage() {
 		[accountList, options],
 	);
 	const rule =
-		opened === null || opened.action === "add"
+		opened === null || !("id" in opened)
 			? undefined
 			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && opened.action !== "add" && rule === undefined;
+	const gone = opened !== null && "id" in opened && rule === undefined;
 	const queries = [rules, accounts, categories, merchants, tags];
 	const ready = queries.every((query) => query.data !== undefined);
 	const failed = queries.find((query) => query.isError);
@@ -538,11 +543,38 @@ function RulesPage() {
 			actions={
 				desktop && admin ? (
 					<>
-						{/* As Sure's index, only once a rule exists. */}
+						{/* As Sure's index, only once a rule exists: its page menu, then « Appliquer tout ». */}
 						{list.length > 0 && (
-							<Button variant="outline" disabled={previewing} onClick={() => void askToApply(null)}>
-								{t("rules.apply.all")}
-							</Button>
+							<>
+								<DropdownMenu>
+									<DropdownMenuTrigger asChild>
+										<Button
+											variant="outline"
+											size="icon"
+											disabled={previewing}
+											aria-label={t("rules.menu")}
+										>
+											<EllipsisIcon />
+										</Button>
+									</DropdownMenuTrigger>
+									<DropdownMenuContent align="end" className="w-auto">
+										<DropdownMenuItem
+											variant="destructive"
+											onSelect={() => openDialog({ action: "deleteAll" })}
+										>
+											<Trash2Icon />
+											{t("rules.deleteAll.action")}
+										</DropdownMenuItem>
+									</DropdownMenuContent>
+								</DropdownMenu>
+								<Button
+									variant="outline"
+									disabled={previewing}
+									onClick={() => void askToApply(null)}
+								>
+									{t("rules.apply.all")}
+								</Button>
+							</>
 						)}
 						{/* An empty list offers its own, the one way forward. */}
 						{!(ready && failed === undefined && list.length === 0) && (
@@ -685,6 +717,26 @@ function RulesPage() {
 								showErrorToast(errorCodeOf(error));
 								setApplyOpen(false);
 							},
+						})
+					}
+				/>
+			)}
+			{opened?.action === "deleteAll" && (
+				<ConfirmDialog
+					open={open}
+					onOpenChange={setOpen}
+					destructive
+					title={t("rules.deleteAll.title")}
+					description={t("rules.deleteAll.description")}
+					confirmLabel={t("rules.deleteAll.confirm")}
+					pending={deleteAll.isPending}
+					onConfirm={() =>
+						deleteAll.mutate(undefined, {
+							onSuccess: () => {
+								toast.success(t("rules.deleteAll.deleted"));
+								setOpen(false);
+							},
+							onError: (error) => showErrorToast(errorCodeOf(error)),
 						})
 					}
 				/>

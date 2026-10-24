@@ -202,6 +202,44 @@ test("« Modifier » reopens the form filled in and saves, « Supprimer » remov
 	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
+test("« Supprimer toutes les règles » deletes every rule once confirmed, and the lines keep what they wrote", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const category = await api.createCategory();
+	const marker = uniqueName("PRLV").replace(" ", "-");
+	const label = `${marker} GAZ`;
+	await api.addTransaction(account.id, { date: daysAgo(2), label, amount: "-45,00" });
+	const rule = await api.createRule({
+		conditions: [labelLike(marker)],
+		actions: [categoryAction(category.id)],
+	});
+	await api.applyRule(rule);
+	await api.createRule({
+		conditions: [labelLike(uniqueName("autre"))],
+		actions: [categoryAction(category.id)],
+	});
+	await visit(page);
+	await expect(rulesList(page).getByRole("listitem")).toHaveCount(2);
+
+	await page.getByRole("button", { name: "Plus d'actions sur les règles" }).click();
+	await page.getByRole("menuitem", { name: "Supprimer toutes les règles" }).click();
+	const confirm = page.getByRole("alertdialog", { name: "Supprimer toutes les règles ?" });
+	await expect(confirm).toContainText("Ceci n'est pas réversible.");
+	await expect(confirm.getByRole("button", { name: "Annuler" })).toBeFocused();
+	await confirm.getByRole("button", { name: "Supprimer toutes les règles" }).click();
+
+	await expect(confirm).toBeHidden();
+	await expect(
+		page.locator("[data-sonner-toast]").filter({ hasText: "Toutes les règles supprimées" }),
+	).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
+	// As Sure's index, the menu only shows while a rule exists.
+	await expect(page.getByRole("button", { name: "Plus d'actions sur les règles" })).toHaveCount(0);
+	await expectCategory(page, label, category.name);
+});
+
 test("« Modifier » on an amount rule shows the amount as typed, and saving it unchanged keeps it", async ({
 	page,
 	api,
