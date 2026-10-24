@@ -2,14 +2,20 @@ import { z } from "zod";
 
 import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
-import { requiredSureName, sureName } from "./fields.ts";
+import { categoryColor } from "../categories.ts";
+import { present, requiredSureName, sureName } from "./fields.ts";
 
-/** `create_tag`: Sure's fields; Archant's tags have no colour, so `color` is taken and ignored. */
+/** Sure's `strip` before its `format:` validation. */
+const tagColor = z.string().trim().pipe(categoryColor);
+
+/** `create_tag`: Sure's fields. */
 export const createTagInput = z.strictObject({
 	name: requiredSureName(TAG_NAME_MAX_LENGTH).describe(
 		"Tag name, which no other tag holds, case aside.",
 	),
-	color: z.string().optional().describe("Ignored: Archant's tags have no colour."),
+	color: present(tagColor).describe(
+		"Hex color code (e.g. #e99537). If omitted, one is chosen from the default palette.",
+	),
 });
 
 /**
@@ -22,5 +28,5 @@ export const updateTagInput = z.strictObject({
 	new_name: sureName(TAG_NAME_MAX_LENGTH)
 		.optional()
 		.describe("New name for the tag, which no other tag holds, case aside."),
-	color: z.string().optional().describe("Ignored: Archant's tags have no colour."),
+	color: present(tagColor).describe("New hex color code (optional)"),
 });

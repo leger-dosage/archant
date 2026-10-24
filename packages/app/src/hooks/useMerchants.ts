@@ -34,12 +34,13 @@ export function useCreateMerchant() {
 	});
 }
 
-export function useRenameMerchant() {
+/** Renames a merchant, and changes its colour or website. */
+export function useUpdateMerchant() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({ id, name }: { id: string; name: string }) =>
-			(await unwrap(api.merchants[":id"].$patch({ param: { id }, json: { name } }))).data,
+		mutationFn: async ({ id, ...json }: MerchantInput & { id: string }) =>
+			(await unwrap(api.merchants[":id"].$patch({ param: { id }, json }))).data,
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
 	});
 }
@@ -69,12 +70,13 @@ export function useDeleteMerchant() {
 	});
 }
 
-export function useMergeMerchant() {
+/** Sure's `perform_merge`: several sources into one target. */
+export function useMergeMerchants() {
 	const invalidate = useInvalidateAfterMove();
 
 	return useMutation({
-		mutationFn: async ({ id, targetId }: { id: string; targetId: string }) =>
-			(await unwrap(api.merchants[":id"].merge.$post({ param: { id }, json: { targetId } }))).data,
+		mutationFn: async (json: { targetId: string; sourceIds: string[] }) =>
+			(await unwrap(api.merchants.merge.$post({ json }))).data,
 		onSuccess: invalidate,
 	});
 }

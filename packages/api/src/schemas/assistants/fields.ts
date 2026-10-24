@@ -7,6 +7,13 @@ import { DEFAULT_PAGE_SIZE } from "../transactions.ts";
  * missing one reaches `run` blank, which refuses it with Sure's key, as
  * `requiredSureName` does for a name.
  */
+/** Sure's `presence`: a blank value reads as absent rather than refused. */
+export const present = <Schema extends z.ZodType>(schema: Schema) =>
+	z.preprocess(
+		(value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+		schema.optional(),
+	);
+
 export const requiredLoose = <Schema extends z.ZodType>(schema: Schema) =>
 	z.preprocess((value) => value ?? "", schema);
 

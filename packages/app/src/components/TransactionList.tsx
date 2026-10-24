@@ -17,6 +17,7 @@ import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { OneTimeMarker } from "@/components/OneTimeMarker";
 import { PostedMatchBadge, StatusBadge } from "@/components/StatusBadge";
+import { TagBadge } from "@/components/TagBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { ProtectionMarker } from "@/components/TransactionProtection";
 import { Badge } from "@/components/ui/badge";
@@ -373,7 +374,7 @@ type RowContext = {
 	categories: readonly CategoryData[] | undefined;
 	categoryOf: ReadonlyMap<string, CategoryData>;
 	merchantNames: ReadonlyMap<string, string>;
-	tagNames: ReadonlyMap<string, string>;
+	tagOf: ReadonlyMap<string, { name: string; color: string }>;
 	/** The row whose category combobox is open, so a pick closes it. */
 	picking: string | null;
 	setPicking: (id: string | null) => void;
@@ -423,11 +424,11 @@ function RowLine({
 	const category = shownCategoryId === null ? undefined : context.categoryOf.get(shownCategoryId);
 	const rowTags = item.tagIds
 		.flatMap((id) => {
-			const name = context.tagNames.get(id);
+			const tag = context.tagOf.get(id);
 
-			return name === undefined ? [] : [name];
+			return tag === undefined ? [] : [tag];
 		})
-		.toSorted((a, b) => byName.compare(a, b));
+		.toSorted((a, b) => byName.compare(a.name, b.name));
 	const selected = !parent && selection?.isSelected(item.id) === true;
 	// A parent's item holds its lines' list too, so its line is a block inside it.
 	const Line = parent ? "div" : "li";
@@ -525,14 +526,8 @@ function RowLine({
 						{(subtitle !== undefined || rowTags.length > 0) && (
 							<span className="hidden min-w-0 items-center gap-1 text-xs text-muted-foreground md:flex">
 								{subtitle !== undefined && <span className="truncate">{subtitle}</span>}
-								{rowTags.slice(0, SHOWN_TAGS).map((name) => (
-									<Badge
-										key={name}
-										variant="outline"
-										className="max-w-32 font-normal text-muted-foreground"
-									>
-										<span className="truncate">{name}</span>
-									</Badge>
+								{rowTags.slice(0, SHOWN_TAGS).map((tag) => (
+									<TagBadge key={tag.name} tag={tag} className="h-5 max-w-32" />
 								))}
 								{rowTags.length > SHOWN_TAGS && (
 									<Badge variant="outline" className="font-normal text-muted-foreground">
@@ -654,7 +649,7 @@ export function TransactionList({
 		categories: categories.data,
 		categoryOf: new Map((categories.data ?? []).map((category) => [category.id, category])),
 		merchantNames: new Map((merchants.data ?? []).map((merchant) => [merchant.id, merchant.name])),
-		tagNames: new Map((tags.data ?? []).map((tag) => [tag.id, tag.name])),
+		tagOf: new Map((tags.data ?? []).map((tag) => [tag.id, tag])),
 		picking,
 		setPicking,
 		setCategory,

@@ -80,7 +80,12 @@ describe("tags", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect((await response.json()).data).toEqual({ id: tag.id, name, transactionCount: 0 });
+		expect((await response.json()).data).toEqual({
+			id: tag.id,
+			name,
+			color: tag.color,
+			transactionCount: 0,
+		});
 	});
 
 	it("deletes a tag, removing it from its transactions and keeping their locks", async () => {
@@ -104,6 +109,42 @@ describe("tags", () => {
 			{ locked: '["date","amount","label","tags"]', tags: kept.id },
 		]);
 		expect((await tagList()).find((item) => item.id === tag.id)).toBeUndefined();
+	});
+
+	it("deletes a tag into a replacement, and refuses the tag itself as one", async () => {
+		const account = await openAccount();
+		await postTransaction(account.id, expense);
+		const tag = await createTag(uniqueCategory("Vacances"));
+		const replacement = await createTag(uniqueCategory("Voyages"));
+		await tagAll(account.id, [tag.id]);
+
+		const refused = await request("DELETE", `/api/tags/${tag.id}?replacementId=${tag.id}`);
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error.fields).toEqual([
+			{ path: "replacementId", code: "invalid_value" },
+		]);
+		await expect(
+			request("DELETE", `/api/tags/${tag.id}?replacementId=${replacement.id}`),
+		).resolves.toEqual({ status: 200, body: { data: { id: tag.id, untagged: 1 } } });
+		expect((await tagList()).find((item) => item.id === replacement.id)).toMatchObject({
+			transactionCount: 1,
+		});
+	});
+
+	it("creates a tag in its colour and deletes every tag at once", async () => {
+		const own = await ownDatabase();
+		const client = testClient(buildApp(own.db)).api.tags;
+		const created = await client.$post({ json: { name: "Vacances", color: "#DB5A54" } });
+
+		expect((await created.json()).data).toMatchObject({ color: "#db5a54" });
+		await client.$post({ json: { name: "Travaux" } });
+
+		const response = await client.$delete();
+
+		expect(response.status).toBe(200);
+		expect((await response.json()).data).toEqual({ deleted: 2 });
+		await expect(tagList(own.db)).resolves.toEqual([]);
 	});
 
 	it("deletes a tagged transaction and an account whose transactions carry tags", async () => {

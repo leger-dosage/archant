@@ -1,15 +1,19 @@
 import { sql } from "drizzle-orm";
 import { integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
-/**
- * A mark that follows a trip or a project across categories. No colour, where
- * Sure gives each tag one: see docs/sure-parity.md.
- */
+import { sampleCategoryColor } from "../category-presets.ts";
+
+/** A mark that follows a trip or a project across categories, in its colour, as Sure's `Tag`. */
 export const tags = sqliteTable(
 	"tags",
 	{
 		id: text("id").primaryKey(),
 		name: text("name").notNull(),
+		// Sure's `Tag::COLORS` are `Category::COLORS`; an insert without one,
+		// an import's or a test's, draws one as Sure's `COLORS.sample`.
+		color: text("color")
+			.notNull()
+			.$defaultFn(() => sampleCategoryColor()),
 		createdAt: integer("created_at").notNull(),
 		updatedAt: integer("updated_at").notNull(),
 	},

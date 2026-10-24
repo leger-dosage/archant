@@ -685,6 +685,49 @@ export async function removeTag(
 	);
 }
 
+/**
+ * Moves tag `from` to tag `to` on every transaction carrying it, as Sure's
+ * `replace_and_destroy!`; a transaction already carrying `to` keeps one
+ * tagging. Returns how many transactions carried `from`. Maintenance only, as
+ * `removeTag`: locks stay.
+ */
+export async function replaceTag(
+	deps: ServiceDeps,
+	from: string,
+	to: string,
+	// Maintenance only, for the same reason as `recategorise`.
+	_options: { origin: "maintenance" },
+): Promise<number> {
+	return deps.db.transaction(
+		async (tx) => {
+			await tx
+				.insert(taggings)
+				.select(
+					tx
+						.select({
+							transactionId: taggings.transactionId,
+							tagId: sql<string>`${to}`.as("tag_id"),
+						})
+						.from(taggings)
+						.where(eq(taggings.tagId, from)),
+				)
+				.onConflictDoNothing();
+			const result = await tx.delete(taggings).where(eq(taggings.tagId, from));
+
+			return result.rowsAffected;
+		},
+		{ behavior: "immediate" },
+	);
+}
+
+/**
+ * Takes every tag off every transaction, for Sure's `destroy_all` of tags.
+ * Maintenance only, as `removeTag`: locks stay.
+ */
+export async function removeAllTags(deps: ServiceDeps): Promise<void> {
+	await deps.db.delete(taggings);
+}
+
 /** How many transactions each tag marks, by tag id; absent marks none. */
 export async function countByTag(deps: ServiceDeps): Promise<Map<string, number>> {
 	const rows = await deps.db

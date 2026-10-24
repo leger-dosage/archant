@@ -5,7 +5,7 @@ import {
 	merchantsInput,
 	renameMerchantInput,
 } from "../schemas/assistants/merchants.ts";
-import { createMerchant, listMerchants, renameMerchant } from "../services/merchants.ts";
+import { createMerchant, listMerchants, updateMerchant } from "../services/merchants.ts";
 import {
 	BANK_TEXT,
 	CREATES,
@@ -89,7 +89,7 @@ export const renameMerchantTool = defineTool({
 	output: written,
 	run: async (deps, { merchant_id: merchantId, name }) => ({
 		result: writtenOf(
-			await validated(async () => renameMerchant(deps, merchantId, { name })),
+			await validated(async () => updateMerchant(deps, merchantId, { name })),
 			"updated",
 		),
 		changedRows: 1,

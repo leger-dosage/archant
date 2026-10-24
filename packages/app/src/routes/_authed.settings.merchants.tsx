@@ -1,7 +1,7 @@
 import type { MerchantData } from "@/hooks/useMerchants";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, StoreIcon } from "lucide-react";
+import { CombineIcon, EllipsisIcon, StoreIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -30,14 +30,14 @@ export const Route = createFileRoute("/_authed/settings/merchants")({
 	component: MerchantsPage,
 });
 
-type Action = "rename" | "merge" | "delete";
+type Action = "edit" | "delete";
 
 /**
  * The dialog open, kept while it closes so its content does not vanish
  * mid-animation. An id, not the merchant: the dialog reads it from the
  * current list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: "create" } | { action: Action; id: string };
+type Opened = { action: "create" | "merge" } | { action: Action; id: string };
 
 function MerchantRow({
 	merchant,
@@ -50,7 +50,7 @@ function MerchantRow({
 
 	return (
 		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
-			<TintedIcon subject={{ kind: "merchant", name: merchant.name }} />
+			<TintedIcon subject={{ kind: "merchant", name: merchant.name, color: merchant.color }} />
 			<span className="min-w-0 flex-1 truncate font-medium">{merchant.name}</span>
 			<span className="shrink-0 text-muted-foreground tabular-nums">
 				{t("merchants.transactions", { count: merchant.transactionCount })}
@@ -66,11 +66,8 @@ function MerchantRow({
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
-					<DropdownMenuItem onSelect={() => onAction("rename")}>
-						{t("merchants.rename")}
-					</DropdownMenuItem>
-					<DropdownMenuItem onSelect={() => onAction("merge")}>
-						{t("merchants.merge")}
+					<DropdownMenuItem onSelect={() => onAction("edit")}>
+						{t("merchants.edit")}
 					</DropdownMenuItem>
 					<DropdownMenuItem variant="destructive" onSelect={() => onAction("delete")}>
 						{t("merchants.delete")}
@@ -82,7 +79,9 @@ function MerchantRow({
 }
 
 /**
- * Creates, renames, merges and deletes merchants. A transaction's or a rule's
+ * Creates, edits, merges and deletes merchants, as Sure's
+ * `family_merchants/index.html.erb`: merging several at once from the page
+ * menu. A transaction's or a rule's
  * combobox creates one too, by typing a new name.
  */
 function MerchantsPage() {
@@ -93,11 +92,11 @@ function MerchantsPage() {
 	const [open, setOpen] = useState(false);
 	const list = merchants.data ?? [];
 	const merchant =
-		opened === null || opened.action === "create"
+		opened === null || !("id" in opened)
 			? undefined
 			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted or merged elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && opened.action !== "create" && merchant === undefined;
+	const gone = opened !== null && "id" in opened && merchant === undefined;
 
 	useEffect(() => {
 		if (gone) {
@@ -132,7 +131,26 @@ function MerchantsPage() {
 			actions={
 				// An empty list offers its own, the one way forward.
 				merchants.data !== undefined && list.length === 0 ? undefined : (
-					<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+					<div className="flex items-center gap-2">
+						{/* Sure's page menu: merge several. */}
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button variant="outline" size="icon" aria-label={t("merchants.menu")}>
+									<EllipsisIcon />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								<DropdownMenuItem
+									disabled={list.length < 2}
+									onSelect={() => show({ action: "merge" })}
+								>
+									<CombineIcon />
+									{t("merchants.mergeAll")}
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+						<Button onClick={() => show({ action: "create" })}>{t("merchants.add")}</Button>
+					</div>
 				)
 			}
 			className="gap-4"
@@ -181,16 +199,11 @@ function MerchantsPage() {
 					</ListCard>
 				))}
 
-			{(opened?.action === "create" || (opened?.action === "rename" && merchant !== undefined)) && (
+			{(opened?.action === "create" || (opened?.action === "edit" && merchant !== undefined)) && (
 				<MerchantDialog open={open} onOpenChange={setOpen} merchant={merchant} />
 			)}
-			{opened?.action === "merge" && merchant !== undefined && (
-				<MergeMerchantDialog
-					open={open}
-					onOpenChange={setOpen}
-					merchant={merchant}
-					merchants={list}
-				/>
+			{opened?.action === "merge" && (
+				<MergeMerchantDialog open={open} onOpenChange={setOpen} merchants={list} />
 			)}
 			{opened?.action === "delete" && merchant !== undefined && (
 				<ConfirmDialog

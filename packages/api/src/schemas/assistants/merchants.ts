@@ -14,9 +14,12 @@ export const merchantsInput = z.strictObject({
 		.describe("Case-insensitive substring filter on merchant name."),
 });
 
-export const createMerchantInput = merchantSchema.strict();
+/** A name alone: Sure has no merchant write tool whose colour or website these would follow. */
+const merchantName = merchantSchema.pick({ name: true });
+
+export const createMerchantInput = merchantName.strict();
 
 export const renameMerchantInput = z.strictObject({
 	merchant_id: merchantId,
-	...merchantSchema.shape,
+	...merchantName.shape,
 });

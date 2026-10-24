@@ -241,7 +241,11 @@ async function household() {
 	const bakery = await ownCategory("Boulangerie", { parentId: food });
 	const trip = await created("/api/tags", { name: "Voyage, été" });
 	const odd = await created("/api/tags", { name: "A\\B|C" });
-	const baker = await created("/api/merchants", { name: "Boulanger du coin" });
+	const baker = await created("/api/merchants", {
+		name: "Boulanger du coin",
+		color: "#c44fe9",
+		websiteUrl: "boulanger.test",
+	});
 
 	const bread = await postOwn(ids.checking, {
 		date: "2026-09-10",
@@ -2199,11 +2203,16 @@ describe("exportArchive", () => {
 			"tag",
 		]);
 		expect(archive.of("Merchant")).toEqual([
-			expect.objectContaining({ id: baker, name: "Boulanger du coin" }),
+			expect.objectContaining({
+				id: baker,
+				name: "Boulanger du coin",
+				color: "#c44fe9",
+				website_url: "boulanger.test",
+			}),
 		]);
 		expect(archive.csv("merchants.csv")).toEqual([
 			["name", "color", "website_url"],
-			["Boulanger du coin", "", ""],
+			["Boulanger du coin", "#c44fe9", "boulanger.test"],
 		]);
 		expect(archive.of("Budget")).toEqual([
 			expect.objectContaining({

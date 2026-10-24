@@ -33,27 +33,52 @@ export function useCreateTag() {
 	});
 }
 
-export function useRenameTag() {
+/** Renames a tag, and changes its colour. */
+export function useUpdateTag() {
 	const queryClient = useQueryClient();
 
 	return useMutation({
-		mutationFn: async ({ id, name }: { id: string; name: string }) =>
-			(await unwrap(api.tags[":id"].$patch({ param: { id }, json: { name } }))).data,
+		mutationFn: async ({ id, ...json }: TagInput & { id: string }) =>
+			(await unwrap(api.tags[":id"].$patch({ param: { id }, json }))).data,
 		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
 	});
 }
 
-/** Deletes a tag; its transactions lose it, so the lists are refetched too. */
-export function useDeleteTag() {
+/** A delete and a delete all take tags off transactions, so the lists are refetched too. */
+function useInvalidateAfterRemoval() {
 	const queryClient = useQueryClient();
 
+	return () =>
+		Promise.all([
+			queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
+		]);
+}
+
+/** Deletes a tag; its transactions lose it, or carry `replacementId` instead. */
+export function useDeleteTag() {
+	const invalidate = useInvalidateAfterRemoval();
+
 	return useMutation({
-		mutationFn: async (id: string) =>
-			(await unwrap(api.tags[":id"].$delete({ param: { id } }))).data,
-		onSuccess: () =>
-			Promise.all([
-				queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
-				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
-			]),
+		mutationFn: async ({ id, replacementId }: { id: string; replacementId: string | null }) =>
+			(
+				await unwrap(
+					api.tags[":id"].$delete({
+						param: { id },
+						query: replacementId === null ? {} : { replacementId },
+					}),
+				)
+			).data,
+		onSuccess: invalidate,
+	});
+}
+
+/** Sure's `destroy_all`: every tag goes, off every transaction. */
+export function useDeleteAllTags() {
+	const invalidate = useInvalidateAfterRemoval();
+
+	return useMutation({
+		mutationFn: async () => (await unwrap(api.tags.$delete())).data,
+		onSuccess: invalidate,
 	});
 }

@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
-// Stories 4.3 and 11.12: merchant management under « Réglages ». One database serves the
+// Stories 4.3, 11.12 and 32.3: merchant management under « Réglages ». One database serves the
 // whole run, so each test works on merchants of its own.
 
 const PAGE = "/settings/merchants";
@@ -11,11 +11,7 @@ const PAGE = "/settings/merchants";
 const merchantRow = (page: Page, name: string) =>
 	page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).locator("..");
 
-async function openAction(
-	page: Page,
-	name: string,
-	action: "Renommer" | "Fusionner" | "Supprimer",
-) {
+async function openAction(page: Page, name: string, action: "Modifier" | "Supprimer") {
 	await page.getByRole("button", { name: `Actions pour ${name}`, exact: true }).click();
 	await page.getByRole("menuitem", { name: action }).click();
 }
@@ -39,7 +35,10 @@ async function visitOperations(page: Page, q: string) {
 	await expect(rowButton(page, q)).toBeVisible();
 }
 
-test("renaming a merchant renames it on its rows", async ({ page, api }) => {
+test("editing a merchant renames it on its rows and keeps its colour and website", async ({
+	page,
+	api,
+}) => {
 	const label = uniqueName("CB CARREF");
 	const merchant = await api.createMerchant(uniqueName("Carref"));
 	const renamed = uniqueName("Carrefour");
@@ -48,41 +47,54 @@ test("renaming a merchant renames it on its rows", async ({ page, api }) => {
 	await page.goto(PAGE);
 	await expect(page.getByRole("heading", { level: 1, name: "Marchands" })).toBeVisible();
 	await expect(merchantRow(page, merchant.name)).toContainText("1 opération");
-	await openAction(page, merchant.name, "Renommer");
+	await openAction(page, merchant.name, "Modifier");
 	const dialog = page.getByRole("dialog");
 	await dialog.getByLabel("Nom").fill(renamed);
-	await dialog.getByRole("button", { name: "Renommer" }).click();
+	await dialog
+		.locator("label", { has: page.getByRole("radio", { name: "Vert", exact: true }) })
+		.click();
+	await dialog.getByPlaceholder("Site web (ex. : starbucks.com)").fill("carrefour.fr");
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(dialog).toBeHidden();
 	await expect(merchantRow(page, renamed)).toBeVisible();
+	await openAction(page, renamed, "Modifier");
+	await expect(dialog.getByRole("radio", { name: "Vert", exact: true })).toBeChecked();
+	await expect(dialog.getByLabel("Site web")).toHaveValue("carrefour.fr");
+	await page.keyboard.press("Escape");
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).toContainText(renamed);
 });
 
-test("merging a merchant into another moves its rows and removes it", async ({ page, api }) => {
+test("merging several merchants into another moves their rows and removes them", async ({
+	page,
+	api,
+}) => {
 	const label = uniqueName("CB LECLERC");
-	const source = await api.createMerchant(uniqueName("Leclerc Drive"));
-	const target = await api.createMerchant(uniqueName("Leclerc"));
+	const prefix = uniqueName("Leclerc");
+	const source = await api.createMerchant(`${prefix} Drive`);
+	const other = await api.createMerchant(`${prefix} Express`);
+	const target = await api.createMerchant(prefix);
 	await linked(api, label, source.id);
 
 	await page.goto(PAGE);
-	await openAction(page, source.name, "Fusionner");
-	const dialog = page.getByRole("dialog", { name: `Fusionner « ${source.name} »` });
-	await dialog.getByRole("button", { name: "Fusionner dans" }).click();
-	const search = page.getByRole("combobox", { name: "Rechercher un marchand" });
-	await search.fill(target.name);
-	// Neither « Sans marchand », nor « Créer », nor the merchant itself.
-	await expect(page.getByRole("option", { name: "Sans marchand" })).toHaveCount(0);
-	await search.fill(uniqueName("Absent"));
-	await expect(page.getByRole("option", { name: /^Créer/u })).toHaveCount(0);
-	await search.fill(source.name);
-	await expect(page.getByRole("option", { name: source.name })).toHaveCount(0);
-	await search.fill(target.name);
-	await page.getByRole("option", { name: target.name }).click();
-	await dialog.getByRole("button", { name: "Fusionner", exact: true }).click();
+	await page.getByRole("button", { name: "Plus d'actions sur les marchands" }).click();
+	await page.getByRole("menuitem", { name: "Fusionner des marchands" }).click();
+	const dialog = page.getByRole("dialog", { name: "Fusionner des marchands" });
+	await dialog.getByRole("button", { name: "Fusionner vers (cible)" }).click();
+	await page.getByRole("combobox", { name: "Rechercher un marchand" }).fill(target.name);
+	await page.getByRole("option", { name: target.name, exact: true }).click();
+	await dialog.getByRole("searchbox", { name: "Rechercher des marchands…" }).fill(prefix);
+	// The target cannot be a source of its own merge.
+	await expect(dialog.getByRole("checkbox", { name: target.name, exact: true })).toBeDisabled();
+	await dialog.getByRole("checkbox", { name: source.name }).check();
+	await dialog.getByRole("checkbox", { name: other.name }).check();
+	await dialog.getByRole("button", { name: "Fusionner la sélection" }).click();
 
 	await expect(dialog).toBeHidden();
+	await expect(page.getByText("2 marchands fusionnés avec succès")).toBeVisible();
 	await expect(merchantRow(page, source.name)).toHaveCount(0);
+	await expect(merchantRow(page, other.name)).toHaveCount(0);
 	await expect(merchantRow(page, target.name)).toContainText("1 opération");
 	await visitOperations(page, label);
 	await expect(rowButton(page, label)).toContainText(target.name);

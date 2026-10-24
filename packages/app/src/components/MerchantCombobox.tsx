@@ -42,8 +42,6 @@ type MerchantComboboxProps = {
 	noneLabel?: string;
 	/** Offers « Créer "…" » last; a merge target must already exist. */
 	allowCreate?: boolean;
-	/** Left out of the list: the merged merchant itself. */
-	exclude?: string;
 };
 
 /**
@@ -59,13 +57,11 @@ export function MerchantCombobox({
 	allowNone = true,
 	noneLabel,
 	allowCreate = true,
-	exclude,
 }: MerchantComboboxProps) {
 	const { t } = useTranslation();
 	const createMerchant = useCreateMerchant();
 	const [search, setSearch] = useState("");
 	const none = noneLabel ?? t("transactions.merchant.none");
-	const offered = merchants.filter((merchant) => merchant.id !== exclude);
 	const typed = search.trim();
 	const canCreate =
 		allowCreate &&
@@ -110,7 +106,7 @@ export function MerchantCombobox({
 							<span>{none}</span>
 						</CommandItem>
 					)}
-					{offered.map((merchant) => (
+					{merchants.map((merchant) => (
 						<CommandItem
 							key={merchant.id}
 							value={merchant.id}

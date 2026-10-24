@@ -1,16 +1,18 @@
 import type { TagData } from "@/hooks/useTags";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, TagIcon } from "lucide-react";
+import { EllipsisIcon, TagIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { DeleteTagDialog } from "@/components/DeleteTagDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { InsetGroup } from "@/components/InsetGroup";
 import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
+import { TagBadge } from "@/components/TagBadge";
 import { TagDialog } from "@/components/TagDialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +22,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDeleteTag, useTags } from "@/hooks/useTags";
+import { useDeleteAllTags, useDeleteTag, useTags } from "@/hooks/useTags";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
@@ -28,21 +30,23 @@ export const Route = createFileRoute("/_authed/settings/tags")({
 	component: TagsPage,
 });
 
-type Action = "rename" | "delete";
+type Action = "edit" | "delete";
 
 /**
  * The dialog open, kept while it closes so its content does not vanish
  * mid-animation. An id, not the tag: the dialog reads it from the current
  * list, so a count or a name that changed since opening is fresh.
  */
-type Opened = { action: "create" } | { action: Action; id: string };
+type Opened = { action: "create" | "deleteAll" } | { action: Action; id: string };
 
 function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) => void }) {
 	const { t } = useTranslation();
 
 	return (
 		<div className="flex min-h-14 items-center gap-3 px-4 py-2 hover:bg-hover">
-			<span className="min-w-0 flex-1 truncate font-medium">{tag.name}</span>
+			<span className="min-w-0 flex-1">
+				<TagBadge tag={tag} className="h-7 text-sm" />
+			</span>
 			<span className="shrink-0 text-muted-foreground tabular-nums">
 				{t("tags.transactions", { count: tag.transactionCount })}
 			</span>
@@ -53,9 +57,7 @@ function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) =>
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
-					<DropdownMenuItem onSelect={() => onAction("rename")}>
-						{t("tags.rename")}
-					</DropdownMenuItem>
+					<DropdownMenuItem onSelect={() => onAction("edit")}>{t("tags.edit")}</DropdownMenuItem>
 					<DropdownMenuItem variant="destructive" onSelect={() => onAction("delete")}>
 						{t("tags.delete")}
 					</DropdownMenuItem>
@@ -66,22 +68,25 @@ function TagRow({ tag, onAction }: { tag: TagData; onAction: (action: Action) =>
 }
 
 /**
- * Creates, renames and deletes tags. A transaction's or a rule's combobox
+ * Creates, edits and deletes tags, as Sure's `tags/index.html.erb`: a used
+ * tag is deleted with a replacement or without, and the page menu deletes
+ * them all. A transaction's or a rule's combobox
  * creates one too, by typing a new name.
  */
 function TagsPage() {
 	const { t } = useTranslation();
 	const tags = useTags();
 	const deleteTag = useDeleteTag();
+	const deleteAll = useDeleteAllTags();
 	const [opened, setOpened] = useState<Opened | null>(null);
 	const [open, setOpen] = useState(false);
 	const list = tags.data ?? [];
 	const tag =
-		opened === null || opened.action === "create"
+		opened === null || !("id" in opened)
 			? undefined
 			: list.find((candidate) => candidate.id === opened.id);
 	// Deleted elsewhere since it opened: nothing left to act on.
-	const gone = opened !== null && opened.action !== "create" && tag === undefined;
+	const gone = opened !== null && "id" in opened && tag === undefined;
 
 	useEffect(() => {
 		if (gone) {
@@ -100,13 +105,16 @@ function TagsPage() {
 	}, [t]);
 
 	const remove = (target: TagData) =>
-		deleteTag.mutate(target.id, {
-			onSuccess: () => {
-				toast.success(t("tags.deleteDialog.deleted", { name: target.name }));
-				setOpen(false);
+		deleteTag.mutate(
+			{ id: target.id, replacementId: null },
+			{
+				onSuccess: () => {
+					toast.success(t("tags.deleteDialog.deleted", { name: target.name }));
+					setOpen(false);
+				},
+				onError: (error) => showErrorToast(errorCodeOf(error)),
 			},
-			onError: (error) => showErrorToast(errorCodeOf(error)),
-		});
+		);
 
 	return (
 		<Page
@@ -116,7 +124,26 @@ function TagsPage() {
 			actions={
 				// An empty list offers its own, the one way forward.
 				tags.data !== undefined && list.length === 0 ? undefined : (
-					<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>
+					<div className="flex items-center gap-2">
+						{/* Sure's page menu: delete all. */}
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button variant="outline" size="icon" aria-label={t("tags.menu")}>
+									<EllipsisIcon />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								<DropdownMenuItem
+									variant="destructive"
+									onSelect={() => show({ action: "deleteAll" })}
+								>
+									<Trash2Icon />
+									{t("tags.deleteAll.action")}
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+						<Button onClick={() => show({ action: "create" })}>{t("tags.add")}</Button>
+					</div>
 				)
 			}
 			className="gap-4"
@@ -160,23 +187,43 @@ function TagsPage() {
 					</ListCard>
 				))}
 
-			{(opened?.action === "create" || (opened?.action === "rename" && tag !== undefined)) && (
+			{(opened?.action === "create" || (opened?.action === "edit" && tag !== undefined)) && (
 				<TagDialog open={open} onOpenChange={setOpen} tag={tag} />
 			)}
-			{opened?.action === "delete" && tag !== undefined && (
+			{/* Sure asks for a replacement only when some transactions carry the tag. */}
+			{opened?.action === "delete" && tag !== undefined && tag.transactionCount > 0 && (
+				<DeleteTagDialog open={open} onOpenChange={setOpen} tag={tag} tags={list} />
+			)}
+			{opened?.action === "delete" && tag !== undefined && tag.transactionCount === 0 && (
 				<ConfirmDialog
 					open={open}
 					onOpenChange={setOpen}
 					title={t("tags.deleteDialog.title", { name: tag.name })}
-					description={
-						tag.transactionCount === 0
-							? t("tags.deleteDialog.none")
-							: t("tags.deleteDialog.count", { count: tag.transactionCount })
-					}
+					description={t("tags.deleteDialog.none")}
 					confirmLabel={t("tags.deleteDialog.action")}
 					destructive
 					pending={deleteTag.isPending}
 					onConfirm={() => remove(tag)}
+				/>
+			)}
+			{opened?.action === "deleteAll" && (
+				<ConfirmDialog
+					open={open}
+					onOpenChange={setOpen}
+					destructive
+					title={t("tags.deleteAll.title")}
+					description={t("tags.deleteAll.description")}
+					confirmLabel={t("tags.deleteAll.confirm")}
+					pending={deleteAll.isPending}
+					onConfirm={() =>
+						deleteAll.mutate(undefined, {
+							onSuccess: () => {
+								toast.success(t("tags.deleteAll.deleted"));
+								setOpen(false);
+							},
+							onError: (error) => showErrorToast(errorCodeOf(error)),
+						})
+					}
 				/>
 			)}
 		</Page>

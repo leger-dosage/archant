@@ -659,7 +659,13 @@ async function* categoriesCsv(readers: Readers) {
 
 async function* merchantsCsv(readers: Readers) {
 	yield csv([["name", "color", "website_url"]]);
-	yield csv((await readers.merchants()).map((merchant) => [textCell(merchant.name), null, null]));
+	yield csv(
+		(await readers.merchants()).map((merchant) => [
+			textCell(merchant.name),
+			merchant.color,
+			merchant.websiteUrl === null ? null : textCell(merchant.websiteUrl),
+		]),
+	);
 }
 
 async function* rulesCsv(readers: Readers) {
@@ -950,23 +956,33 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 		counts,
 	);
 
-	for (const [type, rows] of [
-		["Tag", await readers.tags()],
-		["Merchant", await readers.merchants()],
-	] as const) {
-		yield ndjson(
-			rows.map((row) => ({
-				type,
-				data: {
-					id: row.id,
-					name: row.name,
-					created_at: timestamp(row.createdAt),
-					updated_at: timestamp(row.updatedAt),
-				},
-			})),
-			counts,
-		);
-	}
+	yield ndjson(
+		(await readers.tags()).map((row) => ({
+			type: "Tag",
+			data: {
+				id: row.id,
+				name: row.name,
+				color: row.color,
+				created_at: timestamp(row.createdAt),
+				updated_at: timestamp(row.updatedAt),
+			},
+		})),
+		counts,
+	);
+	yield ndjson(
+		(await readers.merchants()).map((row) => ({
+			type: "Merchant",
+			data: {
+				id: row.id,
+				name: row.name,
+				color: row.color,
+				website_url: row.websiteUrl,
+				created_at: timestamp(row.createdAt),
+				updated_at: timestamp(row.updatedAt),
+			},
+		})),
+		counts,
+	);
 
 	yield ndjson(
 		(await exportedRecurring(deps.db)).map((row) => ({

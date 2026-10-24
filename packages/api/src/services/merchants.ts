@@ -1,18 +1,22 @@
 import type { MerchantRequest } from "../schemas/merchants.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
+import { sampleCategoryColor } from "@archant/data/category-presets";
 import { merchants } from "@archant/data/schema/merchants";
 import type { Merchant } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
 import { countByMerchant, moveMerchant } from "./ledger/edits.ts";
+import { oneByOne } from "./ledger/shared.ts";
 import { assertNameFree } from "./names.ts";
 
 export type MerchantSummary = {
 	id: string;
 	name: string;
+	color: string;
+	websiteUrl: string | null;
 	transactionCount: number;
 };
 
@@ -29,6 +33,8 @@ function summarise(merchant: Merchant, counts: Map<string, number>): MerchantSum
 	return {
 		id: merchant.id,
 		name: merchant.name,
+		color: merchant.color,
+		websiteUrl: merchant.websiteUrl,
 		transactionCount: counts.get(merchant.id) ?? 0,
 	};
 }
@@ -74,7 +80,14 @@ export async function createMerchant(
 			await assertNameFree(tx, merchants, input.name, null);
 			const now = Date.now();
 
-			await tx.insert(merchants).values({ id, name: input.name, createdAt: now, updatedAt: now });
+			await tx.insert(merchants).values({
+				id,
+				name: input.name,
+				color: input.color ?? sampleCategoryColor(),
+				websiteUrl: input.websiteUrl ?? null,
+				createdAt: now,
+				updatedAt: now,
+			});
 		},
 		{ behavior: "immediate" },
 	);
@@ -82,7 +95,8 @@ export async function createMerchant(
 	return getMerchant(deps, id);
 }
 
-export async function renameMerchant(
+/** Renames a merchant, and recolours it or changes its website when given. */
+export async function updateMerchant(
 	deps: ServiceDeps,
 	id: string,
 	input: MerchantRequest,
@@ -96,7 +110,12 @@ export async function renameMerchant(
 			await assertNameFree(tx, merchants, input.name, id);
 			await tx
 				.update(merchants)
-				.set({ name: input.name, updatedAt: Date.now() })
+				.set({
+					name: input.name,
+					...(input.color === undefined ? {} : { color: input.color }),
+					...(input.websiteUrl === undefined ? {} : { websiteUrl: input.websiteUrl }),
+					updatedAt: Date.now(),
+				})
 				.where(eq(merchants.id, id));
 		},
 		{ behavior: "immediate" },
@@ -131,29 +150,45 @@ export async function deleteMerchant(
 }
 
 /**
- * Merges a merchant into `targetId`: its transactions move to the target,
- * keeping their locks, then it is deleted. Returns the target.
+ * Merges `sourceIds` into `targetId`, as Sure's `Merchant::Merger`: each
+ * source's transactions move to the target, keeping their locks, then the
+ * sources go, their recurring series with them, as a single delete does:
+ * the next detection finds the target's. Refused before any write when the
+ * target is among the sources. Returns the target and how many merchants went.
  */
-export async function mergeMerchant(
+export async function mergeMerchants(
 	deps: ServiceDeps,
-	id: string,
 	targetId: string,
-): Promise<MerchantSummary> {
+	sourceIds: readonly string[],
+): Promise<{ target: MerchantSummary; merged: number }> {
+	const ids = [...new Set(sourceIds)];
+
 	await deps.db.transaction(
 		async (tx) => {
-			if ((await findMerchant(tx, id)) === undefined) {
-				throw notFound();
-			}
-
-			if (targetId === id || (await findMerchant(tx, targetId)) === undefined) {
+			if ((await findMerchant(tx, targetId)) === undefined) {
 				throw invalid("targetId", "invalid_value");
 			}
 
-			await moveMerchant({ ...deps, db: tx }, id, targetId, { origin: "maintenance" });
-			await tx.delete(merchants).where(eq(merchants.id, id));
+			if (ids.includes(targetId)) {
+				throw invalid("sourceIds", "same_merchant");
+			}
+
+			const found = await tx
+				.select({ id: merchants.id })
+				.from(merchants)
+				.where(inArray(merchants.id, ids));
+
+			if (found.length !== ids.length) {
+				throw invalid("sourceIds", "invalid_value");
+			}
+
+			await oneByOne(ids, async (id) =>
+				moveMerchant({ ...deps, db: tx }, id, targetId, { origin: "maintenance" }),
+			);
+			await tx.delete(merchants).where(inArray(merchants.id, ids));
 		},
 		{ behavior: "immediate" },
 	);
 
-	return getMerchant(deps, targetId);
+	return { target: await getMerchant(deps, targetId), merged: ids.length };
 }
