@@ -427,7 +427,7 @@ describe("loadEnabledRules", () => {
 				],
 				actions: [
 					{ type: "set_transaction_merchant", merchantId: "amazon" },
-					{ type: "set_transaction_tags", tagId: "achats" },
+					{ type: "set_transaction_tags", tagIds: ["achats"] },
 					{ type: "set_transaction_name", label: "Amazon" },
 					{ type: "exclude_transaction" },
 					{ type: "set_as_transfer_or_payment", accountId: "a2" },
@@ -458,8 +458,26 @@ describe("loadEnabledRules", () => {
 		await expect(loadEnabledRules(temp.db)).resolves.toMatchObject([
 			{
 				conditions: [{ id: null }, { id: null }, { id: null }],
-				actions: [{ merchantId: null }, { tagId: null }, { accountId: null }],
+				actions: [{ merchantId: null }, { tagIds: [] }, { accountId: null }],
 			},
+		]);
+	});
+
+	it("keeps a tag action's tags still there, in order, and none when all are gone", async () => {
+		await createRule(deps(), {
+			conditions: [],
+			actions: [{ actionType: "set_transaction_tags", value: "achats" }],
+		});
+		await temp.db.run(sql`update rule_actions set value = 'gone,achats,achats'`);
+
+		await expect(loadEnabledRules(temp.db)).resolves.toMatchObject([
+			{ actions: [{ type: "set_transaction_tags", tagIds: ["achats"] }] },
+		]);
+
+		await temp.db.run(sql`update rule_actions set value = 'gone'`);
+
+		await expect(loadEnabledRules(temp.db)).resolves.toMatchObject([
+			{ actions: [{ type: "set_transaction_tags", tagIds: [] }] },
 		]);
 	});
 

@@ -23,7 +23,10 @@ const names: SummaryNames = {
 	]),
 	categories: new Map([["c1", "Courses"]]),
 	merchants: new Map([["m1", "Amazon"]]),
-	tags: new Map([["t1", "Achats"]]),
+	tags: new Map([
+		["t1", "Achats"],
+		["t2", "Vacances"],
+	]),
 };
 
 const leaf = (
@@ -190,6 +193,9 @@ describe("ruleSummary with Story 8.2's conditions and actions", () => {
 		["set_as_transfer_or_payment", "a2", "Virement avec Livret A"],
 		["set_transaction_merchant", "gone", "Marchand supprimé"],
 		["set_transaction_tags", "gone", "Étiquette supprimée"],
+		["set_transaction_tags", "t1,t2", "Ajouter les étiquettes Achats, Vacances"],
+		["set_transaction_tags", "gone,t1", "Ajouter l'étiquette Achats"],
+		["set_transaction_tags", "gone,lost", "Étiquette supprimée"],
 		["set_as_transfer_or_payment", "gone", "Compte supprimé"],
 	] as const)("reads %s %s as « %s »", (actionType, value, text) => {
 		expect(ruleSummary({ conditions: [], actions: [{ actionType, value }] }, names, i18n.t)).toBe(

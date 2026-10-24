@@ -85,6 +85,15 @@ async function dissociate(entryId: string) {
 	expect(status).toBe(200);
 }
 
+/** The fields a rule with `actions` and no condition is refused on. */
+async function refused(actions: unknown[]) {
+	const { status, body } = await request("POST", "/api/rules", { conditions: [], actions });
+
+	expect(status).toBe(400);
+
+	return errorBody.parse(body).error.fields;
+}
+
 const page = async (number: number) =>
 	(await request("GET", `/api/rules/runs?page=${number}&pageSize=1`)).body;
 
@@ -549,6 +558,61 @@ describe("rules", () => {
 
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error.fields).toEqual(fields);
+		expect((await request("GET", "/api/rules")).body).toEqual({ data: [] });
+	});
+
+	// Story 32.6: one tag action adds several tags, as Sure's multi_select.
+	it("stores a tag action's ids once, in order, and adds them all beside an earlier rule's tag", async () => {
+		const account = await openAccount();
+		const kept = await createTag(uniqueCategory("Courses"));
+		const trip = await createTag(uniqueCategory("Vacances"));
+		const italy = await createTag(uniqueCategory("Italie"));
+		await createRule({
+			conditions: [ruleLeaf("transaction_name", "like", "pizzeria")],
+			actions: [{ actionType: "set_transaction_tags", value: kept.id }],
+		});
+		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
+		const { status, body } = await request("POST", "/api/rules", {
+			conditions: [ruleLeaf("transaction_name", "like", "pizzeria")],
+			actions: [
+				{ actionType: "set_transaction_tags", value: ` ${trip.id} , ,${italy.id},${trip.id}` },
+			],
+		});
+
+		expect(status).toBe(201);
+		expect(body).toMatchObject({
+			data: { actions: [{ actionType: "set_transaction_tags", value: `${trip.id},${italy.id}` }] },
+		});
+
+		await postTransaction(account.id, { ...expense, label: "Pizzeria Roma" });
+
+		const [row] = await detailsOf(account.id);
+		expect(row?.tags?.split(",").toSorted()).toEqual([kept.id, trip.id, italy.id].toSorted());
+	});
+
+	it("refuses an unknown tag among known ones, too many tags and two tag actions", async () => {
+		const trip = await createTag(uniqueCategory("Vacances"));
+
+		await expect(
+			refused([{ actionType: "set_transaction_tags", value: `${trip.id},nope,gone` }]),
+		).resolves.toEqual([{ path: "actions.0.value", code: "invalid_value" }]);
+		await expect(
+			refused([
+				{
+					actionType: "set_transaction_tags",
+					value: Array.from({ length: 21 }, (_, index) => `t${index}`).join(","),
+				},
+			]),
+		).resolves.toEqual([{ path: "actions.0.value", code: "too_big" }]);
+		await expect(refused([{ actionType: "set_transaction_tags", value: " , " }])).resolves.toEqual([
+			{ path: "actions.0.value", code: "too_small" },
+		]);
+		await expect(
+			refused([
+				{ actionType: "set_transaction_tags", value: trip.id },
+				{ actionType: "set_transaction_tags", value: trip.id },
+			]),
+		).resolves.toEqual([{ path: "actions.1", code: "duplicate_action" }]);
 		expect((await request("GET", "/api/rules")).body).toEqual({ data: [] });
 	});
 

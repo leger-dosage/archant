@@ -133,3 +133,18 @@ export type RuleSnapshot = {
 export const RULE_VALUE_MAX_LENGTH = 200;
 
 export const RULE_NAME_MAX_LENGTH = 100;
+
+/**
+ * The tag ids a tag action holds: Sure's `Rule::Action#value=` keeps them in
+ * one value, comma-separated. Blanks and repeats are dropped, the order kept.
+ */
+export function tagIdsOf(value: string | null): string[] {
+	return [
+		...new Set(
+			(value ?? "")
+				.split(",")
+				.map((id) => id.trim())
+				.filter((id) => id !== ""),
+		),
+	];
+}

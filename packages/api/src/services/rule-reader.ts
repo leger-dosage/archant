@@ -5,7 +5,12 @@ import { asc, eq, inArray } from "drizzle-orm";
 
 import { parseUnsignedDecimal } from "@archant/data/money";
 import type { RuleConditionType } from "@archant/data/rules";
-import { isRuleOperatorOf, isValuelessAction, isValuelessOperator } from "@archant/data/rules";
+import {
+	isRuleOperatorOf,
+	isValuelessAction,
+	isValuelessOperator,
+	tagIdsOf,
+} from "@archant/data/rules";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
@@ -191,7 +196,10 @@ function toAction(action: RuleActionRow, known: Known): RuleAction {
 		case "set_transaction_merchant":
 			return { type: action.actionType, merchantId: ifKnown("merchant") };
 		case "set_transaction_tags":
-			return { type: action.actionType, tagId: ifKnown("tag") };
+			return {
+				type: action.actionType,
+				tagIds: tagIdsOf(value).filter((tagId) => known.tag.has(tagId)),
+			};
 		case "set_transaction_name":
 			return { type: action.actionType, label: value };
 		case "replace_in_transaction_name": {

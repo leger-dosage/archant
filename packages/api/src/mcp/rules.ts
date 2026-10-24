@@ -4,7 +4,12 @@ import type { NameBook } from "../services/names.ts";
 import { z } from "zod";
 
 import type { RuleConditionSnapshot, RuleSnapshot } from "@archant/data/rules";
-import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, RULE_OPERATORS } from "@archant/data/rules";
+import {
+	RULE_ACTION_TYPES,
+	RULE_CONDITION_TYPES,
+	RULE_OPERATORS,
+	tagIdsOf,
+} from "@archant/data/rules";
 
 import { AppError } from "../lib/errors.ts";
 import { listPageInput } from "../schemas/assistants/fields.ts";
@@ -66,7 +71,7 @@ const actionOutput = z.object({
 		.string()
 		.nullable()
 		.describe(
-			"The category, merchant, tag or account by name, else the label or the pattern; null to exclude.",
+			'The category, merchant or account by name, the tags by name separated by ", ", else the label or the pattern; null to exclude.',
 		),
 	replacement: z.string().nullable().optional(),
 });
@@ -126,7 +131,9 @@ function idsIn(rules: readonly RuleSnapshot[]) {
 		const kind = ACTION_KINDS[action.actionType];
 
 		if (kind !== undefined && action.value !== null) {
-			ids[kind].push(action.value);
+			ids[kind].push(
+				...(action.actionType === "set_transaction_tags" ? tagIdsOf(action.value) : [action.value]),
+			);
 		}
 	}
 
@@ -180,10 +187,18 @@ function snapshotOf(rule: RuleSnapshot, reader: Reader) {
 		conditions: rule.conditions.map((condition) => conditionOf(condition, reader)),
 		actions: rule.actions.map(({ actionType, value, replacement }) => {
 			const kind = ACTION_KINDS[actionType];
+			const named =
+				kind === undefined || value === null
+					? value
+					: actionType === "set_transaction_tags"
+						? tagIdsOf(value)
+								.map((id) => nameOf(reader.names.tags, id))
+								.join(", ")
+						: nameOf(reader.names[kind], value);
 
 			return {
 				action_type: actionType,
-				value: kind === undefined || value === null ? value : nameOf(reader.names[kind], value),
+				value: named,
 				...(replacement === undefined ? {} : { replacement }),
 			};
 		}),

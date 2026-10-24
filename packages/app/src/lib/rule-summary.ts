@@ -8,7 +8,7 @@ import type {
 	RuleOperator,
 	RuleOperatorOf,
 } from "@archant/data/rules";
-import { isRuleOperatorOf, isValuelessOperator } from "@archant/data/rules";
+import { isRuleOperatorOf, isValuelessOperator, tagIdsOf } from "@archant/data/rules";
 
 const isRuleTypeValue = (value: string): value is (typeof RULE_TYPE_VALUES)[number] =>
 	RULE_TYPE_VALUES.some((known) => known === value);
@@ -219,9 +219,16 @@ function actionText(action: SummaryRule["actions"][number], names: SummaryNames,
 				: t("rules.summary.merchant", { name });
 		}
 		case "set_transaction_tags": {
-			const name = names.tags.get(value);
+			// Sure's `value_display`: the tags still there, a deleted one left out.
+			const tagNames = tagIdsOf(value).flatMap((tagId) => {
+				const name = names.tags.get(tagId);
 
-			return name === undefined ? t("rules.summary.deletedTag") : t("rules.summary.tag", { name });
+				return name === undefined ? [] : [name];
+			});
+
+			return tagNames.length === 0
+				? t("rules.summary.deletedTag")
+				: t("rules.summary.tag", { name: tagNames.join(", "), count: tagNames.length });
 		}
 		case "set_transaction_name":
 			return t("rules.summary.rename", { name: value });

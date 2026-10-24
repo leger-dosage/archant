@@ -16,11 +16,12 @@ import {
 	isRuleOperatorOf,
 	isValuelessOperator,
 	isValuelessAction,
+	tagIdsOf,
 } from "@archant/data/rules";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
 import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
-import { LABEL_MAX_LENGTH } from "./transactions.ts";
+import { LABEL_MAX_LENGTH, MAX_TAGS_PER_TRANSACTION } from "./transactions.ts";
 
 /**
  * The decimals an amount condition may carry: twice the four of ISO 4217's
@@ -179,6 +180,34 @@ function checkReplacement(
 }
 
 /**
+ * A tag action's ids, comma-separated as Sure stores them: one at least, and
+ * no more than a transaction holds, since the rest could never be added.
+ */
+function checkTags(value: string, path: (string | number)[], context: z.core.$RefinementCtx) {
+	const count = tagIdsOf(value).length;
+
+	if (count === 0) {
+		issue(context, path, "too_small");
+	} else if (count > MAX_TAGS_PER_TRANSACTION) {
+		issue(context, path, "too_big");
+	}
+}
+
+/**
+ * An action's stored value: null for an exclusion, a tag action's ids without
+ * blanks or repeats, the trimmed text otherwise.
+ */
+function storedActionValue(actionType: RuleActionType, value: string | null | undefined) {
+	if (isValuelessAction(actionType)) {
+		return null;
+	}
+
+	return actionType === "set_transaction_tags"
+		? tagIdsOf(value ?? "").join(",")
+		: (value?.trim() ?? "");
+}
+
+/**
  * One stored value: the trimmed text, the amount as Sure's decimal text in
  * major units with a dot, null for a valueless operator.
  */
@@ -225,7 +254,8 @@ export type RuleRequest = {
  * in Sure: it is matched against a line in any. Groups nest one
  * level deep, a rule needs one action at least, and no action type twice, as
  * in Sure. An exclusion takes no value; every other action needs one, a
- * rename its new label. A replacement in the label keeps its pattern and its
+ * rename its new label, a tag action its tag ids comma-separated, as Sure's
+ * `multi_select`. A replacement in the label keeps its pattern and its
  * replacement as typed, spaces included, since a pattern may be a single
  * space; the pattern must be one RE2 accepts.
  */
@@ -286,6 +316,8 @@ export const ruleSchema = z
 				issue(context, path, "too_small");
 			} else if (action.actionType === "set_transaction_name" && value.length > LABEL_MAX_LENGTH) {
 				issue(context, path, "too_big");
+			} else if (action.actionType === "set_transaction_tags") {
+				checkTags(value, path, context);
 			}
 		}
 	})
@@ -327,7 +359,7 @@ export const ruleSchema = z
 					}
 				: {
 						actionType: action.actionType,
-						value: isValuelessAction(action.actionType) ? null : (action.value?.trim() ?? ""),
+						value: storedActionValue(action.actionType, action.value),
 						replacement: null,
 					},
 		),

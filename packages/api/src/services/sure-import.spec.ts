@@ -631,6 +631,33 @@ describe("importSureArchive", () => {
 		).toEqual([]);
 	});
 
+	it("imports Sure's tag action naming several tags as one action holding them all", async () => {
+		await ownDatabase();
+
+		await importLines([
+			line("Rule", {
+				id: "r1",
+				name: "Voyages",
+				active: true,
+				conditions: [{ condition_type: "transaction_name", operator: "like", value: "SNCF" }],
+				actions: [{ action_type: "set_transaction_tags", value: '"Voyage, été",Italie' }],
+			}),
+		]);
+
+		const tagIds = new Map(
+			(await source().all<{ id: string; name: string }>(sql`select id, name from tags`)).map(
+				(tag) => [tag.name, tag.id],
+			),
+		);
+
+		expect(await source().all(sql`select action_type as type, value from rule_actions`)).toEqual([
+			{
+				type: "set_transaction_tags",
+				value: `${tagIds.get("Voyage, été")},${tagIds.get("Italie")}`,
+			},
+		]);
+	});
+
 	it("imports Sure's negative and empty operators, and skips a tag one Sure never applies", async () => {
 		await ownDatabase();
 		const actions = [{ action_type: "set_transaction_merchant", value: "Netflix" }];

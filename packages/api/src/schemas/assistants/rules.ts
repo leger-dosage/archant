@@ -5,6 +5,7 @@ import { z } from "zod";
 import { RULE_OPERATORS_BY_TYPE } from "@archant/data/rules";
 
 import { MAX_RULE_CONDITIONS, RULE_TYPE_VALUES } from "../rules.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../transactions.ts";
 import { clampedPageFields } from "./fields.ts";
 
 /** `get_rule_runs`: a page of past applications, paged as Sure's `get_categories`. */
@@ -118,7 +119,9 @@ const action = z.discriminatedUnion("action_type", [
 		action_type: z.literal("set_transaction_tags"),
 		value: z
 			.string()
-			.describe("One tag id from get_tags or create_tag, added to the tags the transaction keeps."),
+			.describe(
+				`Tag ids from get_tags or create_tag, separated by commas such as "id1,id2", up to ${MAX_TAGS_PER_TRANSACTION}, each added to the tags the transaction keeps.`,
+			),
 	}),
 	z.strictObject({
 		action_type: z.literal("set_transaction_name"),
