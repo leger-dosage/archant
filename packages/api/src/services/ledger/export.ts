@@ -434,6 +434,8 @@ export const LEFT_OUT = {
 		postedMatchId: POSTED_MATCH_LEFT_OUT,
 		postedMatchConfidence: POSTED_MATCH_LEFT_OUT,
 		postedMatchDismissed: POSTED_MATCH_LEFT_OUT,
+		extra:
+			"What the bank sent beside a line, Sure's `extra`, which its exporter never writes; the next sync brings it back for the lines it reads.",
 	},
 	transfer_fees:
 		"Which lines are a transfer's fees, which Sure's `Family::DataExporter` leaves out of its Transfer lines: each fee leaves as the transaction it is.",

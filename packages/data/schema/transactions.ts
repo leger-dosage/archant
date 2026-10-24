@@ -45,6 +45,22 @@ export const POSTED_MATCH_CONFIDENCES = ["medium", "low"] as const;
 export type PostedMatchConfidence = (typeof POSTED_MATCH_CONFIDENCES)[number];
 
 /**
+ * What Enable Banking sends beside a line, as Sure's
+ * `EnableBankingEntry::Processor#extra`: each value the bank's text, only the
+ * keys it sent, `pending` only while the line is not booked.
+ */
+export type EnableBankingDetails = {
+	fx_rate?: string;
+	fx_unit_currency?: string;
+	fx_instructed_amount?: string;
+	merchant_category_code?: string;
+	pending?: true;
+};
+
+/** Sure's `transactions.extra`: the provider's details under its own key. */
+export type TransactionExtra = { enable_banking?: EnableBankingDetails };
+
+/**
  * The transaction-only columns of an entry whose `kind` is `transaction`, as
  * in Sure's delegated types (AD-8). The date and the amount stay on `entries`,
  * where the balance computation reads them for transactions and valuations alike.
@@ -118,6 +134,9 @@ export const transactions = sqliteTable(
 		// Sure's `investment_activity_label`, set from the sheet of an investment
 		// or crypto account's line; an internal movement leaves cash flow (AD-9).
 		investmentActivityLabel: text("investment_activity_label").$type<ActivityLabel>(),
+		// Sure's `extra`: what the bank sent beside the line, which a rule's
+		// « Détails bancaires » searches. Null for every line no bank sent.
+		extra: text("extra", { mode: "json" }).$type<TransactionExtra>(),
 	},
 	(table) => [
 		// Every category delete and merge, and the list's filter, look rows up by it.

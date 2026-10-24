@@ -591,11 +591,11 @@ describe("importSureArchive", () => {
 		await importLines([
 			line("Rule", {
 				id: "r1",
-				name: "Condition inconnue",
+				name: "Compte inconnu",
 				active: true,
 				conditions: [
-					{ condition_type: "transaction_details", operator: "like", value: "x" },
 					{ condition_type: "transaction_category", operator: "=", value: "Fantôme catégorie" },
+					{ condition_type: "transaction_account", operator: "=", value: "compte-fantome" },
 				],
 				actions: [{ action_type: "set_transaction_tags", value: "Fantôme étiquette" }],
 			}),
@@ -629,6 +629,32 @@ describe("importSureArchive", () => {
 		expect(
 			await source().all(sql`select name from categories where name = 'Fantôme catégorie'`),
 		).toEqual([]);
+	});
+
+	it("imports Sure's details condition with its operator and text", async () => {
+		await ownDatabase();
+
+		await importLines([
+			line("Rule", {
+				id: "r1",
+				name: "Supermarchés",
+				active: true,
+				conditions: [
+					{ condition_type: "transaction_details", operator: "like", value: "5411" },
+					{ condition_type: "transaction_details", operator: "is_null", value: null },
+				],
+				actions: [{ action_type: "exclude_transaction", value: null }],
+			}),
+		]);
+
+		expect(
+			await source().all(
+				sql`select condition_type as type, operator, value from rule_conditions order by position`,
+			),
+		).toEqual([
+			{ type: "transaction_details", operator: "like", value: "5411" },
+			{ type: "transaction_details", operator: "is_null", value: null },
+		]);
 	});
 
 	it("imports Sure's tag action naming several tags as one action holding them all", async () => {

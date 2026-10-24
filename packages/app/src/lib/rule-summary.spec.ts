@@ -127,6 +127,22 @@ describe("ruleSummary with Story 8.2's conditions and actions", () => {
 		);
 	});
 
+	it("names the bank's details in Sure's three operators", () => {
+		expect(summary([leaf("transaction_details", "like", "5411")])).toBe(
+			"Si Détails bancaires contient 5411, alors Catégorie Courses",
+		);
+		expect(summary([leaf("transaction_details", "=", "USD")])).toBe(
+			"Si Détails bancaires est égal à USD, alors Catégorie Courses",
+		);
+		expect(
+			summary([
+				{ conditionType: "transaction_details", operator: "is_null", value: null, conditions: [] },
+			]),
+		).toBe("Si Détails bancaires est vide, alors Catégorie Courses");
+		expect(operatorKey("transaction_details", "not_like")).toBeNull();
+		expect(operatorMenuKey("transaction_details", "=")).toBe("rules.operatorLabels.equalTo");
+	});
+
 	it("reads « est vide » without a value", () => {
 		expect(
 			summary([

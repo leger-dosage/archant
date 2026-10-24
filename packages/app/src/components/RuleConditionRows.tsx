@@ -136,7 +136,7 @@ export function LeafRow({
 					}}
 				>
 					<SelectTrigger
-						className="w-36 shrink-0"
+						className="w-44 shrink-0"
 						aria-label={t("rules.form.field", { index: label })}
 					>
 						<SelectValue />

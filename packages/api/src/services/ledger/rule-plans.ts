@@ -229,7 +229,7 @@ export async function applyRulePlanToHistory(
  * Every transaction as a rule reads it, for applying rules to history:
  * possible duplicates and excluded rows included, split parents left out for
  * their children (AD-20), with their merchant,
- * category, tags, notes, transfer kind, expected counterpart and locks.
+ * category, tags, notes, bank details, transfer kind, expected counterpart and locks.
  * `from` keeps rows dated on or after it; `null` keeps every date.
  * `activeAccountsOnly` leaves out a deactivated account's rows, as Sure's
  * rules read `family.transactions.visible` while its recurring identifier,
@@ -245,6 +245,7 @@ export async function ruleCandidates(
 		.select({
 			id: entries.id,
 			...editableColumns,
+			extra: transactions.extra,
 			expectedTransferAccountId: transactions.expectedTransferAccountId,
 			transferKind: transferColumns.transferKind,
 		})

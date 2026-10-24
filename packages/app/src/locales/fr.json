@@ -2733,6 +2733,7 @@
 			"transaction_merchant": "Marchand",
 			"transaction_category": "Catégorie",
 			"transaction_tag": "Étiquette",
+			"transaction_details": "Détails bancaires",
 			"transaction_notes": "Notes",
 			"transaction_type": "Type",
 			"compound": "Groupe de conditions"

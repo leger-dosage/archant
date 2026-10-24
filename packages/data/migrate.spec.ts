@@ -1687,6 +1687,39 @@ describe("rules", () => {
 		]);
 	});
 
+	it("keeps every condition through 0098, takes Sure's three details operators and starts every line without details", async () => {
+		const before = await migratedBefore("0098");
+		await insertRule(before, "r1");
+		await insertCondition(before, "c1", "transaction_tag", "=");
+		await expect(insertCondition(before, "c2", "transaction_details", "like")).rejects.toThrow();
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Café')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, condition_type as type from rule_conditions`),
+		).resolves.toEqual([{ id: "c1", type: "transaction_tag" }]);
+		await expect(database.get(sql`select extra from transactions`)).resolves.toEqual({
+			extra: null,
+		});
+
+		await expect(
+			Promise.all(
+				["like", "=", "is_null"].map((operator, index) =>
+					insertCondition(database, `d${index}`, "transaction_details", operator),
+				),
+			),
+		).resolves.toHaveLength(3);
+
+		await expect(insertCondition(database, "d3", "transaction_details", "!=")).rejects.toThrow();
+		await expect(
+			insertCondition(database, "d4", "transaction_details", "not_like"),
+		).rejects.toThrow();
+	});
+
 	it("starts a transaction expecting no counterpart, and forgets the account once it goes", async () => {
 		const database = await migrated();
 		await insertAccount(database, "a1", "depository", "checking");

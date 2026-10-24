@@ -14,6 +14,7 @@ import { transactions } from "@archant/data/schema/transactions";
 
 import { addDays, minDate } from "../../domain/dates.ts";
 import { SUGGESTION_WINDOW_DAYS, suggestPostedMatch } from "../../domain/pending.ts";
+import { mergeExtra } from "../../domain/transaction-extra.ts";
 import { attachKeys } from "./entry-keys.ts";
 import { changeOf, detailOf, transactionRow } from "./patch.ts";
 import { KEYS_PER_LOOKUP, inSequence, oneByOne } from "./shared.ts";
@@ -162,8 +163,10 @@ export async function heldFingerprints(
 /**
  * Step 3's write (AD-17): the survivor takes the line's date, amount, label
  * and notes, except the fields a user locked (`changeOf`), and its status;
- * the line's keys join the ones it has. With `keepDate`, for a line paired by
- * amount, the survivor keeps its own date, as Sure's `effective_date` keeps
+ * its details merge with the line's, `pending` gone once booked, as Sure's
+ * `clear_pending_flags_from_extra`; the line's keys join the ones it has.
+ * With `keepDate`, for a line paired by amount, the survivor keeps its own
+ * date, as Sure's `effective_date` keeps
  * the pending date of the entry its amount claimed; a line found by its
  * reference takes the booked date, as Sure's same-`external_id` path assigns
  * `date`. The old keys stay, so the bank sending the old pending line again
@@ -187,6 +190,11 @@ export async function absorb(
 	now: number,
 ): Promise<IsoDate> {
 	const current = await transactionRow(tx, survivorId);
+	const stored = await tx
+		.select({ extra: transactions.extra })
+		.from(transactions)
+		.where(eq(transactions.entryId, survivorId))
+		.get();
 	const merchantId = current.merchantId === null ? line.merchantId : null;
 	const change = changeOf(
 		current,
@@ -207,7 +215,11 @@ export async function absorb(
 		.where(eq(entries.id, survivorId));
 	await tx
 		.update(transactions)
-		.set({ ...detailOf(change, origin, now), pending: line.line.pending })
+		.set({
+			...detailOf(change, origin, now),
+			pending: line.line.pending,
+			extra: mergeExtra(stored?.extra, line.line.extra, line.line.pending),
+		})
 		.where(eq(transactions.entryId, survivorId));
 	await attachKeys(tx, current.accountId, keyTarget, [{ entryId: survivorId, keys: line.keys }], {
 		keepExisting: true,

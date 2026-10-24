@@ -15,6 +15,7 @@ import type { z } from "zod";
 
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount, toMinorUnits } from "@archant/data/money";
+import type { EnableBankingDetails, TransactionExtra } from "@archant/data/schema/transactions";
 
 import { addDays } from "../../domain/dates.ts";
 import { providerIsoDate } from "../../domain/provider-date.ts";
@@ -351,6 +352,29 @@ function isPending(raw: unknown): boolean {
 }
 
 /**
+ * Sure's `EnableBankingEntry::Processor#extra`: the exchange rate and the
+ * merchant category code the bank sent, and `pending` for a line it has not
+ * booked, under `enable_banking`; `null` when none. Never logged.
+ */
+function extraOf(line: z.output<typeof transactionSchema>): TransactionExtra | null {
+	const rate = line.exchange_rate;
+	const fxRate = rate?.exchange_rate ?? null;
+	const unitCurrency = rate?.unit_currency ?? null;
+	const instructed = rate?.instructed_amount?.amount ?? null;
+	const details: EnableBankingDetails = {
+		...(fxRate === null ? {} : { fx_rate: fxRate }),
+		...(unitCurrency === null ? {} : { fx_unit_currency: unitCurrency }),
+		...(instructed === null ? {} : { fx_instructed_amount: instructed }),
+		...(line.merchant_category_code === null
+			? {}
+			: { merchant_category_code: line.merchant_category_code }),
+		...(line.status === "PDNG" ? { pending: true as const } : {}),
+	};
+
+	return Object.keys(details).length === 0 ? null : { enable_banking: details };
+}
+
+/**
  * One line as the ledger takes it (AD-18); `null` when it is neither booked
  * nor pending, or dated before `since` because the bank ignored `date_from`;
  * otherwise the reason the line is refused. `knownMerchants` are the
@@ -413,6 +437,7 @@ export function toTransaction(
 		notes: notes === "" ? null : capped(notes, NOTES_MAX_LENGTH),
 		pending: line.status === "PDNG",
 		merchant: merchantNameOf(line, debit, knownMerchants),
+		extra: extraOf(line),
 	};
 }
 

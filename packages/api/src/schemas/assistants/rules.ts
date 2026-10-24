@@ -76,6 +76,14 @@ const leafConditions = [
 		value: optionalValue("A tag id from get_tags or create_tag."),
 	}),
 	z.strictObject({
+		condition_type: z.literal("transaction_details"),
+		operator: operatorsOf(
+			"transaction_details",
+			'"like": a value the bank sent beside the transaction, such as its merchant category code or exchange rate, contains the text, case aside; "=": the same, case included; "is_null": the bank sent no details, without a value. Keys are never searched.',
+		),
+		value: optionalValue("Text searched in the details' values."),
+	}),
+	z.strictObject({
 		condition_type: z.literal("transaction_notes"),
 		operator: operatorsOf("transaction_notes", TEXT_OPERATORS),
 		value: optionalValue("Text compared with the notes."),

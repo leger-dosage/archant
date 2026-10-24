@@ -2305,6 +2305,7 @@ describe("writing rules", () => {
 			{ condition_type: "transaction_name", operator: "is_not_null" },
 			{ condition_type: "transaction_notes", operator: "not_like", value: "remboursé" },
 			{ condition_type: "transaction_merchant", operator: "!=", value: shop.id },
+			{ condition_type: "transaction_details", operator: "like", value: "5411" },
 		];
 		const actions = [
 			{ action_type: "set_transaction_category", value: food.id },
@@ -2336,6 +2337,7 @@ describe("writing rules", () => {
 				{ condition_type: "transaction_name", operator: "is_not_null", value: null },
 				{ condition_type: "transaction_notes", operator: "not_like", value: "remboursé" },
 				{ condition_type: "transaction_merchant", operator: "!=", value: shop.name },
+				{ condition_type: "transaction_details", operator: "like", value: "5411" },
 			],
 			actions: [
 				{ action_type: "set_transaction_category", value: food.name },

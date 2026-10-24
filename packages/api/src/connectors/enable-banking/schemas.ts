@@ -142,6 +142,10 @@ const text = z
 	.catch(null)
 	.transform((value) => (value === "" ? null : value));
 
+// A value of the details Sure keeps in `extra`: a short code or decimal, so
+// anything longer, blank or not a string is dropped rather than stored.
+const providerDetail = z.string().trim().min(1).max(64).nullable().catch(null);
+
 /**
  * `Transaction`, as `GET /accounts/{uid}/transactions` returns it. Every
  * field forgives a wrong type, so the client, not this schema, decides which
@@ -172,6 +176,15 @@ export const transactionSchema = z.object({
 				typeof line === "string" && line.trim() !== "" ? [line.trim()] : [],
 			),
 		),
+	exchange_rate: z
+		.object({
+			exchange_rate: providerDetail,
+			unit_currency: providerDetail,
+			instructed_amount: z.object({ amount: providerDetail }).nullable().catch(null),
+		})
+		.nullable()
+		.catch(null),
+	merchant_category_code: providerDetail,
 });
 
 /**

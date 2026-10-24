@@ -204,6 +204,13 @@ function withoutPending() {
 	});
 }
 
+/** Each line's label and stored details, in date order. */
+async function detailsOf(accountId: string) {
+	return temp.db.all<{ label: string; mcc: string | null; pending: number | null }>(
+		sql`select t.label, t.extra ->> '$.enable_banking.merchant_category_code' as mcc, t.extra ->> '$.enable_banking.pending' as pending from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and t.extra is not null order by e.date`,
+	);
+}
+
 async function connectionRow(id: string) {
 	return temp.db.select().from(bankConnections).where(eq(bankConnections.id, id)).get();
 }
@@ -802,6 +809,75 @@ describe("syncConnection", () => {
 				sql`select e.date from entries e join transactions t on t.entry_id = e.id where e.account_id = ${accountId} and e.amount = -1200`,
 			),
 		).resolves.toEqual([{ date: "2026-09-23" }]);
+	});
+
+	it("keeps the bank's details of each line, as Sure's `extra`, and merges them into a line read again", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(detailsOf(accountId)).resolves.toEqual([
+			{ label: "Carrefour Market", mcc: "5411", pending: null },
+			{ label: "Boulangerie Test", mcc: "5462", pending: 1 },
+		]);
+
+		// A line stored before Archant kept the details gets them at the next sync.
+		await temp.db.run(sql`update transactions set extra = null where label = 'Carrefour Market'`);
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(detailsOf(accountId)).resolves.toEqual([
+			{ label: "Carrefour Market", mcc: "5411", pending: null },
+			{ label: "Boulangerie Test", mcc: "5462", pending: 1 },
+		]);
+	});
+
+	it("drops the pending flag from the details once the bank books the line", async () => {
+		mockProvider();
+		const connectionId = await newConnection();
+		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
+		await syncConnection(deps(), connectionId);
+		const page = z
+			.object({ transactions: z.array(z.record(z.string(), z.unknown())) })
+			.loose()
+			.parse(fixtures.transactionsPage1);
+		mockProvider({
+			transactions: (url) =>
+				url.searchParams.get("continuation_key") === "page-2"
+					? transactionsPage(url)
+					: HttpResponse.json({
+							...page,
+							transactions: page.transactions.map((line) =>
+								line["status"] === "PDNG"
+									? { ...line, status: "BOOK", booking_date: "2026-09-24" }
+									: line,
+							),
+						}),
+		});
+		vi.setSystemTime(NOW + DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([]);
+		await expect(detailsOf(accountId)).resolves.toEqual([
+			{ label: "Carrefour Market", mcc: "5411", pending: null },
+			{ label: "Boulangerie Test", mcc: "5462", pending: null },
+		]);
+
+		// The bank listing the old pending copy again leaves the booked entry's details alone.
+		mockProvider();
+		vi.setSystemTime(NOW + 2 * DAY);
+
+		await syncConnection(deps(), connectionId);
+
+		await expect(pendingOf(accountId)).resolves.toEqual([]);
+		await expect(detailsOf(accountId)).resolves.toEqual([
+			{ label: "Carrefour Market", mcc: "5411", pending: null },
+			{ label: "Boulangerie Test", mcc: "5462", pending: null },
+		]);
 	});
 
 	it("keeps one entry for a pending line listed beside its booked version", async () => {
