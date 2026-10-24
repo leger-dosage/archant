@@ -33,7 +33,7 @@ export const rules = sqliteTable("rules", {
  * text as in Sure: the label or the notes, the amount in minor units, a
  * direction, or an account, merchant, category or tag id, with no foreign
  * key, so a deleted one leaves the condition inert rather than blocking the
- * delete. `is_null` stores null.
+ * delete. A valueless operator stores null.
  */
 export const ruleConditions = sqliteTable(
 	"rule_conditions",

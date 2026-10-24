@@ -455,3 +455,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-31-6-open-a-transfer-in-its-own-drawer.md`
   summary: A Sure archive's `Transfer.notes` is imported untrimmed and uncapped, as a transaction's notes are, so a note over `NOTES_MAX_LENGTH` is refused on its next save from the drawer.
   evidence: `sure-import-plan.ts` reads notes with `textOf`; `transferPatchSchema` caps them at 2000 characters.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-32-4-every-rule-operator.md`
+  summary: The rule form's amount operator menu shows « > », « ≥ », « = », « ≠ » where Sure's `rules.condition_filters.operators` show « Supérieur à », « Supérieur ou égal à », « Est égal à », « Différent de ».
+  evidence: Story 32.4 gave text and select conditions Sure's words and left amount operators untouched; Sure `00dd977fb` `OPERATORS_MAP["number"]` labels them with words.

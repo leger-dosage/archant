@@ -666,6 +666,13 @@
       "when": 1792832813667,
       "tag": "0094_merchant_and_tag_colors",
       "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "6",
+      "when": 1792838438720,
+      "tag": "0095_every_rule_operator",
+      "breakpoints": true
     }
   ]
 }

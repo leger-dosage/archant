@@ -6,7 +6,7 @@ import Papa from "papaparse";
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
 import { parseDecimalAmount, toDecimalString } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
-import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES } from "@archant/data/rules";
+import { RULE_ACTION_TYPES, RULE_CONDITION_TYPES, isValuelessOperator } from "@archant/data/rules";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
 import { tags } from "@archant/data/schema/tags";
@@ -204,7 +204,7 @@ function conditionOf(context: RuleContext, data: unknown): ConditionInput | null
 				};
 	}
 
-	const value = data.operator === "is_null" ? null : operandOf(data);
+	const value = isValuelessOperator(data.operator) ? null : operandOf(data);
 
 	if (value === null) {
 		return { conditionType: type, operator: data.operator, value: null };

@@ -368,6 +368,8 @@ async function household() {
 				conditions: [
 					{ conditionType: "transaction_amount", operator: ">", value: "10,50" },
 					{ conditionType: "transaction_category", operator: "is_null", value: null },
+					{ conditionType: "transaction_notes", operator: "not_like", value: "remboursé" },
+					{ conditionType: "transaction_merchant", operator: "is_not_null", value: null },
 				],
 			},
 		],
@@ -2370,6 +2372,8 @@ describe("exportArchive", () => {
 					sub_conditions: [
 						{ condition_type: "transaction_amount", operator: ">", value: "10.50" },
 						{ condition_type: "transaction_category", operator: "is_null", value: null },
+						{ condition_type: "transaction_notes", operator: "not_like", value: "remboursé" },
+						{ condition_type: "transaction_merchant", operator: "is_not_null", value: null },
 					],
 				},
 			],

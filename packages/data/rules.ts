@@ -22,6 +22,7 @@ export type RuleConditionType = (typeof RULE_CONDITION_TYPES)[number];
 
 export const RULE_OPERATORS = [
 	"like",
+	"not_like",
 	"=",
 	">",
 	">=",
@@ -31,29 +32,46 @@ export const RULE_OPERATORS = [
 	"and",
 	"or",
 	"is_null",
+	"is_not_null",
 ] as const;
 
 export type RuleOperator = (typeof RULE_OPERATORS)[number];
 
 /**
  * The operators each condition type accepts, in the order the form offers
- * them. A compound condition is a group: `and` matches on all of its
- * conditions, `or` on any. `is_null` takes no value, as in Sure.
+ * them: Sure's `OPERATORS_MAP["text"]` and `OPERATORS_MAP["select"]`. A tag
+ * keeps the two operators Sure's `TransactionTag#apply` reads, and a type
+ * its single one. A compound condition is a group: `and` matches on all of
+ * its conditions, `or` on any.
  */
 export const RULE_OPERATORS_BY_TYPE = {
-	transaction_name: ["like", "="],
+	transaction_name: ["like", "not_like", "=", "!=", "is_null", "is_not_null"],
 	transaction_amount: [">", ">=", "<", "<=", "=", "!="],
-	transaction_account: ["="],
-	transaction_merchant: ["=", "is_null"],
-	transaction_category: ["=", "is_null"],
+	transaction_account: ["=", "!=", "is_null", "is_not_null"],
+	transaction_merchant: ["=", "!=", "is_null", "is_not_null"],
+	transaction_category: ["=", "!=", "is_null", "is_not_null"],
 	transaction_tag: ["=", "is_null"],
-	transaction_notes: ["like", "=", "is_null"],
+	transaction_notes: ["like", "not_like", "=", "!=", "is_null", "is_not_null"],
 	transaction_type: ["="],
 	compound: ["and", "or"],
 } as const satisfies Record<RuleConditionType, readonly RuleOperator[]>;
 
 export type RuleOperatorOf<Type extends RuleConditionType> =
 	(typeof RULE_OPERATORS_BY_TYPE)[Type][number];
+
+/** Sure's `VALUELESS_OPERATORS`: they take no value, stored as null. */
+export const VALUELESS_RULE_OPERATORS = [
+	"is_null",
+	"is_not_null",
+] as const satisfies readonly RuleOperator[];
+
+export type ValuelessRuleOperator = (typeof VALUELESS_RULE_OPERATORS)[number];
+
+export function isValuelessOperator(operator: string): operator is ValuelessRuleOperator {
+	const valueless: readonly string[] = VALUELESS_RULE_OPERATORS;
+
+	return valueless.includes(operator);
+}
 
 export const RULE_ACTION_TYPES = [
 	"set_transaction_category",
@@ -90,7 +108,7 @@ export function isRuleOperatorOf<Type extends RuleConditionType>(
 /**
  * A condition as the API returns it. `value` is stored text: the label or the
  * notes, the amount in minor units of the reporting currency, a direction,
- * or an account, merchant, category or tag id; `null` for `is_null` and for
+ * or an account, merchant, category or tag id; `null` for a valueless operator and for
  * a group, whose conditions follow.
  */
 export type RuleConditionSnapshot = {

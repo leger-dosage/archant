@@ -13,11 +13,15 @@ export const ruleRunsInput = z.strictObject(clampedPageFields);
 const operatorsOf = <Type extends keyof typeof RULE_OPERATORS_BY_TYPE>(type: Type, what: string) =>
 	z.enum(RULE_OPERATORS_BY_TYPE[type]).describe(what);
 
-/** `is_null` reads no value: it is omitted or `null`. */
+/** `is_null` and `is_not_null` read no value: it is omitted or `null`. */
 const optionalValue = (what: string) => z.string().nullable().optional().describe(what);
 
 const TEXT_OPERATORS =
-	'"like": contains the value, case aside, accents counting; "=": the whole text, case included.';
+	'"like": contains the value, case aside, accents counting; "not_like": does not contain it, or empty; "=": the whole text, case included; "!=": anything else, or empty; "is_null": empty and "is_not_null": not empty, without a value.';
+
+/** Sure's select operators: `!=` takes a row without one too. */
+const selectOperators = (what: string, none: string) =>
+	`"=": ${what}; "!=": anything else, ${none} included; "is_null": ${none} and "is_not_null": any, without a value.`;
 
 /**
  * One leaf condition per type, each with its own operators, so a refused
@@ -27,7 +31,7 @@ const leafConditions = [
 	z.strictObject({
 		condition_type: z.literal("transaction_name"),
 		operator: operatorsOf("transaction_name", TEXT_OPERATORS),
-		value: z.string().describe("Text compared with the label as the bank wrote it."),
+		value: optionalValue("Text compared with the label as the bank wrote it."),
 	}),
 	z.strictObject({
 		condition_type: z.literal("transaction_amount"),
@@ -43,22 +47,22 @@ const leafConditions = [
 	}),
 	z.strictObject({
 		condition_type: z.literal("transaction_account"),
-		operator: operatorsOf("transaction_account", '"=": the transaction is in this account.'),
-		value: z.string().describe("An account id from get_accounts."),
+		operator: operatorsOf(
+			"transaction_account",
+			selectOperators("the transaction is in this account", "no account, which never happens,"),
+		),
+		value: optionalValue("An account id from get_accounts."),
 	}),
 	z.strictObject({
 		condition_type: z.literal("transaction_merchant"),
-		operator: operatorsOf(
-			"transaction_merchant",
-			'"=": this merchant; "is_null": no merchant, without a value.',
-		),
+		operator: operatorsOf("transaction_merchant", selectOperators("this merchant", "no merchant")),
 		value: optionalValue("A merchant id from get_merchants or create_merchant."),
 	}),
 	z.strictObject({
 		condition_type: z.literal("transaction_category"),
 		operator: operatorsOf(
 			"transaction_category",
-			'"=": exactly this category, never one of its children; "is_null": uncategorised, without a value.',
+			selectOperators("exactly this category, never one of its children", "uncategorised"),
 		),
 		value: optionalValue("A category id from get_categories or create_category."),
 	}),
@@ -72,10 +76,7 @@ const leafConditions = [
 	}),
 	z.strictObject({
 		condition_type: z.literal("transaction_notes"),
-		operator: operatorsOf(
-			"transaction_notes",
-			`${TEXT_OPERATORS} "is_null": no notes, without a value.`,
-		),
+		operator: operatorsOf("transaction_notes", TEXT_OPERATORS),
 		value: optionalValue("Text compared with the notes."),
 	}),
 	z.strictObject({

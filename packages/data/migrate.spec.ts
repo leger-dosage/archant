@@ -1435,7 +1435,7 @@ describe("rules", () => {
 			insertCondition(database, "c3", "transaction_amount", ">="),
 		).resolves.toBeDefined();
 		await expect(insertCondition(database, "c4", "transaction_amount", "like")).rejects.toThrow();
-		await expect(insertCondition(database, "c5", "transaction_account", "!=")).rejects.toThrow();
+		await expect(insertCondition(database, "c5", "transaction_account", ">")).rejects.toThrow();
 		await expect(
 			insertCondition(database, "c9", "transaction_amount", "!="),
 		).resolves.toBeDefined();
@@ -1473,7 +1473,7 @@ describe("rules", () => {
 
 		await expect(insertCondition(database, "m3", "transaction_merchant", "like")).rejects.toThrow();
 		await expect(insertCondition(database, "y2", "transaction_type", "is_null")).rejects.toThrow();
-		await expect(insertCondition(database, "x1", "transaction_name", "is_null")).rejects.toThrow();
+		await expect(insertCondition(database, "x1", "transaction_name", ">")).rejects.toThrow();
 
 		await expect(insertAction(database, "a1", "set_transaction_merchant")).resolves.toBeDefined();
 		await expect(insertAction(database, "a2", "set_transaction_tags")).resolves.toBeDefined();
@@ -1546,6 +1546,58 @@ describe("rules", () => {
 		await expect(
 			database.get(sql`select value, replacement from rule_actions where id = 'a7'`),
 		).resolves.toEqual({ value: "^CARTE ", replacement: " " });
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("keeps every condition through 0095 and accepts Sure's negative and empty operators", async () => {
+		const before = await migratedBefore("0095");
+		await insertRule(before, "r1");
+		await insertCondition(before, "c1", "compound", "and");
+		await insertCondition(before, "c2", "transaction_notes", "is_null", "c1");
+		await insertCondition(before, "c3", "transaction_merchant", "=");
+		await expect(insertCondition(before, "c4", "transaction_name", "not_like")).rejects.toThrow();
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(
+				sql`select id, parent_id as parentId, condition_type as type, operator from rule_conditions order by id`,
+			),
+		).resolves.toEqual([
+			{ id: "c1", parentId: null, type: "compound", operator: "and" },
+			{ id: "c2", parentId: "c1", type: "transaction_notes", operator: "is_null" },
+			{ id: "c3", parentId: null, type: "transaction_merchant", operator: "=" },
+		]);
+
+		const accepted = [
+			["transaction_name", "not_like"],
+			["transaction_name", "!="],
+			["transaction_name", "is_not_null"],
+			["transaction_notes", "not_like"],
+			["transaction_notes", "is_not_null"],
+			["transaction_account", "!="],
+			["transaction_account", "is_null"],
+			["transaction_merchant", "!="],
+			["transaction_category", "is_not_null"],
+		];
+
+		await expect(
+			Promise.all(
+				accepted.map(([type, operator], index) =>
+					insertCondition(database, `n${index}`, type ?? "", operator ?? ""),
+				),
+			),
+		).resolves.toHaveLength(accepted.length);
+
+		await expect(insertCondition(database, "t1", "transaction_tag", "!=")).rejects.toThrow();
+		await expect(
+			insertCondition(database, "t2", "transaction_tag", "is_not_null"),
+		).rejects.toThrow();
+		await expect(insertCondition(database, "y1", "transaction_type", "!=")).rejects.toThrow();
+		await expect(
+			insertCondition(database, "m1", "transaction_amount", "not_like"),
+		).rejects.toThrow();
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 

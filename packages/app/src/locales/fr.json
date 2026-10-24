@@ -2738,9 +2738,13 @@
 		},
 		"operators": {
 			"contains": "contient",
+			"notContains": "ne contient pas",
 			"equals": "est égal à",
+			"notEquals": "est différent de",
 			"is": "est",
+			"isNot": "n'est pas",
 			"isNull": "est vide",
+			"isNotNull": "n'est pas vide",
 			"gt": ">",
 			"gte": "≥",
 			"lt": "<",
@@ -2749,6 +2753,14 @@
 			"ne": "≠",
 			"all": "Toutes les conditions",
 			"any": "Au moins une condition"
+		},
+		"operatorLabels": {
+			"contains": "Contient",
+			"doesNotContain": "Ne contient pas",
+			"equalTo": "Égal à",
+			"notEqualTo": "Différent de",
+			"isEmpty": "Est vide",
+			"isNotEmpty": "N'est pas vide"
 		},
 		"types": {
 			"income": "Revenu",
