@@ -19,7 +19,7 @@ type ConfirmDialogProps = {
 	description: string;
 	/** Repeats the verb of the action: « Supprimer », « Abandonner ». */
 	confirmLabel: string;
-	/** « Annuler » unless the choice is a postponement, as « Plus tard ». */
+	/** « Annuler » unless declining has a name of its own, as « Garder ». */
 	cancelLabel?: string | undefined;
 	onConfirm: () => void;
 	destructive?: boolean;

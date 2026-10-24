@@ -1353,6 +1353,7 @@ describe("detection follows a renamed series and never deletes one", () => {
 		const [row] = await stored();
 		await setStatus(row!.id, "active");
 		await createRule(deps(), {
+			enabled: true,
 			name: "EDF",
 			conditions: [{ conditionType: "transaction_name", operator: "like", value: "edf" }],
 			actions: [{ actionType: "set_transaction_name", value: "EDF ENERGIE" }],

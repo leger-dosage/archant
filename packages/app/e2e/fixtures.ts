@@ -447,9 +447,9 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
-		 * Creates a rule with `actions`, as the form does. Every rule reaches
-		 * every later transaction of the shared database, so the test that
-		 * creates one deletes it with `deleteRules`.
+		 * Creates a rule with `actions`, enabled as a confirmed one is. Every
+		 * rule reaches every later transaction of the shared database, so the
+		 * test that creates one deletes it with `deleteRules`.
 		 */
 		async createRule(input: {
 			name?: string;
@@ -460,6 +460,7 @@ export function apiHelpers(request: APIRequestContext) {
 				await request.post("/api/rules", {
 					data: {
 						name: input.name ?? null,
+						enabled: true,
 						conditions: input.conditions,
 						actions: input.actions,
 					},
@@ -468,8 +469,8 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/**
-		 * Applies the rule to existing transactions, as a confirmed « Appliquer »
-		 * does, recording one run.
+		 * Applies the rule to existing transactions and enables it, as
+		 * « Confirmer les modifications » does, recording one run.
 		 */
 		async applyRule(ruleId: string) {
 			// Bodiless, so it needs the `Origin` a browser would add.

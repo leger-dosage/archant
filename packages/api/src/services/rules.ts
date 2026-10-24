@@ -10,7 +10,7 @@ import type {
 import type { ServiceDeps } from "./deps.ts";
 import type { ReadRule, Reference } from "./rule-reader.ts";
 
-import { asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq } from "drizzle-orm";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
@@ -45,6 +45,8 @@ export type RuleData = RuleSnapshot & {
 	id: string;
 	enabled: boolean;
 	effectiveDate: string | null;
+	/** Epoch milliseconds of the last save or switch, which the list sorts by as Sure's `updated_at`. */
+	updatedAt: number;
 };
 
 type Db = ServiceDeps["db"];
@@ -72,6 +74,7 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 		name: row.name,
 		enabled: row.enabled,
 		effectiveDate: row.effectiveDate,
+		updatedAt: row.updatedAt,
 		conditions: conditionTree(conditions, null),
 		actions: actions.map((action) => ({
 			actionType: action.actionType,
@@ -84,7 +87,7 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 	};
 }
 
-/** Every rule, in the order they apply. */
+/** Every rule, in the order they apply, their creation order. */
 export async function listRules(deps: ServiceDeps): Promise<RuleData[]> {
 	return (await readRules(deps.db)).map(toData);
 }
@@ -241,7 +244,11 @@ async function insertParts(tx: Transaction, ruleId: string, rule: RuleRequest): 
 	await tx.insert(ruleActions).values(actions);
 }
 
-/** Creates a rule, enabled at once, as in Sure. */
+/**
+ * Creates a rule, disabled unless `input.enabled` says otherwise, as Sure's
+ * `rules.active` defaults to false: the interface enables it once the owner
+ * confirms its first application.
+ */
 export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<RuleData> {
 	const rule = parse(input);
 	const id = crypto.randomUUID();
@@ -254,7 +261,7 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 			await tx.insert(rules).values({
 				id,
 				name: rule.name,
-				enabled: true,
+				enabled: input.enabled ?? false,
 				effectiveDate: rule.effectiveDate,
 				createdAt: now,
 				updatedAt: now,
@@ -277,7 +284,8 @@ async function assertExists(db: Pick<Db, "select">, id: string): Promise<void> {
 
 /**
  * Replaces a rule's name, start date, conditions and actions. It keeps its
- * place in the order and its switch; what it wrote before stays.
+ * place in the order and, unless `input.enabled` is given, its switch; what
+ * it wrote before stays.
  */
 export async function updateRule(
 	deps: ServiceDeps,
@@ -292,7 +300,12 @@ export async function updateRule(
 			await assertReferencesExist(tx, rule);
 			await tx
 				.update(rules)
-				.set({ name: rule.name, effectiveDate: rule.effectiveDate, updatedAt: Date.now() })
+				.set({
+					name: rule.name,
+					effectiveDate: rule.effectiveDate,
+					...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+					updatedAt: Date.now(),
+				})
 				.where(eq(rules.id, id));
 			// Sub-conditions go with their group through the cascade.
 			await tx.delete(ruleConditions).where(eq(ruleConditions.ruleId, id));
@@ -357,10 +370,11 @@ async function appliedOf(db: Pick<Db, "select">, found: readonly ReadRule[]): Pr
 
 /**
  * The rules an application runs: the one `id` names, enabled or not, or every
- * enabled rule in application order. Throws `NOT_FOUND` for an unknown id.
+ * rule, disabled ones included, in application order, as Sure's
+ * `ApplyAllRulesJob` runs `family.rules`. Throws `NOT_FOUND` for an unknown id.
  */
 async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
-	const found = await readRules(db, id === undefined ? { enabled: true } : { id });
+	const found = await readRules(db, id === undefined ? {} : { id });
 
 	if (id !== undefined && found.length === 0) {
 		throw notFound();
@@ -520,7 +534,7 @@ function samplesOf(
 /**
  * What applying rules to existing transactions would do: the saved rule an
  * id names, a draft in the form's shape, checked as a save checks it, or
- * every enabled rule when `target` is absent. Counts the rows any rule
+ * every rule when `target` is absent. Counts the rows any rule
  * matches and those it would change: a locked field or a value already there
  * is no change, and a row several rules change counts once. Gives a sample of
  * the changed rows, field by field. Writes nothing and records no run.
@@ -559,7 +573,8 @@ type RuleRunData = {
 export type RuleApplication = { changed: number; runs: RuleRunData[] };
 
 /**
- * Applies the rule `id`, or every enabled rule in application order, to
+ * Applies the rule `id`, enabling it as Sure's `rules#apply` does, or every
+ * rule in application order, enabling none, as Sure's `ApplyAllRulesJob`, to
  * existing transactions, as `previewRules` counted them. One immediate
  * transaction plans again, writes through the ledger with a rule origin, so
  * no lock is added and none is crossed, pairs the rows a transfer action
@@ -579,6 +594,13 @@ export async function applyRules(
 	return deps.db.transaction(
 		async (tx) => {
 			const applied = await rulesToApply(tx, id);
+
+			if (id !== undefined) {
+				await tx
+					.update(rules)
+					.set({ enabled: true, updatedAt: Date.now() })
+					.where(and(eq(rules.id, id), eq(rules.enabled, false)));
+			}
 
 			if (applied.length === 0) {
 				assertExpected(expectedChanged, 0);

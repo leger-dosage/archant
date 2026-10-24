@@ -97,7 +97,7 @@ test.describe("rules", () => {
 		await page.goto("/rules");
 
 		await expect(pageHeader(page)).toContainText("Une règle complète les nouvelles opérations");
-		const rules = await expectListGroup(page, "Ordre d'application");
+		const rules = await expectListGroup(page, "Règles");
 		await expectRowAtLeast56(
 			rules.getByRole("list", { name: "Règles" }).getByRole("listitem").filter({ hasText: name }),
 		);

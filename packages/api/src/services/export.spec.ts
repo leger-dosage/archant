@@ -360,6 +360,7 @@ async function household() {
 
 	const categorise = await created("/api/rules", {
 		name: "Boulangerie",
+		enabled: true,
 		conditions: [
 			{ conditionType: "transaction_name", operator: "like", value: "BOULANGERIE" },
 			{

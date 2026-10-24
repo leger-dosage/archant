@@ -23,13 +23,20 @@ const dialog = (page: Page) =>
 
 const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
 
-// The confirmation after a save or from a menu, the only alert dialog then open.
+// The confirmation after a creation or from a menu, the only alert dialog then open.
 const applyDialog = (page: Page) => page.getByRole("alertdialog");
 
-/** Answers « Plus tard » to the application offered once a rule is saved. */
+/**
+ * Closes the confirmation a new rule opens, which leaves it disabled, then
+ * switches it on: it reaches the lines to come, and no existing one.
+ */
 async function later(page: Page) {
-	await applyDialog(page).getByRole("button", { name: "Plus tard" }).click();
+	await applyDialog(page).getByRole("button", { name: "Annuler" }).click();
 	await expect(applyDialog(page)).toBeHidden();
+	const off = rulesList(page).getByRole("switch", { checked: false });
+	await expect(off).toHaveCount(1);
+	await off.click();
+	await expect(rulesList(page).getByRole("switch", { checked: false })).toHaveCount(0);
 }
 
 const labelLike = (value: string) => ({
@@ -168,12 +175,14 @@ test("« Modifier » reopens the form filled in and saves, « Supprimer » remov
 	await value.fill(after);
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
+	// An edit asks nothing and keeps the switch, as Sure's `update`.
 	await expect(dialog(page)).toBeHidden();
-	await later(page);
+	await expect(applyDialog(page)).toHaveCount(0);
 	await expect(
 		ruleRow(page, `Si Libellé contient ${after}, alors Catégorie ${category.name}`),
 	).toBeVisible();
 	await expect(ruleRow(page, before)).toHaveCount(0);
+	await expect(ruleRow(page, after).getByRole("switch")).toBeChecked();
 
 	await ruleRow(page, after)
 		.getByRole("button", { name: /^Actions pour / })
@@ -206,8 +215,9 @@ test("« Modifier » on an amount rule shows the amount as typed, and saving it 
 	await expect(dialog(page).getByLabel("Valeur de la condition 1")).toHaveValue("50.00");
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 
+	// An edit asks nothing, as Sure's `update`.
 	await expect(dialog(page)).toBeHidden();
-	await later(page);
+	await expect(applyDialog(page)).toHaveCount(0);
 	await expect(
 		page.locator("[data-sonner-toast]").filter({ hasText: "Règle enregistrée." }),
 	).toBeVisible();
@@ -485,8 +495,9 @@ test("a merchant condition saved through its picker reads « Marchand est … »
 
 	await expect(dialog(page)).toBeHidden();
 	// A new merchant holds no transaction yet.
-	await expect(applyDialog(page).getByRole("heading")).toHaveText(
-		"Aucune opération ne sera modifiée",
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("Confirmer les modifications");
+	await expect(applyDialog(page)).toContainText(
+		"Vous êtes sur le point d'appliquer cette règle à 0 opération qui répond à ses critères.",
 	);
 	await later(page);
 	await expect(
@@ -681,7 +692,6 @@ async function reopenAndSaveReplacement(page: Page, marker: string) {
 	).toHaveValue(" ");
 	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
 	await expect(dialog(page)).toBeHidden();
-	await later(page);
 }
 
 test("« Modifier » reopens a replacement as typed, and saving it unchanged keeps it", async ({
@@ -741,7 +751,7 @@ async function saveCoursesRule(page: Page, value: string) {
 	await expect(dialog(page)).toBeHidden();
 }
 
-test("a saved rule offers to apply itself, and « Appliquer » leaves a row set by hand alone", async ({
+test("a new rule waits for its confirmation, which enables it and leaves a row set by hand alone", async ({
 	page,
 	api,
 }) => {
@@ -762,17 +772,22 @@ test("a saved rule offers to apply itself, and « Appliquer » leaves a row set 
 
 	await saveCoursesRule(page, marker);
 
-	await expect(applyDialog(page).getByRole("heading")).toHaveText("2 opérations seront modifiées");
-	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	// Every line it matches, the one set by hand included, as Sure's `affected_resource_count`.
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("Confirmer les modifications");
+	await expect(applyDialog(page)).toContainText(
+		"Vous êtes sur le point d'appliquer cette règle aux 3 opérations qui répondent à ses critères.",
+	);
+	await applyDialog(page).getByRole("button", { name: "Confirmer les modifications" }).click();
 	await expect(applyDialog(page)).toBeHidden();
 	await expect(toast(page, "2 opérations modifiées.")).toBeVisible();
+	await expect(rulesList(page).getByRole("switch")).toBeChecked();
 
 	await expectCategory(page, `CB ${marker} 1`, "Courses");
 	await expectCategory(page, `CB ${marker} 2`, "Courses");
 	await expectCategory(page, `CB ${marker} 3`, leisure.name);
 });
 
-test("« Plus tard » changes nothing and records no run; the next matching row is categorised", async ({
+test("closing the confirmation leaves a new rule disabled, changing nothing and recording no run", async ({
 	page,
 	api,
 }) => {
@@ -786,8 +801,10 @@ test("« Plus tard » changes nothing and records no run; the next matching row 
 	await visit(page);
 
 	await saveCoursesRule(page, marker);
-	await expect(applyDialog(page).getByRole("heading")).toHaveText("1 opération sera modifiée");
-	await later(page);
+	await expect(applyDialog(page)).toContainText("à 1 opération qui répond à ses critères.");
+	await applyDialog(page).getByRole("button", { name: "Annuler" }).click();
+	await expect(applyDialog(page)).toBeHidden();
+	await expect(rulesList(page).getByRole("switch")).not.toBeChecked();
 
 	await expect(page.getByRole("heading", { level: 2, name: "Exécutions récentes" })).toBeVisible();
 	await expect(runRow(page, marker)).toHaveCount(0);
@@ -798,10 +815,10 @@ test("« Plus tard » changes nothing and records no run; the next matching row 
 		label: `CB ${marker} après`,
 		amount: "-5,00",
 	});
-	await expectCategory(page, `CB ${marker} après`, "Courses");
+	await expectCategory(page, `CB ${marker} après`, "Sans catégorie");
 });
 
-test("« Appliquer aux opérations existantes » records a run with the rule's label and counts", async ({
+test("« Réappliquer la règle » asks the same confirmation and records a run with the rule's label and counts", async ({
 	page,
 	api,
 }) => {
@@ -827,18 +844,18 @@ test("« Appliquer aux opérations existantes » records a run with the rule's l
 	await ruleRow(page, summary)
 		.getByRole("button", { name: /^Actions pour / })
 		.click();
-	await page.getByRole("menuitem", { name: "Appliquer aux opérations existantes" }).click();
-	await expect(applyDialog(page).getByRole("heading")).toHaveText("1 opération sera modifiée");
-	// Asked from the menu, declining cancels: « Plus tard » belongs to the save only.
+	await page.getByRole("menuitem", { name: "Réappliquer la règle" }).click();
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("Confirmer les modifications");
+	await expect(applyDialog(page)).toContainText("aux 2 opérations qui répondent à ses critères.");
 	await expect(applyDialog(page).getByRole("button", { name: "Annuler" })).toBeFocused();
-	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	await applyDialog(page).getByRole("button", { name: "Confirmer les modifications" }).click();
 	await expect(applyDialog(page)).toBeHidden();
 
 	const cells = runRow(page, summary).getByRole("cell");
 	await expect(cells).toHaveText([/\S/u, summary, "2", "1"]);
 });
 
-test("« Appliquer toutes les règles » counts distinct rows for the enabled rules and records one run each", async ({
+test("« Appliquer tout » counts distinct rows over every rule, a disabled one included and left so", async ({
 	page,
 	api,
 }) => {
@@ -865,8 +882,6 @@ test("« Appliquer toutes les règles » counts distinct rows for the enabled ru
 	});
 	const switched = await page.request.patch(`/api/rules/${disabled}`, { data: { enabled: false } });
 	expect(switched.ok()).toBe(true);
-	await visit(page);
-	await expect(page.getByRole("button", { name: "Appliquer toutes les règles" })).toBeDisabled();
 
 	const first = uniqueName("Catégorie");
 	const second = uniqueName("Marchand");
@@ -880,16 +895,62 @@ test("« Appliquer toutes les règles » counts distinct rows for the enabled ru
 		conditions: [labelLike(`${marker} livre`)],
 		actions: [{ actionType: "set_transaction_merchant", value: merchant.id }],
 	});
-	await page.reload();
+	await visit(page);
 
-	await page.getByRole("button", { name: "Appliquer toutes les règles" }).click();
-	await expect(applyDialog(page).getByRole("heading")).toHaveText("2 opérations seront modifiées");
-	await applyDialog(page).getByRole("button", { name: "Appliquer" }).click();
+	await page.getByRole("button", { name: "Appliquer tout", exact: true }).click();
+	await expect(applyDialog(page).getByRole("heading")).toHaveText("Appliquer toutes les règles");
+	await expect(applyDialog(page)).toContainText(
+		"Vous êtes sur le point d'appliquer 3 règles affectant 2 opérations uniques",
+	);
+	await applyDialog(page).getByRole("button", { name: "Confirmer et appliquer tout" }).click();
 	await expect(applyDialog(page)).toBeHidden();
 
+	await expect(runRow(page, disabledName).getByRole("cell")).toHaveText([
+		/\S/u,
+		disabledName,
+		"2",
+		"2",
+	]);
 	await expect(runRow(page, first).getByRole("cell")).toHaveText([/\S/u, first, "2", "2"]);
 	await expect(runRow(page, second).getByRole("cell")).toHaveText([/\S/u, second, "1", "1"]);
-	await expect(runRow(page, disabledName)).toHaveCount(0);
+	await expect(ruleRow(page, disabledName).getByRole("switch")).not.toBeChecked();
+});
+
+test("« Trier par : » sorts by name, then by update, either way, and keeps it in the link", async ({
+	page,
+	api,
+}) => {
+	const [mango = "", apricot = "", zebra = ""] = ["Mangue", "abricot", "Zèbre"].map(uniqueName);
+	// One after the other, so each is updated after the one before.
+	await [mango, apricot, zebra].reduce(async (previous, name) => {
+		await previous;
+		await api.createRule({
+			name,
+			conditions: [labelLike(uniqueName("TRI"))],
+			actions: [{ actionType: "exclude_transaction", value: null }],
+		});
+	}, Promise.resolve());
+	const order = (names: string[]) =>
+		expect(rulesList(page).getByRole("listitem")).toHaveText(
+			names.map((name) => new RegExp(name, "u")),
+		);
+	await visit(page);
+
+	// By name ascending by default, case and accents folded, as `rules_controller.rb#index`.
+	await order([apricot, mango, zebra]);
+
+	await page.getByRole("combobox", { name: "Trier par :" }).click();
+	await page.getByRole("option", { name: "Mis à jour à" }).click();
+	await order([mango, apricot, zebra]);
+
+	await page.getByRole("button", { name: "Changer le sens du tri" }).click();
+	await order([zebra, apricot, mango]);
+	await expect(page).toHaveURL(
+		/sortBy=updated_at.*direction=desc|direction=desc.*sortBy=updated_at/u,
+	);
+
+	await page.reload();
+	await order([zebra, apricot, mango]);
 });
 
 test("the runs table pages to older runs", async ({ page, api }) => {

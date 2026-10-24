@@ -80,7 +80,7 @@ A synced transaction reads like the bank's card terminal wrote it:
 >
 > CARTE 29/09/26 PICARD SA 788 4 CB\*2769
 
-Archant keeps the label as the bank sends it, and a bank has its own formats, so nothing is cleaned by default. A rule does it. Under « Règles », « Ajouter une règle », pick the action « Remplacer dans le libellé », type the pattern in « Rechercher » and the text that takes its place in « Remplacer par », empty to remove what matched. Leave the conditions empty to reach every transaction, or add « Libellé contient » to reach one shop. Saving offers to apply the rule to the transactions already there.
+Archant keeps the label as the bank sends it, and a bank has its own formats, so nothing is cleaned by default. A rule does it. Under « Règles », « Ajouter une règle », pick the action « Remplacer dans le libellé », type the pattern in « Rechercher » and the text that takes its place in « Remplacer par », empty to remove what matched. Leave the conditions empty to reach every transaction, or add « Libellé contient » to reach one shop. Saving asks for a confirmation: « Confirmer les modifications » switches the rule on and applies it to the transactions already there; closing it leaves the rule off.
 
 These three rules clean the labels above, one rule each, since a rule holds one replacement:
 

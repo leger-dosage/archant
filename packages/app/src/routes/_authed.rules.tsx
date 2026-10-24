@@ -1,9 +1,10 @@
 import type { RuleData, RuleRunData } from "@/hooks/useRules";
+import type { RuleSort, SortDirection } from "@/lib/rule-sort";
 import type { SummaryNames } from "@/lib/rule-summary";
 
 import { createFileRoute } from "@tanstack/react-router";
-import { EllipsisIcon, ListFilterIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpDownIcon, EllipsisIcon, ListFilterIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -25,6 +26,13 @@ import {
 	DropdownMenuItem,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -57,12 +65,16 @@ import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { pageSearch } from "@/lib/page-search";
 import { amountStep } from "@/lib/rule-form";
+import { RULE_SORTS, SORT_DIRECTIONS, isRuleSort, sortRules } from "@/lib/rule-sort";
 import { ruleSummary } from "@/lib/rule-summary";
 
 // Absent means the first page of runs; a value from an old or hand-edited
 // link that no longer exists falls back to it rather than failing the page.
 const searchSchema = z.object({
 	runsPage: z.number().int().min(1).optional().catch(undefined),
+	// Sure's `sort_by` and `direction`: name ascending unless the link says otherwise.
+	sortBy: z.enum(RULE_SORTS).optional().catch(undefined),
+	direction: z.enum(SORT_DIRECTIONS).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_authed/rules")({
@@ -82,15 +94,16 @@ const DESKTOP_QUERY = "(min-width: 768px)";
 type Opened = { action: "add" } | { action: "edit" | "delete"; id: string };
 
 /**
- * An application waiting for its confirmation: one rule, or every enabled
- * one for a `null` id, with the count its preview read.
+ * An application waiting for its confirmation: one rule, or every rule for a
+ * `null` id, with the lines its preview matched, each once, as Sure's
+ * `affected_resource_count` and `total_affected_resource_count`.
  */
 type Applying = {
 	ruleId: string | null;
 	name: string | null;
-	changed: number;
-	/** Offered right after a save, where declining postpones: « Plus tard ». */
-	afterSave: boolean;
+	matched: number;
+	/** How many rules « Appliquer tout » runs, disabled ones included. */
+	ruleCount: number;
 };
 
 // The API stores instants; the user reads the day it ran, in their zone.
@@ -159,6 +172,7 @@ function RuleRow({
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
 					<DropdownMenuItem onSelect={onEdit}>{t("rules.edit")}</DropdownMenuItem>
+					{/* Sure's « Réappliquer la règle »: the confirmation, which enables it. */}
 					<DropdownMenuItem disabled={applyDisabled} onSelect={onApply}>
 						{t("rules.apply.one")}
 					</DropdownMenuItem>
@@ -167,6 +181,61 @@ function RuleRow({
 					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
+		</div>
+	);
+}
+
+/**
+ * Sure's « Trier par : » and « Changer le sens du tri », kept in the URL as
+ * Sure's query parameters; name ascending is the absent pair.
+ */
+function RuleSortControls({ sortBy, direction }: { sortBy: RuleSort; direction: SortDirection }) {
+	const { t } = useTranslation();
+	const navigate = Route.useNavigate();
+	const labelId = useId();
+	const sortTo = (next: { sortBy: RuleSort; direction: SortDirection }) =>
+		void navigate({
+			to: "/rules",
+			search: (previous) => ({
+				...previous,
+				sortBy: next.sortBy === "name" ? undefined : next.sortBy,
+				direction: next.direction === "asc" ? undefined : next.direction,
+			}),
+			replace: true,
+		});
+
+	return (
+		<div className="flex items-center gap-1">
+			<span id={labelId}>{t("rules.sort.label")}</span>
+			<Select
+				value={sortBy}
+				onValueChange={(value) => {
+					if (isRuleSort(value)) {
+						sortTo({ sortBy: value, direction });
+					}
+				}}
+			>
+				<SelectTrigger
+					size="sm"
+					aria-labelledby={labelId}
+					className="border-none bg-transparent text-foreground uppercase shadow-none dark:bg-transparent"
+				>
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					<SelectItem value="name">{t("rules.sort.name")}</SelectItem>
+					<SelectItem value="updated_at">{t("rules.sort.updatedAt")}</SelectItem>
+				</SelectContent>
+			</Select>
+			<Button
+				variant="ghost"
+				size="icon-sm"
+				aria-label={t("rules.sort.toggle")}
+				title={t("rules.sort.toggle")}
+				onClick={() => sortTo({ sortBy, direction: direction === "asc" ? "desc" : "asc" })}
+			>
+				<ArrowUpDownIcon />
+			</Button>
 		</div>
 	);
 }
@@ -270,15 +339,16 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 }
 
 /**
- * The rules, in the order they apply, each with its switch and its menu. New
- * transactions go through the enabled ones as they arrive; existing ones
- * only through an application the user confirms, listed under the rules.
- * A viewer reads the rules and their runs, and changes none.
+ * The rules, sorted as the user picks, each with its switch and its menu.
+ * New transactions go through the enabled ones as they arrive, in creation
+ * order; existing ones only through an application the user confirms, which
+ * a new rule offers once saved and which enables it, as Sure's
+ * `rules#confirm`. A viewer reads the rules and their runs, and changes none.
  */
 function RulesPage() {
 	const { t } = useTranslation();
 	const admin = useIsAdmin();
-	const { runsPage = 1 } = Route.useSearch();
+	const { runsPage = 1, sortBy = "name", direction = "asc" } = Route.useSearch();
 	const desktop = useMediaQuery(DESKTOP_QUERY);
 	const rules = useRules();
 	const accounts = useAccounts();
@@ -296,7 +366,8 @@ function RulesPage() {
 	const [previewing, setPreviewing] = useState(false);
 	// The state lags a render behind; this guard holds from the first click.
 	const previewPending = useRef(false);
-	const list = rules.data ?? [];
+	const list = useMemo(() => rules.data ?? [], [rules.data]);
+	const sorted = useMemo(() => sortRules(list, sortBy, direction), [list, sortBy, direction]);
 	const accountList = useMemo(
 		() => (accounts.data === undefined ? [] : accountsByName(accounts.data)),
 		[accounts.data],
@@ -349,10 +420,9 @@ function RulesPage() {
 	};
 
 	const summaryOf = (item: RuleData) => ruleSummary(item, names, t);
-	const hasEnabled = list.some((item) => item.enabled);
 
-	/** Reads the count, then asks: a rule's own, or every enabled rule's for `null`. */
-	const askToApply = async (item: RuleData | null, afterSave = false) => {
+	/** Reads the count, then asks: a rule's own, or every rule's for `null`. */
+	const askToApply = async (item: RuleData | null) => {
 		if (previewPending.current) {
 			return;
 		}
@@ -361,12 +431,12 @@ function RulesPage() {
 		setPreviewing(true);
 
 		try {
-			const { changed } = await fetchPreview(item?.id ?? null);
+			const { matched } = await fetchPreview(item?.id ?? null);
 			setApplying({
 				ruleId: item?.id ?? null,
-				name: item === null ? null : (item.name ?? summaryOf(item)),
-				changed,
-				afterSave,
+				name: item?.name ?? null,
+				matched,
+				ruleCount: list.length,
 			});
 			setApplyOpen(true);
 		} catch (error) {
@@ -384,13 +454,12 @@ function RulesPage() {
 			actions={
 				desktop && admin ? (
 					<>
-						<Button
-							variant="outline"
-							disabled={!hasEnabled || previewing}
-							onClick={() => void askToApply(null)}
-						>
-							{t("rules.apply.all")}
-						</Button>
+						{/* As Sure's index, only once a rule exists. */}
+						{list.length > 0 && (
+							<Button variant="outline" disabled={previewing} onClick={() => void askToApply(null)}>
+								{t("rules.apply.all")}
+							</Button>
+						)}
 						{/* An empty list offers its own, the one way forward. */}
 						{!(ready && failed === undefined && list.length === 0) && (
 							<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
@@ -441,9 +510,14 @@ function RulesPage() {
 					/>
 				) : (
 					<ListCard>
-						<InsetGroup level={2} title={t("rules.list")} count={list.length}>
+						<InsetGroup
+							level={2}
+							title={t("rules.list")}
+							count={list.length}
+							total={<RuleSortControls sortBy={sortBy} direction={direction} />}
+						>
 							<ul aria-label={t("rules.title")} className="divide-y divide-line">
-								{list.map((item) => (
+								{sorted.map((item) => (
 									<li key={item.id}>
 										{!admin ? (
 											<RuleLine rule={item} summary={summaryOf(item)} />
@@ -470,7 +544,8 @@ function RulesPage() {
 					onOpenChange={setOpen}
 					rule={rule}
 					options={options}
-					onSaved={(saved) => void askToApply(saved, true)}
+					// Sure confirms a new rule only; an edit keeps the switch and asks nothing.
+					onSaved={opened.action === "add" ? (saved) => void askToApply(saved) : undefined}
 				/>
 			)}
 			{desktop && ready && failed === undefined && <RuleRuns page={runsPage} names={names} />}
@@ -484,17 +559,23 @@ function RulesPage() {
 						}
 					}}
 					title={
-						applying.changed === 0
-							? t("rules.apply.nothing")
-							: t("rules.apply.count", { count: applying.changed })
+						applying.ruleId === null
+							? t("rules.apply.allTitle")
+							: applying.name === null
+								? t("rules.apply.title")
+								: t("rules.apply.titleNamed", { name: applying.name })
 					}
 					description={
-						applying.name === null
-							? t("rules.apply.descriptionAll")
-							: t("rules.apply.description", { name: applying.name })
+						applying.ruleId === null
+							? t("rules.apply.allDescription", {
+									count: applying.ruleCount,
+									rows: t("rules.apply.uniqueRows", { count: applying.matched }),
+								})
+							: t("rules.apply.description", { count: applying.matched })
 					}
-					confirmLabel={t("rules.apply.confirm")}
-					cancelLabel={applying.afterSave ? t("rules.apply.later") : undefined}
+					confirmLabel={
+						applying.ruleId === null ? t("rules.apply.allConfirm") : t("rules.apply.confirm")
+					}
 					pending={applyRules.isPending}
 					onConfirm={() =>
 						applyRules.mutate(applying.ruleId, {

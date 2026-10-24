@@ -1111,7 +1111,7 @@ describe("rules at ingestion", () => {
 		conditions: Parameters<typeof createRule>[1]["conditions"] = [],
 		effectiveDate: string | null = null,
 	) {
-		const rule = await createRule(deps(), { effectiveDate, conditions, actions });
+		const rule = await createRule(deps(), { enabled: true, effectiveDate, conditions, actions });
 		created += 1;
 		// Frozen clocks would give two rules the same creation time.
 		await temp.db.update(rules).set({ createdAt: created }).where(eq(rules.id, rule.id));
@@ -2027,11 +2027,13 @@ describe("ingest of a split record", () => {
 		const bread = await newCategory("Pain");
 
 		await createRule(deps(), {
+			enabled: true,
 			effectiveDate: null,
 			conditions: [labelLike("CB Café")],
 			actions: [{ actionType: "set_transaction_category", value: categoryId }],
 		});
 		await createRule(deps(), {
+			enabled: true,
 			effectiveDate: null,
 			conditions: [labelLike("Pain")],
 			actions: [{ actionType: "set_transaction_category", value: bread }],

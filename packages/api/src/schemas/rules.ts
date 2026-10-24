@@ -44,6 +44,9 @@ const conditionBody = z.object({
 
 export const ruleBodySchema = z.object({
 	name: z.string().nullable().optional(),
+	// Sure's `rule_params` permits `active`; the form never sends it, so a new
+	// rule waits for its confirmation and an edit keeps the switch.
+	enabled: z.boolean().optional(),
 	effectiveDate: z.string().nullable().optional(),
 	conditions: z.array(conditionBody.extend({ conditions: z.array(conditionBody).optional() })),
 	actions: z.array(

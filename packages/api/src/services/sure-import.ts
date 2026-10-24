@@ -27,7 +27,7 @@ import { oneByOne } from "./ledger/shared.ts";
 import { insertSureAccounts, insertSureEntries } from "./ledger/sure-import.ts";
 import { runRecurring } from "./recurring/pipeline.ts";
 import { insertRules } from "./recurring/rules.ts";
-import { createRule, setRuleEnabled } from "./rules.ts";
+import { createRule } from "./rules.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { readSureArchive } from "./sure-import-plan.ts";
 import { foldName } from "./sure-import-preflight.ts";
@@ -387,13 +387,13 @@ async function importRules(
 		}
 
 		await createMissing(tx, shared.taxonomy, context.missing.values(), shared.now);
-		const rule = await createRule(scoped, input);
 		// Sure's `data["active"] || false`: a rule the file does not say is active is not.
 		const active = data.active;
 
-		if (!(active === true || active === "true" || active === 1 || active === "1")) {
-			await setRuleEnabled(scoped, rule.id, { enabled: false });
-		}
+		await createRule(scoped, {
+			...input,
+			enabled: active === true || active === "true" || active === 1 || active === "1",
+		});
 	});
 }
 
