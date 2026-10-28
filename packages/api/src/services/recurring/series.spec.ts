@@ -1334,33 +1334,57 @@ describe("addRecurringFromEntry", () => {
 	});
 });
 
-describe("detection follows a renamed series and never deletes one", () => {
-	it("follows its rows to the merchant a bulk edit set", async () => {
+describe("detection leaves a renamed series behind, as Sure's identifier", () => {
+	it("keeps the series on its key when its rows take a merchant, and suggests the merchant beside it", async () => {
 		const accountId = await account();
-		const ids = await addRows(
-			accountId,
-			["2026-07-10", "2026-08-10", "2026-09-10"],
-			"PRLV NETFLIX",
-		);
-		await runRecurring(deps(), { backfill: false });
-		const [row] = await stored();
+		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"], "NETFLIX");
+		const row = await detectedBill(accountId, ids);
+		await setStatus(row.id, "active");
 		await temp.db
 			.insert(merchants)
 			.values({ id: "netflix", name: "Netflix", createdAt: 0, updatedAt: 0 });
 		await bulkUpdateTransactions(deps(), { ids }, { merchantId: "netflix" }, { origin: "user" });
 
 		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 1 });
+
 		await expect(stored()).resolves.toEqual([
-			{ ...row, merchantId: "netflix", labelKey: null, label: "PRLV NETFLIX" },
+			expect.objectContaining({
+				id: row.id,
+				status: "active",
+				merchantId: null,
+				labelKey: "netflix",
+				label: "NETFLIX",
+				lastOccurrenceDate: "2026-09-10",
+				occurrenceCount: 0,
+			}),
+			expect.objectContaining({
+				status: "suggested",
+				merchantId: "netflix",
+				labelKey: null,
+				occurrenceCount: 3,
+				lastOccurrenceDate: "2026-09-10",
+			}),
 		]);
 	});
 
-	it("follows its rows to the label a rule gave them, active", async () => {
+	it("keeps an active series and its payments when a rule renames its rows, until the cleanup retires it", async () => {
 		const accountId = await account();
 		// Imported: a rule never renames a row typed by hand, whose label is locked.
 		await importRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
+		await runRecurring(deps(), { backfill: true });
 		const [row] = await stored();
 		await setStatus(row!.id, "active");
+		await runRecurring(deps(), { backfill: true });
+		const payments = () =>
+			temp.db
+				.select({ id: recurringAllocations.id })
+				.from(recurringAllocations)
+				.innerJoin(
+					recurringOccurrences,
+					eq(recurringAllocations.recurringOccurrenceId, recurringOccurrences.id),
+				)
+				.where(eq(recurringOccurrences.recurringTransactionId, row!.id));
+		const paid = await payments();
 		await createRule(deps(), {
 			enabled: true,
 			name: "EDF",
@@ -1371,21 +1395,43 @@ describe("detection follows a renamed series and never deletes one", () => {
 
 		await runRecurring(deps(), { backfill: false });
 
+		expect(paid).toHaveLength(3);
+		await expect(payments()).resolves.toEqual(paid);
 		await expect(stored()).resolves.toEqual([
-			{ ...row, status: "active", labelKey: "edf energie", label: "EDF ENERGIE" },
+			expect.objectContaining({
+				id: row!.id,
+				status: "active",
+				labelKey: "prlv edf",
+				label: "PRLV EDF",
+			}),
+			expect.objectContaining({
+				status: "suggested",
+				labelKey: "edf energie",
+				label: "EDF ENERGIE",
+				occurrenceCount: 3,
+			}),
 		]);
+
+		vi.setSystemTime(new Date("2027-01-15T10:00:00Z"));
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 1 });
+		await expect(stored()).resolves.toEqual([
+			expect.objectContaining({ id: row!.id, status: "inactive", labelKey: "prlv edf" }),
+			expect.objectContaining({ status: "suggested", labelKey: "edf energie" }),
+		]);
+		await expect(payments()).resolves.toEqual(paid);
 	});
 
-	it("keeps an ended series ended, with no suggested twin", async () => {
+	it("keeps an ended series ended on its key, and suggests the new name", async () => {
 		const accountId = await account();
 		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		const row = await detectedBill(accountId, ids);
 		await setStatus(row.id, "ended");
 		await rename(ids, "EDF ENERGIE");
 
-		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 0 });
+		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 1 });
 		await expect(stored()).resolves.toEqual([
-			{ ...row, status: "ended", labelKey: "edf energie", label: "EDF ENERGIE" },
+			{ ...row, status: "ended" },
+			expect.objectContaining({ status: "suggested", labelKey: "edf energie" }),
 		]);
 	});
 

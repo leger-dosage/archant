@@ -44,7 +44,6 @@ import {
 	nextDateFrom,
 	nextExpectedDate,
 	refreshSeries,
-	rekey,
 	syncMonthlyRuleDay,
 } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
@@ -254,51 +253,36 @@ async function clean(
 
 /**
  * Sure's `RecurringTransaction::Identifier` at `14638a701` run over the last
- * three months, between two passes. First, a stored row whose latest
- * transaction no longer carries its key follows it (`rekey`), so renaming a
- * series' rows or setting their merchant never leaves a twin, unless another
- * series holds that key: then both stay, and none is ever deleted. Then each
- * pattern claims the stored series of its account, key and currency nearest
- * its mean within 7.5 %, whatever its status: an ended or manual one is left
- * untouched, so detection never recreates a bill the owner declared or
- * dismissed; any other takes the pattern's dates, count and band, never its
- * amount or status, and the pattern's day unless the owner set its cadence,
- * as Sure's `schedule_pinned?`, its plain monthly rule following the day as
- * Sure's `sync_monthly_rule_day`. An unclaimed pattern lands as `suggested`,
- * monthly on its day, typed by Sure's `Classifier` or as an income when money
- * comes in, with the cluster's mean as `dedup_scope` when its key already has
- * a series. Then every other series but the ended ones is recomputed from its
- * current transactions (`refreshSeries`), Sure's manual pass among them, so a
- * revert or a delete never leaves counts and dates built on rows that are
- * gone. A series whose plain monthly rule follows a new day has its future
- * occurrences rebuilt on it. No status changes and no series goes: as Sure's
- * `Pipeline#run!`, detection never runs the `Cleaner`, which « Nettoyer les
- * obsolètes » alone runs (`cleanupRecurring`). The first step
- * of `runRecurring`, inside its immediate transaction, so two detections
- * racing each other cannot insert the same pattern twice.
+ * three months. A series never changes key: rows renamed
+ * or given a merchant form a pattern of their new key, which claims a series of
+ * that key or lands as a suggestion, and the old series stays where it is until
+ * « Nettoyer les obsolètes » retires it: Sure's identifier still has no re-key
+ * at `00dd977fb`. Each pattern claims the stored series of its account, key and
+ * currency nearest its mean within 7.5 %, whatever its status: an ended or
+ * manual one is left untouched, so detection never recreates a bill the owner
+ * declared or dismissed; any other takes the pattern's dates, count and band,
+ * never its amount or status, and the pattern's day unless the owner set its
+ * cadence, as Sure's `schedule_pinned?`, its plain monthly rule following the
+ * day as Sure's `sync_monthly_rule_day`. An unclaimed pattern lands as
+ * `suggested`, monthly on its day, typed by Sure's `Classifier` or as an income
+ * when money comes in, with the cluster's mean as `dedup_scope` when its key
+ * already has a series. Then every other series but the ended ones is
+ * recomputed from its current transactions (`refreshSeries`), Sure's manual
+ * pass among them, so a revert or a delete never leaves counts and dates built
+ * on rows that are gone. A series whose plain monthly rule follows a new day
+ * has its future occurrences rebuilt on it. No status changes and no series
+ * goes: as Sure's `Pipeline#run!`, detection never runs the `Cleaner`, which
+ * « Nettoyer les obsolètes » alone runs (`cleanupRecurring`). The first step of
+ * `runRecurring`, inside its immediate transaction, so two detections racing
+ * each other cannot insert the same pattern twice.
  */
 export async function detectWithin(tx: Transaction, day: IsoDate): Promise<DetectionResult> {
 	const { candidates, detectable, creditCards } = await loadCandidates(tx, day);
 	const names = await merchantNames(tx);
 	const now = Date.now();
-	const rekeyed = rekey(await loadSeries(tx), candidates, day);
-
-	// In order: a move may take a key an earlier move freed.
-	await oneByOne(rekeyed.steps, (step) =>
-		tx
-			.update(recurringTransactions)
-			.set({
-				merchantId: step.merchantId,
-				labelKey: step.labelKey,
-				label: step.label,
-				updatedAt: now,
-			})
-			.where(eq(recurringTransactions.id, step.id)),
-	);
-
 	const patterns = detectPatterns(detectable, day);
 	// What the series stand as after each write, read by the passes that follow.
-	const current = new Map(rekeyed.stored.map((series) => [series.id, series]));
+	const current = new Map((await loadSeries(tx)).map((series) => [series.id, series]));
 	const claimed = new Set<string>();
 	const rulesMoved = new Set<string>();
 	let tombstoned = 0;
