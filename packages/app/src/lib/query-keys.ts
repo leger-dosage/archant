@@ -107,6 +107,8 @@ export const queryKeys = {
 		ofEntry: (entryId: string) => ["recurring", "entry", entryId] as const,
 		/** Under `all`: a declared bill takes its starting point off the list. */
 		candidates: (kind: string) => ["recurring", "candidates", kind] as const,
+		/** Under `all`: a payment changes which row reads « Rattachée à ». */
+		picker: (kind: string, q: string) => ["recurring", "picker", kind, q] as const,
 		/** Under `all`: every recurring write moves the bills page. */
 		bills: ["recurring", "bills"] as const,
 		/** Under `all`, « Toutes les factures » by its search, filters and sort. */

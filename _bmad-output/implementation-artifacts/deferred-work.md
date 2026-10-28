@@ -481,3 +481,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-32-12-categorise-uncategorised-lines-in-groups.md`
   summary: Measure the quick-categorise wizard's read of every uncategorised line at ten years of history, and group in SQL if it misses NFR10.
   evidence: `categorizeStep` and `previewCategorize` read and group every uncategorised line on each step, as Sure's `ByMerchantOrName`; `history-volume.spec.ts` does not time it, and a household fresh from an import without rules could hold most of its history uncategorised.
+- source_spec: `_bmad-output/implementation-artifacts/spec-33-4-declare-a-bill-from-any-transaction.md`
+  summary: Time « Rechercher dans toutes vos transactions » (`pickerTransactions`) with a query matching nothing in `history-volume.spec.ts`.
+  evidence: Unverified medium. Its `LIKE` over label, notes and merchant scans every transaction when nothing matches, as the transactions search does; a volume run against NFR10's 150 ms would settle it.

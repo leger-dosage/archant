@@ -9,6 +9,7 @@ import {
 	addRows,
 	declareMortgage,
 	deps,
+	keyOnMerchant,
 	linkBank,
 	occurrencesOf,
 	openAccount,
@@ -36,11 +37,11 @@ async function mortgage(merchant: boolean) {
 	const accountId = await openAccount();
 	const ids = await addRows(accountId, MORTGAGE);
 
-	if (merchant) {
-		await withMerchant(ids);
-	}
+	const series = await declareMortgage(accountId, { firstDueOn: "2026-10-05" });
 
-	const series = await declareMortgage(accountId, { firstDueOn: "2026-10-05", entryId: ids[3]! });
+	if (merchant) {
+		await keyOnMerchant(series.id, await withMerchant(ids));
+	}
 
 	return { accountId, ids, series };
 }
@@ -188,8 +189,8 @@ describe("runRecurring without history, as an import or a sync", () => {
 		const accountId = await openAccount();
 		const [first = ""] = await addRows(accountId, [{ date: "2026-07-05", amount: -57_129 }]);
 		const [late = ""] = await addRows(accountId, [{ date: "2026-08-10", amount: -57_136 }]);
-		await withMerchant([first, late]);
-		const series = await declareMortgage(accountId, { entryId: first });
+		const series = await declareMortgage(accountId);
+		await keyOnMerchant(series.id, await withMerchant([first, late]));
 
 		await runRecurring(deps(), { backfill: false });
 
@@ -208,8 +209,8 @@ describe("runRecurring without history, as an import or a sync", () => {
 		const accountId = await openAccount();
 		const [first = ""] = await addRows(accountId, [{ date: "2026-07-05", amount: -57_129 }]);
 		const [late = ""] = await addRows(accountId, [{ date: "2026-08-10", amount: -57_136 }]);
-		await withMerchant([first, late]);
-		const series = await declareMortgage(accountId, { entryId: first });
+		const series = await declareMortgage(accountId);
+		await keyOnMerchant(series.id, await withMerchant([first, late]));
 		await setRecurringStatus(deps(), series.id, "inactive");
 
 		await runRecurring(deps(), { backfill: false });

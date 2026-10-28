@@ -180,21 +180,15 @@ test("a suggested payment reads as Sure's, and « Appliquer » or « Pas cette f
 }) => {
 	const account = await openAccount(api);
 	const bills = await Promise.all(
-		["Prêt immobilier", "Crédit auto"].map(async (prefix) => {
-			const label = uniqueName("PRLV CREDIT AGRICOLE");
-			const name = uniqueName(prefix);
-			// The bill starts from an older transaction, whose label it then recognises.
-			const starter = await api.addTransaction(account.id, {
-				date: daysAgo(100),
-				label,
-				amount: "-9,99",
-			});
+		["PRLV PRET IMMO", "PRLV CREDIT AUTO"].map(async (prefix) => {
+			// Named as its transactions, which a declared bill recognises by name.
+			const label = uniqueName(prefix);
+			const name = label;
 			await api.declareBill({
 				name,
 				amount: "571,29",
 				accountId: account.id,
 				firstDueOn: daysAgo(10),
-				entryId: starter,
 			});
 			// Five days late and 28,71 € over: suggested, never confirmed by itself.
 			await api.addTransaction(account.id, { date: daysAgo(5), label, amount: "-600,00" });

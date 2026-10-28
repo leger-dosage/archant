@@ -1458,12 +1458,11 @@ describe("detection leaves a renamed series behind, as Sure's identifier", () =>
 		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		const bill = await declareBill(deps(), {
 			kind: "bill",
-			name: "EDF",
+			name: "PRLV EDF",
 			amount: "65,00",
 			accountId,
 			firstDueOn: "2026-07-10",
 			frequency: { preset: "monthly" },
-			entryId: ids[0]!,
 		});
 		await runRecurring(deps(), { backfill: true });
 		const paid = () =>

@@ -2,15 +2,18 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchEntry } from "../../domain/recurring/matcher.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, between, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
+import { merchants } from "@archant/data/schema/merchants";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
+import { contains } from "./filter.ts";
 import {
 	KEYS_PER_LOOKUP,
 	asInflow,
@@ -19,6 +22,7 @@ import {
 	counterpartEntry,
 	inSequence,
 	isSplitParent,
+	notSplitParent,
 	transferColumns,
 } from "./shared.ts";
 
@@ -64,6 +68,68 @@ export async function matchableTransactions(
 		splitParent: Boolean(splitParent),
 		transfer: transferKind === null ? null : { kind: transferKind, intoAccountId },
 	}));
+}
+
+/** A transaction « Ajouter une facture » may start from, as its picker lists it. */
+export type PickerTransaction = {
+	entryId: string;
+	label: string;
+	merchantName: string | null;
+	date: IsoDate;
+	accountId: string;
+	accountName: string;
+	amount: MinorUnits;
+	currency: string;
+};
+
+/**
+ * Sure's `picker_entries`: transactions of any account, outflows or inflows
+ * as `sign` says, never excluded, a split parent or a transfer side, whose
+ * label, notes or merchant's name contains `q` when given, newest first,
+ * `limit` at most.
+ */
+export async function pickerTransactions(
+	db: Reader,
+	{ sign, q, limit }: { sign: "outflow" | "inflow"; q: string; limit: number },
+): Promise<PickerTransaction[]> {
+	const rows = await db
+		.select({
+			entryId: entries.id,
+			label: transactions.label,
+			merchantName: merchants.name,
+			date: entries.date,
+			accountId: entries.accountId,
+			accountName: accounts.name,
+			amount: entries.amount,
+			currency: entries.currency,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.leftJoin(merchants, eq(merchants.id, transactions.merchantId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(
+			and(
+				eq(entries.kind, "transaction"),
+				sign === "outflow" ? lt(entries.amount, 0) : gt(entries.amount, 0),
+				eq(transactions.excluded, false),
+				notSplitParent,
+				isNull(asOutflow.id),
+				isNull(asInflow.id),
+				q === ""
+					? undefined
+					: or(
+							contains(transactions.label, q),
+							contains(transactions.notes, q),
+							contains(merchants.name, q),
+						),
+			),
+		)
+		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
+		.limit(limit);
+
+	return rows.map((row) => ({ ...row, amount: toMinorUnits(row.amount) }));
 }
 
 /**

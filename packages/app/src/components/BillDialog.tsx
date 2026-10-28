@@ -1,9 +1,10 @@
 import type { AccountSummaryData } from "@/hooks/useAccounts";
-import type { BillCandidateData, RecurringData } from "@/hooks/useRecurring";
+import type { BillCandidateData, PickerEntryData, RecurringData } from "@/hooks/useRecurring";
 import type { Path, Resolver, UseFormReturn } from "react-hook-form";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useMemo, useRef } from "react";
+import { SearchIcon } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { useController, useForm, useWatch } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import {
 	INTERVAL_PRESET,
 	INTERVAL_UNITS,
 	MAX_INTERVAL,
+	PICKER_SHOWN,
 	declareBillSchema,
 	editBillSchema,
 	firstDueFrom,
@@ -43,6 +45,7 @@ import {
 	DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import {
 	Select,
@@ -58,11 +61,12 @@ import { useAccounts } from "@/hooks/useAccounts";
 import {
 	recurringName,
 	useBillCandidates,
+	useBillPicker,
 	useDeclareBill,
 	useEditBill,
 } from "@/hooks/useRecurring";
 import { amountToText } from "@/lib/amount-sign";
-import { ApiError } from "@/lib/api";
+import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
@@ -584,6 +588,119 @@ function Candidates({
 	);
 }
 
+/**
+ * « Trouver une transaction pour démarrer », Sure's `pick_entry`: the latest
+ * transactions of the dialog's sign, searched on Enter by label, notes or
+ * merchant, each naming the bill it already pays. Choosing one fills the
+ * form, as a starting point does.
+ */
+function Picker({
+	kind,
+	onChoose,
+	onBack,
+}: {
+	kind: BillKind;
+	onChoose: (entry: PickerEntryData) => void;
+	onBack: () => void;
+}) {
+	const { t } = useTranslation();
+	const [text, setText] = useState("");
+	const [query, setQuery] = useState("");
+	const picker = useBillPicker(kind, query);
+	const title = t(kind === "income" ? "recurring.picker.incomeTitle" : "recurring.picker.title");
+
+	return (
+		<>
+			<DialogHeader>
+				<DialogTitle>{title}</DialogTitle>
+				<DialogDescription>{t("recurring.picker.hint")}</DialogDescription>
+			</DialogHeader>
+			{/* `min-w-0`: a truncated row must not widen the dialog's grid column on a phone. */}
+			<div className="flex min-w-0 flex-col gap-3">
+				<form
+					role="search"
+					onSubmit={(event) => {
+						// Inside a transaction's sheet, its own form must not save too.
+						event.preventDefault();
+						event.stopPropagation();
+						setQuery(text.trim());
+					}}
+				>
+					<InputGroup>
+						<InputGroupAddon>
+							<SearchIcon aria-hidden />
+						</InputGroupAddon>
+						<InputGroupInput
+							type="search"
+							autoFocus
+							maxLength={200}
+							aria-label={t("recurring.picker.search")}
+							placeholder={t("recurring.picker.search")}
+							value={text}
+							onChange={(event) => setText(event.target.value)}
+						/>
+					</InputGroup>
+				</form>
+				{picker.isPending ? (
+					<Skeleton className="h-40 w-full" />
+				) : picker.isError ? (
+					<p role="alert" className="text-sm text-muted-foreground">
+						{t(`errors.${errorCodeOf(picker.error)}`)}
+					</p>
+				) : picker.data.length === 0 ? (
+					<p className="text-sm text-muted-foreground">
+						{t("recurring.picker.noResults", { query })}
+					</p>
+				) : (
+					<>
+						<ul
+							aria-label={title}
+							className="flex max-h-80 flex-col divide-y divide-line overflow-y-auto rounded-lg border"
+						>
+							{picker.data.map((entry) => (
+								<li key={entry.entryId}>
+									<button
+										type="button"
+										className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+										onClick={() => onChoose(entry)}
+									>
+										<span className="flex min-w-0 flex-col">
+											<span className="truncate text-sm">{entry.label}</span>
+											<span className="truncate text-xs text-muted-foreground">
+												{[
+													formatTableDate(entry.date),
+													entry.accountName,
+													...(entry.claimedBy === null
+														? []
+														: [t("recurring.picker.claimed", { name: entry.claimedBy })]),
+												].join(" · ")}
+											</span>
+										</span>
+										<Money
+											amount={toMinorUnits(Math.abs(entry.amount))}
+											currency={entry.currency}
+										/>
+									</button>
+								</li>
+							))}
+						</ul>
+						{picker.data.length === PICKER_SHOWN && (
+							<p className="text-xs text-muted-foreground">
+								{t("recurring.picker.capped", { count: PICKER_SHOWN })}
+							</p>
+						)}
+					</>
+				)}
+			</div>
+			<DialogFooter>
+				<Button type="button" variant="outline" onClick={onBack}>
+					{t("recurring.picker.back")}
+				</Button>
+			</DialogFooter>
+		</>
+	);
+}
+
 function declareValues(kind: BillKind): BillValues {
 	return {
 		kind,
@@ -601,7 +718,6 @@ function declareValues(kind: BillKind): BillValues {
 		autopay: false,
 		notes: "",
 		paymentUrl: "",
-		entryId: null,
 	};
 }
 
@@ -632,27 +748,55 @@ function DeclareForm({
 		)(values, context, options);
 	const resolver = useRef(resolve);
 	resolver.current = resolve;
+	const { entryId: prefilledFrom, ...prefilled } = prefill ?? { entryId: null };
 	const form = useForm<BillValues>({
 		resolver: async (values, context, options) => resolver.current(values, context, options),
-		defaultValues: { ...declareValues(kind), ...prefill },
+		defaultValues: { ...declareValues(kind), ...prefilled },
 	});
 	const { errors, isSubmitting } = form.formState;
 	const firstDueOn = useController({ control: form.control, name: "firstDueOn" });
 	const income = useWatch({ control: form.control, name: "kind" }) === "income";
-	const entryId = useWatch({ control: form.control, name: "entryId" });
 	const dateError = errorAt(errors, "firstDueOn");
+	// The transaction the form was filled from: the starting points give way
+	// to « Partir d'une autre transaction », as Sure's `new` with `entry_id`.
+	const [startedFrom, setStartedFrom] = useState<string | null>(prefilledFrom);
+	const [picking, setPicking] = useState(false);
 
-	const choose = (candidate: BillCandidateData) =>
+	const fill = (entry: Parameters<typeof prefillFrom>[0]) => {
+		const { entryId, ...values } = prefillFrom(entry);
+
 		form.reset({
 			...form.getValues(),
-			...prefillFrom({
-				id: candidate.entryId,
-				name: candidate.name,
-				amount: candidate.entryAmount,
-				currency: candidate.currency,
-				accountId: candidate.accountId,
-				date: candidate.lastOccurrenceDate,
-			}),
+			...values,
+			// An account the dialog does not offer falls back to « N'importe quel
+			// compte », as Sure's select does to its blank.
+			accountId: accounts.some((account) => account.id === values.accountId)
+				? values.accountId
+				: null,
+		});
+		setStartedFrom(entryId);
+		setPicking(false);
+	};
+
+	const choose = (candidate: BillCandidateData) =>
+		fill({
+			id: candidate.entryId,
+			name: candidate.name,
+			amount: candidate.entryAmount,
+			currency: candidate.currency,
+			accountId: candidate.accountId,
+			date: candidate.lastOccurrenceDate,
+		});
+
+	const pick = (entry: PickerEntryData) =>
+		fill({
+			id: entry.entryId,
+			// Sure's `prefill_recurring_from_entry`: the merchant's name, else the label.
+			name: entry.merchantName ?? entry.label,
+			amount: entry.amount,
+			currency: entry.currency,
+			accountId: entry.accountId,
+			date: entry.date,
 		});
 
 	const submit = form.handleSubmit(async (values) => {
@@ -669,6 +813,12 @@ function DeclareForm({
 		}
 	});
 
+	if (picking) {
+		return (
+			<Picker kind={income ? "income" : "bill"} onChoose={pick} onBack={() => setPicking(false)} />
+		);
+	}
+
 	return (
 		<>
 			<DialogHeader>
@@ -677,9 +827,21 @@ function DeclareForm({
 				</DialogTitle>
 				<DialogDescription>{t("recurring.form.description")}</DialogDescription>
 			</DialogHeader>
-			{prefill === null && (entryId ?? null) === null && (
-				<Candidates kind={kind} onChoose={choose} />
-			)}
+			{startedFrom === null && <Candidates kind={kind} onChoose={choose} />}
+			{/* Before the form, as Sure's, and reachable whether detection found anything or not. */}
+			<p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+				{startedFrom === null && (
+					<span className="text-muted-foreground">{t("recurring.form.searchAllPrompt")}</span>
+				)}
+				<Button
+					type="button"
+					variant="link"
+					className="h-auto p-0"
+					onClick={() => setPicking(true)}
+				>
+					{t(startedFrom === null ? "recurring.form.searchAll" : "recurring.form.pickDifferent")}
+				</Button>
+			</p>
 			<form
 				id="bill-form"
 				noValidate
@@ -809,29 +971,27 @@ function EditForm({
 	const categoryId = useController({ control: form.control, name: "categoryId" });
 	const categoryError = errorAt(errors, "categoryId");
 
-	const submit = form.handleSubmit(
-		async ({ kind: _kind, firstDueOn: _due, entryId: _entry, ...values }) => {
-			// A name left as the merchant's or the label stays unset, so it follows them.
-			const unchangedName = series.name === null && values.name.trim() === initial.name;
+	const submit = form.handleSubmit(async ({ kind: _kind, firstDueOn: _due, ...values }) => {
+		// A name left as the merchant's or the label stays unset, so it follows them.
+		const unchangedName = series.name === null && values.name.trim() === initial.name;
 
-			try {
-				await edit.mutateAsync({
-					id: series.id,
-					input: {
-						...values,
-						...(transfer ? { accountId: undefined } : {}),
-						...(unchangedName ? { name: undefined } : {}),
-						// A transfer's type is never edited: a count it carries stays.
-						...(billType === "installment" || transfer ? {} : { endAfterCount: "" }),
-					},
-				});
-				toast.success(t(income ? "recurring.form.savedIncome" : "recurring.form.saved"));
-				onClose();
-			} catch (error) {
-				showError(error, EDIT_FIELDS, form.setError);
-			}
-		},
-	);
+		try {
+			await edit.mutateAsync({
+				id: series.id,
+				input: {
+					...values,
+					...(transfer ? { accountId: undefined } : {}),
+					...(unchangedName ? { name: undefined } : {}),
+					// A transfer's type is never edited: a count it carries stays.
+					...(billType === "installment" || transfer ? {} : { endAfterCount: "" }),
+				},
+			});
+			toast.success(t(income ? "recurring.form.savedIncome" : "recurring.form.saved"));
+			onClose();
+		} catch (error) {
+			showError(error, EDIT_FIELDS, form.setError);
+		}
+	});
 
 	return (
 		<>

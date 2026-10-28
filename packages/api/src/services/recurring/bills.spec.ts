@@ -5,14 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
-import { merchants } from "@archant/data/schema/merchants";
 import { recurringOccurrences } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { account, addRows, bill, monthly, query, refusal, stored } from "../../testing/bills.ts";
 import { deps, temp, useRecurringDatabase } from "../../testing/recurring.ts";
 import { createAccount } from "../ledger/accounts.ts";
-import { updateTransaction } from "../ledger/edits.ts";
 import { findTransaction } from "../ledger/queries.ts";
 import { allBills, billDetail } from "./all-bills.ts";
 import { billsOverview } from "./bill-overview.ts";
@@ -133,38 +131,20 @@ describe("declareBill", () => {
 		);
 	});
 
-	it("takes the key and label of the transaction it starts from, its name typed", async () => {
+	it("keys on its name with no merchant, as Sure's `declared_bill.rb`", async () => {
 		const accountId = await account();
-		await temp.db
-			.insert(merchants)
-			.values({ id: "credit-agricole", name: "Crédit Agricole", createdAt: 0, updatedAt: 0 });
-		const [loan = ""] = await addRows(accountId, ["2026-09-07"], "ECH PRET 0123", -57_122);
-		const [other = ""] = await addRows(accountId, ["2026-09-08"], "PRLV  SFR", -2999);
-		await updateTransaction(deps(), loan, { merchantId: "credit-agricole" }, { origin: "user" });
 
 		await expect(
-			declareBill(
-				deps(),
-				bill(accountId, { name: "Prêt immobilier", amount: "571,22", entryId: loan }),
-			),
+			declareBill(deps(), bill(accountId, { name: "Prêt immobilier", amount: "571,22" })),
 		).resolves.toMatchObject({
-			merchantId: "credit-agricole",
-			merchantName: "Crédit Agricole",
-			label: "ECH PRET 0123",
+			merchantId: null,
+			merchantName: null,
+			label: "Prêt immobilier",
 			name: "Prêt immobilier",
 		});
-		await declareBill(deps(), bill(accountId, { name: "Box", amount: "29,99", entryId: other }));
-
-		await expect(stored()).resolves.toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					name: "Prêt immobilier",
-					merchantId: "credit-agricole",
-					labelKey: null,
-				}),
-				expect.objectContaining({ name: "Box", merchantId: null, labelKey: "prlv sfr" }),
-			]),
-		);
+		await expect(stored()).resolves.toEqual([
+			expect.objectContaining({ merchantId: null, labelKey: "pret immobilier" }),
+		]);
 	});
 
 	it("answers RECURRING_ALREADY_EXISTS for the same account, name and amount", async () => {
@@ -180,17 +160,12 @@ describe("declareBill", () => {
 		await expect(stored()).resolves.toHaveLength(2);
 	});
 
-	it("refuses an unknown account, transaction, amount, interval or link, writing nothing", async () => {
+	it("refuses an unknown account, amount, interval or link, writing nothing", async () => {
 		const accountId = await account();
 
 		await expect(refusal(declareBill(deps(), bill("nope")))).resolves.toMatchObject({
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "accountId", code: "invalid_value" }],
-		});
-		await expect(
-			refusal(declareBill(deps(), bill(accountId, { entryId: "nope" }))),
-		).resolves.toMatchObject({
-			code: "NOT_FOUND",
 		});
 		await expect(
 			refusal(

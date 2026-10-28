@@ -464,6 +464,22 @@ describe("GET /api/recurring/candidates", () => {
 	});
 });
 
+describe("GET /api/recurring/picker", () => {
+	it("lists the transactions a bill may start from, searched, and refuses another kind", async () => {
+		const { app, ids } = await monthlyNetflix();
+		const client = testClient(app).api.recurring.picker;
+
+		const all = await client.$get({ query: { kind: "bill" } });
+
+		expect(all.status).toBe(200);
+		expect((await all.json()).data.map((entry) => entry.entryId)).toEqual(ids.toReversed());
+		expect((await (await client.$get({ query: { kind: "bill", q: "zzz" } })).json()).data).toEqual(
+			[],
+		);
+		expect((await app.request("/api/recurring/picker?kind=transfer")).status).toBe(400);
+	});
+});
+
 describe("POST /api/recurring/cleanup", () => {
 	it("answers how many series became inactive", async () => {
 		const own = await ownDatabase();

@@ -538,17 +538,13 @@ export function apiHelpers(request: APIRequestContext) {
 			return created(await request.post("/api/recurring", { data: { entryId } }));
 		},
 
-		/**
-		 * Declares a monthly bill on `firstDueOn`, as « Ajouter une facture » does,
-		 * keyed by `entryId`'s label when the dialog started from a transaction.
-		 */
+		/** Declares a monthly bill on `firstDueOn`, keyed on its name, as « Ajouter une facture » does. */
 		async declareBill(input: {
 			name: string;
 			amount: string;
 			/** Omitted, the bill is paid from any account. */
 			accountId?: string;
 			firstDueOn: string;
-			entryId?: string;
 			kind?: "bill" | "income";
 			frequency?: { preset: string };
 		}): Promise<string> {

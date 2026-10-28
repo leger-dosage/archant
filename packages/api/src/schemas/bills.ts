@@ -59,6 +59,15 @@ export const EDITABLE_BILL_TYPES = ["bill", "subscription", "installment", "othe
 /** `?kind=` of the declare dialog's starting points. */
 export const candidatesQuerySchema = z.object({ kind: z.enum(BILL_KINDS) });
 
+/** How many transactions the picker lists, as Sure's `PICKER_SHOWN`: recency is its only order. */
+export const PICKER_SHOWN = 20;
+
+/** `?kind=&q=` of « Rechercher dans toutes vos transactions ». */
+export const pickerQuerySchema = z.object({
+	kind: z.enum(BILL_KINDS),
+	q: z.string().max(200).optional(),
+});
+
 // What the route checks before it knows the account: every field the owner
 // types is text, so the typed client knows the body's shape and a JavaScript
 // number never rounds an amount. The service parses it with the account's
@@ -87,8 +96,6 @@ export const declareBodySchema = z.object({
 	autopay: z.boolean().optional(),
 	notes: z.string().nullable().optional(),
 	paymentUrl: z.string().nullable().optional(),
-	// The transaction the dialog started from, whose key the bill takes.
-	entryId: z.string().nullable().optional(),
 });
 
 export type DeclareInput = z.input<typeof declareBodySchema>;
@@ -263,7 +270,6 @@ export function declareBillSchema(currency: CurrencyCode) {
 		autopay: z.boolean().default(false),
 		notes: notes.default(null),
 		paymentUrl: paymentUrl.default(null),
-		entryId: z.string().min(1).nullable().default(null),
 	});
 }
 

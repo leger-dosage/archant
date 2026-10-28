@@ -589,6 +589,55 @@ test("a deposit seen twice is offered as a starting point, and choosing it fills
 	await expect(row(page, label)).toContainText(`+${euros(90_000_000)}`);
 });
 
+test("« Rechercher dans toutes vos transactions » finds a charge seen once, and choosing it fills the form", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const label = uniqueName("PRLV GARDE MEUBLE");
+	const merchant = await api.createMerchant(uniqueName("Garde-meuble"));
+	const charge = await api.addTransaction(account.id, {
+		date: daysAgo(40),
+		label,
+		amount: "-45,00",
+	});
+	await api.setMerchant([charge], merchant.id);
+	// A closed account's charges are listed, as Sure's: the form, which offers
+	// active accounts only, then pays it from any account.
+	await api.deactivateAccount(account.id);
+
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une facture" }).click();
+	const form = billDialog(page, "Ajouter une facture");
+	await expect(form).toContainText("Vous ne trouvez pas ce que vous cherchez ?");
+	await form.getByRole("button", { name: "Rechercher dans toutes vos transactions" }).click();
+
+	const picker = billDialog(page, "Trouver une transaction pour démarrer");
+	await picker
+		.getByRole("searchbox", { name: "Rechercher par nom, remarque ou marchand" })
+		.fill("zzz-nothing");
+	await picker.getByRole("searchbox").press("Enter");
+	await expect(picker).toContainText("Aucun résultat pour « zzz-nothing ».");
+	await picker.getByRole("searchbox").fill(label);
+	await picker.getByRole("searchbox").press("Enter");
+	const found = picker.getByRole("button", { name: new RegExp(label, "u") });
+	await expect(found).toContainText(account.name);
+	await expect(found).toContainText(euros(4500));
+	await found.click();
+
+	// The merchant's name, else the label, as Sure's `prefill_recurring_from_entry`.
+	await expect(form.getByLabel("Nom")).toHaveValue(merchant.name);
+	await expect(form.getByLabel("Montant")).toHaveValue("45,00");
+	await expect(form.getByRole("combobox", { name: "Payée depuis" })).toHaveText(
+		"N'importe quel compte",
+	);
+	await expect(form.getByRole("button", { name: "Partir d'une autre transaction" })).toBeVisible();
+	await form.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(toast(page, "Facture ajoutée")).toBeVisible();
+	await expect(row(page, merchant.name)).toContainText(euros(-4500));
+});
+
 test("« Créer une facture » in the sheet opens the declare dialog filled from the transaction", async ({
 	page,
 	api,
@@ -607,6 +656,14 @@ test("« Créer une facture » in the sheet opens the declare dialog filled from
 	// Its day from today on: next month's, four days ago this month.
 	await expect(dialog.getByLabel("Prochaine échéance")).not.toHaveValue("");
 	await choose(page, dialog, "Fréquence", "Annuelle");
+	// A search in the picker submits its own form, never the sheet's.
+	await dialog.getByRole("button", { name: "Partir d'une autre transaction" }).click();
+	const picker = billDialog(page, "Trouver une transaction pour démarrer");
+	await picker.getByRole("searchbox").fill(label);
+	await picker.getByRole("searchbox").press("Enter");
+	await expect(picker.getByRole("button", { name: new RegExp(label, "u") })).toBeVisible();
+	await picker.getByRole("button", { name: "Revenir au formulaire" }).click();
+	await expect(dialog.getByRole("combobox", { name: "Fréquence" })).toHaveText("Annuelle");
 	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
 
 	await expect(toast(page, "Facture ajoutée")).toBeVisible();

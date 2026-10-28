@@ -38,6 +38,11 @@ export type BillCandidateData = InferResponseType<
 	200
 >["data"][number];
 
+export type PickerEntryData = InferResponseType<
+	typeof api.recurring.picker.$get,
+	200
+>["data"][number];
+
 /** What a series is called: its typed name, else its merchant's, else its label, as Sure's `display_name`. */
 export const recurringName = (item: Pick<RecurringData, "name" | "merchantName" | "label">) =>
 	item.name ?? item.merchantName ?? item.label;
@@ -149,6 +154,16 @@ export function useBillCandidates(kind: BillKind, enabled: boolean) {
 		queryKey: queryKeys.recurring.candidates(kind),
 		queryFn: async () => (await unwrap(api.recurring.candidates.$get({ query: { kind } }))).data,
 		enabled,
+	});
+}
+
+/** « Rechercher dans toutes vos transactions »: what the picker lists for `q`. */
+export function useBillPicker(kind: BillKind, q: string) {
+	return useQuery({
+		queryKey: queryKeys.recurring.picker(kind, q),
+		queryFn: async () =>
+			(await unwrap(api.recurring.picker.$get({ query: { kind, ...(q === "" ? {} : { q }) } })))
+				.data,
 	});
 }
 

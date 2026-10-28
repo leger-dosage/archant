@@ -1,15 +1,18 @@
 import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
+import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { merchants } from "@archant/data/schema/merchants";
 
 import { account, addRows, bill } from "../../testing/bills.ts";
-import { deps, temp, useRecurringDatabase } from "../../testing/recurring.ts";
+import { deps, occurrencesOf, temp, useRecurringDatabase } from "../../testing/recurring.ts";
 import { updateTransaction } from "../ledger/edits.ts";
 import { oneByOne } from "../ledger/shared.ts";
-import { billCandidates } from "./bill-candidates.ts";
+import { splitTransaction } from "../ledger/splits.ts";
+import { billCandidates, billPicker } from "./bill-candidates.ts";
 import { declareBill } from "./bills.ts";
+import { addPayment } from "./payments.ts";
 
 useRecurringDatabase("2026-09-21T10:00:00Z");
 
@@ -44,17 +47,14 @@ describe("billCandidates", () => {
 		await oneByOne(box, (id) =>
 			updateTransaction(deps(), id, { merchantId: "sfr" }, { origin: "user" }),
 		);
-		const water = await addRows(accountId, ["2026-08-02", "2026-09-02"], "EAU", -3000);
+		await addRows(accountId, ["2026-08-02", "2026-09-02"], "EAU", -3000);
 
 		await expect(billCandidates(deps(), "bill")).resolves.toEqual([
 			expect.objectContaining({ name: "SFR" }),
 			expect.objectContaining({ name: "EAU" }),
 		]);
 
-		await declareBill(
-			deps(),
-			bill(accountId, { name: "Eau", amount: "30,50", entryId: water[1]! }),
-		);
+		await declareBill(deps(), bill(accountId, { name: "Eau", amount: "30,50" }));
 
 		await expect(billCandidates(deps(), "bill")).resolves.toEqual([
 			expect.objectContaining({ name: "SFR" }),
@@ -107,10 +107,7 @@ describe("billCandidates", () => {
 			expect.objectContaining({ name: "FREELANCE", amount: 40_000, occurrenceCount: 3 }),
 		]);
 
-		await declareBill(
-			deps(),
-			bill(accountId, { kind: "income", name: "Salaire", amount: "1,00", entryId: pay[0]! }),
-		);
+		await declareBill(deps(), bill(accountId, { kind: "income", name: "Salaire", amount: "1,00" }));
 
 		await expect(billCandidates(deps(), "income")).resolves.toEqual([
 			expect.objectContaining({ name: "FREELANCE" }),
@@ -119,16 +116,109 @@ describe("billCandidates", () => {
 
 	it("leaves out deposits an income paid into any account follows, as Sure's `claimed_income_source?`", async () => {
 		const accountId = await account();
-		const pay = await addRows(accountId, ["2026-07-28", "2026-08-28"], "SALAIRE", 250_000);
+		await addRows(accountId, ["2026-07-28", "2026-08-28"], "SALAIRE", 250_000);
 		await addRows(accountId, ["2026-08-10", "2026-08-24", "2026-09-07"], "FREELANCE", 40_000);
 
-		await declareBill(
-			deps(),
-			bill(null, { kind: "income", name: "Salaire", amount: "1,00", entryId: pay[0]! }),
-		);
+		await declareBill(deps(), bill(null, { kind: "income", name: "Salaire", amount: "1,00" }));
 
 		await expect(billCandidates(deps(), "income")).resolves.toEqual([
 			expect.objectContaining({ name: "FREELANCE" }),
+		]);
+	});
+});
+
+const asUser = { origin: "user" } as const;
+
+const ids = (entries: readonly { entryId: string }[]) => entries.map((entry) => entry.entryId);
+
+describe("billPicker", () => {
+	it("lists the twenty latest of the dialog's sign, no transfer side, excluded row or split parent, as Sure's `picker_entries`", async () => {
+		const accountId = await account();
+		const savings = await account("EUR", "Livret");
+		const card = await addRows(
+			accountId,
+			Array.from({ length: 22 }, (_, index) => `2026-08-${String(index + 1).padStart(2, "0")}`),
+			"CB CARREFOUR",
+			-1000,
+		);
+		const [refund = ""] = await addRows(accountId, ["2026-09-10"], "REMBOURSEMENT", 3000);
+		const [outflow = ""] = await addRows(accountId, ["2026-09-11"], "VIREMENT LIVRET", -50_000);
+		const [inflow = ""] = await addRows(savings, ["2026-09-11"], "VIREMENT LIVRET", 50_000);
+		const [excluded = ""] = await addRows(accountId, ["2026-09-12"], "CB EXCLUE", -2000);
+		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		const [parent = ""] = await addRows(accountId, ["2026-09-13"], "CB PARTAGEE", -6000);
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Alimentation", amount: toMinorUnits(-4000), categoryId: null },
+				{ label: "Maison", amount: toMinorUnits(-2000), categoryId: null },
+			],
+			asUser,
+		);
+
+		const bills = await billPicker(deps(), "bill");
+
+		expect(bills).toHaveLength(20);
+		expect(ids(bills).slice(0, 2).toSorted()).toEqual(split.childIds.toSorted());
+		expect(ids(bills).slice(2)).toEqual(card.toReversed().slice(0, 18));
+		expect(ids(bills)).not.toContain(parent);
+		expect(bills[2]).toEqual({
+			entryId: card[21],
+			label: "CB CARREFOUR",
+			merchantName: null,
+			date: "2026-08-22",
+			accountId,
+			accountName: "Compte",
+			amount: -1000,
+			currency: "EUR",
+			claimedBy: null,
+		});
+		await expect(billPicker(deps(), "income").then(ids)).resolves.toEqual([refund]);
+		expect([outflow, inflow, excluded].filter((id) => ids(bills).includes(id))).toEqual([]);
+	});
+
+	it("searches the label, the notes and the merchant's name, a `%` read as itself", async () => {
+		const accountId = await account();
+		await temp.db
+			.insert(merchants)
+			.values({ id: "edf", name: "EDF Énergie", createdAt: 0, updatedAt: 0 });
+		const [label = ""] = await addRows(accountId, ["2026-09-01"], "PRLV EDF", -6500);
+		const [noted = ""] = await addRows(accountId, ["2026-09-02"], "CB 1234", -1200);
+		await updateTransaction(deps(), noted, { notes: "Facture edf de juin" }, asUser);
+		const [merchant = ""] = await addRows(accountId, ["2026-09-03"], "PRLV 778", -4000);
+		await updateTransaction(deps(), merchant, { merchantId: "edf" }, asUser);
+		await addRows(accountId, ["2026-09-04"], "CB AUTRE", -900);
+		const [percent = ""] = await addRows(accountId, ["2026-09-05"], "REMISE 50%", -500);
+		await addRows(accountId, ["2026-09-06"], "REMISE 500", -500);
+
+		await expect(billPicker(deps(), "bill", "  edf ").then(ids)).resolves.toEqual([
+			merchant,
+			noted,
+			label,
+		]);
+		await expect(billPicker(deps(), "bill", "edf")).resolves.toEqual(
+			expect.arrayContaining([expect.objectContaining({ merchantName: "EDF Énergie" })]),
+		);
+		await expect(billPicker(deps(), "bill", "50%").then(ids)).resolves.toEqual([percent]);
+		await expect(billPicker(deps(), "bill", "zzz")).resolves.toEqual([]);
+	});
+
+	it("names the bill a row already pays, as Sure's `claimed_series_names`", async () => {
+		const accountId = await account();
+		const [paid = "", free = ""] = await addRows(
+			accountId,
+			["2026-09-10", "2026-09-11"],
+			"EAU DU GRAND LYON",
+			-8420,
+		);
+		const water = await declareBill(deps(), bill(accountId, { firstDueOn: "2026-09-10" }));
+		const [open] = await occurrencesOf(water.id);
+		await addPayment(deps(), open!.id, { entryId: paid });
+
+		await expect(billPicker(deps(), "bill")).resolves.toEqual([
+			expect.objectContaining({ entryId: free, claimedBy: null }),
+			expect.objectContaining({ entryId: paid, claimedBy: "Eau du Grand Lyon" }),
 		]);
 	});
 });
