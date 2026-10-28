@@ -62,8 +62,11 @@ const queryClient = new QueryClient({
 			// Retrying a lost session only delays the sign-in page by the backoff,
 			// seven seconds with the default three retries.
 			// A refusal for the role answers the same until the session is read again.
+			// A missing record stays missing: pausing a bill from an occurrence's
+			// sheet deletes that occurrence, and its refetch held the toast seven seconds.
 			retry: (failureCount, error) =>
-				!["UNAUTHORIZED", "FORBIDDEN"].includes(errorCodeOf(error)) && failureCount < 3,
+				!["UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND"].includes(errorCodeOf(error)) &&
+				failureCount < 3,
 		},
 	},
 	// A failed read has no form to show it next to, so it becomes a toast. Writes

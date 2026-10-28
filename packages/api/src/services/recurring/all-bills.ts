@@ -11,6 +11,7 @@ import { and, desc, eq, gte, inArray, ne } from "drizzle-orm";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
+import type { OccurrenceStatus } from "@archant/data/recurring";
 import { accounts } from "@archant/data/schema/accounts";
 import { merchants } from "@archant/data/schema/merchants";
 import {
@@ -20,8 +21,8 @@ import {
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
-import { addMonths, today } from "../../domain/dates.ts";
-import { displayName } from "../../domain/recurring/bills.ts";
+import { addDays, addMonths, today } from "../../domain/dates.ts";
+import { displayName, nextDueDates } from "../../domain/recurring/bills.ts";
 import {
 	changePercent,
 	remainingOf,
@@ -95,6 +96,11 @@ const ROLLUP_PRICE_CHANGE_MONTHS = 12;
 
 // Sure's sparkline: this month and the eleven before it.
 const HISTORY_MONTHS = 12;
+
+// Sure's `bills#show`: the twelve latest closed occurrences, the four latest years.
+const HISTORY_OCCURRENCES = 12;
+
+const YEARLY_ROWS = 4;
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
@@ -351,11 +357,56 @@ export async function allBills(deps: ServiceDeps, query: AllBillsQuery): Promise
 	};
 }
 
+type ClosedStatus = Exclude<OccurrenceStatus, "scheduled">;
+
+/**
+ * Sure's `yearly_metrics`: the confirmed payments grouped by their
+ * occurrence's due year, each year's total and its total over the payments'
+ * count, rounded half up, the latest years first.
+ */
+function yearlyMetrics(
+	payments: readonly { occurrenceId: string; amount: MinorUnits }[],
+	dueOf: ReadonlyMap<string, IsoDate>,
+): BillDetail["yearly"] {
+	const years = new Map<number, MinorUnits[]>();
+
+	for (const payment of payments) {
+		const due = dueOf.get(payment.occurrenceId);
+
+		if (due !== undefined) {
+			const year = Number(due.slice(0, 4));
+			years.set(year, [...(years.get(year) ?? []), payment.amount]);
+		}
+	}
+
+	return [...years]
+		.toSorted(([a], [b]) => b - a)
+		.slice(0, YEARLY_ROWS)
+		.map(([year, amounts]) => {
+			const total = sumOf(amounts);
+
+			return { year, total, average: toMinorUnits(roundHalfUp(total, amounts.length)) };
+		});
+}
+
 /** Sure's `bills#show`, as the drawer reads it. */
 export type BillDetail = {
 	record: BillRecord;
-	/** Over the paid occurrences' confirmed sums; `null` when none is paid. */
-	averagePaid: { average: MinorUnits; lowest: MinorUnits; highest: MinorUnits } | null;
+	/** Sure's `matcher_hints`: other labels matched, and the tolerance in per mille, `null` unlearned. */
+	rules: { aliases: string[]; learnedTolerance: number | null };
+	/** Sure's `paid_analytics`; `null` when no occurrence is paid. */
+	analytics: {
+		/** Over the paid occurrences' confirmed sums. */
+		average: MinorUnits;
+		lowest: MinorUnits;
+		highest: MinorUnits;
+		/** The monthly equivalent times 12, rounded once. */
+		annualized: MinorUnits;
+		/** Every confirmed payment paid from 1 January. */
+		paidThisYear: MinorUnits;
+	} | null;
+	/** Sure's `yearly_metrics`: by the occurrence's due year, the four latest first. */
+	yearly: { year: number; total: MinorUnits; average: MinorUnits }[];
 	/** The five latest. */
 	priceChanges: PriceChange[];
 	/** How many occurrences are paid, of the plan's payments. */
@@ -364,15 +415,28 @@ export type BillDetail = {
 	lastAccount: { id: string; name: string } | null;
 	/** Twelve months to this one, what was paid toward the occurrences due in each. */
 	months: { month: IsoMonth; paid: MinorUnits }[];
+	/** The next three due dates after today. */
+	upcoming: IsoDate[];
+	/** The twelve latest closed occurrences, latest first. */
+	history: {
+		id: string;
+		dueOn: IsoDate;
+		status: ClosedStatus;
+		/** The confirmed payments' sum. */
+		paid: MinorUnits;
+		payments: number;
+		/** The one payment's transaction label; `null` for a payment without one, or with several. */
+		label: string | null;
+	}[];
 };
 
 /**
- * Sure's `bills#show` without its matching rules, yearly table, upcoming
- * dates, recent payments and history: the series with its current
- * occurrence, Sure's `@analytics` average and range, its price changes, an
- * installment's progress, the last account used and Sure's twelve-month
- * sparkline, each month summing the confirmed payments of the occurrences
- * due in it, whatever their status.
+ * Sure's `bills#show` with its `history` frame: the series with its current
+ * occurrence, its matching hints, Sure's `@analytics`, yearly metrics, price
+ * changes, an installment's progress, the last account used, the
+ * twelve-month sparkline, each month summing the confirmed payments of the
+ * occurrences due in it whatever their status, the next three dates and the
+ * twelve latest closed occurrences with what paid them.
  */
 export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDetail> {
 	const day = today(deps.timeZone);
@@ -385,6 +449,14 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 		})
 		.from(recurringOccurrences)
 		.where(eq(recurringOccurrences.recurringTransactionId, id));
+	const hints = await deps.db
+		.select({
+			aliases: recurringTransactions.nameAliases,
+			learnedTolerance: recurringTransactions.learnedTolerance,
+		})
+		.from(recurringTransactions)
+		.where(eq(recurringTransactions.id, id))
+		.get();
 	const payments = (
 		await deps.db
 			.select({
@@ -436,18 +508,44 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 					.where(eq(accounts.id, entry.accountId))
 					.get();
 	const dueOf = new Map(occurrences.map((occurrence) => [occurrence.id, occurrence.dueOn]));
+	const yearStart = `${day.slice(0, 4)}-01-01`;
+	// Sure's `closed.order(due_on: :desc).limit(12)`.
+	const closed = occurrences
+		.filter(
+			(occurrence): occurrence is typeof occurrence & { status: ClosedStatus } =>
+				occurrence.status !== "scheduled",
+		)
+		.toSorted((a, b) => b.dueOn.localeCompare(a.dueOn) || a.id.localeCompare(b.id))
+		.slice(0, HISTORY_OCCURRENCES);
+	const closedIds = new Set(closed.map((occurrence) => occurrence.id));
+	const labels = await paymentEntries(
+		deps.db,
+		payments.flatMap((payment) =>
+			payment.entryId !== null && closedIds.has(payment.occurrenceId) ? [payment.entryId] : [],
+		),
+	);
 	const first = shiftMonth(day.slice(0, 7), 1 - HISTORY_MONTHS);
 
 	return {
 		record: record!,
-		averagePaid:
+		rules: { aliases: hints?.aliases ?? [], learnedTolerance: hints?.learnedTolerance ?? null },
+		analytics:
 			sums.length === 0
 				? null
 				: {
 						average: toMinorUnits(roundHalfUp(sumOf(sums), sums.length)),
 						lowest: toMinorUnits(Math.min(...sums)),
 						highest: toMinorUnits(Math.max(...sums)),
+						annualized: monthlyRollup([
+							{ rules: record!.rules, amount: toMinorUnits(Math.abs(record!.amount)) },
+						]).annual,
+						paidThisYear: sumOf(
+							payments
+								.filter((payment) => payment.paidOn !== null && payment.paidOn >= yearStart)
+								.map((payment) => payment.amount),
+						),
 					},
+		yearly: yearlyMetrics(payments, dueOf),
 		priceChanges: await priceChangesWhere(
 			deps.db,
 			eq(recurringPriceChanges.recurringTransactionId, id),
@@ -468,6 +566,20 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 						.filter((payment) => dueOf.get(payment.occurrenceId)?.startsWith(month) ?? false)
 						.map((payment) => payment.amount),
 				),
+			};
+		}),
+		upcoming: nextDueDates(record!, addDays(day, 1)),
+		history: closed.map((occurrence) => {
+			const own = payments.filter((payment) => payment.occurrenceId === occurrence.id);
+			const only = own.length === 1 ? own[0]!.entryId : null;
+
+			return {
+				id: occurrence.id,
+				dueOn: occurrence.dueOn,
+				status: occurrence.status,
+				paid: sumOf(own.map((payment) => payment.amount)),
+				payments: own.length,
+				label: only === null ? null : (labels.get(only)?.label ?? null),
 			};
 		}),
 	};

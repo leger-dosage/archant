@@ -409,15 +409,21 @@ test("the sheet names a transaction's suggested series and links to its drawer, 
 	await sheet.getByRole("link", { name: "Voir la facture" }).click();
 	await expect(page).toHaveURL(/\/bills\/[^/?]+$/u);
 	const drawer = page.getByRole("dialog", { name: label });
-	await expect(drawer).toContainText("Prochain paiement");
+	await expect(drawer.getByRole("region", { name: "Prochain paiement" })).toBeVisible();
 	// A suggestion is added or dismissed there, never edited, paused or deleted.
 	await expect(drawer.getByRole("button", { name: "Ajouter la facture" })).toBeVisible();
-	await expect(drawer.getByRole("button", { name: "Modifier" })).toHaveCount(0);
+	await expect(drawer.getByRole("button", { name: `Actions pour ${label}` })).toHaveCount(0);
 	await drawer.getByRole("button", { name: "Ce n'est pas une facture" }).click();
 	await expect(toast(page, "Écartée. Elle ne sera plus proposée.")).toBeVisible();
 	// Ended, a detected series has nothing left to delete.
-	await expect(drawer.getByRole("button", { name: "Reprendre" })).toBeVisible();
-	await expect(drawer.getByRole("button", { name: "Supprimer" })).toHaveCount(0);
+	await drawer.getByRole("button", { name: `Actions pour ${label}` }).click();
+	await expect(page.getByRole("menu").getByRole("menuitem")).toHaveText([
+		"Modifier la facture",
+		"Reprendre",
+	]);
+	await page.keyboard.press("Escape");
+	// The menu's exit leaves the drawer hidden to assistive technology until it ends.
+	await expect(page.getByRole("menu")).toBeHidden();
 	await page.keyboard.press("Escape");
 	await expect(drawer).toBeHidden();
 

@@ -774,7 +774,9 @@ describe("GET /api/recurring/:id", () => {
 			data: {
 				record: { id: seriesId, name: "Prêt immobilier", monthlyEquivalent: 57_129 },
 				months: { 11: { month: "2026-09", paid: 0 } },
-				averagePaid: null,
+				analytics: null,
+				yearly: [],
+				history: [],
 				priceChanges: [],
 				installment: null,
 				lastAccount: null,

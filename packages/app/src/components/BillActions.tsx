@@ -29,8 +29,8 @@ export type BillActions = {
 	/** « Ajouter une facture » or « Ajouter un revenu ». */
 	declare: (kind: "bill" | "income") => void;
 	edit: (bill: Bill) => void;
-	/** « Mettre en pause » an active bill, « Reprendre » any other. */
-	toggle: (bill: Bill) => void;
+	/** « Mettre en pause » an active bill, « Reprendre » any other; `onDone` runs once it succeeds. */
+	toggle: (bill: Bill, onDone?: () => void) => void;
 	/** Asks first, then deletes a manual bill or ends a detected one. */
 	remove: (bill: Bill) => void;
 	/** A suggestion's « Ajouter la facture » (`active`) or « Ce n'est pas une facture » (`ended`). */
@@ -69,14 +69,16 @@ export function useBillActions(onDeleted?: () => void): BillActions {
 		setBillOpen(true);
 	};
 
-	const toggle = (bill: Bill) => {
+	const toggle = (bill: Bill, onDone?: () => void) => {
 		const status = bill.status === "active" ? "inactive" : "active";
 
 		setStatus.mutate(
 			{ id: bill.id, status },
 			{
-				onSuccess: () =>
-					toast.success(t(status === "active" ? "recurring.resumed" : "recurring.paused")),
+				onSuccess: () => {
+					toast.success(t(status === "active" ? "recurring.resumed" : "recurring.paused"));
+					onDone?.();
+				},
 				onError: (error) => showErrorToast(errorCodeOf(error)),
 			},
 		);
@@ -157,11 +159,21 @@ export function useBillActions(onDeleted?: () => void): BillActions {
  * « Supprimer » deletes a manual bill and ends a detected one, so a detected
  * bill already ended has nothing left for it to do.
  */
-export const canDelete = (bill: Pick<Bill, "manual" | "status">) =>
-	bill.manual || bill.status !== "ended";
+const canDelete = (bill: Pick<Bill, "manual" | "status">) => bill.manual || bill.status !== "ended";
 
-/** A bill's row menu: « Modifier », « Mettre en pause » or « Reprendre », « Supprimer ». */
-export function BillMenu({ bill, actions }: { bill: Bill; actions: BillActions }) {
+/**
+ * A bill's menu: « Modifier », « Mettre en pause » or « Reprendre »,
+ * « Supprimer ». The drawer names the first « Modifier la facture », as Sure's.
+ */
+export function BillMenu({
+	bill,
+	actions,
+	editLabel,
+}: {
+	bill: Bill;
+	actions: BillActions;
+	editLabel?: string;
+}) {
 	const { t } = useTranslation();
 
 	return (
@@ -177,7 +189,7 @@ export function BillMenu({ bill, actions }: { bill: Bill; actions: BillActions }
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
 				<DropdownMenuItem onSelect={() => actions.edit(bill)}>
-					{t("recurring.edit")}
+					{editLabel ?? t("recurring.edit")}
 				</DropdownMenuItem>
 				<DropdownMenuItem disabled={actions.pending} onSelect={() => actions.toggle(bill)}>
 					{t(bill.status === "active" ? "recurring.pause" : "recurring.resume")}
