@@ -14,6 +14,7 @@ import {
 	openAccount,
 	openLoan,
 	payments,
+	setToday,
 	temp,
 	transferBetween,
 	useRecurringDatabase,
@@ -27,6 +28,7 @@ import {
 	confirmPayment,
 	editOccurrence,
 	markPaid,
+	otherPaymentCandidates,
 	paymentCandidates,
 	recordBillPayment,
 	rejectPayment,
@@ -629,6 +631,202 @@ describe("paymentCandidates", () => {
 
 	it("answers NOT_FOUND for an unknown occurrence", async () => {
 		await expect(codeOf(paymentCandidates(deps(), "nope"))).resolves.toMatchObject({
+			code: "NOT_FOUND",
+		});
+	});
+});
+
+const ids = (rows: readonly { entryId: string }[]) => rows.map((row) => row.entryId);
+
+describe("otherPaymentCandidates", () => {
+	it("reads 40 days before the due date to today, never past it", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [before = "", first = "", last = "", future = ""] = await addRows(accountId, [
+			{ date: "2026-06-25", amount: -1000, label: "CARTE A" },
+			{ date: "2026-06-26", amount: -1000, label: "CARTE B" },
+			{ date: "2026-08-10", amount: -1000, label: "CARTE C" },
+			{ date: "2026-08-11", amount: -1000, label: "CARTE D" },
+		]);
+
+		const found = ids(await otherPaymentCandidates(deps(), (await august(series.id)).id));
+
+		expect(found).toEqual(expect.arrayContaining([first, last]));
+		expect(found).not.toContain(before);
+		expect(found).not.toContain(future);
+	});
+
+	it("stops 40 days after the due date once that is past", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const occurrence = await august(series.id);
+		const [last = "", after = ""] = await addRows(accountId, [
+			{ date: "2026-09-14", amount: -1000, label: "CARTE A" },
+			{ date: "2026-09-15", amount: -1000, label: "CARTE B" },
+		]);
+		setToday("2026-09-20");
+
+		const found = ids(await otherPaymentCandidates(deps(), occurrence.id));
+
+		expect(found).toContain(last);
+		expect(found).not.toContain(after);
+	});
+
+	it("keeps fifteen once the ranked ones are left out", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [ranked = ""] = await addRows(accountId, [
+			{ date: "2026-08-05", amount: -57_129 },
+			...Array.from({ length: 20 }, (_, index) => ({
+				date: "2026-08-01",
+				amount: -57_100 + index,
+				label: `CARTE ${index}`,
+			})),
+		]);
+		const found = ids(await otherPaymentCandidates(deps(), (await august(series.id)).id));
+
+		expect(found).toHaveLength(15);
+		expect(found).not.toContain(ranked);
+	});
+
+	it("orders by the expected amount once nothing remains", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [small = "", exact = ""] = await addRows(accountId, [
+			{ date: "2026-08-04", amount: -100, label: "CARTE A" },
+			{ date: "2026-07-01", amount: -57_129, label: "CARTE B" },
+		]);
+		const occurrence = await august(series.id);
+		await addPayment(deps(), occurrence.id, { amount: "571,29", paidOn: "2026-08-01" });
+		await reopenOccurrence(deps(), occurrence.id);
+
+		expect(ids(await otherPaymentCandidates(deps(), occurrence.id))).toEqual([exact, small]);
+	});
+
+	it("puts the amount nearest what remains first, then the date nearest the due date", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [farExact = "", near = "", far = "", nearExact = ""] = await addRows(accountId, [
+			{ date: "2026-07-01", amount: -57_129, label: "CARTE A" },
+			{ date: "2026-08-05", amount: -56_000, label: "CARTE B" },
+			{ date: "2026-08-05", amount: -80_000, label: "CARTE C" },
+			{ date: "2026-08-04", amount: -57_129, label: "CARTE D" },
+		]);
+		const occurrence = await august(series.id);
+
+		expect(ids(await otherPaymentCandidates(deps(), occurrence.id))).toEqual([
+			nearExact,
+			farExact,
+			near,
+			far,
+		]);
+
+		await addPayment(deps(), occurrence.id, { amount: "15,00", paidOn: "2026-08-01" });
+
+		// What remains is 556,29 now: 560,00 is nearer than 571,29.
+		expect(ids(await otherPaymentCandidates(deps(), occurrence.id))[0]).toBe(near);
+	});
+
+	it("searches labels whatever their date, and finds nothing for an unknown word", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [old = "", other = ""] = await addRows(accountId, [
+			{ date: "2025-03-01", amount: -57_129, label: "VIR BANQUE MARS" },
+			{ date: "2026-08-04", amount: -57_129, label: "CARTE A" },
+		]);
+		const occurrence = await august(series.id);
+
+		expect(ids(await otherPaymentCandidates(deps(), occurrence.id))).toEqual([other]);
+		expect(ids(await otherPaymentCandidates(deps(), occurrence.id, " banque "))).toEqual([old]);
+		await expect(otherPaymentCandidates(deps(), occurrence.id, "nothing")).resolves.toEqual([]);
+	});
+
+	it("keeps to the series' account, sign and currency, and leaves out the ranked, the held and the split parent", async () => {
+		const accountId = await openAccount();
+		const elsewhere = await openAccount();
+		const series = await declareMortgage(accountId);
+		const [ranked = "", held = "", inflow = "", parent = "", kept = ""] = await addRows(accountId, [
+			{ date: "2026-08-05", amount: -57_129 },
+			{ date: "2026-08-04", amount: -1000, label: "CARTE A" },
+			{ date: "2026-08-04", amount: 57_129, label: "CARTE B" },
+			{ date: "2026-08-04", amount: -2000, label: "CARTE C" },
+			{ date: "2026-08-04", amount: -3000, label: "CARTE D" },
+		]);
+		const [dollars = ""] = await addRows(
+			accountId,
+			[{ date: "2026-08-04", amount: -57_129, label: "CARTE E" }],
+			"USD",
+		);
+		const [away = ""] = await addRows(elsewhere, [
+			{ date: "2026-08-04", amount: -57_129, label: "CARTE F" },
+		]);
+		await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "Un", amount: toMinorUnits(-1000), categoryId: null },
+				{ label: "Deux", amount: toMinorUnits(-1000), categoryId: null },
+			],
+			{ origin: "user" },
+		);
+		const occurrence = await august(series.id);
+		await addPayment(deps(), occurrence.id, { entryId: held });
+
+		const found = ids(await otherPaymentCandidates(deps(), occurrence.id));
+
+		expect(found).toContain(kept);
+		for (const left of [ranked, held, inflow, parent, dollars, away]) {
+			expect(found).not.toContain(left);
+		}
+	});
+
+	it("lists deposits for an income", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId, { kind: "income", name: "Salaire" });
+		const [deposit = "", charge = ""] = await addRows(accountId, [
+			{ date: "2026-08-04", amount: 1000, label: "VIR ACME" },
+			{ date: "2026-08-04", amount: -1000, label: "CARTE A" },
+		]);
+		const found = ids(await otherPaymentCandidates(deps(), (await august(series.id)).id));
+
+		expect(found).toContain(deposit);
+		expect(found).not.toContain(charge);
+	});
+
+	it("reads every account for a bill without one", async () => {
+		const accountId = await openAccount();
+		const elsewhere = await openAccount();
+		const series = await declareMortgage(accountId, { accountId: null });
+		const [here = ""] = await addRows(accountId, [
+			{ date: "2026-08-04", amount: -1000, label: "CARTE A" },
+		]);
+		const [away = ""] = await addRows(elsewhere, [
+			{ date: "2026-08-04", amount: -2000, label: "CARTE B" },
+		]);
+
+		expect(ids(await otherPaymentCandidates(deps(), (await august(series.id)).id))).toEqual(
+			expect.arrayContaining([here, away]),
+		);
+	});
+
+	it("leaves a transfer side out unless the series is a recurring transfer", async () => {
+		const checking = await openAccount();
+		const loan = await openLoan();
+		const bill = await declareMortgage(checking);
+		const { transferId } = await transferBetween(checking, loan, "2026-07-05", 57_129);
+		const transfer = await markTransferRecurring(deps(), transferId);
+		const { outflow } = await transferBetween(checking, loan, "2026-08-01", 50_000);
+
+		expect(ids(await otherPaymentCandidates(deps(), (await august(bill.id)).id))).not.toContain(
+			outflow,
+		);
+		expect(ids(await otherPaymentCandidates(deps(), (await august(transfer.id)).id))).toContain(
+			outflow,
+		);
+	});
+
+	it("answers NOT_FOUND for an unknown occurrence", async () => {
+		await expect(codeOf(otherPaymentCandidates(deps(), "nope"))).resolves.toMatchObject({
 			code: "NOT_FOUND",
 		});
 	});

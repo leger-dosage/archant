@@ -3,6 +3,7 @@ import type { MatchDecision } from "../../domain/recurring/matcher.ts";
 import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { AddPaymentInput, OccurrencePatch } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
+import type { OccurrenceTransaction } from "../ledger/recurring.ts";
 import type { Transaction } from "../ledger/shared.ts";
 
 import { and, eq, inArray, sum } from "drizzle-orm";
@@ -25,7 +26,7 @@ import {
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { direction } from "../../domain/cash-flow.ts";
-import { today } from "../../domain/dates.ts";
+import { addDays, today } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
 import { displayName } from "../../domain/recurring/bills.ts";
 import { explain, knownNames, windowOf } from "../../domain/recurring/matcher.ts";
@@ -39,7 +40,11 @@ import {
 	resolvedExpected,
 } from "../../domain/recurring/occurrences.ts";
 import { AppError } from "../../lib/errors.ts";
-import { matchableTransactions, paymentTransaction } from "../ledger/recurring.ts";
+import {
+	matchableTransactions,
+	occurrenceTransactions,
+	paymentTransaction,
+} from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, invalidField } from "../ledger/shared.ts";
 import { parseAliases } from "./hints.ts";
 import { seriesWithSchedules } from "./rules.ts";
@@ -77,7 +82,9 @@ async function occurrenceOf(tx: Reader, occurrenceId: string) {
 			status: recurringOccurrences.status,
 			closedSource: recurringOccurrences.closedSource,
 			expectedAmount: recurringOccurrences.expectedAmount,
+			dueOn: recurringOccurrences.dueOn,
 			seriesAmount: recurringTransactions.amount,
+			accountId: recurringTransactions.accountId,
 			destinationAccountId: recurringTransactions.destinationAccountId,
 		})
 		.from(recurringOccurrences)
@@ -1029,4 +1036,56 @@ export async function paymentCandidates(
 			)
 			.slice(0, CANDIDATES_SHOWN)
 	);
+}
+
+// Sure's `candidate_window`: 40 days either side of the due date, never past today.
+const WINDOW_DAYS = 40;
+
+// Sure's `FALLBACK_SHOWN`.
+const OTHERS_SHOWN = 15;
+
+/**
+ * « Rechercher dans toutes les transactions », Sure's `candidate_entries`:
+ * the transactions an owner would plausibly link by hand, nearest what
+ * remains to pay first, else the expected amount, then nearest the due date.
+ * Without `q` they are dated from 40 days before the due date to 40 after or
+ * today, whichever comes first; with `q`, any date. The ranked list's
+ * transactions are left out, so the two never repeat each other.
+ */
+export async function otherPaymentCandidates(
+	deps: ServiceDeps,
+	occurrenceId: string,
+	q = "",
+): Promise<OccurrenceTransaction[]> {
+	const day = today(deps.timeZone);
+	const occurrence = await occurrenceOf(deps.db, occurrenceId);
+
+	if (occurrence === undefined) {
+		throw notFound("occurrence");
+	}
+
+	const held = await deps.db
+		.select({ entryId: recurringAllocations.entryId })
+		.from(recurringAllocations)
+		.where(eq(recurringAllocations.recurringOccurrenceId, occurrenceId));
+	const remaining = remainingOf(occurrence.expected, await confirmedOf(deps.db, occurrenceId));
+	const end = addDays(occurrence.dueOn, WINDOW_DAYS);
+	const ranked = new Set(
+		(await paymentCandidates(deps, occurrenceId)).map((candidate) => candidate.entryId),
+	);
+	const found = await occurrenceTransactions(deps.db, {
+		accountId: occurrence.accountId,
+		currency: occurrence.currency,
+		sign: occurrence.seriesAmount < 0 ? "outflow" : "inflow",
+		transfers: occurrence.destinationAccountId !== null,
+		held: held.flatMap((one) => (one.entryId === null ? [] : [one.entryId])),
+		window: { start: addDays(occurrence.dueOn, -WINDOW_DAYS), end: end < day ? end : day },
+		q: q.trim(),
+		target: remaining > 0 ? remaining : occurrence.expected,
+		dueOn: occurrence.dueOn,
+		// Read past the cut, so the list stays full once the ranked ones are gone.
+		limit: OTHERS_SHOWN + CANDIDATES_SHOWN,
+	});
+
+	return found.filter((entry) => !ranked.has(entry.entryId)).slice(0, OTHERS_SHOWN);
 }

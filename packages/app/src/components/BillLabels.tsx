@@ -70,18 +70,7 @@ export function PartialLabel({ row }: { row: BillRowData }) {
 /** A matcher score in ten-thousandths, as « 87 % ». */
 export const confidenceText = (score: number) => percent.format(score / 10_000);
 
-/**
- * Sure's `bills_match_reasons`: the signals the matcher wrote, in words.
- * The account signal is never said: every candidate shares it.
- */
-export function MatchReasons({
-	signals,
-	currency,
-	expected,
-	actual,
-	dueOn,
-	paidOn,
-}: {
+type ReasonsInput = {
 	signals: {
 		merchant?: number | undefined;
 		name?: number | undefined;
@@ -95,8 +84,16 @@ export function MatchReasons({
 	actual: MinorUnits | null;
 	dueOn: string;
 	paidOn: string | null;
-}) {
-	const { t } = useTranslation();
+};
+
+/**
+ * Sure's `bills_match_reasons`: the signals the matcher wrote, in words.
+ * The account signal is never said: every candidate shares it.
+ */
+export function matchReasons(
+	{ signals, currency, expected, actual, dueOn, paidOn }: ReasonsInput,
+	t: TFunction,
+): string[] {
 	const reasons: string[] = [];
 
 	if (signals.merchant !== undefined) {
@@ -134,6 +131,14 @@ export function MatchReasons({
 					: t("bills.match.after", { count: days }),
 		);
 	}
+
+	return reasons;
+}
+
+/** `matchReasons` as pills. */
+export function MatchReasons(input: ReasonsInput) {
+	const { t } = useTranslation();
+	const reasons = matchReasons(input, t);
 
 	return reasons.length === 0 ? null : (
 		<ul aria-label={t("bills.match.label")} className="flex flex-wrap gap-1.5">

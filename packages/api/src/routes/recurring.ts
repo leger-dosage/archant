@@ -14,6 +14,7 @@ import {
 	addRecurringSchema,
 	markPaidSchema,
 	occurrencePatchSchema,
+	othersQuerySchema,
 	recurringPatchSchema,
 } from "../schemas/recurring.ts";
 import { allBills, billDetail } from "../services/recurring/all-bills.ts";
@@ -29,6 +30,7 @@ import {
 	confirmPayment,
 	editOccurrence,
 	markPaid,
+	otherPaymentCandidates,
 	paymentCandidates,
 	rejectPayment,
 	removePayment,
@@ -98,6 +100,11 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.get("/occurrences/:id/candidates", async (c) =>
 			c.json({ data: await paymentCandidates(deps, c.req.param("id")) }, 200),
 		)
+		.get("/occurrences/:id/others", validated("query", othersQuerySchema), async (c) => {
+			const data = await otherPaymentCandidates(deps, c.req.param("id"), c.req.valid("query").q);
+
+			return c.json({ data }, 200);
+		})
 		.patch("/occurrences/:id", validated("json", occurrencePatchSchema), async (c) =>
 			c.json({ data: await editOccurrence(deps, c.req.param("id"), c.req.valid("json")) }, 200),
 		)

@@ -269,7 +269,7 @@ test("the sheet adds a payment by amount and date, which reads partial, and remo
 
 	await visit(page);
 	const sheet = await openSheet(page, name);
-	const add = sheet.getByRole("region", { name: "Ajouter un paiement" });
+	const add = sheet.getByRole("region", { name: "Trouver un paiement" });
 	await expect(add.getByLabel("Montant", { exact: true })).toHaveValue("300,00");
 	await add.getByLabel("Montant", { exact: true }).fill("abc");
 	await add.getByRole("button", { name: "Enregistrer le paiement" }).click();
@@ -333,34 +333,74 @@ test("the sheet's menu postpones an occurrence a week, then skips it, and offers
 	await expect(row(page, name).filter({ hasText: "Reportée au" })).toHaveCount(0);
 });
 
-test("« Ajouter un paiement » offers the transactions the matcher scores, with their percentage and signals", async ({
+test("« Trouver un paiement » offers the transactions the matcher scores, with their percentage and signals", async ({
 	page,
 	api,
 }) => {
 	const account = await openAccount(api);
 	const name = uniqueName("Mutuelle");
+	const bakery = uniqueName("Boulangerie");
 	await declare(api, account.id, name, "32,50", 1);
 	await api.addTransaction(account.id, { date: daysAgo(1), label: name, amount: "-32,50" });
-	await api.addTransaction(account.id, {
-		date: daysAgo(1),
-		label: uniqueName("Boulangerie"),
-		amount: "-32,50",
-	});
+	await api.addTransaction(account.id, { date: daysAgo(1), label: bakery, amount: "-32,50" });
+	await api.addTransaction(account.id, { date: daysAgo(0), label: name, amount: "-33,00" });
 
 	await visit(page);
 	const sheet = await openSheet(page, name);
-	const candidates = sheet.getByRole("list", { name: "Opérations correspondantes" });
-	// Its own items, not the signals listed inside each.
-	await expect(candidates.locator(":scope > li")).toHaveCount(1);
-	await expect(candidates).toContainText(/95\s%/u);
+	const best = sheet.getByRole("group", { name });
+	await expect(best).toContainText(/95\s%/u);
 	await expect(
-		candidates.getByRole("list", { name: "Pourquoi cette correspondance" }).getByRole("listitem"),
+		best.getByRole("list", { name: "Pourquoi cette correspondance" }).getByRole("listitem"),
 	).toHaveText(["Le nom correspond", "Montant exact", "Correspondance de date d'échéance"]);
+	// The other one it scores, its reasons on one line.
+	await expect(
+		sheet.getByRole("list", { name: "Autres correspondances probables" }).getByRole("button"),
+	).toHaveAccessibleName(new RegExp(`^Lier le paiement ${name}, .* · Le nom correspond`, "u"));
+	// The matcher scored one, so the search stays folded, and lists the other nearby.
+	await sheet.getByText("Rechercher dans toutes les transactions").click();
+	await expect(
+		sheet
+			.getByRole("list", { name: "Rechercher dans toutes les transactions" })
+			.getByRole("button"),
+	).toHaveAccessibleName(new RegExp(`^Lier le paiement ${bakery}`, "u"));
 
-	await candidates.getByRole("button", { name: `Utiliser ${name}` }).click();
+	await best.getByRole("button", { name: "Lier le paiement", exact: true }).click();
 	await expect(toast(page, "Paiement ajouté")).toBeVisible();
 	await expect(sheet.getByRole("list", { name: "Paiements" })).toContainText(name);
 	// It settles the occurrence by itself: paid.
+	await expect(sheet.getByRole("button", { name: "Rouvrir" })).toBeVisible();
+});
+
+test("« Rechercher dans toutes les transactions » finds a payment months before the due date and links it", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Taxe foncière");
+	const label = uniqueName("DGFIP PRELEVEMENT");
+	await declare(api, account.id, name, "812,00", -4);
+	await api.addTransaction(account.id, { date: daysAgo(330), label, amount: "-812,00" });
+
+	await visit(page);
+	const sheet = await openSheet(page, name);
+	const found = sheet.getByRole("region", { name: "Trouver un paiement" });
+	// Nothing scores, so the search starts open, on nothing nearby.
+	await expect(found).toContainText("Rien ici ne ressemble encore à un paiement de cette facture.");
+	await expect(found).toContainText("Aucune transaction proche à lier.");
+
+	const search = found.getByRole("searchbox", { name: "Rechercher des transactions" });
+	await search.fill("introuvable");
+	await search.press("Enter");
+	await expect(found).toContainText("Aucun résultat pour introuvable.");
+
+	await search.fill(label);
+	await search.press("Enter");
+	await found
+		.getByRole("list", { name: "Rechercher dans toutes les transactions" })
+		.getByRole("button", { name: new RegExp(`^Lier le paiement ${label}`, "u") })
+		.click();
+	await expect(toast(page, "Paiement ajouté")).toBeVisible();
+	await expect(sheet.getByRole("list", { name: "Paiements" })).toContainText(label);
 	await expect(sheet.getByRole("button", { name: "Rouvrir" })).toBeVisible();
 });
 
