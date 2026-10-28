@@ -1,6 +1,7 @@
 import type { BillRowData, SuggestedPaymentData } from "@/hooks/useRecurring";
 import type { ReactNode } from "react";
 
+import { AlarmClockIcon, EllipsisIcon, SkipForwardIcon } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -21,6 +22,12 @@ import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { SuggestionActions } from "@/components/SuggestionActions";
 import { Button } from "@/components/ui/button";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -44,7 +51,7 @@ import {
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
-import { dayAndMonth, toIsoDate } from "@/lib/dates";
+import { dayAndMonth, toIsoDate, weekFromToday } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { settle } from "@/lib/settle";
 import { cn } from "@/lib/utils";
@@ -239,7 +246,11 @@ function AddPayment({ occurrence }: { occurrence: BillRowData }) {
 
 const failed = (error: unknown) => showErrorToast(errorCodeOf(error));
 
-/** An open occurrence's actions: mark it paid, add a payment, postpone it, change its amount, skip it. */
+/**
+ * An open occurrence's actions, as Sure's `show.html.erb:270-300`: mark it
+ * paid and add a payment, then a menu with « Ignorer » and « Reporter d'une
+ * semaine ». No view of Sure overrides an occurrence's amount.
+ */
 function OpenActions({ occurrence }: { occurrence: BillRowData }) {
 	const { t } = useTranslation();
 	const id = occurrence.occurrenceId;
@@ -247,11 +258,17 @@ function OpenActions({ occurrence }: { occurrence: BillRowData }) {
 	const close = useSetOccurrenceClosed(id);
 	const edit = useEditOccurrence(id);
 	const [paidOn, setPaidOn] = useState(() => toIsoDate());
-	const [until, setUntil] = useState(() => occurrence.snoozedUntil ?? occurrence.effectiveDueOn);
-	const [expected, setExpected] = useState(() =>
-		amountToText(occurrence.expected, occurrence.currency),
-	);
-	const expectedError = useFieldError("expectedAmount");
+	const busy = close.isPending || edit.isPending;
+
+	const postpone = () => {
+		const until = weekFromToday(occurrence);
+
+		void settle(
+			edit.mutateAsync({ snoozedUntil: until }),
+			() => toast.success(t("bills.sheet.postponed", { date: dayAndMonth(until) })),
+			failed,
+		);
+	};
 
 	return (
 		<>
@@ -265,96 +282,53 @@ function OpenActions({ occurrence }: { occurrence: BillRowData }) {
 					<Label htmlFor="paid-on">{t("bills.sheet.paidOn")}</Label>
 					<DateField id="paid-on" value={paidOn} onChange={setPaidOn} />
 				</div>
-				<Button
-					className="self-start"
-					disabled={markPaid.isPending}
-					onClick={() =>
-						void settle(
-							markPaid.mutateAsync(paidOn),
-							() => toast.success(t("bills.sheet.markedPaid")),
-							failed,
-						)
-					}
-				>
-					{t("bills.sheet.markPaid")}
-				</Button>
+				<div className="flex items-center justify-between gap-3">
+					<Button
+						disabled={markPaid.isPending}
+						onClick={() =>
+							void settle(
+								markPaid.mutateAsync(paidOn),
+								() => toast.success(t("bills.sheet.markedPaid")),
+								failed,
+							)
+						}
+					>
+						{t("bills.sheet.markPaid")}
+					</Button>
+					<DropdownMenu>
+						<DropdownMenuTrigger asChild>
+							<Button
+								variant="ghost"
+								size="icon"
+								aria-label={t("bills.sheet.menu", { name: occurrence.name })}
+							>
+								<EllipsisIcon />
+							</Button>
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem
+								disabled={busy}
+								onSelect={() =>
+									void settle(
+										close.mutateAsync("skip"),
+										() => toast.success(t("bills.sheet.skippedToast")),
+										failed,
+									)
+								}
+							>
+								<SkipForwardIcon />
+								{t("bills.sheet.skip")}
+							</DropdownMenuItem>
+							<DropdownMenuItem disabled={busy} onSelect={postpone}>
+								<AlarmClockIcon />
+								{t("bills.sheet.postpone")}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				</div>
 			</Action>
 
 			<AddPayment occurrence={occurrence} />
-
-			<Action title={t("bills.sheet.postpone")}>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="snoozed-until">{t("bills.sheet.postponeTo")}</Label>
-					<DateField id="snoozed-until" value={until} onChange={setUntil} />
-				</div>
-				<Button
-					variant="outline"
-					className="self-start"
-					disabled={edit.isPending}
-					onClick={() =>
-						void settle(
-							edit.mutateAsync({ snoozedUntil: until }),
-							() => toast.success(t("bills.sheet.postponed", { date: dayAndMonth(until) })),
-							failed,
-						)
-					}
-				>
-					{t("bills.sheet.postpone")}
-				</Button>
-			</Action>
-
-			<Action title={t("bills.sheet.changeAmount")}>
-				<p className="text-xs text-muted-foreground">{t("bills.sheet.changeAmountHint")}</p>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="expected-amount">{t("bills.sheet.expected")}</Label>
-					<Input
-						id="expected-amount"
-						inputMode="decimal"
-						autoComplete="off"
-						className="text-right tabular-nums"
-						value={expected}
-						aria-invalid={expectedError.code !== null}
-						{...(expectedError.code === null
-							? {}
-							: { "aria-describedby": "expected-amount-error" })}
-						onChange={(event) => setExpected(event.target.value)}
-					/>
-					<FieldMessage
-						id="expected-amount-error"
-						error={expectedError.code === null ? undefined : { type: expectedError.code }}
-					/>
-				</div>
-				<Button
-					variant="outline"
-					className="self-start"
-					disabled={edit.isPending}
-					onClick={() => {
-						expectedError.setCode(null);
-						void settle(
-							edit.mutateAsync({ expectedAmount: expected }),
-							() => toast.success(t("bills.sheet.amountChanged")),
-							expectedError.fail,
-						);
-					}}
-				>
-					{t("bills.sheet.changeAmount")}
-				</Button>
-			</Action>
-
-			<Button
-				variant="outline"
-				className="self-start"
-				disabled={close.isPending}
-				onClick={() =>
-					void settle(
-						close.mutateAsync("skip"),
-						() => toast.success(t("bills.sheet.skippedToast")),
-						failed,
-					)
-				}
-			>
-				{t("bills.sheet.skip")}
-			</Button>
 		</>
 	);
 }
@@ -516,9 +490,9 @@ export function OccurrenceSheet({
 										{t("bills.sheet.reopen")}
 									</Button>
 								) : (
-									// Keyed by the occurrence's amounts, so the fields start from what it owes now.
+									// Keyed by what it owes, so the payment's amount starts from what remains.
 									<OpenActions
-										key={`${occurrence.expected} ${occurrence.remaining} ${occurrence.snoozedUntil}`}
+										key={`${occurrence.expected} ${occurrence.remaining}`}
 										occurrence={occurrence}
 									/>
 								))}

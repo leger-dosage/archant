@@ -240,7 +240,7 @@ test("the sheet marks an occurrence paid with a payment of no transaction, then 
 	// Closed: « Rouvrir » alone.
 	await expect(sheet.getByRole("button", { name: "Rouvrir" })).toBeVisible();
 	await expect(sheet.getByRole("button", { name: "Marquer comme payée" })).toHaveCount(0);
-	await expect(sheet.getByRole("button", { name: "Ignorer cette échéance" })).toHaveCount(0);
+	await expect(sheet.getByRole("button", { name: `Actions pour ${name}` })).toHaveCount(0);
 
 	await page.keyboard.press("Escape");
 	await expect(sheet).toBeHidden();
@@ -296,7 +296,7 @@ test("the sheet adds a payment by amount and date, which reads partial, and remo
 	await expect(sheet).toContainText(`${euros(30_000)} restant`);
 });
 
-test("the sheet postpones an occurrence, changes its amount alone, then skips it", async ({
+test("the sheet's menu postpones an occurrence a week, then skips it, and offers no amount field", async ({
 	page,
 	api,
 }) => {
@@ -306,24 +306,27 @@ test("the sheet postpones an occurrence, changes its amount alone, then skips it
 
 	await visit(page);
 	const sheet = await openSheet(page, name);
-	await sheet.getByLabel("Reporter au").fill(typed(daysAgo(-6)));
-	await sheet.getByRole("button", { name: "Reporter", exact: true }).click();
-	await expect(toast(page, `Échéance reportée au ${spelled(daysAgo(-6))}`)).toBeVisible();
-	await expect(sheet).toContainText(`Reportée au ${spelled(daysAgo(-6))}`);
+	await expect(sheet.getByLabel("Montant attendu")).toHaveCount(0);
+	await expect(sheet.getByLabel("Reporter au")).toHaveCount(0);
+	await expect(sheet.getByRole("button", { name: "Modifier le montant" })).toHaveCount(0);
 
-	await sheet.getByLabel("Montant attendu").fill("52,00");
-	await sheet.getByRole("button", { name: "Modifier le montant" }).click();
-	await expect(toast(page, "Montant modifié")).toBeVisible();
-	await expect(sheet).toContainText(`${euros(5200)} restant`);
+	await sheet.getByRole("button", { name: `Actions pour ${name}` }).click();
+	const menu = page.getByRole("menu");
+	await expect(menu.getByRole("menuitem")).toHaveText(["Ignorer", "Reporter d'une semaine"]);
+	await menu.getByRole("menuitem", { name: "Reporter d'une semaine" }).click();
+	await expect(toast(page, `Reportée au ${spelled(daysAgo(-7))}`)).toBeVisible();
+	await expect(sheet).toContainText(`Reportée au ${spelled(daysAgo(-7))}`);
 
 	await page.keyboard.press("Escape");
-	await expect(row(page, name).filter({ hasText: "Reportée au" })).toContainText(euros(5200));
+	await expect(row(page, name)).toContainText(`Reportée au ${spelled(daysAgo(-7))}`);
 
 	await openSheet(page, name);
-	await sheet.getByRole("button", { name: "Ignorer cette échéance" }).click();
+	await sheet.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Ignorer" }).click();
 	await expect(toast(page, "Échéance ignorée")).toBeVisible();
 	await expect(sheet).toContainText("Ignorée");
 	await expect(sheet.getByRole("button", { name: "Rouvrir" })).toBeVisible();
+	await expect(sheet.getByRole("button", { name: `Actions pour ${name}` })).toHaveCount(0);
 
 	await page.keyboard.press("Escape");
 	// A skipped occurrence is not listed.

@@ -164,3 +164,15 @@ const DAY_MS = 86_400_000;
 /** Days from `from` to `to`, both `YYYY-MM-DD`. */
 export const daysFrom = (from: string, to: string) =>
 	Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY_MS);
+
+/**
+ * Sure's `Date.current + 7` for « Reporter d'une semaine »: today in
+ * `APP_TIMEZONE`, read off a row as its effective due date less the `days`
+ * the server counted to it, so the browser's own zone never moves the day.
+ */
+export function weekFromToday(row: { effectiveDueOn: string; days: number }): string {
+	const day = new Date(`${row.effectiveDueOn}T00:00:00Z`);
+	day.setUTCDate(day.getUTCDate() - row.days + 7);
+
+	return day.toISOString().slice(0, 10);
+}

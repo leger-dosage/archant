@@ -647,9 +647,7 @@ reader.describe("a viewer", () => {
 		await expectNone(sheet, [
 			{ role: "button", name: "Marquer comme payée" },
 			{ role: "button", name: "Enregistrer le paiement" },
-			{ role: "button", name: "Reporter" },
-			{ role: "button", name: "Modifier le montant" },
-			{ role: "button", name: "Ignorer cette échéance" },
+			{ role: "button", name: `Actions pour ${prefix} facture proche` },
 			{ role: "button", name: "Rouvrir" },
 		]);
 		await expect(sheet.getByRole("textbox")).toHaveCount(0);
