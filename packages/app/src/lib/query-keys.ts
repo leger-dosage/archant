@@ -122,6 +122,9 @@ export const queryKeys = {
 		occurrence: (id: string) => ["recurring", "occurrence", id] as const,
 		/** Under `all`: a payment added or removed changes what a transaction has left. */
 		paymentCandidates: (id: string) => ["recurring", "occurrence", id, "candidates"] as const,
+		/** Under `all`, by its search: a payment linked leaves the list. */
+		otherCandidates: (id: string, q: string) =>
+			["recurring", "occurrence", id, "others", q] as const,
 	},
 	/**
 	 * Bank connections. `setup` changes when credentials are saved or removed,

@@ -901,7 +901,7 @@ test("« Marquer comme récurrent » follows a mortgage payment, which the next 
 	const occurrence = page.getByRole("dialog", { name });
 	await expect(
 		occurrence
-			.getByRole("list", { name: "Opérations correspondantes" })
+			.getByRole("region", { name: "Trouver un paiement" })
 			.getByRole("list", { name: "Pourquoi cette correspondance" })
 			.getByRole("listitem"),
 	).toHaveText([

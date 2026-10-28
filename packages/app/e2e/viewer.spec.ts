@@ -614,7 +614,7 @@ reader.describe("a viewer", () => {
 		// Story 23.4: the bills page and an occurrence's sheet, without any action.
 		const candidatesRead: string[] = [];
 		page.on("request", (request) => {
-			if (/\/api\/recurring\/occurrences\/[^/]+\/candidates/u.test(request.url())) {
+			if (/\/api\/recurring\/occurrences\/[^/]+\/(?:candidates|others)/u.test(request.url())) {
 				candidatesRead.push(request.url());
 			}
 		});

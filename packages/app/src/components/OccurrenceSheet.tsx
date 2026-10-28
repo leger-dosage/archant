@@ -1,8 +1,14 @@
-import type { BillRowData, SuggestedPaymentData } from "@/hooks/useRecurring";
+import type { BillRowData, PaymentCandidateData, SuggestedPaymentData } from "@/hooks/useRecurring";
 import type { ReactNode } from "react";
 
-import { AlarmClockIcon, EllipsisIcon, SkipForwardIcon } from "lucide-react";
-import { useState } from "react";
+import {
+	AlarmClockIcon,
+	ChevronRightIcon,
+	EllipsisIcon,
+	SearchIcon,
+	SkipForwardIcon,
+} from "lucide-react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
@@ -11,6 +17,7 @@ import { formatMoney, toMinorUnits } from "@archant/data/money";
 import {
 	MatchReasons,
 	confidenceText,
+	matchReasons,
 	dueLabel,
 	isClosed,
 	isPartial,
@@ -29,6 +36,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Label } from "@/components/ui/label";
 import {
 	Sheet,
@@ -44,6 +52,7 @@ import {
 	useEditOccurrence,
 	useMarkPaid,
 	useOccurrence,
+	useOtherPaymentCandidates,
 	usePaymentCandidates,
 	useRemovePayment,
 	useSetOccurrenceClosed,
@@ -123,10 +132,141 @@ function Suggestion({ suggestion, admin }: { suggestion: SuggestedPaymentData; a
 	);
 }
 
+/** One transaction a press links, as Sure's `_candidate` row: the whole row is the button. */
+function CandidateRow({
+	label,
+	detail,
+	amount,
+	currency,
+	disabled,
+	onLink,
+}: {
+	label: string;
+	detail: string;
+	amount: number;
+	currency: string;
+	disabled: boolean;
+	onLink: () => void;
+}) {
+	const { t } = useTranslation();
+
+	return (
+		<li>
+			<button
+				type="button"
+				disabled={disabled}
+				aria-label={t("bills.sheet.linkCandidate", {
+					label,
+					detail,
+					amount: formatMoney({ amount: toMinorUnits(Math.abs(amount)), currency }),
+				})}
+				className="flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+				onClick={onLink}
+			>
+				<span className="flex min-w-0 flex-col">
+					<span className="truncate text-sm">{label}</span>
+					<span className="truncate text-xs text-muted-foreground">{detail}</span>
+				</span>
+				<Money amount={toMinorUnits(Math.abs(amount))} currency={currency} />
+			</button>
+		</li>
+	);
+}
+
 /**
- * « Ajouter un paiement »: the transactions the matcher's `explain` scores,
- * each with its percentage and its signals, or an amount and a date with no
- * transaction. Read only by an administrator, the one who may add one.
+ * « Rechercher dans toutes les transactions », Sure's disclosure under the
+ * suggestions: the nearby transactions nearest what remains, or every one
+ * whose label holds the words searched, on Enter.
+ */
+function SearchAll({
+	occurrenceId,
+	defaultOpen,
+	disabled,
+	onLink,
+}: {
+	occurrenceId: string;
+	defaultOpen: boolean;
+	disabled: boolean;
+	onLink: (entryId: string) => void;
+}) {
+	const { t } = useTranslation();
+	const [open, setOpen] = useState(defaultOpen);
+	const [text, setText] = useState("");
+	const [query, setQuery] = useState("");
+	// Read once unfolded: each read scores the matcher's candidates again, to leave them out.
+	const others = useOtherPaymentCandidates(occurrenceId, query, open);
+
+	return (
+		<details className="group" open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+			<summary className="flex cursor-pointer items-center gap-1 py-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+				<ChevronRightIcon
+					aria-hidden="true"
+					className="size-4 transition-transform group-open:rotate-90"
+				/>
+				{t("bills.sheet.searchAll")}
+			</summary>
+			<div className="flex flex-col gap-2 pt-2">
+				<form
+					role="search"
+					onSubmit={(event) => {
+						event.preventDefault();
+						setQuery(text.trim());
+					}}
+				>
+					<InputGroup>
+						<InputGroupAddon>
+							<SearchIcon aria-hidden />
+						</InputGroupAddon>
+						<InputGroupInput
+							type="search"
+							maxLength={200}
+							aria-label={t("bills.sheet.search")}
+							placeholder={t("bills.sheet.search")}
+							value={text}
+							onChange={(event) => setText(event.target.value)}
+						/>
+					</InputGroup>
+				</form>
+				{others.isPending ? (
+					<Skeleton className="h-12 w-full" aria-hidden="true" />
+				) : others.isError ? (
+					<p role="alert" className="text-sm text-muted-foreground">
+						{t(`errors.${errorCodeOf(others.error)}`)}
+					</p>
+				) : others.data.length === 0 ? (
+					<p className="px-1 text-sm text-muted-foreground">
+						{query === "" ? t("bills.sheet.noNearby") : t("bills.sheet.noResults", { query })}
+					</p>
+				) : (
+					<ul
+						aria-label={t("bills.sheet.searchAll")}
+						className="flex flex-col divide-y divide-line"
+					>
+						{others.data.map((entry) => (
+							<CandidateRow
+								key={entry.entryId}
+								label={entry.label}
+								detail={`${formatShortDate(entry.date)} · ${entry.accountName}`}
+								amount={entry.amount}
+								currency={entry.currency}
+								disabled={disabled}
+								onLink={() => onLink(entry.entryId)}
+							/>
+						))}
+					</ul>
+				)}
+			</div>
+		</details>
+	);
+}
+
+/**
+ * Sure's « Trouver un paiement », « Ajouter un autre paiement » once part is
+ * paid: the transaction the matcher's `explain` scores highest as a card,
+ * the others it scores under « Autres correspondances probables », then
+ * « Rechercher dans toutes les transactions », open when nothing scores;
+ * and an amount and a date with no transaction. Read only by an
+ * administrator, the one who may link one.
  */
 function AddPayment({ occurrence }: { occurrence: BillRowData }) {
 	const { t } = useTranslation();
@@ -139,13 +279,22 @@ function AddPayment({ occurrence }: { occurrence: BillRowData }) {
 	const amountError = useFieldError("amount");
 
 	const added = () => toast.success(t("bills.sheet.added"));
+	const link = (entryId: string) =>
+		void settle(add.mutateAsync({ entryId }), added, (error) => showErrorToast(errorCodeOf(error)));
+	const reasonsOf = (candidate: PaymentCandidateData) => ({
+		signals: candidate.signals,
+		currency: candidate.currency,
+		expected: occurrence.expected,
+		actual: toMinorUnits(Math.abs(candidate.amount)),
+		dueOn: occurrence.effectiveDueOn,
+		paidOn: candidate.date,
+	});
+	const [best, ...rest] = candidates.data ?? [];
+	const bestId = useId();
 
 	return (
-		<Action title={t("bills.sheet.addPayment")}>
+		<Action title={t(isPartial(occurrence) ? "bills.sheet.addAnother" : "bills.sheet.find")}>
 			<div className="flex flex-col gap-2">
-				<h4 className="text-xs font-medium text-muted-foreground uppercase">
-					{t("bills.sheet.candidates")}
-				</h4>
 				{candidates.isPending && <Skeleton className="h-12 w-full" aria-hidden="true" />}
 				{candidates.isError && (
 					<p role="alert" className="text-sm text-muted-foreground">
@@ -153,55 +302,76 @@ function AddPayment({ occurrence }: { occurrence: BillRowData }) {
 					</p>
 				)}
 				{candidates.data !== undefined &&
-					(candidates.data.length === 0 ? (
-						<p className="text-sm text-muted-foreground">{t("bills.sheet.noCandidates")}</p>
+					(best === undefined ? (
+						<p className="px-1 text-sm text-muted-foreground">{t("bills.sheet.noCandidates")}</p>
 					) : (
-						<ul
-							aria-label={t("bills.sheet.candidates")}
-							className="flex flex-col divide-y divide-line"
-						>
-							{candidates.data.map((candidate) => (
-								<li key={candidate.entryId} className="flex flex-col gap-2 py-2 text-sm">
-									<div className="flex items-start justify-between gap-3">
-										<div className="flex min-w-0 flex-col">
-											<span className="truncate font-medium">{candidate.label}</span>
-											<span className="text-xs text-muted-foreground">
-												{formatShortDate(candidate.date)}
-											</span>
-										</div>
-										<span className="flex shrink-0 items-center gap-2">
-											<span className="text-xs text-muted-foreground tabular-nums">
-												{confidenceText(candidate.score)}
-											</span>
-											<Money amount={candidate.amount} currency={candidate.currency} signed />
+						<>
+							<div
+								role="group"
+								aria-labelledby={bestId}
+								className="flex flex-col gap-3 rounded-lg bg-muted/50 p-3 text-sm"
+							>
+								<div className="flex items-start justify-between gap-3">
+									<div className="flex min-w-0 flex-col">
+										<span id={bestId} className="truncate font-medium">
+											{best.label}
+										</span>
+										<span className="text-xs text-muted-foreground">
+											{formatShortDate(best.date)}
 										</span>
 									</div>
-									<MatchReasons
-										signals={candidate.signals}
-										currency={candidate.currency}
-										expected={occurrence.expected}
-										actual={toMinorUnits(Math.abs(candidate.amount))}
-										dueOn={occurrence.effectiveDueOn}
-										paidOn={candidate.date}
-									/>
-									<Button
-										size="sm"
-										variant="outline"
-										className="self-start"
-										disabled={add.isPending}
-										aria-label={t("bills.sheet.useCandidate", { label: candidate.label })}
-										onClick={() =>
-											void settle(add.mutateAsync({ entryId: candidate.entryId }), added, (error) =>
-												showErrorToast(errorCodeOf(error)),
-											)
-										}
+									<span className="flex shrink-0 items-center gap-2">
+										<span className="text-xs text-muted-foreground tabular-nums">
+											{confidenceText(best.score)}
+										</span>
+										<Money amount={toMinorUnits(Math.abs(best.amount))} currency={best.currency} />
+									</span>
+								</div>
+								<MatchReasons {...reasonsOf(best)} />
+								<Button
+									className="w-full"
+									disabled={add.isPending}
+									onClick={() => link(best.entryId)}
+								>
+									{t("bills.sheet.link")}
+								</Button>
+							</div>
+							{rest.length > 0 && (
+								<>
+									<h4 className="pt-1 text-xs font-medium text-muted-foreground uppercase">
+										{t("bills.sheet.otherMatches")}
+									</h4>
+									<ul
+										aria-label={t("bills.sheet.otherMatches")}
+										className="flex flex-col divide-y divide-line"
 									>
-										{t("bills.sheet.use")}
-									</Button>
-								</li>
-							))}
-						</ul>
+										{rest.map((candidate) => (
+											<CandidateRow
+												key={candidate.entryId}
+												label={candidate.label}
+												detail={[
+													formatShortDate(candidate.date),
+													...matchReasons(reasonsOf(candidate), t),
+												].join(" · ")}
+												amount={candidate.amount}
+												currency={candidate.currency}
+												disabled={add.isPending}
+												onLink={() => link(candidate.entryId)}
+											/>
+										))}
+									</ul>
+								</>
+							)}
+						</>
 					))}
+				{candidates.data !== undefined && (
+					<SearchAll
+						occurrenceId={occurrence.occurrenceId}
+						defaultOpen={best === undefined}
+						disabled={add.isPending}
+						onLink={link}
+					/>
+				)}
 			</div>
 			<form
 				noValidate

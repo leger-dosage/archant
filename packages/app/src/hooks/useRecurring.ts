@@ -43,6 +43,11 @@ export type PickerEntryData = InferResponseType<
 	200
 >["data"][number];
 
+export type PaymentCandidateData = InferResponseType<
+	(typeof api.recurring.occurrences)[":id"]["candidates"]["$get"],
+	200
+>["data"][number];
+
 /** What a series is called: its typed name, else its merchant's, else its label, as Sure's `display_name`. */
 export const recurringName = (item: Pick<RecurringData, "name" | "merchantName" | "label">) =>
 	item.name ?? item.merchantName ?? item.label;
@@ -241,6 +246,23 @@ export function usePaymentCandidates(id: string) {
 		queryKey: queryKeys.recurring.paymentCandidates(id),
 		queryFn: async () =>
 			(await unwrap(api.recurring.occurrences[":id"].candidates.$get({ param: { id } }))).data,
+	});
+}
+
+/** « Rechercher dans toutes les transactions »: the nearby transactions, or those `q` finds. */
+export function useOtherPaymentCandidates(id: string, q: string, enabled: boolean) {
+	return useQuery({
+		queryKey: queryKeys.recurring.otherCandidates(id, q),
+		enabled,
+		queryFn: async () =>
+			(
+				await unwrap(
+					api.recurring.occurrences[":id"].others.$get({
+						param: { id },
+						query: q === "" ? {} : { q },
+					}),
+				)
+			).data,
 	});
 }
 

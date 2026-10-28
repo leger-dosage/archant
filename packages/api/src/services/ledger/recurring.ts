@@ -2,7 +2,20 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { MatchEntry } from "../../domain/recurring/matcher.ts";
 import type { Transaction } from "./shared.ts";
 
-import { and, between, desc, eq, gt, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import {
+	and,
+	between,
+	desc,
+	eq,
+	gt,
+	gte,
+	inArray,
+	isNull,
+	lt,
+	notInArray,
+	or,
+	sql,
+} from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -128,6 +141,80 @@ export async function pickerTransactions(
 		)
 		.orderBy(desc(entries.date), desc(entries.createdAt), desc(entries.id))
 		.limit(limit);
+
+	return rows.map((row) => ({ ...row, amount: toMinorUnits(row.amount) }));
+}
+
+/** A transaction « Rechercher dans toutes les transactions » lists. */
+export type OccurrenceTransaction = {
+	entryId: string;
+	label: string;
+	date: IsoDate;
+	accountName: string;
+	/** Signed as the transaction (AD-5). */
+	amount: MinorUnits;
+	currency: string;
+};
+
+/**
+ * Sure's `candidate_entries` over its `candidate_scope`: transactions of
+ * `accountId`, else of every account, in `currency` and of `sign`, never a
+ * split parent nor one of `held`, a transfer side only for a recurring
+ * transfer; within `window`, or, with `q`, whose label contains it whatever
+ * its date. Nearest `target` in magnitude first, then nearest `dueOn`, then
+ * newest, `limit` at most.
+ */
+export async function occurrenceTransactions(
+	db: Reader,
+	scope: {
+		accountId: string | null;
+		currency: string;
+		sign: "outflow" | "inflow";
+		transfers: boolean;
+		held: readonly string[];
+		window: { start: IsoDate; end: IsoDate };
+		q: string;
+		target: MinorUnits;
+		dueOn: IsoDate;
+		limit: number;
+	},
+): Promise<OccurrenceTransaction[]> {
+	const rows = await db
+		.select({
+			entryId: entries.id,
+			label: transactions.label,
+			date: entries.date,
+			accountName: accounts.name,
+			amount: entries.amount,
+			currency: entries.currency,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(
+			and(
+				eq(entries.kind, "transaction"),
+				scope.accountId === null ? undefined : eq(entries.accountId, scope.accountId),
+				eq(entries.currency, scope.currency),
+				scope.sign === "outflow" ? lt(entries.amount, 0) : gt(entries.amount, 0),
+				notSplitParent,
+				scope.held.length === 0 ? undefined : notInArray(entries.id, [...scope.held]),
+				scope.transfers ? undefined : and(isNull(asOutflow.id), isNull(asInflow.id)),
+				// A search looks past the window: the payment hunted for is usually one it left out.
+				scope.q === ""
+					? between(entries.date, scope.window.start, scope.window.end)
+					: contains(transactions.label, scope.q),
+			),
+		)
+		.orderBy(
+			sql`abs(abs(${entries.amount}) - ${scope.target})`,
+			sql`abs(julianday(${entries.date}) - julianday(${scope.dueOn}))`,
+			desc(entries.date),
+			entries.id,
+		)
+		.limit(scope.limit);
 
 	return rows.map((row) => ({ ...row, amount: toMinorUnits(row.amount) }));
 }

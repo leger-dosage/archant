@@ -831,6 +831,41 @@ describe("GET /api/recurring/occurrences/:id/candidates", () => {
 	});
 });
 
+describe("GET /api/recurring/occurrences/:id/others", () => {
+	it("finds a transaction by its label past the window, refuses a long query and an unknown occurrence", async () => {
+		const { app, occurrences, account } = await suggestedMortgage();
+		const client = testClient(app).api.recurring.occurrences[":id"].others;
+		const added = await app.request(`/api/accounts/${account.id}/transactions`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ date: "2025-01-06", label: "VIR SEPA BANQUE", amount: "-571,29" }),
+		});
+		const entryId = z.object({ data: z.object({ id: z.string() }) }).parse(await added.json())
+			.data.id;
+		const param = { id: occurrences[0]!.id };
+
+		const found = await client.$get({ param, query: { q: "banque" } });
+		const long = await client.$get({ param, query: { q: "x".repeat(201) } });
+		const unknown = await client.$get({ param: { id: "nope" }, query: {} });
+
+		expect(found.status).toBe(200);
+		expect(await found.json()).toEqual({
+			data: [
+				{
+					entryId,
+					label: "VIR SEPA BANQUE",
+					date: "2025-01-06",
+					accountName: account.name,
+					amount: -57_129,
+					currency: "EUR",
+				},
+			],
+		});
+		expect(long.status).toBe(400);
+		expect(unknown.status).toBe(404);
+	});
+});
+
 describe("the occurrence's actions", () => {
 	it("mark it paid, reopen it, skip it, postpone it and change its amount", async () => {
 		const { app, occurrences } = await suggestedMortgage();

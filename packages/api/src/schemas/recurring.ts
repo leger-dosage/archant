@@ -20,6 +20,9 @@ export const addPaymentSchema = z.object({
 
 export type AddPaymentInput = z.output<typeof addPaymentSchema>;
 
+/** `?q=` of « Rechercher des transactions » in an occurrence's sheet. */
+export const othersQuerySchema = z.object({ q: z.string().max(200).optional() });
+
 /** « Marquer comme payée », today unless the owner names the day. */
 export const markPaidSchema = z.object({ paidOn: z.iso.date().optional() });
 
