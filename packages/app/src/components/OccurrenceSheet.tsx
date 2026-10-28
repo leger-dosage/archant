@@ -1,3 +1,4 @@
+import type { BillActions } from "@/components/BillActions";
 import type { BillRowData, PaymentCandidateData, SuggestedPaymentData } from "@/hooks/useRecurring";
 import type { ReactNode } from "react";
 
@@ -5,6 +6,9 @@ import {
 	AlarmClockIcon,
 	ChevronRightIcon,
 	EllipsisIcon,
+	PauseIcon,
+	PencilIcon,
+	PlayIcon,
 	SearchIcon,
 	SkipForwardIcon,
 } from "lucide-react";
@@ -14,6 +18,7 @@ import { toast } from "sonner";
 
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 
+import { useBillActions } from "@/components/BillActions";
 import {
 	MatchReasons,
 	confidenceText,
@@ -33,6 +38,7 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
@@ -49,6 +55,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
 	useAddPayment,
+	useBill,
 	useEditOccurrence,
 	useMarkPaid,
 	useOccurrence,
@@ -419,9 +426,20 @@ const failed = (error: unknown) => showErrorToast(errorCodeOf(error));
 /**
  * An open occurrence's actions, as Sure's `show.html.erb:270-300`: mark it
  * paid and add a payment, then a menu with « Ignorer » and « Reporter d'une
- * semaine ». No view of Sure overrides an occurrence's amount.
+ * semaine » and, below a separator, the bill's « Modifier la facture » and
+ * « Mettre en pause » or « Reprendre ». No view of Sure overrides an
+ * occurrence's amount.
  */
-function OpenActions({ occurrence }: { occurrence: BillRowData }) {
+function OpenActions({
+	occurrence,
+	billActions,
+	onLeave,
+}: {
+	occurrence: BillRowData;
+	billActions: BillActions;
+	/** Closes the sheet: a pause or a resume regenerates the occurrences, as Sure's `_top` frame leaves. */
+	onLeave: () => void;
+}) {
 	const { t } = useTranslation();
 	const id = occurrence.occurrenceId;
 	const markPaid = useMarkPaid(id);
@@ -429,6 +447,7 @@ function OpenActions({ occurrence }: { occurrence: BillRowData }) {
 	const edit = useEditOccurrence(id);
 	const [paidOn, setPaidOn] = useState(() => toIsoDate());
 	const busy = close.isPending || edit.isPending;
+	const bill = useBill(occurrence.seriesId).data?.record;
 
 	const postpone = () => {
 		const until = weekFromToday(occurrence);
@@ -493,6 +512,22 @@ function OpenActions({ occurrence }: { occurrence: BillRowData }) {
 								<AlarmClockIcon />
 								{t("bills.sheet.postpone")}
 							</DropdownMenuItem>
+							{bill !== undefined && bill.status !== "suggested" && (
+								<>
+									<DropdownMenuSeparator />
+									<DropdownMenuItem onSelect={() => billActions.edit(bill)}>
+										<PencilIcon />
+										{t("bills.detail.edit")}
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										disabled={billActions.pending}
+										onSelect={() => billActions.toggle(bill, onLeave)}
+									>
+										{bill.status === "active" ? <PauseIcon /> : <PlayIcon />}
+										{t(bill.status === "active" ? "recurring.pause" : "recurring.resume")}
+									</DropdownMenuItem>
+								</>
+							)}
 						</DropdownMenuContent>
 					</DropdownMenu>
 				</div>
@@ -524,6 +559,8 @@ export function OccurrenceSheet({
 	const detail = useOccurrence(occurrenceId);
 	const remove = useRemovePayment();
 	const reopen = useSetOccurrenceClosed(occurrenceId);
+	// Here rather than in `OpenActions`, which remounts once a payment changes what it owes.
+	const billActions = useBillActions();
 	// Kept while the dialog closes, so its title does not vanish mid-animation.
 	const [removing, setRemoving] = useState<{ id: string; amount: string } | null>(null);
 	const [removeOpen, setRemoveOpen] = useState(false);
@@ -664,6 +701,8 @@ export function OccurrenceSheet({
 									<OpenActions
 										key={`${occurrence.expected} ${occurrence.remaining}`}
 										occurrence={occurrence}
+										billActions={billActions}
+										onLeave={() => onOpenChange(false)}
 									/>
 								))}
 						</>
@@ -695,6 +734,7 @@ export function OccurrenceSheet({
 					}
 				/>
 			)}
+			{billActions.dialogs}
 		</Sheet>
 	);
 }

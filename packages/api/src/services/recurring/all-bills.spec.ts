@@ -398,8 +398,30 @@ describe("billDetail", () => {
 			monthlyEquivalent: 57_129,
 			currentOccurrence: { dueOn: "2026-10-30", confirmed: 0, remaining: 57_129 },
 		});
-		// (57 130 + 57 129) / 2 = 57 129,5, half up.
-		expect(detail.averagePaid).toEqual({ average: 57_130, lowest: 57_129, highest: 57_130 });
+		// (57 130 + 57 129) / 2 = 57 129,5, half up; 57 129 a month, 12 times.
+		expect(detail.analytics).toEqual({
+			average: 57_130,
+			lowest: 57_129,
+			highest: 57_130,
+			annualized: 685_548,
+			paidThisYear: 114_259,
+		});
+		expect(detail.yearly).toEqual([{ year: 2026, total: 114_259, average: 57_130 }]);
+		expect(detail.upcoming).toEqual(["2026-10-30", "2026-11-30", "2026-12-30"]);
+		// Latest first; August's was paid by hand, so it names no transaction.
+		expect(detail.history).toEqual([
+			{
+				id: september!.id,
+				dueOn: "2026-09-30",
+				status: "paid",
+				paid: 57_129,
+				payments: 1,
+				label: "PRLV CREDIT AGRICOLE",
+			},
+			{ id: "august", dueOn: "2026-08-30", status: "paid", paid: 57_130, payments: 1, label: null },
+		]);
+		// Linked by hand, the payment taught the matcher its label; its amount was within tolerance.
+		expect(detail.rules).toEqual({ aliases: ["PRLV CREDIT AGRICOLE"], learnedTolerance: null });
 		expect(detail.lastAccount).toEqual({ id: accountId, name: "Compte joint" });
 		expect(detail.installment).toBeNull();
 		expect(detail.priceChanges).toEqual([]);
@@ -445,10 +467,97 @@ describe("billDetail", () => {
 		// A payment made by hand has no transaction, so no account.
 		expect(detail.lastAccount).toBeNull();
 		await expect(billDetail(deps(), fresh.id)).resolves.toMatchObject({
-			averagePaid: null,
+			analytics: null,
+			yearly: [],
+			history: [],
 			lastAccount: null,
 			installment: null,
 		});
 		await expect(refusal(billDetail(deps(), "nope"))).resolves.toMatchObject({ code: "NOT_FOUND" });
+	});
+
+	it("sums each due year's payments over their count, four years latest first, and reads the history's statuses, counts and hints", async () => {
+		const accountId = await account();
+		const water = await declareBill(
+			deps(),
+			bill(accountId, { name: "Eau", amount: "10,00", firstDueOn: "2026-09-15" }),
+		);
+		await temp.db
+			.update(recurringTransactions)
+			.set({ nameAliases: ["EAU DU GRAND LYON"], learnedTolerance: 125 })
+			.where(eq(recurringTransactions.id, water.id));
+		const now = Date.now();
+		const closedOn = async (
+			id: string,
+			dueOn: string,
+			status: "paid" | "skipped" | "missed",
+			amounts: number[],
+			paidOn = dueOn,
+		) => {
+			await temp.db.insert(recurringOccurrences).values({
+				id,
+				recurringTransactionId: water.id,
+				originalDueOn: dueOn,
+				dueOn,
+				currency: "EUR",
+				expectedAmount: 1000,
+				status,
+				closedAt: now,
+				closedSource: "user",
+				createdAt: now,
+				updatedAt: now,
+			});
+			await oneByOne(
+				amounts.map((amount, index) => ({ amount, index })),
+				({ amount, index }) =>
+					temp.db.insert(recurringAllocations).values({
+						id: `${id}-${index}`,
+						recurringOccurrenceId: id,
+						allocatedAmount: amount,
+						state: "confirmed",
+						source: "user_created",
+						paidOn,
+						createdAt: now,
+						updatedAt: now,
+					}),
+			);
+		};
+		await closedOn("y2021", "2021-03-15", "paid", [900]);
+		await closedOn("y2022", "2022-03-15", "paid", [950]);
+		await closedOn("y2023", "2023-03-15", "paid", [960]);
+		await closedOn("y2024", "2024-03-15", "paid", [970]);
+		await closedOn("y2025a", "2025-03-15", "paid", [1000]);
+		await closedOn("y2025b", "2025-04-15", "paid", [500, 601]);
+		// Due in December, paid in January: 2025's row, this year's payments.
+		await closedOn("december", "2025-12-15", "paid", [800], "2026-01-05");
+		await closedOn("skipped", "2026-07-15", "skipped", []);
+		await closedOn("y2026", "2026-08-15", "missed", []);
+
+		const detail = await billDetail(deps(), water.id);
+
+		// 2025: 800 + 1 000 + 500 + 601 over four payments, 725,25 rounded half up. 2021 is the fifth year.
+		expect(detail.yearly).toEqual([
+			{ year: 2025, total: 2901, average: 725 },
+			{ year: 2024, total: 970, average: 970 },
+			{ year: 2023, total: 960, average: 960 },
+			{ year: 2022, total: 950, average: 950 },
+		]);
+		expect(
+			detail.history.map(({ id, status, payments, paid }) => [id, status, payments, paid]),
+		).toEqual([
+			["y2026", "missed", 0, 0],
+			["skipped", "skipped", 0, 0],
+			["december", "paid", 1, 800],
+			["y2025b", "paid", 2, 1101],
+			["y2025a", "paid", 1, 1000],
+			["y2024", "paid", 1, 970],
+			["y2023", "paid", 1, 960],
+			["y2022", "paid", 1, 950],
+			["y2021", "paid", 1, 900],
+		]);
+		expect(detail.history.every((row) => row.label === null)).toBe(true);
+		// Only December's payment was made this year.
+		expect(detail.analytics).toMatchObject({ paidThisYear: 800, annualized: 12_000 });
+		expect(detail.rules).toEqual({ aliases: ["EAU DU GRAND LYON"], learnedTolerance: 125 });
 	});
 });

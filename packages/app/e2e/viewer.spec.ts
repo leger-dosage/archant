@@ -587,9 +587,11 @@ reader.describe("a viewer", () => {
 
 			await table.getByRole("link", { name: `${prefix} boulangerie` }).click();
 			const drawer = page.getByRole("dialog", { name: `${prefix} boulangerie` });
-			await expect(drawer).toContainText("Prochain paiement");
+			await expect(drawer.getByRole("region", { name: "Prochain paiement" })).toBeVisible();
 			await expect(drawer.getByRole("list", { name: "12 derniers mois" })).toBeVisible();
 			await expectNone(drawer, [
+				{ role: "button", name: `Actions pour ${prefix} boulangerie` },
+				{ role: "button", name: `Ajouter un lien de paiement pour ${prefix} boulangerie` },
 				{ role: "button", name: "Modifier" },
 				{ role: "button", name: "Mettre en pause" },
 				{ role: "button", name: "Reprendre" },

@@ -296,6 +296,25 @@ test("the sheet adds a payment by amount and date, which reads partial, and remo
 	await expect(sheet).toContainText(`${euros(30_000)} restant`);
 });
 
+test("« Mettre en pause » from an occurrence's menu pauses its bill and closes the sheet", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const name = uniqueName("Salle de sport");
+	await declare(api, account.id, name, "29,00", -1);
+
+	await visit(page);
+	const sheet = await openSheet(page, name);
+	await sheet.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await page.getByRole("menu").getByRole("menuitem", { name: "Mettre en pause" }).click();
+
+	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
+	// Gone, not just hidden behind the menu's exit.
+	await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+	await expect(sheet).toBeHidden();
+});
+
 test("the sheet's menu postpones an occurrence a week, then skips it, and offers no amount field", async ({
 	page,
 	api,
@@ -312,7 +331,20 @@ test("the sheet's menu postpones an occurrence a week, then skips it, and offers
 
 	await sheet.getByRole("button", { name: `Actions pour ${name}` }).click();
 	const menu = page.getByRole("menu");
-	await expect(menu.getByRole("menuitem")).toHaveText(["Ignorer", "Reporter d'une semaine"]);
+	// Sure's divider items follow: the bill's edit and pause.
+	await expect(menu.getByRole("menuitem")).toHaveText([
+		"Ignorer",
+		"Reporter d'une semaine",
+		"Modifier la facture",
+		"Mettre en pause",
+	]);
+	await menu.getByRole("menuitem", { name: "Modifier la facture" }).click();
+	const edit = page.getByRole("dialog", { name: `Modifier ${name}` });
+	await expect(edit.getByLabel("Nom")).toHaveValue(name);
+	await page.keyboard.press("Escape");
+	await expect(edit).toBeHidden();
+
+	await sheet.getByRole("button", { name: `Actions pour ${name}` }).click();
 	await menu.getByRole("menuitem", { name: "Reporter d'une semaine" }).click();
 	await expect(toast(page, `Reportée au ${spelled(daysAgo(-7))}`)).toBeVisible();
 	await expect(sheet).toContainText(`Reportée au ${spelled(daysAgo(-7))}`);
@@ -723,7 +755,7 @@ test("a moving bill reads one amount in the table, « ~ » on its line with its 
 	).toContainText(band);
 });
 
-test("a bill opens as a drawer with its next payment, average, twelve months, price changes and link; closing keeps the search", async ({
+test("a bill opens as a drawer with its summary, « Payer », « Aperçu », « À venir », « Historique » and « Remarques »; closing keeps the search", async ({
 	page,
 	api,
 }) => {
@@ -738,37 +770,83 @@ test("a bill opens as a drawer with its next payment, average, twelve months, pr
 
 	await expect(page).toHaveURL(new RegExp(`/bills/${id}\\?view=all&q=`, "u"));
 	const drawer = page.getByRole("dialog", { name });
-	await expect(drawer.getByRole("region", { name: "Prochain paiement" })).toContainText(
-		euros(1349),
+	const summary = drawer.getByRole("region", { name: "Prochain paiement" });
+	await expect(summary).toContainText(`${euros(1349)} restants`);
+	await expect(summary).toContainText(`${euros(0)} sur ${euros(1349)} payés`);
+	const pay = summary.getByRole("link", { name: `Payer ${name} (ouvre un nouvel onglet)` });
+	await expect(pay).toHaveText("Payer");
+	await expect(pay).toHaveAttribute("href", "https://netflix.example/compte");
+	await expect(pay).toHaveAttribute("target", "_blank");
+	await expect(pay).toHaveAttribute("rel", "noopener noreferrer");
+
+	// « Aperçu » starts open, as Sure's.
+	const rules = drawer.getByRole("region", { name: "Comment cette facture est reconnue" });
+	await expect(rules.getByRole("listitem")).toContainText(["Mensuelle", account.name]);
+	// Linked by hand, the 15,99 € payment taught the matcher its label and an 18,5 % tolerance.
+	await expect(rules).toContainText(`Correspond aussi à ${name} prélèvement`);
+	await expect(rules).toContainText(
+		"Les montants situés à 18,5\u202f% près du montant habituel correspondent à cette facture",
 	);
-	await expect(drawer.getByRole("region", { name: "Moyenne payée" })).toContainText(
-		`de ${euros(1599)} à ${euros(1599)}`,
-	);
+	await expect(drawer.getByText("Moyenne payée")).toBeVisible();
+	await expect(drawer).toContainText(`de ${euros(1599)} à ${euros(1599)}`);
+	await expect(drawer.getByText("Par an")).toBeVisible();
+	await expect(drawer.getByText("Payé cette année")).toBeVisible();
 	const months = drawer.getByRole("list", { name: "12 derniers mois" });
 	await expect(months.getByRole("listitem")).toHaveCount(12);
 	// Paid yesterday for the occurrence due yesterday: its month holds 15,99 €.
 	await expect(months.getByRole("listitem", { name: /: 15,99\s€$/u })).toHaveCount(1);
+	await drawer.getByText("Indicateurs clés").click();
+	const years = drawer.getByRole("table");
+	await expect(years.getByRole("columnheader")).toHaveText(["Année", "Dépensé", "Paiement moyen"]);
+	await expect(years.getByRole("rowheader").first()).toHaveText(/^\d{4}$/u);
 	await expect(drawer.getByRole("region", { name: "Changements de prix" })).toContainText(
 		`${euros(1349)} → ${euros(1599)} (+18,5\u202f%)`,
 	);
 	await expect(drawer.getByRole("region", { name: "Dernier compte utilisé" })).toContainText(
 		account.name,
 	);
-	await expect(drawer.getByRole("region", { name: "Remarques" })).toContainText("Contrat 4821");
-	const link = drawer.getByRole("link", { name: "Ouvrir le site de la facture" });
-	await expect(link).toHaveAttribute("href", "https://netflix.example/compte");
-	await expect(link).toHaveAttribute("target", "_blank");
-	await expect(link).toHaveAttribute("rel", "noopener noreferrer");
 
-	await drawer.getByRole("button", { name: "Modifier" }).click();
+	// The other sections start folded.
+	const upcoming = drawer.getByRole("list", { name: "À venir" });
+	await expect(upcoming).toBeHidden();
+	await drawer.getByText("À venir", { exact: true }).click();
+	await expect(upcoming.getByRole("listitem")).toHaveCount(3);
+	await expect(upcoming.getByRole("listitem").first()).toContainText("~");
+	await drawer.getByText("Historique", { exact: true }).click();
+	await expect(drawer.getByRole("list", { name: "Historique" })).toContainText(
+		`Payée · ${name} prélèvement`,
+	);
+	await drawer.getByText("Remarques", { exact: true }).click();
+	await expect(drawer.getByText("Contrat 4821")).toBeVisible();
+
+	// Edit, pause and delete sit in Sure's header menu.
+	await drawer.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Modifier la facture" }).click();
 	const edit = page.getByRole("dialog", { name: `Modifier ${name}` });
 	await expect(edit.getByLabel("Nom")).toHaveValue(name);
 	await page.keyboard.press("Escape");
 	await expect(edit).toBeHidden();
 
-	await drawer.getByRole("button", { name: "Mettre en pause" }).click();
+	await drawer.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Mettre en pause" }).click();
 	await expect(toast(page, "Récurrence mise en pause")).toBeVisible();
-	await expect(drawer.getByRole("button", { name: "Reprendre" })).toBeVisible();
+	// Paused, its open occurrence goes; the latest, paid, is the current one.
+	await expect(summary).toContainText(`${euros(1599)} payés`);
+	await drawer.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await expect(page.getByRole("menuitem", { name: "Reprendre" })).toBeVisible();
+	await page.keyboard.press("Escape");
+	// The menu's exit leaves the drawer hidden to assistive technology until it ends.
+	await expect(page.getByRole("menu")).toBeHidden();
+
+	// Autopaid, the link stays, quiet.
+	await api.editBill(id, { autopay: true });
+	await page.reload();
+	await expect(
+		summary.getByRole("link", {
+			name: `${name} est payée automatiquement, ouvrir son portail dans un nouvel onglet`,
+		}),
+	).toHaveText("Paiement automatique");
+	await expect(summary.getByRole("link", { name: /^Payer/u })).toHaveCount(0);
 
 	await page.keyboard.press("Escape");
 	await expect(drawer).toBeHidden();
@@ -789,10 +867,23 @@ test("an installment reads which payment is next, and deleting a bill from its d
 	await page.goto(`/bills/${id}?view=all&q=${encodeURIComponent(prefix)}&sort=name`);
 	const drawer = page.getByRole("dialog", { name });
 	await expect(drawer).toContainText("Paiement 1 sur 12");
-	// Nothing paid yet: no average.
-	await expect(drawer.getByRole("region", { name: "Moyenne payée" })).toHaveCount(0);
+	// Nothing paid yet: no average, no yearly table, no history.
+	await expect(drawer.getByText("Moyenne payée")).toHaveCount(0);
+	await expect(drawer.getByText("Indicateurs clés")).toHaveCount(0);
+	await expect(drawer.getByText("Historique", { exact: true })).toHaveCount(0);
+	// No link yet: an administrator adds one; an autopaid bill says so instead.
+	await drawer.getByRole("button", { name: `Ajouter un lien de paiement pour ${name}` }).click();
+	const edit = page.getByRole("dialog", { name: `Modifier ${name}` });
+	await expect(edit.getByLabel("Lien de paiement")).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(edit).toBeHidden();
+	await api.editBill(id, { autopay: true });
+	await page.reload();
+	await expect(drawer.getByText("Paiement automatique", { exact: true })).toBeVisible();
+	await expect(drawer.getByRole("button", { name: /^Ajouter un lien/u })).toHaveCount(0);
 
-	await drawer.getByRole("button", { name: "Supprimer" }).click();
+	await drawer.getByRole("button", { name: `Actions pour ${name}` }).click();
+	await page.getByRole("menuitem", { name: "Supprimer" }).click();
 	const confirm = page.getByRole("alertdialog");
 	await expect(confirm).toContainText(`Supprimer « ${name} » ?`);
 	await confirm.getByRole("button", { name: "Supprimer" }).click();
