@@ -28,6 +28,7 @@ import { getReportingCurrency } from "../settings.ts";
 import { pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules } from "./rules.ts";
 import { getRecord, invalid, notFound, setRecurringStatus, setStatusWithin } from "./series.ts";
+import { ensureRecurringEnabled } from "./switch.ts";
 
 const alreadyExists = () =>
 	new AppError("RECURRING_ALREADY_EXISTS", "A series with this account, key and amount exists.");
@@ -229,12 +230,14 @@ export async function declareBill(
  * (AD-5), monthly on the outflow's day, last seen on its date and due next
  * from today on, named as Sure's `Transfer#name`. A series already on the
  * same account, destination, amount and currency, whatever its status,
- * answers `RECURRING_TRANSFER_ALREADY_EXISTS`, as Sure's controller.
+ * answers `RECURRING_TRANSFER_ALREADY_EXISTS`, as Sure's controller, and
+ * the switch off `RECURRING_DISABLED`, as its `transfer_feature_disabled`.
  */
 export async function markTransferRecurring(
 	deps: ServiceDeps,
 	transferId: string,
 ): Promise<RecurringRecord> {
+	await ensureRecurringEnabled(deps);
 	const date = today(deps.timeZone);
 
 	return deps.db.transaction(

@@ -954,3 +954,42 @@ test("a search of digits alone, which the router reads as a number, still filter
 	await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
 	await expect.poll(() => names(page)).toEqual([name]);
 });
+
+test("« Activer les transactions récurrentes » off takes « Factures », its pages and « À venir » away, and on brings them back", async ({
+	page,
+	request,
+}) => {
+	const rail = page.getByRole("navigation", { name: "Navigation principale" });
+	const toggle = page.getByRole("switch", { name: "Activer les transactions récurrentes" });
+
+	try {
+		await page.goto("/settings/recurring");
+		await expect(toggle).toBeChecked();
+		await expect(toggle).toHaveAccessibleDescription(/afficher les transactions projetées/u);
+		await toggle.click();
+		await expect(toast(page, "Paramètres des transactions récurrentes mis à jour")).toBeVisible();
+		await expect(toggle).not.toBeChecked();
+		await expect(page.getByRole("button", { name: "Identifier les modèles" })).toHaveCount(0);
+		await expect(page.getByRole("button", { name: "Nettoyer les obsolètes" })).toHaveCount(0);
+		await expect(rail.getByRole("link", { name: "Factures", exact: true })).toHaveCount(0);
+
+		await page.goto(PAGE);
+		await expect(page).toHaveURL(/\/$/u);
+
+		await page.goto("/transactions");
+		await expect(page.getByRole("heading", { level: 1, name: "Opérations" })).toBeVisible();
+		await expect(page.getByRole("tab", { name: "À venir" })).toHaveCount(0);
+
+		await page.goto("/settings/recurring");
+		await toggle.click();
+		await expect(toggle).toBeChecked();
+		await expect(page.getByRole("button", { name: "Identifier les modèles" })).toBeVisible();
+		await rail.getByRole("link", { name: "Factures", exact: true }).click();
+		await expect(page.getByRole("heading", { level: 1, name: "Factures" })).toBeVisible();
+	} finally {
+		// One database serves the whole run: every later test needs the bills.
+		expect((await request.put("/api/recurring/settings", { data: { enabled: true } })).ok()).toBe(
+			true,
+		);
+	}
+});

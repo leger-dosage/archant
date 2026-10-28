@@ -27,7 +27,12 @@ import {
 } from "@/hooks/useDuplicates";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
-import { recurringName, useAddRecurring, useRecurringOfEntry } from "@/hooks/useRecurring";
+import {
+	recurringName,
+	useAddRecurring,
+	useRecurringEnabled,
+	useRecurringOfEntry,
+} from "@/hooks/useRecurring";
 import { useMatchTransfer, useRejectTransfer, useUnmatchTransfer } from "@/hooks/useTransfers";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
@@ -477,6 +482,9 @@ export function RecurringBlock({
 	const admin = useIsAdmin();
 	const series = useRecurringOfEntry(transaction.id);
 	const addRecurring = useAddRecurring();
+	// While recurring transactions are off, the bill pages lead home, as Sure's
+	// `ensure_recurring_enabled`: neither the bill nor its declaration is offered.
+	const bills = useRecurringEnabled();
 	const merchants = useMerchants();
 	const accounts = useAccounts({
 		select: (data) =>
@@ -521,11 +529,13 @@ export function RecurringBlock({
 									name: recurringName(series.data),
 								})}
 					</p>
-					<Button variant="outline" asChild>
-						<Link to="/bills/$billId" params={{ billId: series.data.id }} search={{}}>
-							{t("transactions.recurring.open")}
-						</Link>
-					</Button>
+					{bills && (
+						<Button variant="outline" asChild>
+							<Link to="/bills/$billId" params={{ billId: series.data.id }} search={{}}>
+								{t("transactions.recurring.open")}
+							</Link>
+						</Button>
+					)}
 				</div>
 			) : !admin ? (
 				<p className="text-sm text-muted-foreground">{t("transactions.recurring.none")}</p>
@@ -546,9 +556,11 @@ export function RecurringBlock({
 						>
 							{t("transactions.recurring.add")}
 						</Button>
-						<Button type="button" variant="outline" disabled={dirty} onClick={create}>
-							{t("transactions.recurring.create")}
-						</Button>
+						{bills && (
+							<Button type="button" variant="outline" disabled={dirty} onClick={create}>
+								{t("transactions.recurring.create")}
+							</Button>
+						)}
 					</div>
 				</div>
 			)}

@@ -39,6 +39,7 @@ import { UserMenu } from "@/components/UserMenu";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { ACCOUNT_TABS, accountTypeGroups, isAccountTab } from "@/lib/account-group-totals";
 import { kindOf } from "@/lib/account-kinds";
@@ -82,6 +83,16 @@ const DESTINATIONS = [
 
 type Destination = (typeof DESTINATIONS)[number];
 
+/**
+ * The destinations this household has: no « Factures » while recurring
+ * transactions are off, as Sure's `bills_nav_item`, rather than an empty page.
+ */
+function useDestinations(): readonly Destination[] {
+	const recurring = useRecurringEnabled();
+
+	return recurring ? DESTINATIONS : DESTINATIONS.filter(({ to }) => to !== "/bills");
+}
+
 const ENTRY =
 	"group flex min-w-0 flex-1 flex-col items-center gap-1 py-1.5 text-[11px] leading-[1.27] font-medium text-muted-foreground outline-none hover:text-foreground aria-[current=page]:text-foreground lg:flex-none";
 
@@ -119,10 +130,11 @@ function isAt(pathname: string, { to, exact }: Destination): boolean {
  */
 function MainNav({ className }: { className?: string }) {
 	const { t } = useTranslation();
+	const destinations = useDestinations();
 
 	return (
 		<nav aria-label={t("nav.main")} className={className}>
-			{DESTINATIONS.map((destination) => (
+			{destinations.map((destination) => (
 				<DestinationLink key={destination.to} destination={destination} />
 			))}
 		</nav>
@@ -139,14 +151,17 @@ function MainNav({ className }: { className?: string }) {
 function BottomNav({ className }: { className?: string }) {
 	const { t } = useTranslation();
 	const pathname = useRouterState({ select: (router) => router.location.pathname });
-	const more = DESTINATIONS.filter((destination) => !destination.phone);
+	const destinations = useDestinations();
+	const more = destinations.filter((destination) => !destination.phone);
 	const inMore = more.some((destination) => isAt(pathname, destination));
 
 	return (
 		<nav aria-label={t("nav.main")} className={className}>
-			{DESTINATIONS.filter((destination) => destination.phone).map((destination) => (
-				<DestinationLink key={destination.to} destination={destination} />
-			))}
+			{destinations
+				.filter((destination) => destination.phone)
+				.map((destination) => (
+					<DestinationLink key={destination.to} destination={destination} />
+				))}
 			<DropdownMenu>
 				<DropdownMenuTrigger aria-current={inMore ? "page" : undefined} className={ENTRY}>
 					<EntryContent icon={EllipsisIcon} label={t("nav.more")} />

@@ -96,6 +96,11 @@ export const queryKeys = {
 		preview: (ruleId: string | null) => ["rules", "preview", ruleId] as const,
 	},
 	/**
+	 * « Activer les transactions récurrentes », outside `recurring` so a bill
+	 * write does not read it again; the rail and the bill pages follow it.
+	 */
+	recurringSettings: ["recurring-settings"] as const,
+	/**
 	 * Every recurring pattern, one query: a household has a few dozen. Not
 	 * invalidated by transaction writes: a confirmed or reverted import, which
 	 * runs the detection, invalidates it, and once stale the page refetches it

@@ -30,6 +30,7 @@ import { matchableTransactions } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, oneByOne } from "../ledger/shared.ts";
 import { allocateMatched } from "./payments.ts";
 import { seriesWithSchedules } from "./rules.ts";
+import { recurringEnabled } from "./switch.ts";
 
 type Writer = Pick<Transaction, "select" | "selectDistinct" | "insert" | "update" | "delete">;
 
@@ -345,7 +346,8 @@ const generatedOn = async (db: Pick<Transaction, "select">) =>
  * The first signed-in read of the day generates every active series'
  * occurrences, so a bill due today exists without a sync. The day is claimed
  * in one immediate transaction, as the price run's lease: of two requests
- * racing, one runs. `null` once today's run is claimed.
+ * racing, one runs. `null` once today's run is claimed, or while
+ * « Activer les transactions récurrentes » is off.
  */
 export async function startDailyOccurrences(
 	deps: ServiceDeps,
@@ -376,7 +378,9 @@ export async function startDailyOccurrences(
 		{ behavior: "immediate" },
 	);
 
-	return claimed
+	// Claimed even while the switch is off, as Sure's nightly sweep passes a
+	// disabled family by: turned on again, the next sync or day generates.
+	return claimed && (await recurringEnabled(deps))
 		? {
 				run: () =>
 					deps.db.transaction((tx) => generateOccurrences(tx, day), { behavior: "immediate" }),

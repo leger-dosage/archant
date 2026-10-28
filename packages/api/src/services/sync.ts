@@ -30,7 +30,7 @@ import {
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { includesPending } from "./bank-settings.ts";
 import { ingest } from "./ledger/ingest.ts";
-import { runRecurring } from "./recurring/pipeline.ts";
+import { runAutomaticRecurring } from "./recurring/pipeline.ts";
 import { runRulesAfterSync } from "./rules.ts";
 
 /**
@@ -319,7 +319,7 @@ async function runSync(
 
 	if (linked.length > errors.length) {
 		try {
-			await runRecurring(deps, { backfill: false });
+			await runAutomaticRecurring(deps);
 		} catch (error) {
 			// The code only: an unexpected error's message may embed bound amounts.
 			deps.logger.error({ connectionId, code: codeOf(error) }, "recurring detection failed");

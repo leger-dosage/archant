@@ -5,6 +5,7 @@ import { today } from "../../domain/dates.ts";
 import { backfillOccurrences, generateOccurrences, matchOccurrences } from "./occurrences.ts";
 import { detectPriceChanges } from "./price-changes.ts";
 import { detectWithin } from "./series.ts";
+import { recurringEnabled } from "./switch.ts";
 
 /**
  * Sure's `Pipeline#run!` at `14638a701`, in one immediate transaction:
@@ -35,4 +36,15 @@ export async function runRecurring(
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * The run an import, a revert or a sync starts: nothing while « Activer les
+ * transactions récurrentes » is off, as Sure's
+ * `IdentifyRecurringTransactionsJob` returns for a family that disabled it.
+ */
+export async function runAutomaticRecurring(deps: ServiceDeps): Promise<void> {
+	if (await recurringEnabled(deps)) {
+		await runRecurring(deps, { backfill: false });
+	}
 }

@@ -25,7 +25,7 @@ import { AppError } from "../lib/errors.ts";
 import { ruleSchema } from "../schemas/rules.ts";
 import { oneByOne } from "./ledger/shared.ts";
 import { insertSureAccounts, insertSureEntries } from "./ledger/sure-import.ts";
-import { runRecurring } from "./recurring/pipeline.ts";
+import { runAutomaticRecurring } from "./recurring/pipeline.ts";
 import { insertRules } from "./recurring/rules.ts";
 import { createRule, runRulesAfterSync } from "./rules.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -495,7 +495,7 @@ export async function afterImport(deps: SureImportDeps): Promise<void> {
 	await runRulesAfterSync(deps);
 
 	try {
-		await runRecurring(deps, { backfill: false });
+		await runAutomaticRecurring(deps);
 	} catch (error) {
 		// The code only: an unexpected error's message may embed bound amounts.
 		const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";

@@ -36,6 +36,7 @@ import { billAudit } from "../services/recurring/audit.ts";
 import { billHistory, billView, findBills, lifecycleOf } from "../services/recurring/bill-reads.ts";
 import { declareBill, updateBill } from "../services/recurring/bills.ts";
 import { recordBillPayment } from "../services/recurring/payments.ts";
+import { recurringEnabled } from "../services/recurring/switch.ts";
 import {
 	BANK_TEXT,
 	CREATES,
@@ -120,6 +121,20 @@ function billIdOf(value: string): string {
 	}
 
 	return value;
+}
+
+/**
+ * Sure's `recurring_disabled_result`, which every bill tool answers first
+ * while « Activer les transactions récurrentes » is off.
+ */
+async function refuseWhenDisabled(deps: ServiceDeps): Promise<void> {
+	if (!(await recurringEnabled(deps))) {
+		refuseWithHint(
+			"Bills & recurring transactions are disabled for this family",
+			"Do not retry. Tell the user this feature is switched off under Settings -> Recurring transactions, and answer from transaction data instead.",
+			"RECURRING_DISABLED",
+		);
+	}
 }
 
 /** A read whose `NOT_FOUND` answers as Sure's tool caller answers a missing record. */
@@ -397,6 +412,8 @@ export const getBills = defineTool({
 			.describe("When nothing matched a status: how many bills other statuses hold."),
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const status = knownValue(input.status, BILL_LIFECYCLES, "status") ?? "active";
 		const billType = knownValue(input.bill_type, BILL_TYPES, "bill_type");
 		const paymentState = knownValue(input.payment_state, BILL_PAYMENT_STATES, "payment_state");
@@ -551,6 +568,8 @@ export const getBillDetails = defineTool({
 		price_change_window: z.object({ months: z.number().int(), count: z.number().int() }),
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const history = await reachable(() => billHistory(deps, billIdOf(input.bill_id)));
 		const { bill, analytics } = history;
 		const names = await categoryNames(deps, [bill]);
@@ -690,6 +709,8 @@ export const getBillAudit = defineTool({
 		),
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const lookbackMonths =
 			wholeNumberWithin(input.lookback_months, [1, 24], {
 				error: "lookback_months must be a whole number between 1 and 24",
@@ -846,6 +867,8 @@ export const createBillTool = defineTool({
 		upcoming_due_dates: z.array(z.string()).describe("The next three from today."),
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const isIncome = flagOf(input.is_income, "is_income");
 		const autopay = flagOf(input.autopay, "autopay");
 		const accountId = isBlank(input.account_name)
@@ -967,6 +990,8 @@ export const updateBillTool = defineTool({
 		bill: billOutput,
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const billId = billIdOf(input.bill_id);
 		const current = await reachable(() => billView(deps, billId));
 		const changed: string[] = [];
@@ -1241,6 +1266,8 @@ export const recordBillPaymentTool = defineTool({
 		occurrence: occurrenceOutput.extend({ status: z.enum(OCCURRENCE_STATUSES) }),
 	}),
 	run: async (deps, input) => {
+		await refuseWhenDisabled(deps);
+
 		const billId = billIdOf(input.bill_id);
 		const settling = input.amount === undefined || input.amount === null;
 		const dueOn = isBlank(input.occurrence_due_on) ? undefined : input.occurrence_due_on!;
