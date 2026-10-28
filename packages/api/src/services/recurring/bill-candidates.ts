@@ -1,16 +1,23 @@
 import type { IsoDate } from "../../domain/dates.ts";
 import type { BillKind } from "../../schemas/bills.ts";
 import type { ServiceDeps } from "../deps.ts";
+import type { PickerTransaction } from "../ledger/recurring.ts";
 
-import { eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
+import { merchants } from "@archant/data/schema/merchants";
+import {
+	recurringAllocations,
+	recurringOccurrences,
+} from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { direction } from "../../domain/cash-flow.ts";
 import { addDays, today } from "../../domain/dates.ts";
+import { displayName } from "../../domain/recurring/bills.ts";
 import { majorUnitOf } from "../../domain/recurring/classifier.ts";
 import {
 	claimOf,
@@ -19,6 +26,8 @@ import {
 	sameKey,
 	seriesKeyOf,
 } from "../../domain/recurring/identifier.ts";
+import { PICKER_SHOWN } from "../../schemas/bills.ts";
+import { pickerTransactions } from "../ledger/recurring.ts";
 import { loadCandidates, merchantNames } from "./series.ts";
 
 // Sure's `first(8)`: the dialog offers a few starting points, never a list to page.
@@ -44,6 +53,68 @@ export type BillCandidate = {
 	/** The latest transaction's own signed amount. */
 	entryAmount: MinorUnits;
 };
+
+/** A transaction the declare dialog's picker lists, and the bill it already pays, if any. */
+export type PickerEntry = PickerTransaction & { claimedBy: string | null };
+
+/**
+ * « Rechercher dans toutes vos transactions »: Sure's `picker_entries`, the
+ * twenty latest transactions of the dialog's sign that `q` finds, each named
+ * with the bill a confirmed payment ties it to, as Sure's
+ * `claimed_series_names`: shown rather than hidden, since starting a bill
+ * from it usually makes a duplicate.
+ */
+export async function billPicker(
+	deps: ServiceDeps,
+	kind: BillKind,
+	q = "",
+): Promise<PickerEntry[]> {
+	const rows = await pickerTransactions(deps.db, {
+		sign: kind === "income" ? "inflow" : "outflow",
+		q: q.trim(),
+		limit: PICKER_SHOWN,
+	});
+	const claims =
+		rows.length === 0
+			? []
+			: await deps.db
+					.select({
+						entryId: recurringAllocations.entryId,
+						name: recurringTransactions.name,
+						merchantName: merchants.name,
+						label: recurringTransactions.label,
+					})
+					.from(recurringAllocations)
+					.innerJoin(
+						recurringOccurrences,
+						eq(recurringOccurrences.id, recurringAllocations.recurringOccurrenceId),
+					)
+					.innerJoin(
+						recurringTransactions,
+						eq(recurringTransactions.id, recurringOccurrences.recurringTransactionId),
+					)
+					.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
+					.where(
+						and(
+							eq(recurringAllocations.state, "confirmed"),
+							inArray(
+								recurringAllocations.entryId,
+								rows.map((row) => row.entryId),
+							),
+						),
+					)
+					.orderBy(asc(recurringOccurrences.dueOn), asc(recurringOccurrences.id));
+	const claimedBy = new Map<string, string>();
+
+	for (const claim of claims) {
+		// The earliest occurrence's bill, as the sheet's « Récurrence » block names it.
+		if (claim.entryId !== null && !claimedBy.has(claim.entryId)) {
+			claimedBy.set(claim.entryId, displayName(claim));
+		}
+	}
+
+	return rows.map((row) => ({ ...row, claimedBy: claimedBy.get(row.entryId) ?? null }));
+}
 
 /** The declare dialog's starting points: `candidatePatterns`' first eight. */
 export async function billCandidates(deps: ServiceDeps, kind: BillKind): Promise<BillCandidate[]> {

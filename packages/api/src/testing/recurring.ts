@@ -13,6 +13,7 @@ import {
 	recurringAllocations,
 	recurringOccurrences,
 } from "@archant/data/schema/recurring-occurrences";
+import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { createAccount } from "../services/ledger/accounts.ts";
 import { linkBankAccount } from "../services/ledger/bank-link.ts";
@@ -202,7 +203,18 @@ export async function withMerchant(ids: readonly string[]): Promise<string> {
 	return "ca";
 }
 
-/** The owner's mortgage, 571,29 € monthly from `firstDueOn`, keyed by `entryId`'s row or else its name. */
+/**
+ * Keys a series on `merchantId`, as an earlier version keyed a bill declared
+ * from a transaction with a merchant: upgraded data keeps such bills.
+ */
+export async function keyOnMerchant(seriesId: string, merchantId: string): Promise<void> {
+	await temp.db
+		.update(recurringTransactions)
+		.set({ merchantId, labelKey: null })
+		.where(eq(recurringTransactions.id, seriesId));
+}
+
+/** The owner's mortgage, 571,29 € monthly from `firstDueOn`, keyed by its name. */
 export async function declareMortgage(accountId: string, overrides: Partial<DeclareInput> = {}) {
 	return declareBill(deps(), {
 		kind: "bill",

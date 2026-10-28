@@ -9,6 +9,7 @@ import {
 	addRows,
 	declareMortgage,
 	deps,
+	keyOnMerchant,
 	occurrencesOf,
 	openAccount,
 	setToday,
@@ -81,7 +82,6 @@ describe("findBills", () => {
 		const skipped = await bill(accountId, "Sautée", "2026-09-20");
 		await skipOccurrence(deps(), (await occurrencesOf(skipped.id))[0]!.id);
 		const [row = ""] = await addRows(accountId, [{ date: "2026-09-01", amount: -2000 }]);
-		await withMerchant([row]);
 		const detected = await declareBill(deps(), {
 			kind: "bill",
 			name: "Crédit",
@@ -89,8 +89,8 @@ describe("findBills", () => {
 			accountId,
 			firstDueOn: "2026-12-01",
 			frequency: { preset: "monthly" },
-			entryId: row,
 		});
+		await keyOnMerchant(detected.id, await withMerchant([row]));
 		await editBill(deps(), detected.id, { name: null });
 
 		await expect(names({ ...ACTIVE, dueWithinDays: 1 })).resolves.toEqual(["Retard"]);

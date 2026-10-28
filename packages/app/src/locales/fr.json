@@ -2637,6 +2637,16 @@
 		"edit": "Modifier",
 		"addBill": "Ajouter une facture",
 		"addIncome": "Ajouter un revenu",
+		"picker": {
+			"title": "Trouver une transaction pour démarrer",
+			"incomeTitle": "Trouver un versement pour démarrer",
+			"hint": "En choisir une ne fait que préremplir le formulaire ; vous pouvez tout modifier.",
+			"search": "Rechercher par nom, remarque ou marchand",
+			"back": "Revenir au formulaire",
+			"capped": "Vos {{count}} transactions les plus récentes sont affichées. Recherchez pour affiner.",
+			"noResults": "Aucun résultat pour « {{query}} ». Essayez avec moins de mots, ou revenez en arrière et remplissez le formulaire vous-même.",
+			"claimed": "Rattachée à {{name}}"
+		},
 		"form": {
 			"title": "Ajouter une facture",
 			"incomeTitle": "Ajouter un revenu",
@@ -2647,6 +2657,9 @@
 			"startFromIncome": "Partir d'un versement récurrent que nous avons repéré",
 			"startFromHint": "Facultatif. En choisir un ne fait que préremplir le formulaire ; vous pouvez tout modifier.",
 			"candidateMeta": "{{count}}× · dernière fois le {{date}}",
+			"searchAllPrompt": "Vous ne trouvez pas ce que vous cherchez ?",
+			"searchAll": "Rechercher dans toutes vos transactions",
+			"pickDifferent": "Partir d'une autre transaction",
 			"name": "Nom",
 			"namePlaceholder": "Loyer, EDF, Netflix",
 			"incomeName": "Source",

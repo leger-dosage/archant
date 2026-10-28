@@ -1,7 +1,7 @@
 import type { Direction } from "../../domain/cash-flow.ts";
 import type { IsoDate } from "../../domain/dates.ts";
 import type { AmountRange } from "../../domain/transaction-filter.ts";
-import type { SQL } from "drizzle-orm";
+import type { SQL, SQLWrapper } from "drizzle-orm";
 
 import {
 	and,
@@ -127,7 +127,7 @@ function absoluteAmountIn(range: AmountRange): SQL | undefined {
 
 // `LIKE` rather than FTS5 until NFR10's 150 ms target fails. Drizzle's
 // `like` has no `escape` clause, and without one `50%` would find `Remise 500`.
-function contains(column: typeof transactions.label | typeof transactions.notes, q: string): SQL {
+export function contains(column: SQLWrapper, q: string): SQL {
 	return sql`${column} like ${`%${escapeLike(q)}%`} escape ${LIKE_ESCAPE}`;
 }
 

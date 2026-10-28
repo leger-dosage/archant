@@ -3,7 +3,12 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { allBillsQuerySchema, candidatesQuerySchema, declareBodySchema } from "../schemas/bills.ts";
+import {
+	allBillsQuerySchema,
+	candidatesQuerySchema,
+	declareBodySchema,
+	pickerQuerySchema,
+} from "../schemas/bills.ts";
 import {
 	addPaymentSchema,
 	addRecurringSchema,
@@ -12,7 +17,7 @@ import {
 	recurringPatchSchema,
 } from "../schemas/recurring.ts";
 import { allBills, billDetail } from "../services/recurring/all-bills.ts";
-import { billCandidates } from "../services/recurring/bill-candidates.ts";
+import { billCandidates, billPicker } from "../services/recurring/bill-candidates.ts";
 import {
 	billsOverview,
 	occurrenceDetail,
@@ -50,6 +55,11 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.get("/candidates", validated("query", candidatesQuerySchema), async (c) =>
 			c.json({ data: await billCandidates(deps, c.req.valid("query").kind) }, 200),
 		)
+		.get("/picker", validated("query", pickerQuerySchema), async (c) => {
+			const { kind, q } = c.req.valid("query");
+
+			return c.json({ data: await billPicker(deps, kind, q) }, 200);
+		})
 		.post("/declare", validated("json", declareBodySchema), async (c) =>
 			c.json({ data: await declareBill(deps, c.req.valid("json")) }, 201),
 		)

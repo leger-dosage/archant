@@ -18,13 +18,11 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 import { maxDate, today, weekdayOf } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
 import { applyFrequency } from "../../domain/recurring/frequency.ts";
-import { seriesKeyOf } from "../../domain/recurring/identifier.ts";
 import { monthlyOn } from "../../domain/recurring/schedule.ts";
 import { isKept, nextDateFrom, nextExpectedDate } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
 import { declareBillSchema, editBillSchema } from "../../schemas/bills.ts";
-import { findTransaction } from "../ledger/queries.ts";
 import { transferPair } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
 import { pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
@@ -133,10 +131,11 @@ export async function taken(
  * on its first due date, with no payment yet, its amount negative for a bill
  * and positive for an income (AD-5), typed and categorised as asked, an
  * income always `income` and uncategorised, its rules those of the frequency picked
- * on that date's day, weekday and month. Its key is the merchant or label of
- * the transaction it started from, so 23.3's matcher still finds it, else its
- * normalised name. Its amount is its `dedup_scope`, as Sure's: the same
- * account, key and amount twice answers `RECURRING_ALREADY_EXISTS`.
+ * on that date's day, weekday and month. Its key is its normalised name and
+ * never a merchant, even when the dialog started from a transaction, as
+ * Sure's, whose create never reads that transaction. Its amount is its
+ * `dedup_scope`, as Sure's: the same account, key and amount twice answers
+ * `RECURRING_ALREADY_EXISTS`.
  */
 export async function declareBill(
 	deps: ServiceDeps,
@@ -153,14 +152,7 @@ export async function declareBill(
 	}
 
 	const bill = parsed.data;
-	const entry = bill.entryId === null ? null : await findTransaction(deps, bill.entryId);
-
-	if (bill.entryId !== null && entry === null) {
-		throw notFound("transaction");
-	}
-
-	const key: SeriesKey =
-		entry === null ? { merchantId: null, labelKey: normalizeLabel(bill.name) } : seriesKeyOf(entry);
+	const key: SeriesKey = { merchantId: null, labelKey: normalizeLabel(bill.name) };
 	const amount = toMinorUnits(bill.kind === "income" ? bill.amount : -Math.abs(bill.amount));
 	const due = bill.firstDueOn;
 	const day = Number(due.slice(8, 10));
@@ -204,7 +196,7 @@ export async function declareBill(
 			await tx.insert(recurringTransactions).values({
 				...row,
 				id,
-				label: entry?.label ?? bill.name,
+				label: bill.name,
 				name: bill.name,
 				expectedDayOfMonth: schedule.expectedDayOfMonth,
 				anchorDate: due,
