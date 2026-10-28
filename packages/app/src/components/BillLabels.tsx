@@ -67,6 +67,46 @@ export function PartialLabel({ row }: { row: BillRowData }) {
 	) : null;
 }
 
+// Sure's notice percent, `number_to_percentage(precision: 0)`, signed.
+const wholePercent = new Intl.NumberFormat("fr-FR", {
+	style: "percent",
+	maximumFractionDigits: 0,
+	signDisplay: "exceptZero",
+});
+
+/** Sure's `notice_price`: « Netflix a changé de prix : 13,49 € → 15,99 € (+19 %) », `percent` whole. */
+export function noticeText(
+	notice: {
+		name: string;
+		previousAmount: MinorUnits;
+		newAmount: MinorUnits;
+		currency: string;
+		percent: number;
+	},
+	t: TFunction,
+) {
+	const money = (amount: MinorUnits) => formatMoney({ amount, currency: notice.currency });
+
+	return t("bills.notices.price", {
+		name: notice.name,
+		from: money(notice.previousAmount),
+		to: money(notice.newAmount),
+		// U+2212, as `formatMoney` does.
+		percent: wholePercent.format(notice.percent / 100).replace("-", "−"),
+	});
+}
+
+/**
+ * Sure's `index.html.erb` notices: the urgent ones, then the routine ones,
+ * folded only when an urgent one comes first.
+ */
+export function noticeGroups<Notice extends { urgent: boolean }>(notices: readonly Notice[]) {
+	const urgent = notices.filter((notice) => notice.urgent);
+	const routine = notices.filter((notice) => !notice.urgent);
+
+	return { urgent, routine, folded: urgent.length > 0 && routine.length > 0 };
+}
+
 /** A matcher score in ten-thousandths, as « 87 % ». */
 export const confidenceText = (score: number) => percent.format(score / 10_000);
 

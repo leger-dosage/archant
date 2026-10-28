@@ -5,7 +5,7 @@ import type { Transaction } from "../ledger/shared.ts";
 import type { RecurringRecord } from "./series.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, lt, lte, or } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
@@ -17,15 +17,19 @@ import type { MatchSignals } from "@archant/data/schema/recurring-occurrences";
 import {
 	recurringAllocations,
 	recurringOccurrences,
+	recurringPriceChanges,
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { addDays, daysBetween, monthRange, today } from "../../domain/dates.ts";
+import { displayName } from "../../domain/recurring/bills.ts";
 import {
 	effectiveDueOn,
+	isMaterialShift,
 	occurrenceState,
 	remainingOf,
 	resolvedExpected,
+	wholePercent,
 } from "../../domain/recurring/occurrences.ts";
 import { hasTransactions, paymentEntries } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence } from "../ledger/shared.ts";
@@ -44,6 +48,9 @@ const NEXT_SHOWN = 4;
 
 // Sure's `compute_kpis`: what falls due within a week.
 const DUE_SOON_DAYS = 7;
+
+// Sure's `collect_notices`: a price change stays news for 30 days.
+const NOTICE_DAYS = 30;
 
 /** An occurrence as the bills page lists it. */
 type BillRow = {
@@ -73,6 +80,8 @@ type BillRow = {
 	suggestionId: string | null;
 	/** The series' band, magnitudes ascending, only when `expected` is an estimate. */
 	amountRange: AmountRange | null;
+	/** The series pays itself, so its row recedes, as Sure's `lead_tone`. */
+	autopay: boolean;
 };
 
 /** Positive magnitudes, `min` below `max`. */
@@ -120,6 +129,21 @@ type SuggestedPayment = {
 	signals: MatchSignals;
 };
 
+/** Sure's price notice: a listed bill's recent price change, amounts positive magnitudes. */
+type PriceNotice = {
+	id: string;
+	seriesId: string;
+	name: string;
+	effectiveOn: IsoDate;
+	previousAmount: MinorUnits;
+	newAmount: MinorUnits;
+	currency: string;
+	/** Whole percent, negative for a fall. */
+	percent: number;
+	/** A tenth or more either way, as Sure's `RecurringPriceChange#material?`. */
+	urgent: boolean;
+};
+
 /** Sure's `bills#index` on today in `APP_TIMEZONE`. */
 export type BillsOverview = {
 	currency: CurrencyCode;
@@ -138,6 +162,8 @@ export type BillsOverview = {
 	/** The series whose rows the totals leave out, each once (NFR2). */
 	leftOut: { id: string; name: string }[];
 	review: SuggestedPayment[];
+	/** « Changements »: the urgent first, then the nearest today. */
+	notices: PriceNotice[];
 	hasTransactions: boolean;
 };
 
@@ -184,6 +210,7 @@ export async function loadBills(
 			expectedAmountMin: recurringTransactions.expectedAmountMin,
 			expectedAmountMax: recurringTransactions.expectedAmountMax,
 			seriesStatus: recurringTransactions.status,
+			autopay: recurringTransactions.autopay,
 			seriesName: recurringTransactions.name,
 			label: recurringTransactions.label,
 			accountId: recurringTransactions.accountId,
@@ -321,6 +348,80 @@ async function suggestionsOf(
 }
 
 /**
+ * Sure's `payable_series_ids`: outgoing series, a recurring transfer only
+ * into a card or a loan, a debt the household pays.
+ */
+function payable(db: Reader) {
+	return and(
+		// AD-5: a bill's money leaves the account.
+		lt(recurringTransactions.amount, 0),
+		or(
+			isNull(recurringTransactions.destinationAccountId),
+			inArray(
+				recurringTransactions.destinationAccountId,
+				db
+					.select({ id: accounts.id })
+					.from(accounts)
+					.where(inArray(accounts.type, DEBT_ACCOUNT_TYPES)),
+			),
+		),
+	);
+}
+
+/**
+ * Sure's `collect_notices` without trials and renewals, which Archant does not
+ * store: the price changes of the active payable series effective from 30
+ * days ago, the urgent first, then the nearest today either way.
+ */
+async function priceNotices(db: Reader, day: IsoDate): Promise<PriceNotice[]> {
+	const rows = await db
+		.select({
+			id: recurringPriceChanges.id,
+			seriesId: recurringPriceChanges.recurringTransactionId,
+			seriesName: recurringTransactions.name,
+			merchantName: merchants.name,
+			label: recurringTransactions.label,
+			effectiveOn: recurringPriceChanges.effectiveOn,
+			previousAmount: recurringPriceChanges.previousAmount,
+			newAmount: recurringPriceChanges.newAmount,
+			currency: recurringPriceChanges.currency,
+		})
+		.from(recurringPriceChanges)
+		.innerJoin(
+			recurringTransactions,
+			eq(recurringTransactions.id, recurringPriceChanges.recurringTransactionId),
+		)
+		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
+		.where(
+			and(
+				eq(recurringTransactions.status, "active"),
+				payable(db),
+				gte(recurringPriceChanges.effectiveOn, addDays(day, -NOTICE_DAYS)),
+			),
+		)
+		.orderBy(desc(recurringPriceChanges.effectiveOn), recurringPriceChanges.id);
+	const notices = rows.map(({ seriesName, merchantName, label, ...row }) => {
+		const previousAmount = toMinorUnits(row.previousAmount);
+		const newAmount = toMinorUnits(row.newAmount);
+
+		return {
+			...row,
+			name: displayName({ name: seriesName, merchantName, label }),
+			previousAmount,
+			newAmount,
+			percent: wholePercent(previousAmount, newAmount),
+			urgent: isMaterialShift(previousAmount, newAmount),
+		};
+	});
+	const distance = (notice: PriceNotice) => Math.abs(daysBetween(day, notice.effectiveOn));
+
+	// Stable: a tie keeps the query's latest first.
+	return notices.toSorted(
+		(a, b) => Number(b.urgent) - Number(a.urgent) || distance(a) - distance(b),
+	);
+}
+
+/**
  * Sure's `bills#index` on today in `APP_TIMEZONE`: the open occurrences of
  * active and inactive outgoing series, three months ahead at most, and the
  * month's paid ones. A recurring transfer counts only into a card or a loan,
@@ -342,18 +443,7 @@ export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 		deps.db,
 		and(
 			inArray(recurringTransactions.status, ["active", "inactive"]),
-			// AD-5: a bill's money leaves the account.
-			lt(recurringTransactions.amount, 0),
-			or(
-				isNull(recurringTransactions.destinationAccountId),
-				inArray(
-					recurringTransactions.destinationAccountId,
-					deps.db
-						.select({ id: accounts.id })
-						.from(accounts)
-						.where(inArray(accounts.type, DEBT_ACCOUNT_TYPES)),
-				),
-			),
+			payable(deps.db),
 			lte(recurringOccurrences.dueOn, addDays(day, BILLS_HORIZON_DAYS)),
 			or(gte(recurringOccurrences.dueOn, monthStart), eq(recurringOccurrences.status, "scheduled")),
 		),
@@ -414,6 +504,7 @@ export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 		},
 		leftOut: [...leftOut].map(([id, name]) => ({ id, name })),
 		review: await suggestionsOf(deps.db, [...open, ...paid], allocations),
+		notices: await priceNotices(deps.db, day),
 		hasTransactions: await hasTransactions(deps.db),
 	};
 }

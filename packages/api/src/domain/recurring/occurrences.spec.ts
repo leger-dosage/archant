@@ -10,12 +10,14 @@ import {
 	effectiveDueOn,
 	horizonOf,
 	isCloseWorthy,
+	isMaterialShift,
 	learnedTolerance,
 	occurrenceState,
 	priceChangeOf,
 	remainingOf,
 	resolvedExpected,
 	roundHalfUp,
+	wholePercent,
 } from "./occurrences.ts";
 import { monthlyOn } from "./schedule.ts";
 
@@ -216,6 +218,27 @@ describe("changePercent", () => {
 
 	it("is 0 from nothing", () => {
 		expect(changePercent(toMinorUnits(0), toMinorUnits(999))).toBe(0);
+	});
+});
+
+describe("wholePercent", () => {
+	it("rounds the signed change to a whole percent, half away from zero, 0 from nothing", () => {
+		expect(wholePercent(toMinorUnits(1349), toMinorUnits(1599))).toBe(19);
+		expect(wholePercent(toMinorUnits(1599), toMinorUnits(1349))).toBe(-16);
+		// 12,5 % either way.
+		expect(wholePercent(toMinorUnits(800), toMinorUnits(900))).toBe(13);
+		expect(wholePercent(toMinorUnits(800), toMinorUnits(700))).toBe(-13);
+		expect(wholePercent(toMinorUnits(0), toMinorUnits(999))).toBe(0);
+	});
+});
+
+describe("isMaterialShift", () => {
+	it("is a tenth or more either way, as Sure's MATERIAL_SHIFT", () => {
+		expect(isMaterialShift(toMinorUnits(1000), toMinorUnits(1100))).toBe(true);
+		expect(isMaterialShift(toMinorUnits(1000), toMinorUnits(900))).toBe(true);
+		expect(isMaterialShift(toMinorUnits(1000), toMinorUnits(1099))).toBe(false);
+		expect(isMaterialShift(toMinorUnits(1000), toMinorUnits(901))).toBe(false);
+		expect(isMaterialShift(toMinorUnits(0), toMinorUnits(999))).toBe(false);
 	});
 });
 

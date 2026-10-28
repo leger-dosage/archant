@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	recurringAllocations,
 	recurringOccurrences,
+	recurringPriceChanges,
 } from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
@@ -33,6 +34,19 @@ const suggest = async (occurrenceId: string, entryId: string, confidence: number
 		paidOn: "2026-10-04",
 		createdAt: at,
 		updatedAt: at,
+	});
+
+/** A recorded price change of `seriesId`, its id the series and the date. */
+const change = (seriesId: string, effectiveOn: string, previous: number, next: number) =>
+	temp.db.insert(recurringPriceChanges).values({
+		id: `${seriesId}-${effectiveOn}`,
+		recurringTransactionId: seriesId,
+		effectiveOn,
+		previousAmount: previous,
+		newAmount: next,
+		currency: "EUR",
+		createdAt: 0,
+		updatedAt: 0,
 	});
 
 describe("billsOverview", () => {
@@ -82,6 +96,7 @@ describe("billsOverview", () => {
 				currency: "EUR",
 				suggestionId: null,
 				amountRange: null,
+				autopay: false,
 			},
 		]);
 		expect(shown(overview.month)).toEqual([
@@ -287,6 +302,61 @@ describe("billsOverview", () => {
 			inactive: [],
 			next: [],
 			hasTransactions: true,
+		});
+	});
+
+	it("announces the listed bills' price changes of the last 30 days, the material ones first, then the nearest", async () => {
+		const accountId = await account();
+		const declared = async (name: string, extra: Partial<Parameters<typeof bill>[1]> = {}) =>
+			(await declareBill(deps(), bill(accountId, { name, ...extra }))).id;
+		const streaming = await declared("Streaming", { autopay: true });
+		const water = await declared("Eau");
+		const phone = await declared("Téléphone");
+		const paused = await declared("Presse");
+		await setRecurringStatus(deps(), paused, "inactive");
+		const ended = await declared("Salle");
+		await temp.db
+			.update(recurringTransactions)
+			.set({ status: "ended" })
+			.where(eq(recurringTransactions.id, ended));
+		const salary = await declared("Salaire", { kind: "income", amount: "2 500,00" });
+		await change(streaming, "2026-10-06", 1349, 1599);
+		// 31 days ago: no longer news.
+		await change(streaming, "2026-09-05", 1199, 1349);
+		// 30 days ago, 9,9 %: routine, though it rounds to 10.
+		await change(water, "2026-09-06", 1000, 1099);
+		await change(water, "2026-10-05", 1099, 1150);
+		// Three days ahead, as detection dates a change on a payment made early: after the 5th.
+		await change(water, "2026-10-09", 1150, 1160);
+		// Exactly a tenth down: material.
+		await change(phone, "2026-10-04", 1000, 900);
+		await Promise.all(
+			[paused, ended, salary].map((seriesId) => change(seriesId, "2026-10-06", 1000, 2000)),
+		);
+
+		const { notices, month } = await billsOverview(deps());
+
+		expect(notices).toEqual([
+			{
+				id: `${streaming}-2026-10-06`,
+				seriesId: streaming,
+				name: "Streaming",
+				effectiveOn: "2026-10-06",
+				previousAmount: 1349,
+				newAmount: 1599,
+				currency: "EUR",
+				percent: 19,
+				urgent: true,
+			},
+			expect.objectContaining({ name: "Téléphone", percent: -10, urgent: true }),
+			expect.objectContaining({ effectiveOn: "2026-10-05", percent: 5, urgent: false }),
+			expect.objectContaining({ effectiveOn: "2026-10-09", percent: 1, urgent: false }),
+			expect.objectContaining({ effectiveOn: "2026-09-06", percent: 10, urgent: false }),
+		]);
+		expect(Object.fromEntries(month.map(({ name, autopay }) => [name, autopay]))).toEqual({
+			Streaming: true,
+			Eau: false,
+			Téléphone: false,
 		});
 	});
 

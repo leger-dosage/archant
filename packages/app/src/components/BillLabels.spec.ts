@@ -1,8 +1,10 @@
 import { createInstance } from "i18next";
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { formatMoney, toMinorUnits } from "@archant/data/money";
+
 import fr from "../locales/fr.json";
-import { dueLabel } from "./BillLabels.tsx";
+import { dueLabel, noticeGroups, noticeText } from "./BillLabels.tsx";
 
 const i18n = createInstance();
 
@@ -67,5 +69,51 @@ describe("dueLabel", () => {
 	it("counts the days ahead, tomorrow singular", () => {
 		expect(label({ state: "due", days: 1 })).toBe("À payer demain, 5 octobre");
 		expect(label({ state: "upcoming", days: 4 })).toBe("À payer dans 4 jours, 5 octobre");
+	});
+});
+
+// Node's and the browser's ICU disagree on the space before « % ».
+const spaced = (text: string) => text.replaceAll(/\s/gu, " ");
+
+const notice = (previous: number, next: number, percent: number) =>
+	spaced(
+		noticeText(
+			{
+				name: "Netflix",
+				previousAmount: toMinorUnits(previous),
+				newAmount: toMinorUnits(next),
+				currency: "EUR",
+				percent,
+			},
+			i18n.t,
+		),
+	);
+
+const euros = (amount: number) =>
+	spaced(formatMoney({ amount: toMinorUnits(amount), currency: "EUR" }));
+
+describe("noticeText", () => {
+	it("reads Sure's notice, the percent whole and signed", () => {
+		expect(notice(1349, 1599, 19)).toBe(
+			`Netflix a changé de prix : ${euros(1349)} → ${euros(1599)} (+19 %)`,
+		);
+		expect(notice(1000, 900, -10)).toBe(
+			`Netflix a changé de prix : ${euros(1000)} → ${euros(900)} (−10 %)`,
+		);
+	});
+});
+
+describe("noticeGroups", () => {
+	const urgent = { id: "u", urgent: true };
+	const routine = { id: "r", urgent: false };
+
+	it("folds the routine notices only behind an urgent one", () => {
+		expect(noticeGroups([urgent, routine])).toEqual({
+			urgent: [urgent],
+			routine: [routine],
+			folded: true,
+		});
+		expect(noticeGroups([routine, routine])).toMatchObject({ urgent: [], folded: false });
+		expect(noticeGroups([urgent])).toMatchObject({ routine: [], folded: false });
 	});
 });
