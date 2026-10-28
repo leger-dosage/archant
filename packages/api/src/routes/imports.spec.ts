@@ -267,15 +267,15 @@ describe("POST /api/imports/:id/confirm", () => {
 });
 
 describe("POST /api/imports/:id/revert and recurring detection", () => {
-	it("deletes the detected series whose every line it removed", async () => {
+	it("leaves the detected series whose every line it removed as it is, as Sure", async () => {
 		const { app, db, account } = await ownRecurringAccount();
 		const { id } = await confirmOwnImport(app, account.id);
-		await expect(recurringRows(db)).resolves.toHaveLength(1);
+		const [series] = await recurringRows(db);
 
 		const response = await app.request(`/api/imports/${id}/revert`, { method: "POST" });
 
 		expect(response.status).toBe(200);
-		await expect(recurringRows(db)).resolves.toEqual([]);
+		await expect(recurringRows(db)).resolves.toEqual([series]);
 	});
 
 	it("answers 200 when detection throws, and logs the import id and code only", async () => {

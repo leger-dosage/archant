@@ -653,18 +653,18 @@ describe("cleanupRecurring", () => {
 		await expect(dates(paid)).resolves.toEqual(before);
 	});
 
-	it("deletes a suggestion with no row left in its window, and never counts it", async () => {
+	it("keeps a suggestion with no row left in its window, and never counts it", async () => {
 		const accountId = await account();
-		await detectedBill(accountId);
+		const row = await detectedBill(accountId);
 		vi.setSystemTime(new Date("2026-12-21T10:00:00Z"));
 
 		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 0 });
-		await expect(stored()).resolves.toEqual([]);
+		await expect(stored()).resolves.toEqual([row]);
 	});
 });
 
 describe("detection and statuses", () => {
-	it("keeps a suggestion that goes stale suggested, and deletes it once its window is empty", async () => {
+	it("keeps a suggestion that goes stale suggested, and leaves it as it is once its window is empty, as Sure", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-05-15", "2026-06-15", "2026-07-15"]);
 		vi.setSystemTime(new Date("2026-08-01T10:00:00Z"));
@@ -681,10 +681,12 @@ describe("detection and statuses", () => {
 		vi.setSystemTime(new Date("2026-10-16T10:00:00Z"));
 		await runRecurring(deps(), { backfill: false });
 
-		await expect(stored()).resolves.toEqual([]);
+		await expect(stored()).resolves.toEqual([
+			{ ...row, occurrenceCount: 1, updatedAt: Date.parse("2026-10-16T10:00:00Z") },
+		]);
 	});
 
-	it("marks an active pattern inactive two months after its last row", async () => {
+	it("leaves an active pattern stale two months after its last row active, until « Nettoyer les obsolètes »", async () => {
 		const accountId = await account();
 		await addRows(accountId, ["2026-05-15", "2026-06-15", "2026-07-15"]);
 		vi.setSystemTime(new Date("2026-08-01T10:00:00Z"));
@@ -694,16 +696,20 @@ describe("detection and statuses", () => {
 
 		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
 
+		// A sync, an import or a revert, then « Identifier les modèles ».
 		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 0 });
+		await expect(runRecurring(deps(), { backfill: true })).resolves.toEqual({ detected: 0 });
 		// Six months back for an active pattern: its three rows still count.
-		await expect(stored()).resolves.toEqual([
-			{
-				...row,
-				status: "inactive",
-				nextExpectedDate: "2026-10-15",
-				updatedAt: Date.parse("2026-09-21T10:00:00Z"),
-			},
-		]);
+		const refreshed = {
+			...row,
+			status: "active",
+			nextExpectedDate: "2026-10-15",
+			updatedAt: Date.parse("2026-09-21T10:00:00Z"),
+		};
+		await expect(stored()).resolves.toEqual([refreshed]);
+
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 1 });
+		await expect(stored()).resolves.toEqual([{ ...refreshed, status: "inactive" }]);
 	});
 
 	it("keeps an active pattern last seen exactly two months ago", async () => {
@@ -734,6 +740,9 @@ describe("detection and statuses", () => {
 		vi.setSystemTime(new Date("2026-09-22T10:00:00Z"));
 		await runRecurring(deps(), { backfill: false });
 
+		await expect(stored()).resolves.toMatchObject([{ status: "active", manual: true }]);
+
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 1 });
 		await expect(stored()).resolves.toMatchObject([{ status: "inactive", manual: true }]);
 	});
 
@@ -1398,7 +1407,7 @@ describe("detection follows a renamed series and never deletes one", () => {
 		]);
 	});
 
-	it("keeps a declared bill and its payments when its rows take a suggestion's key, until it goes stale", async () => {
+	it("keeps a declared bill and its payments when its rows take a suggestion's key, until the cleanup retires it", async () => {
 		const accountId = await account();
 		const ids = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		const bill = await declareBill(deps(), {
@@ -1467,12 +1476,17 @@ describe("detection follows a renamed series and never deletes one", () => {
 		// Sure's threshold for a manual monthly bill: six months after its last payment.
 		vi.setSystemTime(new Date("2027-03-10T10:00:00Z"));
 		await runRecurring(deps(), { backfill: false });
+		await expect(cleanupRecurring(deps())).resolves.toEqual({ inactive: 0 });
 		await expect(listRecurring(deps())).resolves.toContainEqual(
 			expect.objectContaining({ id: bill.id, status: "active" }),
 		);
 
 		vi.setSystemTime(new Date("2027-03-11T10:00:00Z"));
 		await runRecurring(deps(), { backfill: false });
+		await expect(listRecurring(deps())).resolves.toContainEqual(
+			expect.objectContaining({ id: bill.id, status: "active" }),
+		);
+		await cleanupRecurring(deps());
 		await expect(listRecurring(deps())).resolves.toContainEqual(
 			expect.objectContaining({ id: bill.id, status: "inactive" }),
 		);
@@ -1646,14 +1660,14 @@ describe("detection keeps every series current", () => {
 		]);
 	});
 
-	it("deletes a suggested series whose every row a revert removed", async () => {
+	it("leaves a suggested series whose every row a revert removed as it is", async () => {
 		const accountId = await account();
 		const importId = await importRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
-		await expect(stored()).resolves.toHaveLength(1);
+		const [row] = await stored();
 
 		await revertImport(importDeps(), importId);
 
-		await expect(stored()).resolves.toEqual([]);
+		await expect(stored()).resolves.toEqual([row]);
 	});
 
 	it("keeps an active series whose every row a revert removed, count 0", async () => {
@@ -1685,7 +1699,7 @@ describe("detection keeps every series current", () => {
 		]);
 	});
 
-	it("deletes a suggested series left with no row and marks nothing inactive for it", async () => {
+	it("keeps a suggested series left with no row, suggested", async () => {
 		const accountId = await account();
 		const ids = await addRows(accountId, ["2026-05-15", "2026-06-15", "2026-07-15"]);
 		vi.setSystemTime(new Date("2026-08-01T10:00:00Z"));
@@ -1696,7 +1710,14 @@ describe("detection keeps every series current", () => {
 		vi.setSystemTime(new Date("2026-09-21T10:00:00Z"));
 		await runRecurring(deps(), { backfill: false });
 
-		await expect(stored()).resolves.toEqual([]);
+		await expect(stored()).resolves.toMatchObject([
+			{
+				label: "PRLV EDF",
+				status: "suggested",
+				occurrenceCount: 3,
+				lastOccurrenceDate: "2026-07-20",
+			},
+		]);
 	});
 });
 
