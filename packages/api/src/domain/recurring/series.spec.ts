@@ -429,7 +429,6 @@ describe("refreshSeries", () => {
 				TODAY,
 			),
 		).toEqual({
-			kind: "update",
 			label: "prlv netflix",
 			lastOccurrenceDate: "2026-09-04",
 			nextExpectedDate: "2026-10-05",
@@ -493,7 +492,6 @@ describe("refreshSeries", () => {
 				TODAY,
 			),
 		).toEqual({
-			kind: "update",
 			label: "PRLV NETFLIX",
 			lastOccurrenceDate: "2026-11-05",
 			nextExpectedDate: "2026-11-05",
@@ -516,7 +514,6 @@ describe("refreshSeries", () => {
 				TODAY,
 			),
 		).toEqual({
-			kind: "update",
 			label: "PRLV NETFLIX",
 			lastOccurrenceDate: "2026-02-05",
 			nextExpectedDate: "2026-10-05",
@@ -540,7 +537,6 @@ describe("refreshSeries", () => {
 				TODAY,
 			),
 		).toEqual({
-			kind: "update",
 			label: "PRLV NETFLIX",
 			lastOccurrenceDate: "2026-06-11",
 			nextExpectedDate: "2026-12-10",
@@ -549,20 +545,27 @@ describe("refreshSeries", () => {
 		});
 	});
 
-	it("deletes a suggested series with no row left in its window, whatever its last date", () => {
-		expect(refreshSeries(series(), [], TODAY)).toEqual({ kind: "delete" });
+	it("leaves a suggested series with no row left in its window as it is, as Sure's identifier", () => {
+		const kept = {
+			label: "PRLV NETFLIX",
+			lastOccurrenceDate: "2026-09-05",
+			nextExpectedDate: "2026-10-05",
+			occurrenceCount: 3,
+			band: null,
+		};
+
+		expect(refreshSeries(series(), [], TODAY)).toEqual(kept);
 		expect(
 			refreshSeries(
-				series({ lastOccurrenceDate: "2026-06-20" }),
+				series({ lastOccurrenceDate: "2026-06-20", nextExpectedDate: "2026-07-20" }),
 				[row("2026-06-05", noMerchant)],
 				TODAY,
 			),
-		).toEqual({ kind: "delete" });
+		).toEqual({ ...kept, lastOccurrenceDate: "2026-06-20", nextExpectedDate: "2026-07-20" });
 	});
 
 	it("keeps any other series with no row left, count 0, an active one due from today on", () => {
 		expect(refreshSeries(series({ status: "inactive" }), [], TODAY)).toEqual({
-			kind: "update",
 			label: "PRLV NETFLIX",
 			lastOccurrenceDate: "2026-09-05",
 			nextExpectedDate: "2026-10-05",
@@ -631,7 +634,7 @@ describe("cleanerSteps", () => {
 				[],
 				TODAY,
 			),
-		).toEqual({ inactive: ["s1"], deleted: [] });
+		).toEqual({ inactive: ["s1"] });
 	});
 
 	it("gives a manual series six months", () => {
@@ -675,14 +678,10 @@ describe("cleanerSteps", () => {
 		expect(cleanerSteps([transfer], [outflow("l2")], TODAY).inactive).toEqual(["s1"]);
 	});
 
-	it("never marks a suggestion inactive, and deletes one with no row in its window", () => {
+	it("never marks a suggestion inactive nor deletes one, even with no row in its window", () => {
 		const old = { lastOccurrenceDate: "2026-06-05" };
 
-		expect(cleanerSteps([series(old)], [], TODAY)).toEqual({ inactive: [], deleted: ["s1"] });
-		expect(cleanerSteps([series(old)], [row("2026-07-06", noMerchant)], TODAY)).toEqual({
-			inactive: [],
-			deleted: [],
-		});
+		expect(cleanerSteps([series(old)], [], TODAY)).toEqual({ inactive: [] });
 	});
 
 	it("leaves inactive and ended series alone", () => {
@@ -694,6 +693,6 @@ describe("cleanerSteps", () => {
 				[],
 				TODAY,
 			),
-		).toEqual({ inactive: [], deleted: [] });
+		).toEqual({ inactive: [] });
 	});
 });

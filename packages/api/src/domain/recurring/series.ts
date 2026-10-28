@@ -251,17 +251,14 @@ export function rekey(
 	return { steps, stored: current };
 }
 
-export type SeriesRefresh =
-	| { kind: "delete" }
-	| {
-			kind: "update";
-			label: string;
-			lastOccurrenceDate: IsoDate;
-			nextExpectedDate: IsoDate;
-			occurrenceCount: number;
-			/** Set for an active manual series, as Sure's manual pass; `null` leaves the band. */
-			band: AmountBand | null;
-	  };
+export type SeriesRefresh = {
+	label: string;
+	lastOccurrenceDate: IsoDate;
+	nextExpectedDate: IsoDate;
+	occurrenceCount: number;
+	/** Set for an active manual series, as Sure's manual pass; `null` leaves the band. */
+	band: AmountBand | null;
+};
 
 /** The signed band of `amounts`, never empty. */
 function bandOf(amounts: readonly MinorUnits[]): AmountBand {
@@ -280,11 +277,11 @@ function bandOf(amounts: readonly MinorUnits[]): AmountBand {
  * ended: count, latest date and label come from its current transactions, and
  * an active manual series takes its band from them too, as Sure's
  * `update_manual_recurring_transactions`, and the next date follows the
- * series' schedule. A `suggested` series with none left in its window goes,
- * to a revert, a delete or time: a suggestion never becomes inactive. A
- * manual one keeps its last date and count, as Sure's `next if
- * matching_entries.empty?`, so a bill declared ahead of its first payment
- * stays as declared, its next date moved from today on once passed. Any other
+ * series' schedule. A manual series with none left in its window keeps its
+ * last date and count, as Sure's `next if matching_entries.empty?`, so a bill
+ * declared ahead of its first payment stays as declared, its next date moved
+ * from today on once passed. A suggestion with none left stays as it is,
+ * since neither Sure's identifier nor its cleaner touches one. Any other
  * keeps its last date with a count of 0.
  */
 export function refreshSeries(
@@ -297,13 +294,8 @@ export function refreshSeries(
 	const current = (next: IsoDate) => (isKept(series) ? currentNextDate(series, next, today) : next);
 
 	if (latest === undefined) {
-		if (series.status === "suggested") {
-			return { kind: "delete" };
-		}
-
-		if (series.manual) {
+		if (series.manual || series.status === "suggested") {
 			return {
-				kind: "update",
 				label: series.label,
 				lastOccurrenceDate: series.lastOccurrenceDate,
 				nextExpectedDate: current(series.nextExpectedDate),
@@ -313,7 +305,6 @@ export function refreshSeries(
 		}
 
 		return {
-			kind: "update",
 			label: series.label,
 			lastOccurrenceDate: series.lastOccurrenceDate,
 			nextExpectedDate: current(series.nextExpectedDate),
@@ -323,7 +314,6 @@ export function refreshSeries(
 	}
 
 	return {
-		kind: "update",
 		label: latest.label,
 		lastOccurrenceDate: latest.date,
 		nextExpectedDate: current(nextExpectedDate(series, latest.date)),
@@ -354,15 +344,16 @@ export function staleBefore(
 }
 
 /** What the cleaner writes. */
-export type CleanerSteps = { inactive: string[]; deleted: string[] };
+export type CleanerSteps = { inactive: string[] };
 
 /**
- * Sure's `Cleaner#cleanup_stale_transactions`: an `active` series last seen
- * before `staleBefore` becomes `inactive`, unless one of its transactions
- * since passes `matches`, a recurring transfer's outflows included as Sure's
- * since #1590. A suggestion never becomes inactive; one with no
- * transaction left in its window is deleted instead. Sure's removal of old
- * inactive series has no port: a household keeps its history.
+ * Sure's `Cleaner#cleanup_stale_transactions`, run by « Nettoyer les
+ * obsolètes » alone: an `active` series last seen before `staleBefore`
+ * becomes `inactive`, unless one of its transactions since passes `matches`,
+ * a recurring transfer's outflows included as Sure's since #1590. Any other
+ * series is left as it is, a suggestion with no transaction left included.
+ * Sure's removal of old inactive series has no port: a household keeps its
+ * history.
  */
 export function cleanerSteps(
 	stored: readonly StoredSeries[],
@@ -383,12 +374,6 @@ export function cleanerSteps(
 			);
 		})
 		.map((series) => series.id);
-	const deleted = stored
-		.filter(
-			(series) =>
-				series.status === "suggested" && occurrencesOf(series, candidates, today).length === 0,
-		)
-		.map((series) => series.id);
 
-	return { inactive, deleted };
+	return { inactive };
 }

@@ -228,9 +228,9 @@ export async function merchantNames(db: Pick<Transaction, "select">): Promise<Ma
 }
 
 /**
- * Applies Sure's `Cleaner` to `stored`: stale active series become inactive,
- * suggestions with no transaction left go. A series made inactive loses its
- * future occurrences, as any status change. Returns how many became inactive.
+ * Applies Sure's `Cleaner` to `stored`: stale active series become inactive
+ * and lose their future occurrences, as any status change. Returns how many
+ * became inactive.
  */
 async function clean(
 	tx: Transaction,
@@ -246,9 +246,6 @@ async function clean(
 			.update(recurringTransactions)
 			.set({ status: "inactive", updatedAt: now })
 			.where(inArray(recurringTransactions.id, ids)),
-	);
-	await oneByOne(chunks(steps.deleted, IDS_PER_UPDATE), (ids) =>
-		tx.delete(recurringTransactions).where(inArray(recurringTransactions.id, ids)),
 	);
 	await regenerateFuture(tx, steps.inactive, day);
 
@@ -273,8 +270,10 @@ async function clean(
  * a series. Then every other series but the ended ones is recomputed from its
  * current transactions (`refreshSeries`), Sure's manual pass among them, so a
  * revert or a delete never leaves counts and dates built on rows that are
- * gone. Last, Sure's `Cleaner` runs. A series whose plain monthly rule
- * follows a new day has its future occurrences rebuilt on it. The first step
+ * gone. A series whose plain monthly rule follows a new day has its future
+ * occurrences rebuilt on it. No status changes and no series goes: as Sure's
+ * `Pipeline#run!`, detection never runs the `Cleaner`, which « Nettoyer les
+ * obsolètes » alone runs (`cleanupRecurring`). The first step
  * of `runRecurring`, inside its immediate transaction, so two detections
  * racing each other cannot insert the same pattern twice.
  */
@@ -468,16 +467,7 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 		.map((series) => ({ series, refresh: refreshSeries(series, candidates, day) }));
 
 	await oneByOne(refreshes, ({ series, refresh }) => {
-		if (refresh.kind === "delete") {
-			current.delete(series.id);
-
-			return tx.delete(recurringTransactions).where(eq(recurringTransactions.id, series.id));
-		}
-
-		const { kind: _kind, band, ...dates } = refresh;
-		const updated = { ...series, ...dates, ...band };
-
-		current.set(series.id, updated);
+		const { band, ...dates } = refresh;
 
 		return tx
 			.update(recurringTransactions)
@@ -485,12 +475,7 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 			.where(eq(recurringTransactions.id, series.id));
 	});
 
-	await clean(tx, [...current.values()], candidates, day, now);
-	await regenerateFuture(
-		tx,
-		[...rulesMoved].filter((id) => current.has(id)),
-		day,
-	);
+	await regenerateFuture(tx, [...rulesMoved], day);
 
 	// A pattern an ended series claims is not offered again, so it is not counted.
 	return { detected: patterns.length - tombstoned };
