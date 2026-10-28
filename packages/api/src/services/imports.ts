@@ -36,7 +36,7 @@ import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { currencyOf, getAccount } from "./accounts.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
-import { runRecurring } from "./recurring/pipeline.ts";
+import { runAutomaticRecurring } from "./recurring/pipeline.ts";
 import { runRulesAfterSync } from "./rules.ts";
 
 /**
@@ -450,7 +450,7 @@ export async function detectAfterImport(deps: ImportDeps, importId: string): Pro
 	await runRulesAfterSync(deps);
 
 	try {
-		await runRecurring(deps, { backfill: false });
+		await runAutomaticRecurring(deps);
 	} catch (error) {
 		// The code only: an unexpected error's message may embed bound amounts.
 		const code = error instanceof AppError ? error.code : "INTERNAL_ERROR";

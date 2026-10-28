@@ -18,6 +18,7 @@ import { declareBill, editBill, markTransferRecurring } from "../services/recurr
 import { generateOccurrences } from "../services/recurring/occurrences.ts";
 import { addPayment, markPaid } from "../services/recurring/payments.ts";
 import { setRecurringStatus } from "../services/recurring/series.ts";
+import { saveRecurringSettings } from "../services/recurring/switch.ts";
 import {
 	openOwn,
 	ownCategory,
@@ -1678,5 +1679,37 @@ describe("a read token", () => {
 			{ tool: "update_bill", outcome: "INSUFFICIENT_SCOPE", changedRows: 0 },
 			{ tool: "record_bill_payment", outcome: "INSUFFICIENT_SCOPE", changedRows: 0 },
 		]);
+	});
+});
+
+describe("the switch off", () => {
+	it("refuses every bill tool with Sure's `recurring_disabled_result`, and get_recurring_transactions still answers", async () => {
+		await household();
+		const tools = await assistants();
+		await saveRecurringSettings(deps(), { enabled: false });
+
+		const bill = { bill_id: UNKNOWN_ID };
+
+		const toolCalls = [
+			["get_bills", {}],
+			["get_bill_details", bill],
+			["get_bill_audit", {}],
+			["create_bill", { name: "Loyer", amount: 800, frequency: "monthly" }],
+			["update_bill", bill],
+			["record_bill_payment", bill],
+		] as const;
+
+		await expect(
+			Promise.all(toolCalls.map(([tool, args]) => tools.refusal(tool, args))),
+		).resolves.toEqual(
+			toolCalls.map(() => ({
+				error: "Bills & recurring transactions are disabled for this family",
+				hint: "Do not retry. Tell the user this feature is switched off under Settings -> Recurring transactions, and answer from transaction data instead.",
+			})),
+		);
+
+		await expect(tools.read("get_recurring_transactions")).resolves.toMatchObject({
+			recurring_transactions: [],
+		});
 	});
 });

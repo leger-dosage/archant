@@ -3004,6 +3004,9 @@
 			"title": "Transactions récurrentes",
 			"description": "Les abonnements, factures et revenus qui reviennent à leur rythme, à quelques centimes près. Archant les trouve sur les trois derniers mois d'opérations et vous les propose comme factures possibles.",
 			"detect": "Identifier les modèles",
+			"enable": "Activer les transactions récurrentes",
+			"enableDescription": "Détecter automatiquement les modèles de transactions récurrentes et afficher les transactions projetées à venir.",
+			"saved": "Paramètres des transactions récurrentes mis à jour",
 			"info": {
 				"title": "Détection automatique des modèles",
 				"manual": "Vous pouvez identifier les modèles ou nettoyer les transactions récurrentes obsolètes avec les boutons ci-dessus.",
@@ -3549,6 +3552,7 @@
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"RECURRING_ALREADY_EXISTS": "Une récurrence suit déjà ce compte, ce marchand ou libellé et ce montant.",
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "Un virement récurrent existe déjà pour cette paire de comptes.",
+		"RECURRING_DISABLED": "Les transactions récurrentes sont désactivées pour ce foyer.",
 		"PAYMENT_EXCEEDS_TRANSACTION": "Le montant de cette opération paie déjà d'autres échéances.",
 		"GOAL_ACCOUNT_TAKEN": "Un autre objectif prend désormais tout le solde de « {{account}} ». Modifiez l'un des deux pour qu'il y affecte un montant.",
 		"TRADES_NOT_SUPPORTED": "Ce compte ne prend pas en charge les ordres : seuls un compte d'investissement et une plateforme d'échange crypto en reçoivent."

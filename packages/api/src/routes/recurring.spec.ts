@@ -7,6 +7,7 @@ import {
 	recurringOccurrences,
 } from "@archant/data/schema/recurring-occurrences";
 
+import { runAutomaticRecurring } from "../services/recurring/pipeline.ts";
 import {
 	buildApp,
 	errorBody,
@@ -950,5 +951,84 @@ describe("GET /api/recurring", () => {
 			state: "upcoming",
 			daysLate: null,
 		});
+	});
+});
+
+const settings = (app: ReturnType<typeof buildApp>, enabled: boolean) =>
+	testClient(app).api.recurring.settings.$put({ json: { enabled } });
+
+describe("« Activer les transactions récurrentes »", () => {
+	it("is on by default, and saves the household's choice", async () => {
+		const { app } = await ownRecurringAccount();
+
+		const fresh = await testClient(app).api.recurring.settings.$get();
+		expect(await fresh.json()).toEqual({ data: { enabled: true } });
+
+		const saved = await settings(app, false);
+		expect(saved.status).toBe(200);
+		expect(await saved.json()).toEqual({ data: { enabled: false } });
+
+		const read = await testClient(app).api.recurring.settings.$get();
+		expect(await read.json()).toEqual({ data: { enabled: false } });
+	});
+
+	it("refuses the bill pages while off, keeps the series and Sure's ungated actions", async () => {
+		const { app, db, ids } = await monthlyNetflix();
+		await testClient(app).api.recurring.detect.$post();
+		const [series] = z
+			.object({ data: z.array(z.object({ id: z.string() })) })
+			.parse(await (await testClient(app).api.recurring.$get()).json()).data;
+		await settings(app, false);
+
+		const refused = [
+			["GET", "/api/recurring/bills"],
+			["GET", "/api/recurring/bills/all"],
+			["GET", "/api/recurring/upcoming"],
+			["GET", "/api/recurring/candidates?kind=bill"],
+			["GET", "/api/recurring/picker?kind=bill"],
+			["POST", "/api/recurring/declare"],
+			["GET", `/api/recurring/${series?.id}`],
+			["PATCH", `/api/recurring/${series?.id}`],
+			["GET", "/api/recurring/occurrences/unknown"],
+			["POST", "/api/recurring/payments/unknown/confirm"],
+		] as const;
+
+		const answers = await Promise.all(
+			refused.map(async ([method, path]) => {
+				const response = await app.request(path, {
+					method,
+					headers: { "content-type": "application/json" },
+					...(method === "GET" ? {} : { body: JSON.stringify({ status: "inactive" }) }),
+				});
+
+				return [path, response.status, errorBody.parse(await response.json()).error.code];
+			}),
+		);
+
+		expect(answers).toEqual(refused.map(([, path]) => [path, 403, "RECURRING_DISABLED"]));
+		expect((await testClient(app).api.recurring.$get()).status).toBe(200);
+		expect((await testClient(app).api.recurring.detect.$post()).status).toBe(200);
+		expect((await testClient(app).api.recurring.cleanup.$post()).status).toBe(200);
+		const ofEntry = await testClient(app).api.recurring["by-entry"][":entryId"].$get({
+			param: { entryId: ids[0] ?? "" },
+		});
+		expect(ofEntry.status).toBe(200);
+		await expect(recurringRows(db)).resolves.toHaveLength(1);
+
+		await settings(app, true);
+		expect((await testClient(app).api.recurring.bills.$get()).status).toBe(200);
+	});
+
+	it("leaves the run of a sync or an import out while off", async () => {
+		const { app, db } = await monthlyNetflix();
+		const deps = { db, timeZone: "Europe/Paris" };
+		await settings(app, false);
+
+		await runAutomaticRecurring(deps);
+		await expect(recurringRows(db)).resolves.toEqual([]);
+
+		await settings(app, true);
+		await runAutomaticRecurring(deps);
+		await expect(recurringRows(db)).resolves.toHaveLength(1);
 	});
 });

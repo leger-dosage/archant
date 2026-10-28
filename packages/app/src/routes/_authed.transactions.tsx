@@ -38,6 +38,7 @@ import { useUncategorisedCount } from "@/hooks/useCategorize";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
 import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
@@ -208,6 +209,8 @@ function OperationsPage() {
 	const merchants = useMerchants();
 	const tags = useTags();
 	const admin = useIsAdmin();
+	// Sure shows the list without its tabs while recurring transactions are off.
+	const recurring = useRecurringEnabled();
 	const uncategorised = useUncategorisedCount(admin).data ?? 0;
 	const data = transactions.data;
 	const figures = totals.data;
@@ -307,18 +310,26 @@ function OperationsPage() {
 				) : undefined
 			}
 		>
-			<Tabs value={tab ?? "transactions"} onValueChange={changeTab} className="gap-3">
-				<TabsList aria-label={t("operations.tabs.label")}>
-					<TabsTrigger value="transactions" className={FLAT_TAB}>
-						{t("operations.tabs.transactions")}
-					</TabsTrigger>
-					<TabsTrigger value="upcoming" className={FLAT_TAB}>
-						{t("operations.tabs.upcoming")}
-					</TabsTrigger>
-				</TabsList>
-				<TabsContent value="upcoming">
-					<UpcomingRecurring />
-				</TabsContent>
+			<Tabs
+				value={recurring ? (tab ?? "transactions") : "transactions"}
+				onValueChange={changeTab}
+				className="gap-3"
+			>
+				{recurring && (
+					<>
+						<TabsList aria-label={t("operations.tabs.label")}>
+							<TabsTrigger value="transactions" className={FLAT_TAB}>
+								{t("operations.tabs.transactions")}
+							</TabsTrigger>
+							<TabsTrigger value="upcoming" className={FLAT_TAB}>
+								{t("operations.tabs.upcoming")}
+							</TabsTrigger>
+						</TabsList>
+						<TabsContent value="upcoming">
+							<UpcomingRecurring />
+						</TabsContent>
+					</>
+				)}
 				<TabsContent value="transactions" className="flex flex-col gap-6">
 					{/* The strip's own shape, so the list card does not jump when the figures land. */}
 					{totals.isPending && (

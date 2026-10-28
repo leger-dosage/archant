@@ -491,6 +491,20 @@ describe("transfers", () => {
 		await notFound("POST", "/api/transfers/nope/recurring");
 	});
 
+	it("refuses « Marquer comme récurrent » while recurring transactions are off, as Sure's `transfer_feature_disabled`", async () => {
+		const { transferId } = await household();
+		await ownRequest("PUT", "/api/recurring/settings", { enabled: false });
+
+		try {
+			const refused = await ownRequest("POST", `/api/transfers/${transferId}/recurring`);
+
+			expect(refused.status).toBe(403);
+			expect(errorBody.parse(refused.body).error.code).toBe("RECURRING_DISABLED");
+		} finally {
+			await ownRequest("PUT", "/api/recurring/settings", { enabled: true });
+		}
+	});
+
 	it("names a recurring transfer into an asset « Virement vers »", async () => {
 		const { transferId } = await household();
 

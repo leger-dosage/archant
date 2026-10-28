@@ -1161,13 +1161,11 @@ describe("syncConnection", () => {
 		const syncDeps = deps();
 		const takenOver = NOW + 11 * MINUTE;
 		// While this run reads the bank, its lease expires and another run takes it.
-		const run = vi.spyOn(recurringService, "runRecurring").mockImplementation(async () => {
+		const run = vi.spyOn(recurringService, "runAutomaticRecurring").mockImplementation(async () => {
 			await temp.db
 				.update(bankConnections)
 				.set({ syncStartedAt: takenOver })
 				.where(eq(bankConnections.id, connectionId));
-
-			return { detected: 0 };
 		});
 
 		await syncConnection(syncDeps, connectionId);
@@ -1175,7 +1173,7 @@ describe("syncConnection", () => {
 		await expect(connectionRow(connectionId)).resolves.toMatchObject({
 			syncStartedAt: takenOver,
 		});
-		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
+		expect(run).toHaveBeenCalledWith(syncDeps);
 	});
 
 	it("stamps a connection with nothing linked and clears its error, and its first link still syncs at once", async () => {
@@ -1223,7 +1221,7 @@ describe("syncConnection", () => {
 	it("keeps the sync when recurring detection fails, and logs its code only", async () => {
 		mockProvider();
 		const run = vi
-			.spyOn(recurringService, "runRecurring")
+			.spyOn(recurringService, "runAutomaticRecurring")
 			.mockRejectedValue(new Error("amount 4290 refused"));
 		const connectionId = await newConnection();
 		await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -1238,7 +1236,7 @@ describe("syncConnection", () => {
 			.find((line) => line["msg"] === "recurring detection failed");
 		expect(failure).toMatchObject({ connectionId, code: "INTERNAL_ERROR" });
 		expect(loggedFigures(logLines)).not.toContain("4290");
-		expect(run).toHaveBeenCalledWith(syncDeps, { backfill: false });
+		expect(run).toHaveBeenCalledWith(syncDeps);
 	});
 
 	it("logs ids, counts, durations and codes, never an amount, an IBAN, a uid or the session", async () => {

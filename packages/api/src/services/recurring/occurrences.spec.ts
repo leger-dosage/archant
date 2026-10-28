@@ -25,6 +25,7 @@ import { generateOccurrences, startDailyOccurrences } from "./occurrences.ts";
 import { addPayment } from "./payments.ts";
 import { runRecurring } from "./pipeline.ts";
 import { addRecurringFromEntry, cleanupRecurring, deleteRecurring } from "./series.ts";
+import { saveRecurringSettings } from "./switch.ts";
 
 useRecurringDatabase("2026-09-21T10:00:00Z");
 
@@ -247,6 +248,20 @@ describe("startDailyOccurrences", () => {
 
 		setToday("2026-12-12");
 		await expect(startDailyOccurrences(deps())).resolves.not.toBeNull();
+	});
+
+	it("claims the day and generates nothing while the switch is off", async () => {
+		const accountId = await openAccount();
+		const series = await declareMortgage(accountId, { firstDueOn: "2026-10-10" });
+		setToday("2026-12-11");
+		const before = await dueDates(series.id);
+		await saveRecurringSettings(deps(), { enabled: false });
+
+		await expect(startDailyOccurrences(deps())).resolves.toBeNull();
+		await saveRecurringSettings(deps(), { enabled: true });
+		await expect(startDailyOccurrences(deps())).resolves.toBeNull();
+
+		await expect(dueDates(series.id)).resolves.toEqual(before);
 	});
 });
 

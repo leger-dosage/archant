@@ -30,6 +30,12 @@ export const ERROR_STATUSES = {
 	/** Setup with a token other than the one the server logged at start. Nothing is written. */
 	SETUP_TOKEN_INVALID: 403,
 	/**
+	 * A bill read or write while « Activer les transactions récurrentes » is
+	 * off, as Sure's `ensure_recurring_enabled` and `transfer_feature_disabled`.
+	 * Nothing is written.
+	 */
+	RECURRING_DISABLED: 403,
+	/**
 	 * More setup attempts from one address than the sign-in limit allows, or a
 	 * sign-in while too many failed across every address. The body is not read.
 	 */

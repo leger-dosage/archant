@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useMarkTransferRecurring } from "@/hooks/useRecurring";
+import { useMarkTransferRecurring, useRecurringEnabled } from "@/hooks/useRecurring";
 import {
 	useSetTransferTags,
 	useTransfer,
@@ -333,31 +333,35 @@ function Settings({ transferId, onClose }: { transferId: string; onClose: () => 
 	const markRecurring = useMarkTransferRecurring();
 	const remove = useUnmatchTransfer();
 	const [confirming, setConfirming] = useState(false);
+	// Sure's `@can_mark_as_recurring_transfer`: not while recurring transactions are off.
+	const recurring = useRecurringEnabled();
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-				<div className="flex flex-col gap-1 text-sm">
-					<h3>{t("transfers.show.markRecurringTitle")}</h3>
-					<p className="text-muted-foreground">{t("transfers.show.markRecurringDescription")}</p>
+			{recurring && (
+				<div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+					<div className="flex flex-col gap-1 text-sm">
+						<h3>{t("transfers.show.markRecurringTitle")}</h3>
+						<p className="text-muted-foreground">{t("transfers.show.markRecurringDescription")}</p>
+					</div>
+					{/* Shown even once a series follows it, as Sure's: the API answers a second one. */}
+					<Button
+						type="button"
+						variant="outline"
+						className="shrink-0"
+						disabled={markRecurring.isPending}
+						onClick={() =>
+							markRecurring.mutate(transferId, {
+								onSuccess: () => toast.success(t("transactions.transfer.markedRecurring")),
+								onError: (error) => showErrorToast(errorCodeOf(error)),
+							})
+						}
+					>
+						<Repeat aria-hidden="true" />
+						{t("transactions.transfer.markRecurring")}
+					</Button>
 				</div>
-				{/* Shown even once a series follows it, as Sure's: the API answers a second one. */}
-				<Button
-					type="button"
-					variant="outline"
-					className="shrink-0"
-					disabled={markRecurring.isPending}
-					onClick={() =>
-						markRecurring.mutate(transferId, {
-							onSuccess: () => toast.success(t("transactions.transfer.markedRecurring")),
-							onError: (error) => showErrorToast(errorCodeOf(error)),
-						})
-					}
-				>
-					<Repeat aria-hidden="true" />
-					{t("transactions.transfer.markRecurring")}
-				</Button>
-			</div>
+			)}
 			<div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<div className="flex flex-col gap-1 text-sm">
 					<h3>{t("transfers.show.deleteTitle")}</h3>

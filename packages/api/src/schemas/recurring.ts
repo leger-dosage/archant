@@ -65,3 +65,6 @@ export type RecurringPatch = z.output<typeof recurringPatchSchema>;
 export const RECURRING_VIEWS = ["active", "inactive", "all"] as const;
 
 export type RecurringView = (typeof RECURRING_VIEWS)[number];
+
+/** « Activer les transactions récurrentes », Sure's `update_settings`. */
+export const recurringSettingsSchema = z.object({ enabled: z.boolean() });

@@ -7,7 +7,7 @@ import type {
 } from "@/hooks/useRecurring";
 import type { TFunction } from "i18next";
 
-import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
+import { Link, Outlet, createFileRoute, redirect } from "@tanstack/react-router";
 import { ChevronRightIcon, ReceiptIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -45,7 +45,12 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useBills, useDetectRecurring, useRecurring } from "@/hooks/useRecurring";
+import {
+	recurringSettingsQuery,
+	useBills,
+	useDetectRecurring,
+	useRecurring,
+} from "@/hooks/useRecurring";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
@@ -79,6 +84,20 @@ const searchSchema = z.object({
 
 export const Route = createFileRoute("/_authed/bills")({
 	validateSearch: searchSchema,
+	// Sure's `ensure_recurring_enabled`: the bills, a bill's drawer among them,
+	// lead home while the household has recurring transactions off.
+	beforeLoad: async ({ context }) => {
+		if (
+			!(
+				await context.queryClient.ensureQueryData({
+					...recurringSettingsQuery,
+					revalidateIfStale: true,
+				})
+			).enabled
+		) {
+			throw redirect({ to: "/", replace: true });
+		}
+	},
 	component: BillsPage,
 });
 

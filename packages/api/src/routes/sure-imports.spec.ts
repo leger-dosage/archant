@@ -241,7 +241,7 @@ describe("POST /api/sure-imports, after the write", () => {
 
 	it("answers 201 when detection throws, and logs the code only", async () => {
 		const run = vi
-			.spyOn(recurringService, "runRecurring")
+			.spyOn(recurringService, "runAutomaticRecurring")
 			.mockRejectedValue(new Error("SQLITE_ERROR: params [-1399, 'NETFLIX.COM']"));
 		const own = await ownDatabase();
 
@@ -257,6 +257,6 @@ describe("POST /api/sure-imports, after the write", () => {
 			expect.objectContaining({ code: "INTERNAL_ERROR", msg: "recurring detection failed" }),
 		]);
 		expect(loggedFigures(logLines)).not.toMatch(/1399|13\.99|NETFLIX|panne/u);
-		expect(run).toHaveBeenCalledWith(expect.anything(), { backfill: false });
+		expect(run).toHaveBeenCalledWith(expect.anything());
 	});
 });

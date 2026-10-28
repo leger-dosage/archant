@@ -1,6 +1,7 @@
 import type { ServiceDeps } from "../services/deps.ts";
 
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 
 import { validated } from "../lib/validated.ts";
 import {
@@ -16,6 +17,7 @@ import {
 	occurrencePatchSchema,
 	othersQuerySchema,
 	recurringPatchSchema,
+	recurringSettingsSchema,
 } from "../schemas/recurring.ts";
 import { allBills, billDetail } from "../services/recurring/all-bills.ts";
 import { billCandidates, billPicker } from "../services/recurring/bill-candidates.ts";
@@ -45,12 +47,39 @@ import {
 	listRecurring,
 	recurringOfEntry,
 } from "../services/recurring/series.ts";
+import {
+	ensureRecurringEnabled,
+	recurringSettings,
+	saveRecurringSettings,
+} from "../services/recurring/switch.ts";
 
 // `GET /:id` comes last: registered before them, it would answer `/bills`
 // and `/upcoming`.
 export function recurringRoutes(deps: ServiceDeps) {
+	// The bill pages Sure's `ensure_recurring_enabled` guards, refused while
+	// the switch is off. The series list, a transaction's « Marquer comme
+	// récurrent », deleting a series, detection and cleanup keep their reach, as Sure's
+	// `RecurringTransactionsController` and `TransactionsController` keep it.
+	// Every member reads `/settings`, as the navigation follows it;
+	// `viewerReadOnly` keeps its write to an administrator.
+	const guarded = createMiddleware(async (_c, next) => {
+		await ensureRecurringEnabled(deps);
+		await next();
+	});
+
 	return new Hono()
+		.use("/bills/*", guarded)
+		.use("/upcoming", guarded)
+		.use("/candidates", guarded)
+		.use("/picker", guarded)
+		.use("/declare", guarded)
+		.use("/occurrences/*", guarded)
+		.use("/payments/*", guarded)
 		.get("/", async (c) => c.json({ data: await listRecurring(deps) }, 200))
+		.get("/settings", async (c) => c.json({ data: await recurringSettings(deps) }, 200))
+		.put("/settings", validated("json", recurringSettingsSchema), async (c) =>
+			c.json({ data: await saveRecurringSettings(deps, c.req.valid("json")) }, 200),
+		)
 		.post("/", validated("json", addRecurringSchema), async (c) =>
 			c.json({ data: await addRecurringFromEntry(deps, c.req.valid("json").entryId) }, 200),
 		)
@@ -68,7 +97,7 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.get("/by-entry/:entryId", async (c) =>
 			c.json({ data: await recurringOfEntry(deps, c.req.param("entryId")) }, 200),
 		)
-		.patch("/:id", validated("json", recurringPatchSchema), async (c) => {
+		.patch("/:id", guarded, validated("json", recurringPatchSchema), async (c) => {
 			const data = await patchRecurring(deps, c.req.param("id"), c.req.valid("json"));
 
 			return c.json({ data }, 200);
@@ -120,5 +149,7 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.post("/occurrences/:id/payments", validated("json", addPaymentSchema), async (c) =>
 			c.json({ data: await addPayment(deps, c.req.param("id"), c.req.valid("json")) }, 201),
 		)
-		.get("/:id", async (c) => c.json({ data: await billDetail(deps, c.req.param("id")) }, 200));
+		.get("/:id", guarded, async (c) =>
+			c.json({ data: await billDetail(deps, c.req.param("id")) }, 200),
+		);
 }

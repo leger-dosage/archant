@@ -1,6 +1,12 @@
 import type { InferResponseType } from "hono/client";
 
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	keepPreviousData,
+	queryOptions,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 
 import type {
 	BillKind,
@@ -63,6 +69,34 @@ export type AllBillsQuery = {
 
 /** What the user can move a pattern to; `suggested` is detection's alone. */
 export type RecurringMove = Exclude<RecurringData["status"], "suggested">;
+
+/** « Activer les transactions récurrentes », the household's, which every member reads. */
+export const recurringSettingsQuery = queryOptions({
+	queryKey: queryKeys.recurringSettings,
+	queryFn: async () => (await unwrap(api.recurring.settings.$get())).data,
+});
+
+/**
+ * Whether the household follows recurring transactions. On until the answer
+ * says otherwise, Sure's default, so the rail does not move on every load.
+ */
+export function useRecurringEnabled(): boolean {
+	return useQuery(recurringSettingsQuery).data?.enabled !== false;
+}
+
+/** Sure's `update_settings`: the bill pages and the lists follow the new state. */
+export function useSaveRecurringSettings() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (enabled: boolean) =>
+			(await unwrap(api.recurring.settings.$put({ json: { enabled } }))).data,
+		onSuccess: async (settings) => {
+			queryClient.setQueryData(queryKeys.recurringSettings, settings);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all });
+		},
+	});
+}
 
 export function useRecurring() {
 	return useQuery({
