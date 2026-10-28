@@ -366,8 +366,11 @@ describe("scheduleOf", () => {
 const installment = { rules: [monthly(5)], anchorDate: "2026-01-05", endAfterCount: 3 };
 
 describe("nextExpectedDate", () => {
-	it("keeps Spec 9.2's date for a plain monthly series, the schedule's for any other", () => {
-		expect(nextExpectedDate(series({ expectedDayOfMonth: 1 }), "2026-08-31")).toBe("2026-10-01");
+	it("takes a plain monthly series' day in the month after the row's, the schedule's for any other", () => {
+		expect(nextExpectedDate(series({ expectedDayOfMonth: 28 }), "2026-03-02")).toBe("2026-04-28");
+		expect(nextExpectedDate(series({ expectedDayOfMonth: 31 }), "2026-01-15")).toBe("2026-02-28");
+		expect(nextExpectedDate(series({ expectedDayOfMonth: 31 }), "2028-01-15")).toBe("2028-02-29");
+		expect(nextExpectedDate(series({ expectedDayOfMonth: 1 }), "2026-08-31")).toBe("2026-09-01");
 		expect(
 			nextExpectedDate(series({ rules: [monthly(10, 3)], anchorDate: "2026-02-10" }), "2026-05-12"),
 		).toBe("2026-08-10");

@@ -381,7 +381,12 @@ function isPlainMonthly(schedule: Schedule): boolean {
 	);
 }
 
-/** Sure's shim `next_occurrence_after`: a plain monthly series' day in the following month. */
+/**
+ * Sure's shim `next_occurrence_after`: a plain monthly series' day in the
+ * month after `date`'s, clamped to its end, so a bill due on the 28th paid
+ * late on 2 March is next due on 28 April; any other takes its schedule's
+ * first occurrence after `date`.
+ */
 export function nextOccurrenceAfter(schedule: Schedule, date: IsoDate): IsoDate | null {
 	return isPlainMonthly(schedule)
 		? withDay(addMonths(firstOfMonth(date), 1), schedule.expectedDayOfMonth)
@@ -404,30 +409,6 @@ export function nextOccurrenceFromToday(schedule: Schedule, today: IsoDate): Iso
 	return day <= daysInMonth(yearOf(today), monthOf(today)) && thisMonth > today
 		? thisMonth
 		: withDay(addMonths(firstOfMonth(today), 1), day);
-}
-
-/**
- * A series' next date after a payment on `last`. A plain monthly series keeps
- * Spec 9.2's: the expected day nearest to one month after `last`, so a bill
- * due on the 1st paid on 31 August is due on 1 September; any other takes its
- * schedule's first occurrence after `last`.
- */
-export function nextExpectedAfter(schedule: Schedule, last: IsoDate): IsoDate | null {
-	if (!isPlainMonthly(schedule)) {
-		return nextOccurrenceAfter(schedule, last);
-	}
-
-	const target = addMonths(last, 1);
-	// The target's own month first, so it wins a tie.
-	const candidates = [0, 1, -1].map((months) =>
-		withDay(addMonths(firstOfMonth(target), months), schedule.expectedDayOfMonth),
-	);
-
-	return candidates.reduce((best, candidate) =>
-		Math.abs(daysBetween(target, candidate)) < Math.abs(daysBetween(target, best))
-			? candidate
-			: best,
-	);
 }
 
 /**

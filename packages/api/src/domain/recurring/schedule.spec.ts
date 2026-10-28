@@ -13,7 +13,6 @@ import {
 	monthlyEquivalent,
 	monthlyRollup,
 	monthlyOn,
-	nextExpectedAfter,
 	nextOccurrenceAfter,
 	nextOccurrenceFromToday,
 	occurrencesBetween,
@@ -304,7 +303,22 @@ describe("matchesDay", () => {
 describe("nextOccurrenceAfter", () => {
 	it("takes a plain monthly series' day in the following month, clamped", () => {
 		expect(nextOccurrenceAfter(schedule([monthly(5)]), "2026-09-02")).toBe("2026-10-05");
+		expect(nextOccurrenceAfter(schedule([monthly(5)]), "2026-09-05")).toBe("2026-10-05");
 		expect(nextOccurrenceAfter(schedule([monthly(31)]), "2026-01-31")).toBe("2026-02-28");
+	});
+
+	it("takes the month after a late row's", () => {
+		expect(nextOccurrenceAfter(schedule([monthly(28)]), "2026-03-02")).toBe("2026-04-28");
+		expect(nextOccurrenceAfter(schedule([monthly(30)]), "2026-09-02")).toBe("2026-10-30");
+	});
+
+	it("takes the coming month for a row early across the month end", () => {
+		expect(nextOccurrenceAfter(schedule([monthly(1)]), "2026-08-31")).toBe("2026-09-01");
+	});
+
+	it("clamps the 31st to February's end, the 29th in a leap year", () => {
+		expect(nextOccurrenceAfter(schedule([monthly(31)]), "2026-01-15")).toBe("2026-02-28");
+		expect(nextOccurrenceAfter(schedule([monthly(31)]), "2028-01-15")).toBe("2028-02-29");
 	});
 
 	it("asks the schedule for any other", () => {
@@ -339,41 +353,6 @@ describe("nextOccurrenceFromToday", () => {
 
 /** A plain monthly schedule on `day`. */
 const plain = (day: number) => schedule([monthly(day)]);
-
-describe("nextExpectedAfter", () => {
-	it("takes the expected day of the next month when the row came on time", () => {
-		expect(nextExpectedAfter(plain(5), "2026-09-05")).toBe("2026-10-05");
-		expect(nextExpectedAfter(plain(5), "2026-09-03")).toBe("2026-10-05");
-		expect(nextExpectedAfter(plain(5), "2026-09-07")).toBe("2026-10-05");
-	});
-
-	it("moves a month on for a row that came early across the month end", () => {
-		expect(nextExpectedAfter(plain(1), "2026-08-31")).toBe("2026-10-01");
-		expect(nextExpectedAfter(plain(2), "2026-08-30")).toBe("2026-10-02");
-	});
-
-	it("moves a month back for a row that came late across the month end", () => {
-		expect(nextExpectedAfter(plain(30), "2026-09-02")).toBe("2026-09-30");
-		expect(nextExpectedAfter(plain(31), "2026-09-01")).toBe("2026-09-30");
-	});
-
-	it("clamps the month end to a shorter month", () => {
-		expect(nextExpectedAfter(plain(31), "2026-01-31")).toBe("2026-02-28");
-		expect(nextExpectedAfter(plain(31), "2026-08-31")).toBe("2026-09-30");
-	});
-
-	it("keeps the target's month on a tie", () => {
-		// Target 2026-06-16: 2026-06-01 and 2026-07-01 are both 15 days away.
-		expect(nextExpectedAfter(plain(1), "2026-05-16")).toBe("2026-06-01");
-	});
-
-	it("takes any other schedule's first occurrence after the date, none past an installment", () => {
-		const quarterly = schedule([monthly(10, 3)], { anchorDate: "2026-02-10" });
-
-		expect(nextExpectedAfter(quarterly, "2026-05-12")).toBe("2026-08-10");
-		expect(nextExpectedAfter(installment, "2026-03-05")).toBeNull();
-	});
-});
 
 describe("dueFrom", () => {
 	it("takes today when the expected day is today, else the next one", () => {
