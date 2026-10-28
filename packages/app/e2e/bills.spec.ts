@@ -446,6 +446,7 @@ const EMPTY = {
 	totals: { remaining: 0, overdue: 0, dueSoon: 0, paid: 0 },
 	leftOut: [],
 	review: [],
+	notices: [],
 };
 
 /**
@@ -852,6 +853,48 @@ test("a bill opens as a drawer with its summary, « Payer », « Aperçu », « 
 	await expect(drawer).toBeHidden();
 	await expect(page).toHaveURL(new RegExp(`/bills\\?view=all&q=`, "u"));
 	await expect(allRow(page, name)).toContainText("En pause");
+});
+
+test("« Changements » announces a recent price change, the minor ones folded, and an autopaid row recedes", async ({
+	page,
+	api,
+}) => {
+	const account = await openAccount(api);
+	const prefix = uniqueName("Prix");
+	const netflix = `${prefix} Netflix`;
+	const water = `${prefix} Eau`;
+	const late = `${prefix} Gaz`;
+	const netflixId = await repriced(api, account.id, netflix, "13,49", "15,99");
+	await repriced(api, account.id, water, "10,00", "10,50");
+	await api.editBill(netflixId, { autopay: true });
+	await api.editBill(await declare(api, account.id, late, "60,00", 5), { autopay: true });
+
+	await visit(page);
+
+	const notices = section(page, "Changements");
+	// 18,5 % is material: on top, in the foreground.
+	const material = notices.getByRole("listitem").filter({
+		hasText: `${netflix} a changé de prix : ${euros(1349)} → ${euros(1599)} (+19\u202f%)`,
+	});
+	await expect(material).toBeVisible();
+	await expect(material.locator("p")).toHaveClass(/font-medium/u);
+	// 5 % is not: folded below the material ones.
+	const minor = notices.getByRole("listitem").filter({ hasText: `${water} a changé de prix` });
+	await expect(minor).toBeHidden();
+	await notices.getByText(/^\d+ changements? mineurs?$/u).click();
+	await expect(minor).toContainText(`${euros(1000)} → ${euros(1050)} (+5\u202f%)`);
+
+	// Autopaid: the name and amount recede and the line says why; late, it still needs attention.
+	const autopaid = row(page, netflix);
+	await expect(autopaid).toContainText("Paiement automatique");
+	await expect(autopaid.getByText(netflix, { exact: true })).toHaveClass(/text-muted-foreground/u);
+	const overdue = sectionRow(page, "Requiert votre attention", late);
+	await expect(overdue).toContainText("Paiement automatique");
+	await expect(overdue).toContainText("5 jours de retard");
+
+	await material.getByRole("link", { name: `Gérer ${netflix}` }).click();
+	await expect(page).toHaveURL(new RegExp(`/bills/${netflixId}$`, "u"));
+	await expect(page.getByRole("dialog", { name: netflix })).toBeVisible();
 });
 
 test("an installment reads which payment is next, and deleting a bill from its drawer goes back to the table", async ({

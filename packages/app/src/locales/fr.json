@@ -2543,6 +2543,15 @@
 			"reopened": "Échéance rouverte"
 		},
 		"priceChange": "{{from}} → {{to}} ({{percent}})",
+		"notices": {
+			"title": "Changements",
+			"price": "{{name}} a changé de prix : {{from}} → {{to}} ({{percent}})",
+			"manage": "Gérer",
+			"manageAria": "Gérer {{name}}",
+			"routine_one": "{{count}} changement mineur",
+			"routine_other": "{{count}} changements mineurs"
+		},
+		"autopay": "Paiement automatique",
 		"allView": {
 			"description": "Chaque facture et chaque revenu suivis, avec ce qu'ils coûtent par mois. Ouvrez-en un pour voir ses paiements et ses changements de prix.",
 			"search": "Rechercher une facture",

@@ -237,6 +237,28 @@ export function changePercent(previous: MinorUnits, next: MinorUnits): number {
 }
 
 /**
+ * Sure's notice percent, `(shift * 100).round`: the change in whole percent,
+ * half away from zero; `0` when the previous amount is.
+ */
+export function wholePercent(previous: MinorUnits, next: MinorUnits): number {
+	if (previous === 0) {
+		return 0;
+	}
+
+	const whole = roundHalfUp(Math.abs(next - previous) * 100, previous);
+
+	return next < previous ? -whole : whole;
+}
+
+/**
+ * Sure's `RecurringPriceChange#material?`: a tenth or more either way, worth
+ * a top notice. Compared in integers, `|next − previous| × 10 ≥ previous`.
+ */
+export function isMaterialShift(previous: MinorUnits, next: MinorUnits): boolean {
+	return previous > 0 && Math.abs(next - previous) * 10 >= previous;
+}
+
+/**
  * Sure's `default_horizon`: 90 days ahead, stretched to the next due date for
  * a yearly bill, and to an installment's last payment.
  */

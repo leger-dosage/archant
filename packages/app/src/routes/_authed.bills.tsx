@@ -8,7 +8,7 @@ import type {
 import type { TFunction } from "i18next";
 
 import { Link, Outlet, createFileRoute } from "@tanstack/react-router";
-import { ReceiptIcon } from "lucide-react";
+import { ChevronRightIcon, ReceiptIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -27,6 +27,8 @@ import {
 	confidenceText,
 	dueLabel,
 	isPartial,
+	noticeGroups,
+	noticeText,
 } from "@/components/BillLabels";
 import { EmptyState } from "@/components/EmptyState";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -107,11 +109,18 @@ function RowAmount({ row, className = "" }: { row: BillRowData; className?: stri
 	);
 }
 
-/** One occurrence, a link that opens its sheet. */
+/**
+ * One occurrence, a link that opens its sheet. An autopaid bill recedes, its
+ * name and amount in the secondary colour and its subline led by « Paiement
+ * automatique », as Sure's `lead_tone` and `bills_autopay_label`, which only
+ * an active series claims.
+ */
 function BillRow({ row }: { row: BillRowData }) {
 	const { t } = useTranslation();
 	const paid = row.state === "paid";
 	const range = estimateOf(row);
+	const lead = row.autopay ? "text-muted-foreground" : "";
+	const autopayLabel = row.autopay && row.state !== "paused" && row.state !== "ended";
 
 	return (
 		<li>
@@ -123,13 +132,19 @@ function BillRow({ row }: { row: BillRowData }) {
 			>
 				<TintedIcon subject={{ kind: "merchant", name: row.name }} size="md" />
 				<span className="flex min-w-0 flex-1 flex-col">
-					<span className="truncate font-medium">{row.name}</span>
+					<span className={cn("truncate font-medium", lead)}>{row.name}</span>
 					<span
 						className={cn(
 							"flex flex-wrap items-center gap-x-1.5 text-xs",
 							row.state === "overdue" ? "text-destructive" : "text-muted-foreground",
 						)}
 					>
+						{autopayLabel && (
+							<>
+								<span className="text-muted-foreground">{t("bills.autopay")}</span>
+								<span aria-hidden="true">·</span>
+							</>
+						)}
 						<span>{dueLabel(row, t)}</span>
 						{isPartial(row) && (
 							<>
@@ -150,7 +165,7 @@ function BillRow({ row }: { row: BillRowData }) {
 					{row.state === "due" && <StatusBadge status="billDueSoon" />}
 					{paid && <StatusBadge status="billPaid" />}
 					<span className="flex flex-col items-end">
-						<RowAmount row={row} />
+						<RowAmount row={row} className={lead} />
 						{/* Sure shows the band only from `@lg`: on a phone it squeezes the name, and the drawer has it. */}
 						{range !== null && (
 							<AmountRange range={range} currency={row.currency} className="hidden @lg:block" />
@@ -178,6 +193,82 @@ function BillSection({ title, rows }: { title: string; rows: readonly BillRowDat
 					<BillRow key={row.occurrenceId} row={row} />
 				))}
 			</ul>
+		</InsetGroup>
+	);
+}
+
+type NoticeData = BillsData["notices"][number];
+
+/** Sure's `bills/_notice`: the change, its percent, and « Gérer » to the bill's drawer. */
+function Notice({ notice }: { notice: NoticeData }) {
+	const { t } = useTranslation();
+
+	return (
+		<li className="flex items-center justify-between gap-3 px-4 py-2.5">
+			<p
+				className={cn(
+					"text-sm",
+					notice.urgent ? "font-medium text-foreground" : "text-muted-foreground",
+				)}
+			>
+				{noticeText(notice, t)}
+			</p>
+			<Button variant="link" size="sm" className="-mr-2 shrink-0" asChild>
+				<Link
+					to="/bills/$billId"
+					params={{ billId: notice.seriesId }}
+					resetScroll={false}
+					aria-label={t("bills.notices.manageAria", { name: notice.name })}
+				>
+					{t("bills.notices.manage")}
+				</Link>
+			</Button>
+		</li>
+	);
+}
+
+/**
+ * Sure's « Changements »: the urgent notices, then the others, folded under
+ * « N changements mineurs » when an urgent one is there to come first.
+ */
+function Notices({ notices }: { notices: readonly NoticeData[] }) {
+	const { t } = useTranslation();
+	const [open, setOpen] = useState(false);
+
+	if (notices.length === 0) {
+		return null;
+	}
+
+	const { urgent, routine, folded } = noticeGroups(notices);
+	const list = (items: readonly NoticeData[]) => (
+		<ul className="flex flex-col divide-y divide-line">
+			{items.map((notice) => (
+				<Notice key={notice.id} notice={notice} />
+			))}
+		</ul>
+	);
+	const title = t("bills.notices.title");
+
+	return (
+		<InsetGroup level={2} title={title} count={notices.length}>
+			<div className="flex flex-col divide-y divide-line overflow-hidden rounded-lg border bg-card">
+				{urgent.length > 0 && list(urgent)}
+				{routine.length > 0 &&
+					(folded ? (
+						<details open={open} onToggle={(event) => setOpen(event.currentTarget.open)}>
+							<summary className="flex cursor-pointer items-center gap-2 px-4 py-2.5 text-sm text-muted-foreground hover:bg-hover [&::-webkit-details-marker]:hidden">
+								<ChevronRightIcon
+									aria-hidden="true"
+									className={cn("size-4 transition-transform", open && "rotate-90")}
+								/>
+								{t("bills.notices.routine", { count: routine.length })}
+							</summary>
+							<div className="border-t border-line">{list(routine)}</div>
+						</details>
+					) : (
+						list(routine)
+					))}
+			</div>
 		</InsetGroup>
 	);
 }
@@ -458,6 +549,7 @@ function OverviewPage() {
 				<>
 					{listed && <Totals bills={data} />}
 					<LeftOutNotice accounts={data.leftOut} />
+					<Notices notices={data.notices} />
 					{data.review.length > 0 && <ReviewQueue items={data.review} admin={admin} />}
 					{suggestions.length > 0 && <RecurringSuggestions items={suggestions} admin={admin} />}
 					{empty && (

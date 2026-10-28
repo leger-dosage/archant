@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
-import { recurringOccurrences } from "@archant/data/schema/recurring-occurrences";
+import {
+	recurringOccurrences,
+	recurringPriceChanges,
+} from "@archant/data/schema/recurring-occurrences";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { account, addRows, bill, monthly, query, refusal, stored } from "../../testing/bills.ts";
@@ -680,8 +683,21 @@ describe("markTransferRecurring", () => {
 		);
 
 		expect(marked.name).toBe("Virement vers Livret A");
+		const now = Date.now();
+		// Nor does its price change make news.
+		await temp.db.insert(recurringPriceChanges).values({
+			id: "savings-change",
+			recurringTransactionId: marked.id,
+			effectiveOn: "2026-09-05",
+			previousAmount: 10_000,
+			newAmount: 20_000,
+			currency: "EUR",
+			createdAt: now,
+			updatedAt: now,
+		});
 		const overview = await billsOverview(deps());
 		expect([...overview.attention, ...overview.month, ...overview.later]).toEqual([]);
+		expect(overview.notices).toEqual([]);
 		await expect(allBills(deps(), { type: "transfer", sort: "due" })).resolves.toMatchObject({
 			bills: [{ id: marked.id, billType: "transfer" }],
 		});
