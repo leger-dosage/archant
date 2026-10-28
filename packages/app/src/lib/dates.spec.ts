@@ -11,6 +11,7 @@ import {
 	ofMonth,
 	toIsoMonth,
 	monthsAgo,
+	weekFromToday,
 	yearsAgo,
 } from "./dates.ts";
 
@@ -119,5 +120,24 @@ describe("MONTH_NAMES", () => {
 		expect(MONTH_NAMES).toHaveLength(12);
 		expect(MONTH_NAMES[0]).toBe("janvier");
 		expect(MONTH_NAMES[11]).toBe("décembre");
+	});
+});
+
+describe("weekFromToday", () => {
+	it("counts seven days from the server's today, read off a row due ahead", () => {
+		// Due on the 13th, three days on: today is the 10th.
+		expect(weekFromToday({ effectiveDueOn: "2026-10-13", days: 3 })).toBe("2026-10-17");
+	});
+
+	it("counts from today for an overdue row too", () => {
+		expect(weekFromToday({ effectiveDueOn: "2026-10-06", days: -4 })).toBe("2026-10-17");
+	});
+
+	it("crosses a month and a year end", () => {
+		expect(weekFromToday({ effectiveDueOn: "2026-12-30", days: 2 })).toBe("2027-01-04");
+	});
+
+	it("answers before the due date when the row is due further than a week out", () => {
+		expect(weekFromToday({ effectiveDueOn: "2026-10-20", days: 10 })).toBe("2026-10-17");
 	});
 });

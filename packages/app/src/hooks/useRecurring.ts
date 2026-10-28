@@ -303,7 +303,7 @@ export function useAddPayment(id: string) {
 	});
 }
 
-/** « Ignorer cette échéance » and « Rouvrir ». */
+/** « Ignorer » and « Rouvrir ». */
 export function useSetOccurrenceClosed(id: string) {
 	const invalidate = useInvalidateRecurring();
 
@@ -314,14 +314,12 @@ export function useSetOccurrenceClosed(id: string) {
 	});
 }
 
-/** « Reporter » and « Modifier le montant ». */
+/** « Reporter d'une semaine ». No screen sets an occurrence's amount, as no view of Sure does. */
 export function useEditOccurrence(id: string) {
 	const invalidate = useInvalidateRecurring();
 
 	return useMutation({
-		mutationFn: async (
-			patch: { snoozedUntil: string | null } | { expectedAmount: string | null },
-		) =>
+		mutationFn: async (patch: { snoozedUntil: string }) =>
 			(await unwrap(api.recurring.occurrences[":id"].$patch({ param: { id }, json: patch }))).data,
 		onSuccess: invalidate,
 	});

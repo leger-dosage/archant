@@ -2432,7 +2432,7 @@
 	},
 	"bills": {
 		"title": "Factures",
-		"description": "Ce qui est en retard, ce qui tombe ce mois-ci et ce qui est déjà payé. Ouvrez une échéance pour la marquer comme payée, l'ignorer, la reporter ou changer son montant.",
+		"description": "Ce qui est en retard, ce qui tombe ce mois-ci et ce qui est déjà payé. Ouvrez une échéance pour la marquer comme payée, l'ignorer ou la reporter d'une semaine.",
 		"all": "Toutes les factures",
 		"overview": "Vue d'ensemble",
 		"totals": {
@@ -2529,14 +2529,10 @@
 			"paymentDate": "Date du paiement",
 			"record": "Enregistrer le paiement",
 			"added": "Paiement ajouté",
-			"postpone": "Reporter",
-			"postponeTo": "Reporter au",
-			"postponed": "Échéance reportée au {{date}}",
-			"changeAmount": "Modifier le montant",
-			"changeAmountHint": "Pour cette échéance seulement. Les suivantes gardent le montant de la facture.",
-			"expected": "Montant attendu",
-			"amountChanged": "Montant modifié",
-			"skip": "Ignorer cette échéance",
+			"menu": "Actions pour {{name}}",
+			"postpone": "Reporter d'une semaine",
+			"postponed": "Reportée au {{date}}",
+			"skip": "Ignorer",
 			"skippedToast": "Échéance ignorée",
 			"reopen": "Rouvrir",
 			"reopened": "Échéance rouverte"
