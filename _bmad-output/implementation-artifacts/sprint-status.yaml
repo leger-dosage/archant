@@ -340,7 +340,7 @@ development_status:
 
   epic-33: in-progress
   33-1-retire-stale-bills-from-the-cleanup-button-only: done
-  33-2-date-a-monthly-bills-next-payment-as-sure: backlog
+  33-2-date-a-monthly-bills-next-payment-as-sure: done
   33-3-leave-a-renamed-series-behind: backlog
   33-4-declare-a-bill-from-any-transaction: backlog
   33-5-postpone-an-occurrence-a-week: backlog

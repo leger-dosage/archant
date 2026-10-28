@@ -14,7 +14,7 @@ import {
 	DAYS_PER_YEAR,
 	dueFrom,
 	matchesDay,
-	nextExpectedAfter,
+	nextOccurrenceAfter,
 	occurrencesPerYear,
 } from "./schedule.ts";
 
@@ -53,7 +53,7 @@ export function scheduleOf(series: ScheduledSeries): Schedule {
  * installment past its last payment keeps `last`.
  */
 export function nextExpectedDate(series: ScheduledSeries, last: IsoDate): IsoDate {
-	return nextExpectedAfter(scheduleOf(series), last) ?? last;
+	return nextOccurrenceAfter(scheduleOf(series), last) ?? last;
 }
 
 /** The first date of the series that is today or later: a manual item's next date, as Sure's. */
