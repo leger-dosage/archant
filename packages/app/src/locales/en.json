@@ -3115,7 +3115,9 @@
 			"title": "General",
 			"subtitle": "Configure your preferences",
 			"defaultAccountOrder": "Default account order",
-			"locale": "Language"
+			"locale": "Language",
+			"householdLocale": "Household data language",
+			"householdLocaleHint": "Language of the default categories and transfer names Archant writes. What already exists is not renamed."
 		},
 		"transactions": {
 			"title": "Transactions",

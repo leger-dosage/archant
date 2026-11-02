@@ -10,6 +10,8 @@ import {
 type Choice<Value extends string> = {
 	id: string;
 	label: string;
+	/** What the choice changes, under the select. */
+	description?: string;
 	value: Value;
 	options: readonly { value: Value; label: string }[];
 	onChange: (value: Value) => void;
@@ -20,6 +22,7 @@ type Choice<Value extends string> = {
 export function ChoiceField<Value extends string>({
 	id,
 	label,
+	description,
 	value,
 	options,
 	onChange,
@@ -50,6 +53,7 @@ export function ChoiceField<Value extends string>({
 					))}
 				</SelectContent>
 			</Select>
+			{description !== undefined && <p className="text-sm text-muted-foreground">{description}</p>}
 		</div>
 	);
 }

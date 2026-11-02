@@ -1,4 +1,5 @@
 import type { CategoryIcon } from "@archant/data/category-presets";
+import type { Locale } from "@archant/data/locales";
 
 export type DefaultCategory = {
 	name: string;
@@ -10,7 +11,7 @@ export type DefaultCategory = {
  * Sure's `Family#investment_contributions_category`: seeded with the others,
  * and created again for a contribution's outflow once the owner deleted it.
  */
-export const INVESTMENT_CONTRIBUTIONS_CATEGORY: DefaultCategory = {
+const INVESTMENT_CONTRIBUTIONS_CATEGORY: DefaultCategory = {
 	name: "Contributions aux investissements",
 	color: "#0d9488",
 	icon: "trending-up",
@@ -47,3 +48,51 @@ export const DEFAULT_CATEGORIES: readonly DefaultCategory[] = [
 	{ name: "Épargne et placements", color: "#059669", icon: "piggy-bank" },
 	INVESTMENT_CONTRIBUTIONS_CATEGORY,
 ];
+
+/** Sure's English `models.category.defaults`, same colours and icons, same order. */
+const ENGLISH_NAMES = [
+	"Income",
+	"Food & Drink",
+	"Groceries",
+	"Shopping",
+	"Transportation",
+	"Travel",
+	"Entertainment",
+	"Healthcare",
+	"Personal Care",
+	"Home Improvement",
+	"Mortgage / Rent",
+	"Utilities",
+	"Subscriptions",
+	"Insurance",
+	"Sports & Fitness",
+	"Gifts & Donations",
+	"Taxes",
+	"Loan Payments",
+	"Services",
+	"Fees",
+	"Savings & Investments",
+	"Investment Contributions",
+] as const;
+
+/** The default categories in the household's language, Sure's `Category.default_categories`. */
+export function defaultCategoriesFor(locale: Locale): readonly DefaultCategory[] {
+	return locale === "fr"
+		? DEFAULT_CATEGORIES
+		: DEFAULT_CATEGORIES.map((category, index) => ({
+				...category,
+				name: ENGLISH_NAMES[index] ?? category.name,
+			}));
+}
+
+/** Sure's `Family#investment_contributions_category`, named in the household's language. */
+export function investmentContributionsCategoryFor(locale: Locale): DefaultCategory {
+	return locale === "fr"
+		? INVESTMENT_CONTRIBUTIONS_CATEGORY
+		: { ...INVESTMENT_CONTRIBUTIONS_CATEGORY, name: "Investment Contributions" };
+}
+
+/** Sure's `models.category.defaults.fees`, the category of every transfer fee. */
+export function transferFeesCategoryFor(locale: Locale): DefaultCategory {
+	return { name: locale === "fr" ? "Frais" : "Fees", color: "#6b7280", icon: "receipt" };
+}

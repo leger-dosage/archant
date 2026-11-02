@@ -3115,7 +3115,9 @@
 			"title": "Général",
 			"subtitle": "Configurez vos préférences",
 			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut",
-			"locale": "Langue"
+			"locale": "Langue",
+			"householdLocale": "Langue des données du foyer",
+			"householdLocaleHint": "Langue des catégories par défaut et des noms de virement qu'Archant écrit. Ce qui existe déjà n'est pas renommé."
 		},
 		"transactions": {
 			"title": "Opérations",

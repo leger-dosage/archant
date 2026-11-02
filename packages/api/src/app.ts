@@ -110,6 +110,8 @@ export type AppDeps = ServiceDeps &
 		 * exists; `null` once one does. Never stored, never returned.
 		 */
 		setupToken: string | null;
+		/** Seeds the default categories at setup, in the household's language. */
+		seedAtSetup?: boolean | undefined;
 		/** `APP_VERSION`: the release the image was built from, `null` for a development build. */
 		version: string | null;
 		/**

@@ -8,6 +8,8 @@ import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
 import type { Locale } from "@archant/data/locales";
 import { users } from "@archant/data/schema/auth";
 
+import { householdLocale, saveHouseholdLocale } from "./household-locale.ts";
+
 /**
  * One user's preferences, Sure's `users` columns that « Préférences » edits,
  * and its `show_split_grouped`, which Sure keeps in « Apparence ».
@@ -51,7 +53,7 @@ export async function updatePreferences(
 	deps: ServiceDeps,
 	userId: string,
 	input: PreferencesInput,
-): Promise<Preferences> {
+): Promise<Preferences & { householdLocale: Locale }> {
 	const changes = {
 		...(input.defaultAccountOrder !== undefined && {
 			defaultAccountOrder: input.defaultAccountOrder,
@@ -64,5 +66,24 @@ export async function updatePreferences(
 		await deps.db.update(users).set(changes).where(eq(users.id, userId));
 	}
 
-	return getPreferences(deps, userId);
+	if (input.householdLocale !== undefined) {
+		await saveHouseholdLocale(deps.db, input.householdLocale);
+	}
+
+	return getPreferencesPage(deps, userId);
+}
+
+/**
+ * What « Préférences » shows: the user's own, and the household's language,
+ * which only that page reads. Apart from `getPreferences`, which every list of
+ * accounts reads for its order and must not depend on a second table.
+ */
+export async function getPreferencesPage(
+	deps: ServiceDeps,
+	userId: string,
+): Promise<Preferences & { householdLocale: Locale }> {
+	return {
+		...(await getPreferences(deps, userId)),
+		householdLocale: await householdLocale(deps.db),
+	};
 }

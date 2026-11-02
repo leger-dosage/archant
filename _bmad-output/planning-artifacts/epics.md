@@ -8803,7 +8803,7 @@ So that the household uses one login, as Sure.
 
 The owner's decision of 2026-11-02 reverses the one of 2026-10-14: the interface comes in English as well as French, Sure's way and better. Sure keeps a language per member (`users.locale`, filled from `Accept-Language` on the first visit) and one for the family (`families.locale`); its English is the source of most of Archant's French. Archant separates what Sure mixes. The interface language belongs to each member and never changes what is stored. The language of the data the server writes belongs to the household and is fixed when it is created, so choosing English never renames a category.
 
-Stories 37.2 and 37.3 follow 37.1.
+Stories 37.2, 37.3 and 37.4 follow 37.1; 37.3 comes last, once both languages have all their texts.
 
 ### Story 37.1: Read the interface in English or French
 
@@ -8846,7 +8846,7 @@ So that I use it in my language, as Sure.
 ### Story 37.2: Give the household a language for its data
 
 As the household's administrator,
-I want the categories and labels Archant writes to follow the household's language,
+I want the categories and transfer names Archant writes to follow the household's language,
 So that an English household reads « Groceries », not « Courses », as Sure's `Family.locale`.
 
 **Requirements:** none new
@@ -8855,19 +8855,41 @@ So that an English household reads « Groceries », not « Courses », as Sure's
 
 **Given** a `settings` row `locale`
 **When** setup creates the household
-**Then** it holds the language of the browser that ran setup, and « Réglages › Préférences » lets the administrator change it with a notice that existing data is not renamed
+**Then** the setup page sends its language, the row holds it, and the default categories are seeded then, in Sure's English names for `en`, not at the server's start, which cannot know the language; an API client that sends none gets French, as every household before
 
-**Given** the default categories, the sample household, the labels « Virement sortant », « Virement entrant », « Revenu divers », « Dépense diverse », the transfer names « Virement vers », « Paiement vers », « Virement depuis » and « Frais de virement », and the tool outputs of the assistant
-**When** the server writes or formats them
-**Then** it uses the household's language, French as today for a French household, and `formatMoney` takes the household's `Intl` tag
+**Given** an existing household with no row
+**When** the server reads its language
+**Then** it is `fr`, so no stored name changes
 
-**Given** an existing household
-**When** it is updated
-**Then** its `locale` row is `fr`, so no stored name or generated label changes
+**Given** « Réglages › Préférences »
+**When** an administrator picks « Langue des données du foyer »
+**Then** it is saved apart from the member's own language, with a hint that nothing existing is renamed; a viewer never sees it
+
+**Given** a transfer, a fee, a contribution to an investment or « Créer les catégories par défaut »
+**When** the household is English
+**Then** the names are Sure's `Transfer to`, `Payment to`, `Transfer from`, `Transfer fee`, `Fees` and `Investment Contributions`, and the missing defaults are English
 
 **Given** the finished story
-**When** `pnpm test` runs
-**Then** Vitest covers each generated text in both languages
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the setting, the seed, the setup, the transfer and its fees in both languages
+
+### Story 37.4: Write an import's labels and the sample household in the household's language
+
+As the household's administrator,
+I want the labels an import or a bank sync writes, and the sample household, in the household's language,
+So that an English household has no French line the server wrote.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** the labels « Virement sortant », « Virement entrant », « Revenu divers », « Dépense diverse », « Intérêts », « Opération importée », and the QIF actions
+**When** a bank sync or an import writes them for an English household
+**Then** they are Sure's English, and the fingerprint key of a synced line never changes (AD-7)
+
+**Given** « Réinitialiser et précharger » and the assistant's tools
+**When** the household is English
+**Then** the sample household's names and the amounts the tools write follow `en`
 
 ### Story 37.3: Cover both languages end to end
 

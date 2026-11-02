@@ -18,6 +18,7 @@ import { ApiError, api, unwrap } from "@/lib/api";
 import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { activeLocale } from "@/lib/locale";
 import { queryKeys } from "@/lib/query-keys";
 
 // The API's schema plus the confirmation, which only the form needs. The API
@@ -72,7 +73,9 @@ function SetupPage() {
 		setOriginMismatch(false);
 
 		try {
-			await unwrap(api.setup.$post({ json: { token, name, email, password } }));
+			await unwrap(
+				api.setup.$post({ json: { token, name, email, password, locale: activeLocale } }),
+			);
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 

@@ -48,7 +48,12 @@ describe("GET /api/preferences", () => {
 
 		expect(response.status).toBe(200);
 		await expect(response.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "name_asc", showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: "name_asc",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 	});
 });
@@ -77,10 +82,20 @@ describe("PATCH /api/preferences", () => {
 
 		expect(saved.status).toBe(200);
 		await expect(saved.json()).resolves.toEqual({
-			data: { defaultAccountOrder: order, showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: order,
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 		await expect(read.json()).resolves.toEqual({
-			data: { defaultAccountOrder: order, showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: order,
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 	});
 
@@ -92,7 +107,12 @@ describe("PATCH /api/preferences", () => {
 
 		expect(saved.status).toBe(200);
 		await expect(saved.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "name_desc", showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: "name_desc",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 	});
 
@@ -100,18 +120,37 @@ describe("PATCH /api/preferences", () => {
 		const api = await preferencesApi();
 		await api.$patch({ json: { defaultAccountOrder: "balance_desc" } });
 
-		const off = await api.$patch({ json: { showSplitGrouped: false, locale: null } });
+		const off = await api.$patch({
+			json: { showSplitGrouped: false, locale: null, householdLocale: "fr" },
+		});
 		const readOff = await api.$get();
-		const on = await api.$patch({ json: { showSplitGrouped: true, locale: null } });
+		const on = await api.$patch({
+			json: { showSplitGrouped: true, locale: null, householdLocale: "fr" },
+		});
 
 		await expect(off.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: false, locale: null },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: false,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 		await expect(readOff.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: false, locale: null },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: false,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 		await expect(on.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 	});
 
@@ -119,18 +158,43 @@ describe("PATCH /api/preferences", () => {
 		const api = await preferencesApi();
 		await api.$patch({ json: { defaultAccountOrder: "balance_desc" } });
 
-		const english = await api.$patch({ json: { locale: "en" } });
-		const french = await api.$patch({ json: { locale: "fr" } });
-		const browser = await api.$patch({ json: { locale: null } });
+		const english = await api.$patch({ json: { locale: "en", householdLocale: "fr" } });
+		const french = await api.$patch({ json: { locale: "fr", householdLocale: "fr" } });
+		const browser = await api.$patch({ json: { locale: null, householdLocale: "fr" } });
 
 		await expect(english.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: true, locale: "en" },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: true,
+				locale: "en",
+				householdLocale: "fr",
+			},
 		});
 		await expect(french.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: true, locale: "fr" },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: true,
+				locale: "fr",
+				householdLocale: "fr",
+			},
 		});
 		await expect(browser.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "balance_desc", showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: "balance_desc",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
+		});
+	});
+
+	it("saves the household's language apart from the user's, as Sure's family locale", async () => {
+		const api = await preferencesApi();
+
+		const saved = await api.$patch({ json: { householdLocale: "en" } });
+
+		await expect(saved.json()).resolves.toMatchObject({
+			data: { locale: null, householdLocale: "en" },
 		});
 	});
 
@@ -171,7 +235,12 @@ describe("PATCH /api/preferences", () => {
 			fields: [{ path: "defaultAccountOrder", code: "invalid_value" }],
 		});
 		await expect(read.json()).resolves.toEqual({
-			data: { defaultAccountOrder: "name_asc", showSplitGrouped: true, locale: null },
+			data: {
+				defaultAccountOrder: "name_asc",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
 		});
 	});
 
@@ -255,7 +324,12 @@ describe("PATCH /api/preferences", () => {
 			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");
 			expect(read.status).toBe(200);
 			await expect(read.json()).resolves.toEqual({
-				data: { defaultAccountOrder: "name_asc", showSplitGrouped: true, locale: null },
+				data: {
+					defaultAccountOrder: "name_asc",
+					showSplitGrouped: true,
+					locale: null,
+					householdLocale: "fr",
+				},
 			});
 		});
 	});

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { LOCALES } from "@archant/data/locales";
+
 /** Better Auth's default bounds, restated so the form reports them per field (NFR6). */
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
@@ -36,6 +38,9 @@ export const setupSchema = z.object({
 	name: firstNameSchema.optional(),
 	email: emailSchema,
 	password: passwordSchema,
+	// The language of the household's data, from the page that set it up; French
+	// without one, as every household before Story 37.2.
+	locale: z.enum(LOCALES).optional(),
 });
 
 export type SetupInput = z.infer<typeof setupSchema>;

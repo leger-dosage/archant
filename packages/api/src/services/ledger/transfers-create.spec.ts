@@ -1,7 +1,7 @@
 import type { TransferBetween } from "./transfers.ts";
 
 import { eq } from "drizzle-orm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -28,6 +28,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { updateAccount } from "../accounts.ts";
+import { saveHouseholdLocale } from "../household-locale.ts";
 import { deleteTransaction } from "./edits.ts";
 import { createTransferBetween, rejectTransfer, unmatchTransfer } from "./transfers.ts";
 
@@ -50,6 +51,13 @@ function between(
 		tagIds: [],
 		...overrides,
 	};
+}
+
+async function categoryNamed(id: string | null | undefined) {
+	return temp.db
+		.select({ name: categories.name })
+		.from(categories)
+		.where(eq(categories.id, id ?? ""));
 }
 
 async function rowOf(entryId: string) {
@@ -92,6 +100,42 @@ const feesCategories = () =>
 	temp.db.select({ id: categories.id }).from(categories).where(eq(categories.name, "Frais"));
 
 describe("createTransferBetween", () => {
+	it("names an English household's transfers, fees and contributions as Sure's English", async () => {
+		const { checking, livret, card } = await openHousehold();
+		const pea = await openPea();
+		await saveHouseholdLocale(temp.db, "en");
+		// One database for the file: the next tests are a French household's.
+		onTestFinished(() => saveHouseholdLocale(temp.db, "fr"));
+
+		const { transfer } = await createTransferBetween(
+			deps(),
+			between(checking.id, livret.id, { sourceFee: cents(150) }),
+			asUser,
+		);
+		const payment = await createTransferBetween(deps(), between(checking.id, card.id), asUser);
+		const contribution = await createTransferBetween(deps(), between(checking.id, pea.id), asUser);
+
+		await expect(rowOf(transfer.outflowTransactionId)).resolves.toMatchObject({
+			label: "Transfer to Livret A",
+		});
+		await expect(rowOf(transfer.inflowTransactionId)).resolves.toMatchObject({
+			label: "Transfer from Compte courant",
+		});
+		await expect(rowOf(payment.transfer.outflowTransactionId)).resolves.toMatchObject({
+			label: "Payment to Carte",
+		});
+		await expect(rowOf(payment.transfer.inflowTransactionId)).resolves.toMatchObject({
+			label: "Payment from Compte courant",
+		});
+		const [fees] = await feesOf(transfer.id);
+		expect(fees?.label).toBe("Transfer fee — Transfer to Livret A");
+		await expect(categoryNamed(fees?.categoryId)).resolves.toEqual([{ name: "Fees" }]);
+		const contributed = await rowOf(contribution.transfer.outflowTransactionId);
+		await expect(categoryNamed(contributed?.categoryId)).resolves.toEqual([
+			{ name: "Investment Contributions" },
+		]);
+	});
+
 	it("creates both sides, confirmed, and moves both balances, as Sure's `Transfer::Creator`", async () => {
 		const { checking, livret } = await openHousehold();
 		const checkingBefore = (await history(checking.id)).get("2026-09-15");

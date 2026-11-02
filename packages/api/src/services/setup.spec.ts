@@ -76,6 +76,35 @@ describe("GET /api/setup", () => {
 });
 
 describe("POST /api/setup", () => {
+	it("writes the household's language and seeds the default categories in it", async () => {
+		const { auth, db, logger } = await freshApp();
+
+		await completeSetup(
+			{ db, auth, logger, setupToken: TEST_SETUP_TOKEN, seedAtSetup: true },
+			{ ...ADMIN, token: TEST_SETUP_TOKEN, locale: "en" },
+		);
+
+		const names = await db.all<{ name: string }>(sql`select name from categories`);
+		expect(names).toHaveLength(22);
+		expect(names).toContainEqual({ name: "Groceries" });
+		await expect(
+			db.all<{ value: string }>(sql`select value from settings where key = 'locale'`),
+		).resolves.toEqual([{ value: "en" }]);
+	});
+
+	it("is a French household without a language, as every one before Story 37.2", async () => {
+		const { auth, db, logger } = await freshApp();
+
+		await completeSetup(
+			{ db, auth, logger, setupToken: TEST_SETUP_TOKEN, seedAtSetup: true },
+			{ ...ADMIN, token: TEST_SETUP_TOKEN },
+		);
+
+		await expect(
+			db.all<{ name: string }>(sql`select name from categories`),
+		).resolves.toContainEqual({ name: "Courses" });
+	});
+
 	it("creates the single administrator and closes setup", async () => {
 		const { app, db } = await freshApp();
 
