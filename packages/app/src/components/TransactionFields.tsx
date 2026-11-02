@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useMerchants } from "@/hooks/useMerchants";
 import { useTags } from "@/hooks/useTags";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
 /**
@@ -189,7 +190,7 @@ export function MerchantField({
 	);
 }
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 /**
  * The sheet's Étiquettes field: the list's combobox behind a button naming the tags.

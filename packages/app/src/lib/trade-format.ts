@@ -1,5 +1,7 @@
 import { isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
 
+import { intlLocale } from "@/lib/locale";
+
 // The API answers quantities and prices as plain decimal strings, such as
 // `"612.4"`, read here without ever becoming a float: `Intl.NumberFormat`
 // formats the string itself.
@@ -10,7 +12,7 @@ const QUANTITY_DECIMALS = 18;
 /** Sure's `decimal(19,10)` trade prices; a holding's price and a cost basis have six. */
 const PRICE_DECIMALS = 10;
 
-const quantityFormat = new Intl.NumberFormat("fr-FR", {
+const quantityFormat = new Intl.NumberFormat(intlLocale, {
 	maximumFractionDigits: QUANTITY_DECIMALS,
 });
 
@@ -33,7 +35,7 @@ export function formatPrice(price: string, currency: string): string {
 
 	const decimals = isCurrencyCode(currency) ? minorUnitsOf(currency) : 2;
 
-	return new Intl.NumberFormat("fr-FR", {
+	return new Intl.NumberFormat(intlLocale, {
 		style: "currency",
 		currency,
 		minimumFractionDigits: decimals,
@@ -46,7 +48,7 @@ export function decimalToText(value: string): string {
 	return value.replace(".", ",");
 }
 
-const shareFormat = new Intl.NumberFormat("fr-FR", {
+const shareFormat = new Intl.NumberFormat(intlLocale, {
 	style: "percent",
 	minimumFractionDigits: 1,
 	maximumFractionDigits: 1,

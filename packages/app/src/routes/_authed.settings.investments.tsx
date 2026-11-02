@@ -15,13 +15,14 @@ import { Switch } from "@/components/ui/switch";
 import { usePrices, useSetPricesEnabled, useUpdatePrices } from "@/hooks/usePrices";
 import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showErrorToast, showFailureToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
 export const Route = createFileRoute("/_authed/settings/investments")({
 	component: InvestmentsPage,
 });
 
 // Day and time, as a bank's last sync.
-const updateTime = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" });
+const updateTime = new Intl.DateTimeFormat(intlLocale, { dateStyle: "long", timeStyle: "short" });
 
 /**
  * The last update and the last run's error, with « Mettre à jour les cours ».

@@ -7,7 +7,6 @@ import { useTranslation } from "react-i18next";
 
 import { budgetCategorySchema } from "@archant/api/schemas/budgets";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import { BudgetMoveDialog } from "@/components/BudgetMoveDialog";
 import { FieldMessage } from "@/components/FieldMessage";
@@ -18,6 +17,8 @@ import { useSaveCategoryBudget, useSetCategoryRollover } from "@/hooks/useBudget
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
 /** A blank field is 0: a subcategory left blank shares its parent's amount. */
@@ -26,7 +27,7 @@ const textOf = (amount: MinorUnits, currency: string) =>
 
 function currencySymbol(currency: string): string {
 	return (
-		new Intl.NumberFormat("fr-FR", { style: "currency", currency })
+		new Intl.NumberFormat(intlLocale, { style: "currency", currency })
 			.formatToParts(0)
 			.find((part) => part.type === "currency")?.value ?? currency
 	);

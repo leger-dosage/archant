@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
+import { LOCALES } from "@archant/data/locales";
 
 /**
  * « Réglages › Préférences »: the order is one of Sure's, else
@@ -11,6 +12,8 @@ import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
 export const preferencesSchema = z.object({
 	defaultAccountOrder: z.enum(ACCOUNT_ORDERS).optional(),
 	showSplitGrouped: z.boolean().optional(),
+	// Null goes back to the browser's language, Sure's blank `locale`.
+	locale: z.enum(LOCALES).nullable().optional(),
 });
 
 export type PreferencesInput = z.infer<typeof preferencesSchema>;

@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Area, CartesianGrid, ComposedChart, Line, ReferenceLine, XAxis, YAxis } from "recharts";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import {
 } from "@/lib/balance-change";
 import { axisTicks, goalDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
+import { formatMoney } from "@/lib/format-money";
 
 const HEIGHT = CHART_HEIGHTS[256];
 

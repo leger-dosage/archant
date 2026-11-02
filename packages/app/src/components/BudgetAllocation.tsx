@@ -3,11 +3,13 @@ import type { BudgetData } from "@/hooks/useBudget";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
-const percentFormat = new Intl.NumberFormat("fr-FR", {
+const percentFormat = new Intl.NumberFormat(intlLocale, {
 	style: "percent",
 	maximumFractionDigits: 0,
 });

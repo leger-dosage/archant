@@ -3,7 +3,7 @@ import type { RecurringData } from "@/hooks/useRecurring";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
 import { ListCard } from "@/components/ListCard";
@@ -21,6 +21,7 @@ import {
 import { recurringName, useSetRecurringStatus } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 const nameOf = recurringName;

@@ -9,7 +9,7 @@ import {
 	parseAmountBound,
 } from "@archant/api/schemas/transactions";
 
-import { isoToFrench } from "@/lib/dates";
+import { isoToInput } from "@/lib/dates";
 
 // The router reads `?amount=40` or `?q=2024` as JSON, so a number, while a
 // value set by the page is a string: both mean the same text.
@@ -238,12 +238,12 @@ function tagLabel(ids: readonly string[], names: FilterNames, t: Translate) {
 
 function periodLabel(from: string | undefined, to: string | undefined, t: Translate) {
 	if (from !== undefined && to !== undefined) {
-		return t("operations.chips.periodBetween", { from: isoToFrench(from), to: isoToFrench(to) });
+		return t("operations.chips.periodBetween", { from: isoToInput(from), to: isoToInput(to) });
 	}
 
 	return from === undefined
-		? t("operations.chips.periodUntil", { to: isoToFrench(to ?? "") })
-		: t("operations.chips.periodSince", { from: isoToFrench(from) });
+		? t("operations.chips.periodUntil", { to: isoToInput(to ?? "") })
+		: t("operations.chips.periodSince", { from: isoToInput(from) });
 }
 
 function directionLabel(values: readonly Direction[], t: Translate) {

@@ -2,9 +2,10 @@ import { useTranslation } from "react-i18next";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { longDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 /** What the dry run answers: Sure's `new_balance` and `new_cash_balance`. */

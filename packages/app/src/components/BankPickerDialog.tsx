@@ -23,8 +23,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useInstitutions, useStartBankConnection } from "@/hooks/useBankConnections";
 import { errorCodeOf } from "@/lib/api";
 import { showFailureToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
-const countryNames = new Intl.DisplayNames("fr", { type: "region" });
+const countryNames = new Intl.DisplayNames(intlLocale, { type: "region" });
 
 export const countryName = (code: string) => countryNames.of(code) ?? code;
 

@@ -1,6 +1,8 @@
 import type { AccountListData, AccountSummaryData } from "@/hooks/useAccounts";
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+import { intlLocale } from "@/lib/locale";
+
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 /**
  * Every account of the list, assets then liabilities, each class by name.

@@ -8,7 +8,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import {
 } from "@/lib/balance-change";
 import { axisTicks, balanceDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
+import { formatMoney } from "@/lib/format-money";
 
 /**
  * What the chart draws: an account's balance history or the household's net

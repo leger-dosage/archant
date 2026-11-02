@@ -16,7 +16,6 @@ import {
 	isIncomeSide,
 } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
@@ -46,6 +45,7 @@ import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, errorAt } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 import { decimalToText } from "@/lib/trade-format";
 
 const FIELD_NAMES = [

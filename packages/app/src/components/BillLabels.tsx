@@ -4,13 +4,15 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { formatSignedPercent } from "@/lib/balance-change";
 import { dayAndMonth, daysFrom } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
-const percent = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 });
+const percent = new Intl.NumberFormat(intlLocale, { style: "percent", maximumFractionDigits: 0 });
 
 /** An occurrence paid, skipped or missed: its status, never its dates, says what it is. */
 export const isClosed = (row: Pick<BillRowData, "state">) =>
@@ -68,7 +70,7 @@ export function PartialLabel({ row }: { row: BillRowData }) {
 }
 
 // Sure's notice percent, `number_to_percentage(precision: 0)`, signed.
-const wholePercent = new Intl.NumberFormat("fr-FR", {
+const wholePercent = new Intl.NumberFormat(intlLocale, {
 	style: "percent",
 	maximumFractionDigits: 0,
 	signDisplay: "exceptZero",

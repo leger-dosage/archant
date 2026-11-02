@@ -6,7 +6,7 @@ import { Suspense, lazy, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { UNCATEGORISED } from "@archant/api/schemas/transactions";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
 
 import { InsetGroup } from "@/components/InsetGroup";
@@ -20,6 +20,8 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useCashFlow } from "@/hooks/useCashFlow";
 import { errorCodeOf } from "@/lib/api";
 import { ofMonth } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
 type Side = "expense" | "income";
@@ -28,7 +30,10 @@ const SIDES: readonly Side[] = ["expense", "income"];
 
 const isSide = (value: string): value is Side => SIDES.some((side) => side === value);
 
-const shareFormat = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
+const shareFormat = new Intl.NumberFormat(intlLocale, {
+	style: "percent",
+	maximumFractionDigits: 1,
+});
 
 const DONUT_SIZE = 128;
 

@@ -10,7 +10,7 @@ import type { SnapshotFormInput } from "@archant/api/schemas/snapshots";
 import { createSnapshotSchema } from "@archant/api/schemas/snapshots";
 import type { AccountType } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney, parseAmount } from "@archant/data/money";
+import { parseAmount } from "@archant/data/money";
 
 import { BalanceConfirmation } from "@/components/BalanceConfirmation";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -40,6 +40,7 @@ import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 
 const FIELD_NAMES = ["date", "balance", "notes"] as const;
 

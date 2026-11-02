@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { BillMenu, useBillActions } from "@/components/BillActions";
 import { AmountRange, CurrentOccurrence, PriceChangeAmounts } from "@/components/BillLabels";
@@ -26,6 +26,8 @@ import { recurringName, useBill } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { dayAndMonth } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
 // A child of `/bills`, so the table or the month stays behind the sheet and
@@ -34,12 +36,12 @@ export const Route = createFileRoute("/_authed/bills/$billId")({
 	component: BillDrawer,
 });
 
-const monthFormat = new Intl.DateTimeFormat("fr-FR", {
+const monthFormat = new Intl.DateTimeFormat(intlLocale, {
 	month: "long",
 	year: "numeric",
 	timeZone: "UTC",
 });
-const shortMonth = new Intl.DateTimeFormat("fr-FR", { month: "short", timeZone: "UTC" });
+const shortMonth = new Intl.DateTimeFormat(intlLocale, { month: "short", timeZone: "UTC" });
 
 type BillRecord = BillDetailData["record"];
 
@@ -256,8 +258,8 @@ const varies = (record: BillRecord) =>
 	record.expectedAmountMax !== null &&
 	record.expectedAmountMin < record.expectedAmountMax;
 
-const tolerance = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
-const sentence = new Intl.ListFormat("fr", { type: "conjunction" });
+const tolerance = new Intl.NumberFormat(intlLocale, { style: "percent", maximumFractionDigits: 1 });
+const sentence = new Intl.ListFormat(intlLocale, { type: "conjunction" });
 
 /**
  * Sure's « Comment cette facture est reconnue »: the name the matcher reads,

@@ -64,6 +64,7 @@ export default defineConfig(({ mode }) => {
 		test: {
 			environment: "node",
 			include: ["src/**/*.spec.{ts,tsx}"],
+			setupFiles: ["./vitest.setup.ts"],
 			// Vitest blanks every CSS import by default, `?raw` included; the theme's
 			// contrast test reads the tokens from the stylesheet itself.
 			css: { include: [/styles\.css/u] },

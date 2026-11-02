@@ -1,6 +1,8 @@
 import { useTranslation } from "react-i18next";
 
-const listFormat = new Intl.ListFormat("fr");
+import { intlLocale } from "@/lib/locale";
+
+const listFormat = new Intl.ListFormat(intlLocale);
 
 /**
  * The accounts a total leaves out because no rate converts their currency,

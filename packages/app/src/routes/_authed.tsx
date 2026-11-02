@@ -2,6 +2,7 @@ import { Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-ro
 import { useEffect } from "react";
 
 import { AppShell } from "@/components/AppShell";
+import { useFollowSavedLocale } from "@/hooks/useFollowSavedLocale";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { isAdmin, isSetupOpen, sessionQuery } from "@/lib/auth-client";
 
@@ -30,6 +31,7 @@ export const Route = createFileRoute("/_authed")({
 function AuthedLayout() {
 	const router = useRouter();
 	const admin = useIsAdmin();
+	useFollowSavedLocale();
 	const loadedAsAdmin = isAdmin(Route.useRouteContext({ select: ({ session }) => session }));
 
 	// The role changed under an open page, read again on a refusal or when the

@@ -44,6 +44,7 @@ import { useTags } from "@/hooks/useTags";
 import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
+import { intlLocale } from "@/lib/locale";
 import { shownOrder } from "@/lib/transaction-days";
 import {
 	filtersOf,
@@ -74,7 +75,7 @@ export const Route = createFileRoute("/_authed/transactions")({
 // Long enough to skip the keystrokes of one word, short enough to feel live.
 const SEARCH_DELAY_MS = 300;
 
-const countFormat = new Intl.NumberFormat("fr-FR");
+const countFormat = new Intl.NumberFormat(intlLocale);
 
 /**
  * The search field, bound to `q`. It keeps what is typed, trailing spaces
@@ -164,7 +165,7 @@ function OperationSheet({
 	);
 }
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 /**
  * What « Ajouter une opération » offers, as Sure's `set_new_transaction_form_options`:

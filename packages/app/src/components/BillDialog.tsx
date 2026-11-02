@@ -71,6 +71,7 @@ import { formatTableDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, errorAt } from "@/lib/form-errors";
+import { intlLocale } from "@/lib/locale";
 
 /** What the declare dialog starts from: a transaction, as Sure's `prefill_recurring_from_entry`. */
 export type BillPrefill = {
@@ -175,9 +176,9 @@ const LAST_DAY = "-1";
 // Monday first, as the calendar (EXPERIENCE.md); 0 is Sunday, as Ruby's.
 const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
 
-const weekdayName = new Intl.DateTimeFormat("fr-FR", { weekday: "long", timeZone: "UTC" });
+const weekdayName = new Intl.DateTimeFormat(intlLocale, { weekday: "long", timeZone: "UTC" });
 
-const monthName = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" });
+const monthName = new Intl.DateTimeFormat(intlLocale, { month: "long", timeZone: "UTC" });
 
 /** A capitalised day or month name, as a select lists it. */
 const capitalised = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);

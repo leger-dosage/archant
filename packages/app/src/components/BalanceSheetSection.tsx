@@ -14,8 +14,12 @@ import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { kindOf } from "@/lib/account-kinds";
 import { balanceSheet } from "@/lib/balance-sheet";
+import { intlLocale } from "@/lib/locale";
 
-const shareFormat = new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 });
+const shareFormat = new Intl.NumberFormat(intlLocale, {
+	style: "percent",
+	maximumFractionDigits: 1,
+});
 
 /** DESIGN.md's `type-*` tokens, so the bar and the dots follow the theme. */
 const TYPE_COLOURS = {

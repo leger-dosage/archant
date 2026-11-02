@@ -1,6 +1,6 @@
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 type MoneyProps = {

@@ -15,6 +15,7 @@
 		"./csv-mapping": "./csv-mapping.ts",
 		"./decimals": "./decimals.ts",
 		"./goals": "./goals.ts",
+		"./locales": "./locales.ts",
 		"./micros": "./micros.ts",
 		"./migrate": "./migrate.ts",
 		"./money": "./money.ts",

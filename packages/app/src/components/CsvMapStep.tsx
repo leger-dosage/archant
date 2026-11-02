@@ -22,6 +22,7 @@ import {
 import { useCategories } from "@/hooks/useCategories";
 import { useTags } from "@/hooks/useTags";
 import { categoryTree } from "@/lib/category-tree";
+import { intlLocale } from "@/lib/locale";
 
 /** Sure's mapping steps: `AccountTypeMapping`, `AccountMapping`, `CategoryMapping`, `TagMapping`. */
 export type MapKind = "accountTypes" | "accounts" | "categories" | "tags";
@@ -71,7 +72,7 @@ function useOptions(kind: ValueKind, accounts: readonly { id: string; name: stri
 
 	if (kind === "tags") {
 		return (tags.data ?? [])
-			.toSorted((a, b) => a.name.localeCompare(b.name, "fr"))
+			.toSorted((a, b) => a.name.localeCompare(b.name, intlLocale))
 			.map((tag) => ({ id: tag.id, name: tag.name, child: false }));
 	}
 

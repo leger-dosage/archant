@@ -12,8 +12,9 @@ import {
 	useRenewBankConnection,
 } from "@/hooks/useBankConnections";
 import { showFailureToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
-const alertDate = new Intl.DateTimeFormat("fr-FR", { day: "numeric", month: "long" });
+const alertDate = new Intl.DateTimeFormat(intlLocale, { day: "numeric", month: "long" });
 
 /**
  * Keyed by connection and alert: closing the expiring banner does not hide

@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Money } from "@/components/Money";
@@ -19,6 +18,7 @@ import { useSplit, useUnsplitTransaction } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
 
 /** One line of a split as its parent's sheet lists it: label, category and amount. */
 function SplitLineItem({ line }: { line: SplitData["children"][number] }) {

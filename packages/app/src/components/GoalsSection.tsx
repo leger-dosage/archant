@@ -4,8 +4,6 @@ import { Link } from "@tanstack/react-router";
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
-import { formatMoney } from "@archant/data/money";
-
 import { goalBadge } from "@/components/GoalCard";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Money } from "@/components/Money";
@@ -13,6 +11,7 @@ import { Section } from "@/components/Section";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { useGoalsSummary } from "@/hooks/useGoals";
+import { formatMoney } from "@/lib/format-money";
 
 /** A share of a whole as a bar's width, 0 to 100 %. */
 function widthOf(part: number, whole: number): string {

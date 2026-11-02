@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { BudgetCategorySheet } from "@/components/BudgetCategorySheet";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -18,6 +18,7 @@ import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 /** The filter's values in the URL; « Toutes » is the absent one. */

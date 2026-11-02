@@ -9,7 +9,6 @@ import { toast } from "sonner";
 
 import { isCsvColumnsValid } from "@archant/api/schemas/imports";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 import type { QifDateOrder } from "@archant/data/qif-options";
 import { QIF_DATE_ORDERS } from "@archant/data/qif-options";
 import type { CsvMapping } from "@archant/data/schema/imports";
@@ -42,6 +41,7 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate, formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
 import {
 	IMPORT_GROUPS,
 	canConfirm,

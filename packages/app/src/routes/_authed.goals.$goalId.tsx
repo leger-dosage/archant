@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
 import type { GoalEvent } from "@archant/data/goals";
-import { formatMoney } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
@@ -38,6 +37,7 @@ import { formatShortDate } from "@/lib/balance-change";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
 import { formatWholePercent } from "@/lib/percent";
 
 // Recharts weighs more than the rest of the page: it downloads with the chart.

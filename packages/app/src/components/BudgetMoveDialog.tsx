@@ -9,7 +9,6 @@ import { toast } from "sonner";
 import type { BudgetMoveFormInput } from "@archant/api/schemas/budgets";
 import { budgetMoveSchema } from "@archant/api/schemas/budgets";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import { FieldMessage } from "@/components/FieldMessage";
 import { Button } from "@/components/ui/button";
@@ -34,6 +33,7 @@ import { useMoveBudget } from "@/hooks/useBudget";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 
 const FIELD_NAMES = ["amount", "toCategoryId"] as const;
 

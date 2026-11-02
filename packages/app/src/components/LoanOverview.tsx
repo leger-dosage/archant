@@ -4,7 +4,6 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { ProgressRing } from "@/components/ProgressRing";
@@ -12,12 +11,14 @@ import { SummaryCard } from "@/components/SummaryCard";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { longDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
 import { formatInsuranceRate, formatRate, truncatedTermOf } from "@/lib/loan-details";
+import { intlLocale } from "@/lib/locale";
 import { formatWholePercent } from "@/lib/percent";
 import { cn } from "@/lib/utils";
 
 // Sure's `number_with_precision(ratio, precision: 1)`: 4,0x, never 4x.
-const ratioFormat = new Intl.NumberFormat("fr-FR", {
+const ratioFormat = new Intl.NumberFormat(intlLocale, {
 	minimumFractionDigits: 1,
 	maximumFractionDigits: 1,
 });

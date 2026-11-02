@@ -64,6 +64,7 @@ import { useTags } from "@/hooks/useTags";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf, isErrorCode } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 import { pageSearch } from "@/lib/page-search";
 import { amountStep, presetValues } from "@/lib/rule-form";
 import { RULE_SORTS, SORT_DIRECTIONS, isRuleSort, sortRules } from "@/lib/rule-sort";
@@ -116,7 +117,7 @@ type Applying = {
 
 // The API stores instants; the user reads when it ran, in their zone, as
 // Sure's `%b %d, %Y %I:%M %p` in French.
-const runTime = new Intl.DateTimeFormat("fr-FR", { dateStyle: "medium", timeStyle: "short" });
+const runTime = new Intl.DateTimeFormat(intlLocale, { dateStyle: "medium", timeStyle: "short" });
 
 const RUN_STATUSES = {
 	pending: "rulePending",

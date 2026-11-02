@@ -16,7 +16,6 @@ import {
 	isIncomeSide,
 } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 
 import {
 	IncomeSecuritySelect,
@@ -40,6 +39,7 @@ import { useConvertTransaction } from "@/hooks/useTrades";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, errorAt } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 
 const FIELD_NAMES = [
 	"side",

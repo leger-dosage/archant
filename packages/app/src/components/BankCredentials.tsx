@@ -26,6 +26,7 @@ import {
 import { useRemoveBankCredentials, useSaveBankCredentials } from "@/hooks/useBankConnections";
 import { ApiError } from "@/lib/api";
 import { errorMessage, showFailureToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
 const DEPLOYMENT_GUIDE =
 	"https://github.com/leger-dosage/archant/blob/main/docs/deployment.md#connecting-a-bank";
@@ -33,7 +34,7 @@ const DEPLOYMENT_GUIDE =
 /** Where an application is created, as Sure's panel links it. */
 const ENABLE_BANKING_PORTAL = "https://enablebanking.com/cp/applications";
 
-const byName = new Intl.Collator("fr", { sensitivity: "base" });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base" });
 
 /** Sure's « France (FR) », named in French, in French alphabetical order. */
 const countryLabel = (code: BankCountry) => `${countryName(code)} (${code})`;

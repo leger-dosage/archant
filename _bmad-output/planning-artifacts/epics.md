@@ -220,7 +220,7 @@ NFR8: An import or a sync is atomic per account: a failure writes nothing for th
 NFR9: The whole application runs as one process with no queue and no broker. A sync runs inside the request that triggers it, except the sync of the first visit of the day, which runs in the same process beside the request that started it.
 NFR10: With 100,000 transactions, the first page of the transaction list and an account's page answer in under 150 ms, and a 24,000-line OFX file is confirmed in under 3 seconds on a small server.
 NFR11: No test reaches the network; an unmocked request fails the test and names the URL. Money paths (import, deduplication, balance computation, transfer matching, provider sync) are covered to the branch.
-NFR12: The interface is in French first. Every visible string goes through a translation layer so another language can be added without touching components.
+NFR12: The interface is in French and English. Every visible string goes through a translation layer so another language can be added without touching components.
 NFR13: The interface is usable with the keyboard alone and meets WCAG 2.2 AA contrast.
 NFR14: Dependencies stay few and popular; each new one is justified in its pull request.
 NFR15: A request cannot exhaust the server: every route has a body size limit, sign-in attempts are limited per address and overall with a count that survives a restart, and no parser runs in time exponential in its input.
@@ -8798,3 +8798,95 @@ So that the household uses one login, as Sure.
 **Given** the finished story
 **When** `pnpm test` and `pnpm test:e2e` run
 **Then** Vitest covers linking, creation through an invitation, the local-login switch and the audit log, with the provider mocked; Playwright signs in through a mocked provider
+
+## Epic 37: Languages
+
+The owner's decision of 2026-11-02 reverses the one of 2026-10-14: the interface comes in English as well as French, Sure's way and better. Sure keeps a language per member (`users.locale`, filled from `Accept-Language` on the first visit) and one for the family (`families.locale`); its English is the source of most of Archant's French. Archant separates what Sure mixes. The interface language belongs to each member and never changes what is stored. The language of the data the server writes belongs to the household and is fixed when it is created, so choosing English never renames a category.
+
+Stories 37.2 and 37.3 follow 37.1.
+
+### Story 37.1: Read the interface in English or French
+
+As a member of the household,
+I want to read Archant in English or in French,
+So that I use it in my language, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `packages/data/locales.ts`
+**When** this story ships
+**Then** it holds `LOCALES` (`en`, `fr`), `DEFAULT_LOCALE` (`en`), the `Intl` tag of each and `pickLocale`, which takes the first language of the browser's list that Archant has, by primary subtag, as Sure's `accept_language_top_locale`
+
+**Given** `users.locale`
+**When** a migration adds it
+**Then** it is null for every existing user, which follows the browser, `PATCH /api/preferences` saves `en`, `fr` or null, and anything else is a `VALIDATION_ERROR`
+
+**Given** `packages/app/src/locales/en.json`
+**When** the interface builds
+**Then** it has every key of `fr.json` and every placeholder, enforced by the types and by a Vitest spec; the wording is Sure's English where Sure has the string
+
+**Given** a browser that asks for English and a user who chose nothing
+**When** the interface opens, the sign-in page included
+**Then** it is in English: dates, numbers, amounts (`€1,234.56`), sorting, the date typed in a field (`09/15/2026`) and `<html lang>` follow the language, and `ofMonth` drops the French « de » particle
+
+**Given** « Réglages › Préférences »
+**When** the member picks « Language » then English, French or « Browser language »
+**Then** it is saved with Sure's notice, the page reloads in that language, and any other device of the member opens in it
+
+**Given** the documents
+**When** this story ships
+**Then** `README.md`, `docs/architecture.md` and `docs/sure-parity.md` « Interface language » say so
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers `pickLocale`, the preference and the English file's shape; Playwright reads the interface in English with an English browser
+
+### Story 37.2: Give the household a language for its data
+
+As the household's administrator,
+I want the categories and labels Archant writes to follow the household's language,
+So that an English household reads « Groceries », not « Courses », as Sure's `Family.locale`.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** a `settings` row `locale`
+**When** setup creates the household
+**Then** it holds the language of the browser that ran setup, and « Réglages › Préférences » lets the administrator change it with a notice that existing data is not renamed
+
+**Given** the default categories, the sample household, the labels « Virement sortant », « Virement entrant », « Revenu divers », « Dépense diverse », the transfer names « Virement vers », « Paiement vers », « Virement depuis » and « Frais de virement », and the tool outputs of the assistant
+**When** the server writes or formats them
+**Then** it uses the household's language, French as today for a French household, and `formatMoney` takes the household's `Intl` tag
+
+**Given** an existing household
+**When** it is updated
+**Then** its `locale` row is `fr`, so no stored name or generated label changes
+
+**Given** the finished story
+**When** `pnpm test` runs
+**Then** Vitest covers each generated text in both languages
+
+### Story 37.3: Cover both languages end to end
+
+As the owner,
+I want the end-to-end suite to guard both languages,
+So that a missing English string or a French one left in English fails the build.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `packages/app/e2e/`
+**When** this story ships
+**Then** the suite keeps running in French, and a small English series signs in, sets up an account, imports a file and reads the dashboard in English
+
+**Given** a French string left in the English interface
+**When** the English series runs
+**Then** it fails
+
+**Given** the documents
+**When** this story ships
+**Then** `AGENTS.md` and `CONTRIBUTING.md` say how to add a language

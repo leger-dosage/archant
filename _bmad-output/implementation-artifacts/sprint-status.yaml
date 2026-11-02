@@ -390,3 +390,9 @@ development_status:
   36-7-sign-in-with-a-passkey: backlog
   36-8-sign-in-through-openid-connect: backlog
   epic-36-retrospective: optional
+
+  epic-37: in-progress
+  37-1-read-the-interface-in-english-or-french: done
+  37-2-give-the-household-a-language-for-its-data: backlog
+  37-3-cover-both-languages-end-to-end: backlog
+  epic-37-retrospective: optional
