@@ -111,11 +111,12 @@ test("each occurrence sits in its section and reads its due date as Sure's", asy
 	await expect(sectionRow(page, "Requiert votre attention", late)).toContainText(
 		`5 jours de retard, échéance le ${spelled(daysAgo(5))}`,
 	);
-	// Inside its grace days: the month's, due soon, never overdue.
-	await expect(sectionRow(page, "Ce mois-ci", grace)).toContainText(
-		`Échéance le ${spelled(daysAgo(2))}`,
-	);
-	await expect(sectionRow(page, "Ce mois-ci", grace)).toContainText("Bientôt due");
+	// Inside its grace days: the month's, due soon, never overdue. On the first
+	// days of a month its next occurrence, 30 days on, falls in « Ce mois-ci »
+	// too, so the earliest row is the one read.
+	const graceRow = sectionRow(page, "Ce mois-ci", grace).first();
+	await expect(graceRow).toContainText(`Échéance le ${spelled(daysAgo(2))}`);
+	await expect(graceRow).toContainText("Bientôt due");
 	await expect(sectionRow(page, "Ce mois-ci", due)).toContainText("À payer aujourd'hui");
 	await expect(sectionRow(page, "Ce mois-ci", due)).toContainText(euros(5000));
 	await expect(row(page, soon)).toContainText(`À payer dans 4 jours, ${spelled(daysAgo(-4))}`);
