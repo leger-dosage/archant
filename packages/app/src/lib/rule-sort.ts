@@ -1,3 +1,5 @@
+import { intlLocale } from "@/lib/locale";
+
 /** Sure's `rules_controller.rb#index` columns, by name first. */
 export const RULE_SORTS = ["name", "updated_at"] as const;
 
@@ -13,7 +15,7 @@ export type SortDirection = (typeof SORT_DIRECTIONS)[number];
 type Sortable = { name: string | null; updatedAt: number };
 
 // Case and accents folded and digits read as text, as PostgreSQL's collation orders Sure's names.
-const byName = new Intl.Collator("fr", { sensitivity: "base" });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base" });
 
 /**
  * The rules as the list shows them, by name or by last update, as Sure's

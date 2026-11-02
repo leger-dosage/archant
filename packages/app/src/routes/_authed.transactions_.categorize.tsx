@@ -36,7 +36,7 @@ import {
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
-import { isoToFrench } from "@/lib/dates";
+import { isoToInput } from "@/lib/dates";
 import { matchesSearch } from "@/lib/search-match";
 
 const searchSchema = z.object({
@@ -186,7 +186,7 @@ function LineRow({
 			/>
 			<span className="truncate font-medium">{line.label}</span>
 			<Money amount={line.amount} currency={line.currency} signed className="text-right" />
-			<span className="col-start-2 text-sm text-muted-foreground">{isoToFrench(line.date)}</span>
+			<span className="col-start-2 text-sm text-muted-foreground">{isoToInput(line.date)}</span>
 			<Select value="" onValueChange={onAssign} disabled={disabled}>
 				<SelectTrigger
 					size="sm"

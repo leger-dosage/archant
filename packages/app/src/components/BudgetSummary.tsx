@@ -4,10 +4,11 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 /** `part`'s share of `whole`, 0 to 100; nothing of nothing is none. */

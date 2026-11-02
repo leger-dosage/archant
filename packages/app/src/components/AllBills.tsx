@@ -8,7 +8,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { BILL_SORTS, BILL_STATUS_FILTERS } from "@archant/api/schemas/bills";
-import { formatMoney } from "@archant/data/money";
 import { BILL_TYPES } from "@archant/data/recurring";
 
 import { BillMenu } from "@/components/BillActions";
@@ -43,6 +42,7 @@ import { recurringName, useAllBills } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
 import { dayAndMonth } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
 
 // Long enough to skip the keystrokes of one word, short enough to feel live.
 const SEARCH_DELAY_MS = 300;

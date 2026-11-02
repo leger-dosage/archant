@@ -33,6 +33,7 @@ import { ApiError } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { intlLocale } from "@/lib/locale";
 
 const FIELD_NAMES = [
 	"fromAccountId",
@@ -46,7 +47,7 @@ const FIELD_NAMES = [
 
 type FieldName = (typeof FIELD_NAMES)[number];
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 /** Every active account, by name, as Sure's `set_accounts`: a bank-linked one included. */
 const activeAccounts = (list: AccountListData) =>

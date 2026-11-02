@@ -28,13 +28,14 @@ import { useMembers, useRemoveMember, useSetMemberRole } from "@/hooks/useMember
 import { errorCodeOf } from "@/lib/api";
 import { sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
 export const Route = createFileRoute("/_authed/settings/members")({
 	component: MembersPage,
 });
 
 // Day and time: a link made this morning expires three days later at that hour.
-const moment = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" });
+const moment = new Intl.DateTimeFormat(intlLocale, { dateStyle: "long", timeStyle: "short" });
 
 /** A member by first name, else by email: Better Auth stores a blank name as `""`. */
 const nameOf = (member: MemberData) => (member.name.trim() === "" ? member.email : member.name);

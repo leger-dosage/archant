@@ -1,8 +1,10 @@
+import { intlLocale } from "@/lib/locale";
+
 const UNITS = ["byte", "kilobyte", "megabyte", "gigabyte"] as const;
 
 const formats = UNITS.map(
 	(unit) =>
-		new Intl.NumberFormat("fr-FR", {
+		new Intl.NumberFormat(intlLocale, {
 			style: "unit",
 			unit,
 			unitDisplay: "short",
@@ -12,7 +14,7 @@ const formats = UNITS.map(
 
 /**
  * A file's size as Sure's `number_to_human_size` shows it, in powers of 1024
- * and French units: `512 o`, `1,5 ko`, `10 Mo`. A size that rounds up to
+ * and the page's units: `512 o`, `1,5 ko`, `10 Mo` in French, `512 byte`, `1.5 kB` in English. A size that rounds up to
  * 1 024 of a unit is shown in the next one.
  */
 export function formatFileSize(bytes: number): string {

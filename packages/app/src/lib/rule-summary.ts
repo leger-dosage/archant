@@ -12,6 +12,7 @@ import type {
 import { isRuleOperatorOf, isValuelessOperator, tagIdsOf } from "@archant/data/rules";
 
 import { ACTIVITY_LABEL_NAMES } from "@/lib/activity-labels";
+import { intlLocale } from "@/lib/locale";
 
 const isRuleTypeValue = (value: string): value is (typeof RULE_TYPE_VALUES)[number] =>
 	RULE_TYPE_VALUES.some((known) => known === value);
@@ -166,7 +167,7 @@ function amountText(value: string): string {
 
 	const decimals = value.split(".")[1]?.length ?? 0;
 
-	return new Intl.NumberFormat("fr-FR", {
+	return new Intl.NumberFormat(intlLocale, {
 		minimumFractionDigits: decimals,
 		maximumFractionDigits: decimals,
 	}).format(value);

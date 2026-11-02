@@ -21,7 +21,7 @@ import {
 } from "recharts";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, isCurrencyCode, minorUnitsOf, toMinorUnits } from "@archant/data/money";
+import { isCurrencyCode, minorUnitsOf, toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { SummaryCard } from "@/components/SummaryCard";
@@ -38,6 +38,8 @@ import {
 import { axisTicks, loanDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { longDate } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 import { atMidnight, isoOf, nearestDate, payoffStops, splitDay } from "@/lib/payoff-cursor";
 import { cn } from "@/lib/utils";
 
@@ -124,7 +126,11 @@ function formatWholeMoney(amount: MinorUnits, currency: string): string {
 	const unit = 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
 	const whole = (BigInt(Math.abs(amount)) + unit / 2n) / unit;
 
-	return new Intl.NumberFormat("fr-FR", { style: "currency", currency, maximumFractionDigits: 0 })
+	return new Intl.NumberFormat(intlLocale, {
+		style: "currency",
+		currency,
+		maximumFractionDigits: 0,
+	})
 		.format(amount < 0 ? -whole : whole)
 		.replace("-", "−");
 }

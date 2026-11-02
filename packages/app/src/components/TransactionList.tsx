@@ -36,6 +36,7 @@ import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayHeading } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 import { protectedFromSync } from "@/lib/locked-fields";
 import { rowSubject } from "@/lib/tint";
 import { groupByDay } from "@/lib/transaction-days";
@@ -357,7 +358,7 @@ function RowCheckbox({
 /** Past this many, a row shows « +N » rather than squeezing its label. */
 const SHOWN_TAGS = 3;
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 const ROW_DIVIDER = "border-b border-line last:border-b-0";
 

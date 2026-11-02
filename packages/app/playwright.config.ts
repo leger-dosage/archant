@@ -4,6 +4,12 @@ import { ADMIN_STATE, TIME_ZONE, WEB_URL } from "./e2e/settings.ts";
 
 const CI = Boolean(process.env["CI"]);
 
+// The specs import the interface's own formatters (`formatFileSize`,
+// `formatTableDate`) to state what the page shows, and those follow
+// `navigator.languages`, which Node derives from the machine's locale. Pin the
+// French the browsers below run in, or a machine in English expects English.
+process.env["LC_ALL"] = "fr_FR.UTF-8";
+
 // DESIGN.md's reference screen: the rail and the accounts column leave the
 // page about 950 px, as Chrome's default 1280 px would not.
 const DESKTOP = { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } };

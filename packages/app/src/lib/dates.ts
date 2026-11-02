@@ -1,3 +1,5 @@
+import { activeLocale, intlLocale } from "@/lib/locale";
+
 const pad = (value: number) => String(value).padStart(2, "0");
 
 /** A calendar day in the browser's own time zone, as `YYYY-MM-DD`; today by default. */
@@ -38,25 +40,35 @@ export function isoToDate(iso: string): Date | undefined {
 	return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
 }
 
-/** `2026-09-15` as `15/09/2026`, the format French users type. */
-export function isoToFrench(iso: string): string {
+// Day first in French, month first in English, as Sure's `date_format`
+// defaults read for each language.
+const dayFirst = activeLocale === "fr";
+
+/** `2026-09-15` as `15/09/2026`, or `09/15/2026` in English: the format users type. */
+export function isoToInput(iso: string): string {
 	const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(iso);
 
-	return match === null ? iso : `${match[3]}/${match[2]}/${match[1]}`;
+	if (match === null) {
+		return iso;
+	}
+
+	return dayFirst ? `${match[3]}/${match[2]}/${match[1]}` : `${match[2]}/${match[3]}/${match[1]}`;
 }
 
 /**
- * Reads `15/09/2026` (or `15/9/2026`) into `2026-09-15`. Returns `null` for
- * anything else, including dates that do not exist such as 31/02.
+ * Reads `15/09/2026` (or `15/9/2026`) into `2026-09-15`, `09/15/2026` in
+ * English. Returns `null` for anything else, including dates that do not
+ * exist such as 31/02.
  */
-export function frenchToIso(text: string): string | null {
+export function inputToIso(text: string): string | null {
 	const match = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/u.exec(text.trim());
 
 	if (match === null) {
 		return null;
 	}
 
-	const [day, month, year] = [Number(match[1]), Number(match[2]), Number(match[3])];
+	const [first, second, year] = [Number(match[1]), Number(match[2]), Number(match[3])];
+	const [day, month] = dayFirst ? [first, second] : [second, first];
 	const date = new Date(Date.UTC(year, month - 1, day));
 
 	if (
@@ -70,13 +82,13 @@ export function frenchToIso(text: string): string | null {
 	return `${year}-${pad(month)}-${pad(day)}`;
 }
 
-const sameYear = new Intl.DateTimeFormat("fr-FR", {
+const sameYear = new Intl.DateTimeFormat(intlLocale, {
 	weekday: "long",
 	day: "numeric",
 	month: "long",
 	timeZone: "UTC",
 });
-const otherYear = new Intl.DateTimeFormat("fr-FR", {
+const otherYear = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	year: "numeric",
@@ -120,7 +132,7 @@ export function toIsoMonth(now: Date = new Date()): string {
 	return toIsoDate(now).slice(0, 7);
 }
 
-const monthYear = new Intl.DateTimeFormat("fr-FR", {
+const monthYear = new Intl.DateTimeFormat(intlLocale, {
 	month: "long",
 	year: "numeric",
 	timeZone: "UTC",
@@ -128,10 +140,15 @@ const monthYear = new Intl.DateTimeFormat("fr-FR", {
 
 /**
  * `2026-09` as « de septembre 2026 », to follow a noun: « Flux de septembre
- * 2026 ». Avril, août and octobre elide: « d'avril 2024 ».
+ * 2026 ». Avril, août and octobre elide: « d'avril 2024 ». English has no
+ * such particle, and its strings carry their own « for »: « September 2026 ».
  */
 export function ofMonth(month: string): string {
 	const text = monthYear.format(new Date(`${month}-01T00:00:00Z`));
+
+	if (activeLocale !== "fr") {
+		return text;
+	}
 
 	return /^[aeiouéâ]/u.test(text) ? `d'${text}` : `de ${text}`;
 }
@@ -141,7 +158,7 @@ export function monthLabel(month: string): string {
 	return monthYear.format(new Date(`${month}-01T00:00:00Z`));
 }
 
-const dayMonth = new Intl.DateTimeFormat("fr-FR", {
+const dayMonth = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	timeZone: "UTC",
@@ -152,7 +169,7 @@ export function dayAndMonth(iso: string): string {
 	return dayMonth.format(new Date(`${iso}T00:00:00Z`));
 }
 
-const monthOnly = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" });
+const monthOnly = new Intl.DateTimeFormat(intlLocale, { month: "long", timeZone: "UTC" });
 
 /** « janvier » to « décembre », in calendar order. */
 export const MONTH_NAMES: readonly string[] = Array.from({ length: 12 }, (_, index) =>

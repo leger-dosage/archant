@@ -13,6 +13,8 @@ import type {
 	VehicleDetails,
 } from "@archant/data/account-types";
 
+import { intlLocale } from "@/lib/locale";
+
 /** Every field of a property's details, as a PATCH must send them. */
 type CompletePropertyInput = Extract<
 	NonNullable<UpdateAccountInput["details"]>,
@@ -147,7 +149,7 @@ export function addressText(details: PropertyDetails | null): string | null {
 	return parts.length === 0 ? null : parts.join(", ");
 }
 
-const wholeNumber = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 0 });
+const wholeNumber = new Intl.NumberFormat(intlLocale, { maximumFractionDigits: 0 });
 
 /** An area's or a mileage's value as French digits: `15 000`. */
 export function formatMeasurement(value: number): string {

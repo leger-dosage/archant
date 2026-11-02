@@ -5,11 +5,10 @@ import type { TFunction } from "i18next";
 import { Link } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
-import { formatMoney } from "@archant/data/money";
-
 import { ProgressRing } from "@/components/ProgressRing";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatShortDate } from "@/lib/balance-change";
+import { formatMoney } from "@/lib/format-money";
 import { formatWholePercent } from "@/lib/percent";
 
 const GOAL_BADGES = {

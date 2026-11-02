@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import type { SplitFormInput } from "@archant/api/schemas/transactions";
 import { MAX_SPLIT_LINES, splitTransactionSchema } from "@archant/api/schemas/transactions";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { formatMoney, parseAmount, toMinorUnits } from "@archant/data/money";
+import { parseAmount, toMinorUnits } from "@archant/data/money";
 
 import { FieldMessage } from "@/components/FieldMessage";
 import { Money } from "@/components/Money";
@@ -34,6 +34,7 @@ import { ApiError } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors, fieldErrorCode } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 /** What the dialog reads of the transaction it splits. */

@@ -5,13 +5,19 @@ import { eq } from "drizzle-orm";
 
 import type { AccountOrder } from "@archant/data/account-orders";
 import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
+import type { Locale } from "@archant/data/locales";
 import { users } from "@archant/data/schema/auth";
 
 /**
  * One user's preferences, Sure's `users` columns that « Préférences » edits,
  * and its `show_split_grouped`, which Sure keeps in « Apparence ».
  */
-export type Preferences = { defaultAccountOrder: AccountOrder; showSplitGrouped: boolean };
+export type Preferences = {
+	defaultAccountOrder: AccountOrder;
+	showSplitGrouped: boolean;
+	/** Null follows the browser's language. */
+	locale: Locale | null;
+};
 
 /**
  * The signed-in user's preferences; the defaults for a user removed since
@@ -22,6 +28,7 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 		.select({
 			defaultAccountOrder: users.defaultAccountOrder,
 			showSplitGrouped: users.showSplitGrouped,
+			locale: users.locale,
 		})
 		.from(users)
 		.where(eq(users.id, userId))
@@ -30,6 +37,7 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 	return {
 		defaultAccountOrder: user?.defaultAccountOrder ?? DEFAULT_ACCOUNT_ORDER,
 		showSplitGrouped: user?.showSplitGrouped ?? true,
+		locale: user?.locale ?? null,
 	};
 }
 
@@ -49,6 +57,7 @@ export async function updatePreferences(
 			defaultAccountOrder: input.defaultAccountOrder,
 		}),
 		...(input.showSplitGrouped !== undefined && { showSplitGrouped: input.showSplitGrouped }),
+		...(input.locale !== undefined && { locale: input.locale }),
 	};
 
 	if (Object.keys(changes).length > 0) {

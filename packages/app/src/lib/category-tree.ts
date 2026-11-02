@@ -1,3 +1,5 @@
+import { intlLocale } from "@/lib/locale";
+
 /** The fields the tree reads; the API's category summary has more. */
 type TreeCategory = { id: string; name: string; parentId: string | null };
 
@@ -6,7 +8,7 @@ export type CategoryBranch<Category extends TreeCategory> = {
 	children: Category[];
 };
 
-const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
 
 /**
  * Parents sorted as a French reader expects, « Épargne » under E, each with

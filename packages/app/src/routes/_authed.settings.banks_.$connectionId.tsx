@@ -47,6 +47,7 @@ import { kindOf } from "@/lib/account-kinds";
 import { ApiError, errorCodeOf, isErrorCode } from "@/lib/api";
 import { monthsAgo, toIsoDate } from "@/lib/dates";
 import { showFailureToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 import { queryKeys } from "@/lib/query-keys";
 
 // `sync`: set by the return page, so a renewed consent syncs once on arrival.
@@ -135,7 +136,7 @@ function SyncStartDateField({
 // The lines synced and only the balance is missing: a warning, not a failure.
 const BALANCE_UNAVAILABLE = "BANK_BALANCE_UNAVAILABLE";
 
-const syncTime = new Intl.DateTimeFormat("fr-FR", {
+const syncTime = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	year: "numeric",

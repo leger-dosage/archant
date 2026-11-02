@@ -1,5 +1,7 @@
+import { intlLocale } from "@/lib/locale";
+
 // `42 %`, the narrow no-break space French typography puts before the sign.
-const wholePercentFormat = new Intl.NumberFormat("fr-FR", {
+const wholePercentFormat = new Intl.NumberFormat(intlLocale, {
 	style: "percent",
 	maximumFractionDigits: 0,
 });

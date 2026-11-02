@@ -1,10 +1,12 @@
 import type { AccountOrder } from "../account-orders.ts";
+import type { Locale } from "../locales.ts";
 import type { UserRole } from "../user-roles.ts";
 
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
 import { ACCOUNT_ORDERS, DEFAULT_ACCOUNT_ORDER } from "../account-orders.ts";
+import { LOCALES } from "../locales.ts";
 import { USER_ROLES } from "../user-roles.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
@@ -60,6 +62,9 @@ export const users = sqliteTable(
 			.$type<AccountOrder>()
 			.notNull()
 			.default(DEFAULT_ACCOUNT_ORDER),
+		// Sure's `users.locale`. Null follows the browser's language, so a user
+		// who never chose reads the language they travel with.
+		locale: text("locale").$type<Locale>(),
 		// Sure's `preferences.show_split_grouped`: whether this user's
 		// transaction lists show a split's lines under their parent. Absent in
 		// Sure means on, so every existing user keeps the grouping.
@@ -77,6 +82,10 @@ export const users = sqliteTable(
 		check(
 			"users_default_account_order_check",
 			sql`${table.defaultAccountOrder} in ${inList(ACCOUNT_ORDERS)}`,
+		),
+		check(
+			"users_locale_check",
+			sql`${table.locale} is null or ${table.locale} in ${inList(LOCALES)}`,
 		),
 	],
 );

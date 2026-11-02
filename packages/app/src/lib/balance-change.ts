@@ -1,7 +1,10 @@
 import type { TFunction } from "i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
+import { isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
+
+import { formatMoney } from "@/lib/format-money";
+import { intlLocale } from "@/lib/locale";
 
 /** A change of balance: `+12,40 €` up, `−12,40 €` down, `0,00 €` flat. */
 export function formatSignedMoney(amount: MinorUnits, currency: string): string {
@@ -32,7 +35,7 @@ function compactFormat(currency: string): Intl.NumberFormat {
 	let format = compactFormats.get(currency);
 
 	if (format === undefined) {
-		format = new Intl.NumberFormat("fr-FR", {
+		format = new Intl.NumberFormat(intlLocale, {
 			style: "currency",
 			currency,
 			notation: "compact",
@@ -82,7 +85,7 @@ export function formatCompactMoney(amount: MinorUnits, currency: string): string
 	);
 }
 
-const percentFormat = new Intl.NumberFormat("fr-FR", {
+const percentFormat = new Intl.NumberFormat(intlLocale, {
 	style: "percent",
 	minimumFractionDigits: 1,
 	maximumFractionDigits: 1,
@@ -95,31 +98,31 @@ export function formatSignedPercent(percent: number): string {
 	return percentFormat.format(percent / 100).replace("-", "−");
 }
 
-const tooltipDate = new Intl.DateTimeFormat("fr-FR", {
+const tooltipDate = new Intl.DateTimeFormat(intlLocale, {
 	weekday: "long",
 	day: "numeric",
 	month: "long",
 	year: "numeric",
 	timeZone: "UTC",
 });
-const tableDate = new Intl.DateTimeFormat("fr-FR", {
+const tableDate = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	year: "numeric",
 	timeZone: "UTC",
 });
-const dayTick = new Intl.DateTimeFormat("fr-FR", {
+const dayTick = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "short",
 	timeZone: "UTC",
 });
-const shortDate = new Intl.DateTimeFormat("fr-FR", {
+const shortDate = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "short",
 	year: "numeric",
 	timeZone: "UTC",
 });
-const monthTick = new Intl.DateTimeFormat("fr-FR", {
+const monthTick = new Intl.DateTimeFormat(intlLocale, {
 	month: "short",
 	year: "numeric",
 	timeZone: "UTC",

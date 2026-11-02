@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { frenchToIso, isoToDate, isoToFrench, toIsoDate } from "@/lib/dates";
+import { inputToIso, isoToDate, isoToInput, toIsoDate } from "@/lib/dates";
 
 type DateFieldProps = {
 	id: string;
@@ -41,7 +41,7 @@ export function DateField({
 	max,
 }: DateFieldProps) {
 	const { t } = useTranslation();
-	const [text, setText] = useState(() => isoToFrench(value));
+	const [text, setText] = useState(() => isoToInput(value));
 	const [open, setOpen] = useState(false);
 	const selected = isoToDate(value);
 	const first = min === undefined ? undefined : isoToDate(min);
@@ -63,7 +63,7 @@ export function DateField({
 				{...(describedBy === undefined ? {} : { "aria-describedby": describedBy })}
 				onChange={(event) => {
 					setText(event.target.value);
-					onChange(frenchToIso(event.target.value) ?? event.target.value);
+					onChange(inputToIso(event.target.value) ?? event.target.value);
 				}}
 				{...(onBlur === undefined ? {} : { onBlur })}
 			/>
@@ -92,7 +92,7 @@ export function DateField({
 						onSelect={(date) => {
 							if (date !== undefined) {
 								const iso = toIsoDate(date);
-								setText(isoToFrench(iso));
+								setText(isoToInput(iso));
 								onChange(iso);
 								setOpen(false);
 							}

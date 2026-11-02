@@ -16,7 +16,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { useBillActions } from "@/components/BillActions";
 import {
@@ -69,6 +69,7 @@ import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayAndMonth, toIsoDate, weekFromToday } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatMoney } from "@/lib/format-money";
 import { settle } from "@/lib/settle";
 import { cn } from "@/lib/utils";
 

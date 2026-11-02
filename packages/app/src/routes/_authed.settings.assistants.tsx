@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAssistants, useDisconnectAssistant } from "@/hooks/useAssistants";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
 const ASSISTANT_GUIDE =
 	"https://github.com/leger-dosage/archant/blob/main/docs/deployment.md#connecting-an-assistant";
@@ -27,7 +28,7 @@ export const Route = createFileRoute("/_authed/settings/assistants")({
 });
 
 // Day and time: a last call minutes ago and one last month read differently.
-const moment = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "short" });
+const moment = new Intl.DateTimeFormat(intlLocale, { dateStyle: "long", timeStyle: "short" });
 
 function GuideLink() {
 	const { t } = useTranslation();

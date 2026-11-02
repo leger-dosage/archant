@@ -7,8 +7,9 @@ import { useDeleteAccount } from "@/hooks/useAccounts";
 import { useAccountTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
-const countFormat = new Intl.NumberFormat("fr-FR");
+const countFormat = new Intl.NumberFormat(intlLocale);
 
 type DeleteAccountDialogProps = {
 	account: { id: string; name: string };

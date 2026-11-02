@@ -6,9 +6,9 @@ import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { GoalEvent } from "@archant/data/goals";
-import { formatMoney } from "@archant/data/money";
 
 import { Button } from "@/components/ui/button";
+import { formatMoney } from "@/lib/format-money";
 
 /** What each state that is not active says, and the event its button fires, as Sure's banners. */
 const BANNERS = {

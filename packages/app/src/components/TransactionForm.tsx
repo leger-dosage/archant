@@ -15,7 +15,6 @@ import { transactionFormSchema } from "@archant/api/schemas/transactions";
 import type { AccountType } from "@archant/data/account-types";
 import { supportsTrades } from "@archant/data/account-types";
 import type { CurrencyCode } from "@archant/data/money";
-import { formatMoney } from "@archant/data/money";
 import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
 
 import { ActivityLabelField } from "@/components/ActivityLabelField";
@@ -61,6 +60,7 @@ import { joinAmount, splitAmount } from "@/lib/amount-sign";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { formatMoney } from "@/lib/format-money";
 import { protectedFromSync } from "@/lib/locked-fields";
 import { valuesOf } from "@/lib/transaction-form";
 import { showsCategory } from "@/lib/transfers";

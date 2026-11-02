@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import type { PreferencesInput } from "@archant/api/schemas/preferences";
 import type { AccountOrder } from "@archant/data/account-orders";
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
+import type { Locale } from "@archant/data/locales";
+import { LOCALES } from "@archant/data/locales";
 
 import { ChoiceField } from "@/components/ChoiceField";
 import { Page } from "@/components/Page";
@@ -43,6 +45,12 @@ function PreferencesPage() {
 		label: t(`preferences.accountOrders.${order}`),
 	}));
 
+	// « Langue du navigateur » is the empty choice, Sure's blank `locale`.
+	const localeOptions: { value: Locale | "browser"; label: string }[] = [
+		{ value: "browser", label: t("preferences.locales.browser") },
+		...LOCALES.map((locale) => ({ value: locale, label: t(`preferences.locales.${locale}`) })),
+	];
+
 	const save = (input: PreferencesInput) =>
 		update.mutate(input, {
 			onSuccess: () => toast.success(t("preferences.saved")),
@@ -61,14 +69,26 @@ function PreferencesPage() {
 					)}
 					{preferences.isPending && <Skeleton className="h-14 w-full" />}
 					{preferences.data !== undefined && (
-						<ChoiceField
-							id="default-account-order"
-							label={t("preferences.general.defaultAccountOrder")}
-							value={preferences.data.defaultAccountOrder}
-							options={options}
-							disabled={update.isPending}
-							onChange={(defaultAccountOrder: AccountOrder) => save({ defaultAccountOrder })}
-						/>
+						<>
+							<ChoiceField
+								id="locale"
+								label={t("preferences.general.locale")}
+								value={preferences.data.locale ?? "browser"}
+								options={localeOptions}
+								disabled={update.isPending}
+								onChange={(choice: Locale | "browser") =>
+									save({ locale: choice === "browser" ? null : choice })
+								}
+							/>
+							<ChoiceField
+								id="default-account-order"
+								label={t("preferences.general.defaultAccountOrder")}
+								value={preferences.data.defaultAccountOrder}
+								options={options}
+								disabled={update.isPending}
+								onChange={(defaultAccountOrder: AccountOrder) => save({ defaultAccountOrder })}
+							/>
+						</>
 					)}
 				</div>
 			</Section>

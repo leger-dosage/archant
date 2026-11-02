@@ -7,12 +7,13 @@ import { Suspense, lazy } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { ofMonth } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 const DONUT_SIZE = 224;

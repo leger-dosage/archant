@@ -3114,7 +3114,8 @@
 		"general": {
 			"title": "Général",
 			"subtitle": "Configurez vos préférences",
-			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut"
+			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut",
+			"locale": "Langue"
 		},
 		"transactions": {
 			"title": "Opérations",
@@ -3128,7 +3129,12 @@
 			"balance_asc": "Solde (de bas en haut)",
 			"balance_desc": "Solde (haut à bas)"
 		},
-		"saved": "Votre profil a été mis à jour."
+		"saved": "Votre profil a été mis à jour.",
+		"locales": {
+			"browser": "Langue du navigateur",
+			"en": "English",
+			"fr": "Français"
+		}
 	},
 	"investments": {
 		"title": "Placements",

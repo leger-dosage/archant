@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 
 import { UNCATEGORISED } from "@archant/api/schemas/transactions";
 import type { MinorUnits } from "@archant/data/money";
-import { formatMoney, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
@@ -25,6 +25,7 @@ import { useRecentTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { ofMonth } from "@/lib/dates";
+import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 /**

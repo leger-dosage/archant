@@ -28,18 +28,19 @@ import {
 } from "@/hooks/useBankConnections";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import { intlLocale } from "@/lib/locale";
 
 export const Route = createFileRoute("/_authed/settings/banks")({
 	component: BanksPage,
 });
 
-const consentDate = new Intl.DateTimeFormat("fr-FR", {
+const consentDate = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	year: "numeric",
 });
 
-const syncTime = new Intl.DateTimeFormat("fr-FR", {
+const syncTime = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
 	month: "long",
 	year: "numeric",
