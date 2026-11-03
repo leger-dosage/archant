@@ -368,5 +368,6 @@ describe("resetWithSampleData in English", () => {
 		expect(english.map((row) => row.name)).toContain("Chase Premier Checking");
 		expect(english.some((row) => row.label === "Acme Corp salary")).toBe(true);
 		expect(english.some((row) => row.name === "Compte courant Chase Premier")).toBe(false);
-	});
+		// Two loads of 8,000 entries: a CI runner needs more than Vitest's 5 seconds.
+	}, 30_000);
 });
