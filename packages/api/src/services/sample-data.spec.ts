@@ -10,6 +10,7 @@ import { daysBetween } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import { createLogger } from "../lib/logger.ts";
 import { openOwn, ownDatabase, postOwn, useSignedInApp } from "../testing/app.ts";
+import { saveHouseholdLocale } from "./household-locale.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import { SAMPLE_DATA_SEED, STUDENT_LOAN_EXTRA_PAYMENT, samplePlan } from "./sample-data-plan.ts";
 import { resetWithSampleData } from "./sample-data.ts";
@@ -347,4 +348,26 @@ describe("resetWithSampleData", { timeout: 30_000 }, () => {
 		await expect(load(db)).rejects.toMatchObject({ code: "SYNC_IN_PROGRESS" });
 		expect(await counts(db)).toMatchObject({ accounts: 1, goals: 0, budgets: 0 });
 	});
+});
+
+describe("resetWithSampleData in English", () => {
+	it("names the sample household in English and keeps its rows and amounts", async () => {
+		const { db } = await ownDatabase();
+		await load(db);
+		const french = await ledger(db);
+
+		await saveHouseholdLocale(db, "en");
+		await load(db);
+		const english = await ledger(db);
+
+		// Names sort differently in each language: compare the rows by date and amount.
+		const shape = (rows: typeof french) =>
+			rows.map(({ date, amount }) => `${date} ${amount}`).toSorted();
+
+		expect(shape(english)).toEqual(shape(french));
+		expect(english.map((row) => row.name)).toContain("Chase Premier Checking");
+		expect(english.some((row) => row.label === "Acme Corp salary")).toBe(true);
+		expect(english.some((row) => row.name === "Compte courant Chase Premier")).toBe(false);
+		// Two loads of 8,000 entries: a CI runner needs more than Vitest's 5 seconds.
+	}, 30_000);
 });

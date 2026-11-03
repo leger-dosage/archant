@@ -21,6 +21,7 @@ import {
 	useSignedInApp,
 } from "../testing/app.ts";
 import { importCsv, previewCsvImport } from "./csv-import.ts";
+import { saveHouseholdLocale } from "./household-locale.ts";
 
 useSignedInApp();
 
@@ -560,6 +561,18 @@ describe("mappings", () => {
 		expect(await lines()).toEqual([
 			expect.objectContaining({ label: "Opération importée", notes: "Ticket 42" }),
 		]);
+	});
+
+	it("names it in English for an English household", async () => {
+		await ownDatabase();
+		await saveHouseholdLocale(db(), "en");
+		const accountId = await account();
+
+		await publish(["Date,Montant", "2026-09-01,-3"].join("\n"), {
+			configuration: { accountId, columns: { date: "Date", amount: "Montant" } },
+		});
+
+		expect(await lines()).toEqual([expect.objectContaining({ label: "Imported transaction" })]);
 	});
 });
 

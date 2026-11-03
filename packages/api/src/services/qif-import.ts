@@ -19,6 +19,7 @@ import type { SureIssue } from "./sure-import-preflight.ts";
 import type { AccountType } from "@archant/data/account-types";
 import { supportsTrades } from "@archant/data/account-types";
 import { parseQuantity, parseTradePrice, scaledQuantity } from "@archant/data/decimals";
+import type { Locale } from "@archant/data/locales";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, parseDecimalAmount, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -28,6 +29,7 @@ import { toStoredBalance } from "../domain/balances/stored-balance.ts";
 import { addDays } from "../domain/dates.ts";
 import { buyCostFits, conversionFee, tradeAmount, unsignedQuantity } from "../domain/trades.ts";
 import { AppError } from "../lib/errors.ts";
+import { IMPORT_LABELS } from "../lib/import-labels.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import { CREATE_NEW_KEY, DATE_FORMATS, cleanColumnsOf } from "../schemas/csv-imports.ts";
 import { LABEL_MAX_LENGTH, MAX_SPLIT_LINES, NOTES_MAX_LENGTH } from "../schemas/transactions.ts";
@@ -158,39 +160,69 @@ const negated = (decimal: string) =>
 const joinTags = (tags: readonly string[]) =>
 	tags.map((tag) => tag.replaceAll(/[\\,|]/gu, (character) => `\\${character}`)).join("|");
 
-/** Sure's `transaction_row_name`, in French: the payee, else what the action says. */
-function cashLabelOf(action: string, payee: string, security: string, memo: string): string {
+const QIF_LABELS = {
+	fr: {
+		dividend: "Dividende",
+		interest: "Intérêts",
+		longTermGain: "Plus-value (long terme)",
+		shortTermGain: "Plus-value (court terme)",
+		miscIncome: "Revenu divers",
+		miscExpense: "Dépense diverse",
+	},
+	en: {
+		dividend: "Dividend",
+		interest: "Interest",
+		longTermGain: "Capital gain (long term)",
+		shortTermGain: "Capital gain (short term)",
+		miscIncome: "Miscellaneous income",
+		miscExpense: "Miscellaneous expense",
+	},
+} satisfies Record<Locale, Record<string, string>>;
+
+/** Sure's `transaction_row_name`: the payee, else what the action says. */
+function cashLabelOf(
+	action: string,
+	payee: string,
+	security: string,
+	memo: string,
+	locale: Locale,
+): string {
 	if (payee !== "") {
 		return payee;
 	}
 
+	const text = QIF_LABELS[locale];
 	const of = (label: string) => (security === "" ? label : `${label} : ${security}`);
 
 	switch (action) {
 		case "Div":
-			return of("Dividende");
+			return of(text.dividend);
 		case "IntInc":
-			return of("Intérêts");
+			return of(text.interest);
 		case "XIn":
-			return "Virement entrant";
+			return IMPORT_LABELS[locale].transferIn;
 		case "XOut":
-			return "Virement sortant";
+			return IMPORT_LABELS[locale].transferOut;
 		case "CGLong":
-			return of("Plus-value (long terme)");
+			return of(text.longTermGain);
 		case "CGShort":
-			return of("Plus-value (court terme)");
+			return of(text.shortTermGain);
 		case "MiscInc":
-			return memo === "" ? "Revenu divers" : memo;
+			return memo === "" ? text.miscIncome : memo;
 		case "MiscExp":
-			return memo === "" ? "Dépense diverse" : memo;
+			return memo === "" ? text.miscExpense : memo;
 		default:
 			return action;
 	}
 }
 
-/** Sure's `Trade.build_name`, in French. */
-function tradeLabelOf(buy: boolean, quantity: string, ticker: string): string {
-	return `${buy ? "Achat" : "Vente"} de ${quantity.replace(/^-/u, "")} actions ${ticker === "" ? "inconnues" : ticker}`;
+/** Sure's `Trade.build_name`. */
+function tradeLabelOf(buy: boolean, quantity: string, ticker: string, locale: Locale): string {
+	const shares = quantity.replace(/^-/u, "");
+
+	return locale === "en"
+		? `${buy ? "Buy" : "Sell"} ${shares} shares of ${ticker === "" ? "unknown" : ticker}`
+		: `${buy ? "Achat" : "Vente"} de ${shares} actions ${ticker === "" ? "inconnues" : ticker}`;
 }
 
 /** A total as plain decimal text, else as written, which « Nettoyer » then refuses. */
@@ -221,6 +253,7 @@ export function readQifSheet(
 	},
 	day: IsoDate,
 	currency: CurrencyCode,
+	locale: Locale = "fr",
 ): QifSheet {
 	const file = readQif(input.text, day);
 	const chosen = input.configuration?.accountId ?? null;
@@ -345,7 +378,7 @@ export function readQifSheet(
 						record.amount === ""
 							? ""
 							: (decimalAmountOf(record.amount)?.replace(/^-/u, "") ?? record.amount.trim()),
-					name: tradeLabelOf(buy, quantity, record.ticker),
+					name: tradeLabelOf(buy, quantity, record.ticker, locale),
 					category: "",
 					tags: "",
 					ticker: record.ticker,
@@ -371,7 +404,7 @@ export function readQifSheet(
 								: inflow
 									? amount
 									: negated(amount),
-					name: cashLabelOf(record.action, record.payee, record.security, record.memo),
+					name: cashLabelOf(record.action, record.payee, record.security, record.memo, locale),
 					category: category(record.category),
 					tags: joinTags(tagsOf(record.tags)),
 					...blank,
@@ -505,6 +538,7 @@ export async function analyseQif(
 	db: Pick<Transaction, "select">,
 	qif: QifSheet,
 	mappings: Mappings | undefined,
+	locale: Locale = "fr",
 ): Promise<Analysis> {
 	const { sheet, facts, file, chosen } = qif;
 	const errors: SureIssue[] = [];
@@ -583,6 +617,7 @@ export async function analyseQif(
 		{ ...sheet, table: { ...sheet.table, rows: lineRows } },
 		currencyFor,
 		errors,
+		locale,
 	).map((item) => ({
 		...item,
 		account: keyOf(item.row),

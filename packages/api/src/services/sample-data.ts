@@ -7,7 +7,9 @@ import type { CurrencyCode } from "@archant/data/money";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
 import { today } from "../domain/dates.ts";
+import { householdLocale } from "./household-locale.ts";
 import { resetFinancialData } from "./ledger/reset.ts";
+import { englishSample } from "./sample-data-english.ts";
 import { SAMPLE_DATA_SEED, samplePlan } from "./sample-data-plan.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { afterImport, writeArchive } from "./sure-import.ts";
@@ -69,7 +71,9 @@ async function insertGoals(
 export async function resetWithSampleData(deps: SureImportDeps): Promise<void> {
 	const currency = getReportingCurrency();
 	// Built before the write lock is taken: the plan depends on no row.
-	const sample = samplePlan({ seed: SAMPLE_DATA_SEED, today: today(deps.timeZone), currency });
+	const generated = samplePlan({ seed: SAMPLE_DATA_SEED, today: today(deps.timeZone), currency });
+	// The household's language decides the names, never the rows.
+	const sample = (await householdLocale(deps.db)) === "en" ? englishSample(generated) : generated;
 
 	await deps.db.transaction(
 		async (tx) => {

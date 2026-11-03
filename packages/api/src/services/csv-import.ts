@@ -43,6 +43,7 @@ import {
 	scaledQuantity,
 	scaledTradePrice,
 } from "@archant/data/decimals";
+import type { Locale } from "@archant/data/locales";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, parseDecimalAmount, toMinorUnits } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/name-limits";
@@ -94,6 +95,7 @@ import {
 } from "./csv-import-sheet.ts";
 import { TOOL_PRESETS } from "./csv-import-tools.ts";
 import { analyseTransactions } from "./csv-import-transactions.ts";
+import { householdLocale } from "./household-locale.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { insertCsvTrades, listingOf, storedListing } from "./ledger/csv-trades.ts";
 import { oneByOne } from "./ledger/shared.ts";
@@ -178,7 +180,7 @@ type Source = { kind: "csv"; table: CsvTable } | { kind: "qif"; qif: QifSheet };
  * (`CSV_INVALID`), more rows than Sure's `max_row_count`. A QIF file is read
  * by Sure's `QifParser` into its rows instead.
  */
-function readSource(request: CsvImportRequest, day: IsoDate): Source {
+function readSource(request: CsvImportRequest, day: IsoDate, locale: Locale): Source {
 	const max = maxRowsOf(request.type);
 
 	if (request.file.bytes.length > MAX_CSV_BYTES) {
@@ -200,6 +202,7 @@ function readSource(request: CsvImportRequest, day: IsoDate): Source {
 				},
 				day,
 				getReportingCurrency(),
+				locale,
 			),
 		};
 	}
@@ -950,11 +953,12 @@ async function analyse(
 	request: CsvImportRequest,
 	source: Source,
 	day: IsoDate,
+	locale: Locale,
 ): Promise<{ sheet: Sheet; analysis: Analysis }> {
 	if (source.kind === "qif") {
 		return {
 			sheet: source.qif.sheet,
-			analysis: await analyseQif(db, source.qif, request.mappings),
+			analysis: await analyseQif(db, source.qif, request.mappings, locale),
 		};
 	}
 
@@ -993,7 +997,7 @@ async function analyse(
 		};
 	}
 
-	return { sheet, analysis: await analysisOf(db, request, sheet) };
+	return { sheet, analysis: await analysisOf(db, request, sheet, locale) };
 }
 
 /** What the import of `request.type` reads from the sheet. */
@@ -1001,6 +1005,7 @@ async function analysisOf(
 	db: Pick<Transaction, "select">,
 	request: CsvImportRequest,
 	sheet: Sheet,
+	locale: Locale,
 ): Promise<Analysis> {
 	switch (request.type) {
 		case "accounts":
@@ -1013,7 +1018,7 @@ async function analysisOf(
 		case "mint":
 		case "ynab":
 		case "actual":
-			return analyseTransactions(db, sheet, request.mappings);
+			return analyseTransactions(db, sheet, request.mappings, locale);
 		case "rules":
 			return analyseRules(db, {
 				rows: sheet.table.rows,
@@ -1037,8 +1042,9 @@ export async function previewCsvImport(
 	request: CsvImportRequest,
 ): Promise<CsvImportPreview> {
 	const day = today(deps.timeZone);
-	const source = readSource(request, day);
-	const { sheet, analysis } = await analyse(deps.db, request, source, day);
+	const locale = await householdLocale(deps.db);
+	const source = readSource(request, day, locale);
+	const { sheet, analysis } = await analyse(deps.db, request, source, day, locale);
 	const qif = source.kind === "qif" ? source.qif : null;
 
 	return {
@@ -1076,10 +1082,11 @@ export async function importCsv(
 	try {
 		// Parsed before the write lock is taken: the table depends on no row.
 		const day = today(deps.timeZone);
-		const source = readSource(request, day);
+		const locale = await householdLocale(deps.db);
+		const source = readSource(request, day, locale);
 		const { counts, committed } = await deps.db.transaction(
 			async (tx) => {
-				const { analysis } = await analyse(tx, request, source, day);
+				const { analysis } = await analyse(tx, request, source, day, locale);
 
 				if (analysis.errors.length > 0) {
 					throw new AppError("CSV_IMPORT_INVALID", "The file's preview found errors.");
