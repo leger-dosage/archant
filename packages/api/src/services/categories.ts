@@ -11,7 +11,8 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 import type { Category } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
-import { DEFAULT_CATEGORIES } from "./default-categories.ts";
+import { defaultCategoriesFor } from "./default-categories.ts";
+import { householdLocale } from "./household-locale.ts";
 import { countByCategory, recategorise, uncategoriseAll } from "./ledger/edits.ts";
 import { assertNameFree } from "./names.ts";
 
@@ -393,7 +394,7 @@ export async function bootstrapCategories(deps: ServiceDeps): Promise<{ created:
 					row.name.toLocaleLowerCase("fr"),
 				),
 			);
-			const missing = DEFAULT_CATEGORIES.filter(
+			const missing = defaultCategoriesFor(await householdLocale(tx)).filter(
 				(category) => !held.has(category.name.toLocaleLowerCase("fr")),
 			);
 			const now = Date.now();

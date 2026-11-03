@@ -110,7 +110,8 @@ try {
 	logger.warn({ code: errorCode(error) }, "statistics refresh failed");
 }
 // Once per instance, not once per start: a default the user deleted stays deleted.
-const seeded = await seedDefaults({ db });
+// A new instance seeds at setup instead, in the household's language.
+const seeded = (await hasUser({ db })) ? await seedDefaults({ db }) : 0;
 if (seeded > 0) {
 	logger.info({ seeded }, "default categories seeded");
 }
@@ -171,6 +172,7 @@ const app = createApp({
 	webDist: env.WEB_DIST,
 	syncSecret: env.SYNC_SECRET,
 	setupToken,
+	seedAtSetup: true,
 	version: env.APP_VERSION,
 	priceApiUrl: env.YAHOO_FINANCE_URL,
 	sureImport: {

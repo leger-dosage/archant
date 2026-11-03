@@ -10,6 +10,8 @@ import { settings } from "@archant/data/schema/settings";
 
 import { AppError } from "../lib/errors.ts";
 import { sameSecret } from "../lib/secret.ts";
+import { saveHouseholdLocale } from "./household-locale.ts";
+import { seedDefaults } from "./seed.ts";
 
 export type SetupDeps = Pick<ServiceDeps, "db"> & {
 	auth: Pick<Auth, "api">;
@@ -19,6 +21,12 @@ export type SetupDeps = Pick<ServiceDeps, "db"> & {
 	 * existed; `null` once one did, which refuses every token.
 	 */
 	setupToken: string | null;
+	/**
+	 * Seeds the default categories once the administrator exists, in the
+	 * household's language. The server turns it on; a spec that wants no
+	 * categories it did not make leaves it off.
+	 */
+	seedAtSetup?: boolean | undefined;
 };
 
 const SETUP_KEY = "setup_completed_at";
@@ -86,6 +94,14 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 		});
 
 		deps.logger.info({ userId: user.id }, "administrator created");
+
+		// The language first: the default categories are written in it. Seeded
+		// here, not at start, because no start knows which language a new
+		// household will choose.
+		await saveHouseholdLocale(deps.db, input.locale ?? "fr");
+		if (deps.seedAtSetup === true) {
+			await seedDefaults(deps);
+		}
 
 		return { id: user.id };
 	} catch (error) {

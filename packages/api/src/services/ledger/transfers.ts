@@ -36,7 +36,11 @@ import {
 	transferKindOf,
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
-import { INVESTMENT_CONTRIBUTIONS_CATEGORY } from "../default-categories.ts";
+import {
+	investmentContributionsCategoryFor,
+	transferFeesCategoryFor,
+} from "../default-categories.ts";
+import { householdLocale } from "../household-locale.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { categoryOriginOf, tagsExist } from "./patch.ts";
 import {
@@ -637,9 +641,6 @@ export type TransferBetween = {
 /** A transfer created, or the one a double submit's key already created. */
 export type CreatedTransfer = { transfer: Transfer; created: boolean };
 
-/** Sure's `models.category.defaults.fees`, the category of every transfer fee. */
-const FEES_CATEGORY: DefaultCategory = { name: "Frais", color: "#6b7280", icon: "receipt" };
-
 /**
  * The category named as `category`, case aside, else one created with its
  * colour and icon, as Sure's `find_or_create_by!`.
@@ -702,7 +703,11 @@ async function categoriseContributions(
 			return;
 		}
 
-		categoryId ??= await categoryIdFor(tx, INVESTMENT_CONTRIBUTIONS_CATEGORY, now);
+		categoryId ??= await categoryIdFor(
+			tx,
+			investmentContributionsCategoryFor(await householdLocale(tx)),
+			now,
+		);
 		await tx
 			.update(transactions)
 			.set({ categoryId, categoryOrigin: origin })
@@ -836,9 +841,18 @@ export async function createTransferBetween(
 			}
 
 			const now = Date.now();
-			const prefix = classificationOf(destination.type) === "liability" ? "Paiement" : "Virement";
-			const outflowLabel = `${prefix} vers ${destination.name}`;
-			const inflowLabel = `${prefix} depuis ${source.name}`;
+			const locale = await householdLocale(tx);
+			const payment = classificationOf(destination.type) === "liability";
+			// Sure's `models.transfer.name` and `payment_name`, and its « Transfer fee ».
+			const outflowLabel =
+				locale === "fr"
+					? `${payment ? "Paiement" : "Virement"} vers ${destination.name}`
+					: `${payment ? "Payment" : "Transfer"} to ${destination.name}`;
+			const inflowLabel =
+				locale === "fr"
+					? `${payment ? "Paiement" : "Virement"} depuis ${source.name}`
+					: `${payment ? "Payment" : "Transfer"} from ${source.name}`;
+			const feePrefix = locale === "fr" ? "Frais de virement" : "Transfer fee";
 			const transfer: Transfer = {
 				id: crypto.randomUUID(),
 				outflowTransactionId: crypto.randomUUID(),
@@ -872,18 +886,18 @@ export async function createTransferBetween(
 			];
 			const feeCategoryId =
 				input.sourceFee > 0 || input.destinationFee > 0
-					? await categoryIdFor(tx, FEES_CATEGORY, now)
+					? await categoryIdFor(tx, transferFeesCategoryFor(locale), now)
 					: null;
 			const fees = [
 				{
 					accountId: source.id,
 					amount: input.sourceFee,
-					label: `Frais de virement — ${outflowLabel}`,
+					label: `${feePrefix} — ${outflowLabel}`,
 				},
 				{
 					accountId: destination.id,
 					amount: input.destinationFee,
-					label: `Frais de virement — ${inflowLabel}`,
+					label: `${feePrefix} — ${inflowLabel}`,
 				},
 			]
 				.filter((fee) => fee.amount > 0)

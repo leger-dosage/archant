@@ -21,5 +21,7 @@ test("a browser in English reads the interface in English, « Langue du navigate
 		.click();
 
 	await expect(page.getByRole("heading", { level: 1, name: "Preferences" })).toBeVisible();
-	await expect(page.getByRole("combobox", { name: "Language" })).toHaveText("Browser language");
+	await expect(page.getByRole("combobox", { name: "Language", exact: true })).toHaveText(
+		"Browser language",
+	);
 });

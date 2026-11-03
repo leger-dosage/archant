@@ -14,6 +14,9 @@ export const preferencesSchema = z.object({
 	showSplitGrouped: z.boolean().optional(),
 	// Null goes back to the browser's language, Sure's blank `locale`.
 	locale: z.enum(LOCALES).nullable().optional(),
+	// The household's, Sure's `families.locale`: an administrator's write, which
+	// `viewerReadOnly` already keeps from a viewer.
+	householdLocale: z.enum(LOCALES).optional(),
 });
 
 export type PreferencesInput = z.infer<typeof preferencesSchema>;

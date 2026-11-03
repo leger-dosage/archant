@@ -15,6 +15,7 @@ import { Section } from "@/components/Section";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { usePreferences, useUpdatePreferences } from "@/hooks/usePreferences";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
@@ -35,6 +36,7 @@ function PreferencesPage() {
 	const { t } = useTranslation();
 	const preferences = usePreferences();
 	const update = useUpdatePreferences();
+	const admin = useIsAdmin();
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("preferences.title"), app: t("app.name") });
@@ -80,6 +82,20 @@ function PreferencesPage() {
 									save({ locale: choice === "browser" ? null : choice })
 								}
 							/>
+							{admin && (
+								<ChoiceField
+									id="household-locale"
+									label={t("preferences.general.householdLocale")}
+									description={t("preferences.general.householdLocaleHint")}
+									value={preferences.data.householdLocale}
+									options={LOCALES.map((locale) => ({
+										value: locale,
+										label: t(`preferences.locales.${locale}`),
+									}))}
+									disabled={update.isPending}
+									onChange={(householdLocale: Locale) => save({ householdLocale })}
+								/>
+							)}
 							<ChoiceField
 								id="default-account-order"
 								label={t("preferences.general.defaultAccountOrder")}

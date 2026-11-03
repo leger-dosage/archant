@@ -10,7 +10,7 @@ Archant re-implements the parts of [Sure](https://github.com/we-promise/sure) th
 
 Know its limits before you install it:
 
-- The interface comes in English and French. Each member picks theirs in « Réglages › Préférences », and a new member gets their browser's language. What the server writes into your data, such as the default categories, stays in French until Epic 37 gives the household its own language.
+- The interface comes in English and French. Each member picks theirs in « Réglages › Préférences », and a new member gets their browser's language. The household has its own language too, set at setup and changed in the same page, which names the default categories and the transfers Archant writes; labels written by an import or a bank sync stay French for now.
 - Totals and reports are in euros, the one reporting currency. An account in another currency keeps its own balance but stays out of the totals, with no exchange rates.
 - One household. There is no public sign-up: an administrator invites each other member by a link, as an administrator or as a read-only viewer, and every member sees the whole household, with no per-account sharing.
 - Bank synchronisation goes through [Enable Banking](https://enablebanking.com) only, which covers European banks and needs an application registered with it. File import works without it.

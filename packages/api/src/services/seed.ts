@@ -3,7 +3,8 @@ import type { ServiceDeps } from "./deps.ts";
 import { categories } from "@archant/data/schema/categories";
 import { settings } from "@archant/data/schema/settings";
 
-import { DEFAULT_CATEGORIES } from "./default-categories.ts";
+import { defaultCategoriesFor } from "./default-categories.ts";
+import { householdLocale } from "./household-locale.ts";
 
 const SEEDED_KEY = "defaults_seeded_at";
 
@@ -28,8 +29,10 @@ export async function seedDefaults(deps: Pick<ServiceDeps, "db">): Promise<numbe
 				return 0;
 			}
 
+			const defaults = defaultCategoriesFor(await householdLocale(tx));
+
 			await tx.insert(categories).values(
-				DEFAULT_CATEGORIES.map((category) => ({
+				defaults.map((category) => ({
 					id: crypto.randomUUID(),
 					...category,
 					parentId: null,
@@ -38,7 +41,7 @@ export async function seedDefaults(deps: Pick<ServiceDeps, "db">): Promise<numbe
 				})),
 			);
 
-			return DEFAULT_CATEGORIES.length;
+			return defaults.length;
 		},
 		{ behavior: "immediate" },
 	);

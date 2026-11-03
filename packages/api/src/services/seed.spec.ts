@@ -10,6 +10,7 @@ import { settings } from "@archant/data/schema/settings";
 
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { DEFAULT_CATEGORIES } from "./default-categories.ts";
+import { saveHouseholdLocale } from "./household-locale.ts";
 import { seedDefaults } from "./seed.ts";
 
 const execute = promisify(execFile);
@@ -45,6 +46,24 @@ afterEach(async () => {
 });
 
 describe("seedDefaults", () => {
+	it("writes Sure's English names for an English household, with the same colours and icons", async () => {
+		const db = await fresh();
+		await saveHouseholdLocale(db, "en");
+
+		await expect(seedDefaults({ db })).resolves.toBe(22);
+
+		const rows = await db
+			.select({ name: categories.name, color: categories.color, icon: categories.icon })
+			.from(categories);
+		expect(rows).toContainEqual({ name: "Groceries", color: "#407706", icon: "shopping-bag" });
+		expect(rows).toContainEqual({
+			name: "Investment Contributions",
+			color: "#0d9488",
+			icon: "trending-up",
+		});
+		expect(rows.map((row) => row.name)).not.toContain("Courses");
+	});
+
 	it("inserts Sure's 22 top-level defaults with the settings row on first start", async () => {
 		const db = await fresh();
 
