@@ -1,6 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { ParsedStatement } from "../domain/statement.ts";
 
+import type { Locale } from "@archant/data/locales";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
 
@@ -155,7 +156,7 @@ export type BankConnector = {
 	 * holds one. With `includePending` false, Sure's `syncs_include_pending`
 	 * turned off, only booked lines are asked for, and a pending one the bank
 	 * returns all the same is left out. `psu` as for `fetchBalance`, on every
-	 * page.
+	 * page. `locale`, the household's, names a line the bank leaves unnamed.
 	 */
 	fetchStatement: (
 		uid: string,
@@ -164,6 +165,7 @@ export type BankConnector = {
 		knownMerchants: readonly string[],
 		includePending: boolean,
 		psu?: PsuContext,
+		locale?: Locale,
 	) => Promise<BankStatement>;
 };
 

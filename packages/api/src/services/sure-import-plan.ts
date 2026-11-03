@@ -41,6 +41,7 @@ import {
 	parseTradePrice,
 } from "@archant/data/decimals";
 import type { IncomeKind } from "@archant/data/income-kinds";
+import type { Locale } from "@archant/data/locales";
 import type { Micros } from "@archant/data/micros";
 import { parseMicros } from "@archant/data/micros";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
@@ -58,10 +59,12 @@ import { TRANSFER_KINDS, TRANSFER_STATUSES } from "@archant/data/transfer-kinds"
 import { addDays, today } from "../domain/dates.ts";
 import { isTooFarAhead } from "../domain/statement.ts";
 import { tradeAmount, tradeValue } from "../domain/trades.ts";
+import { IMPORT_LABELS } from "../lib/import-labels.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import { parseAccountDetails } from "../schemas/accounts.ts";
 import { MERCHANT_WEBSITE_MAX_LENGTH } from "../schemas/merchants.ts";
 import { LABEL_MAX_LENGTH, NOTES_MAX_LENGTH } from "../schemas/transactions.ts";
+import { householdLocale } from "./household-locale.ts";
 import { getReportingCurrency } from "./settings.ts";
 import {
 	amountOf,
@@ -469,6 +472,8 @@ type Reader = {
 	parsed: Parsed;
 	findings: Findings;
 	timeZone: string;
+	/** The household's language, which names a line the archive leaves unnamed. */
+	locale: Locale;
 	accounts: Map<string, PlanAccount>;
 	/** The currency each security key was first traded or held in. */
 	securityCurrencies: Map<string, string>;
@@ -710,9 +715,6 @@ function archantTransaction(data: Data) {
 	};
 }
 
-/** The label of an imported line without one: Sure's « Imported transaction ». */
-const IMPORTED_LABEL = "Opération importée";
-
 /** Tag ids as Sure's `mapped_tag_ids` reads them, repeats dropped. */
 function tagIdsOf(value: unknown): string[] {
 	return [...new Set(arrayOf(value).flatMap((id) => idOf(id) ?? []))];
@@ -775,7 +777,7 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 							textOf(split.name) ??
 								textOf(split.memo) ??
 								textOf(split.description) ??
-								IMPORTED_LABEL,
+								IMPORT_LABELS[reader.locale].imported,
 							LABEL_MAX_LENGTH,
 						),
 						amount: toMinorUnits(0 - lineAmount),
@@ -814,7 +816,7 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 				accountSourceId: account.sourceId,
 				date,
 				amount,
-				label: cut(textOf(data.name) ?? IMPORTED_LABEL, LABEL_MAX_LENGTH),
+				label: cut(textOf(data.name) ?? IMPORT_LABELS[reader.locale].imported, LABEL_MAX_LENGTH),
 				notes: cutOrNull(textOf(data.notes), NOTES_MAX_LENGTH),
 				excluded: booleanOf(data.excluded, false),
 				oneTime: data.kind === "one_time",
@@ -1458,11 +1460,12 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 }
 
 /** Archant's refusals, each on its line, and the plan of what Archant keeps. */
-function readPlan(parsed: Parsed, findings: Findings, timeZone: string): SurePlan {
+function readPlan(parsed: Parsed, findings: Findings, timeZone: string, locale: Locale): SurePlan {
 	const reader: Reader = {
 		parsed,
 		findings,
 		timeZone,
+		locale,
 		accounts: new Map(),
 		securityCurrencies: new Map(),
 	};
@@ -1508,8 +1511,9 @@ export async function readSureArchive(
 	file: { name: string; bytes: Uint8Array },
 	limits: SureImportLimits,
 ): Promise<SureArchive> {
+	const locale = await householdLocale(deps.db);
 	const { kept, ...preflight } = await runPreflight(deps, file, limits, (parsed, findings) =>
-		readPlan(parsed, findings, deps.timeZone),
+		readPlan(parsed, findings, deps.timeZone, locale),
 	);
 
 	return { ...preflight, plan: kept };

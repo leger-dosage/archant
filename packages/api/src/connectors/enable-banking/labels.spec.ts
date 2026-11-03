@@ -121,6 +121,10 @@ describe("labelOf", () => {
 			),
 		).toBe("Carte");
 		expect(labelOf(card([]), true, [])).toBe("Virement sortant");
+		expect(labelOf(card([]), true, [], "en")).toBe("Outgoing transfer");
+		expect(labelOf(line([], { credit_debit_indicator: "CRDT" }), false, [], "en")).toBe(
+			"Incoming transfer",
+		);
 		expect(labelOf(line(["SUMUP *GLACIER"]), true, [])).toBe("GLACIER");
 		expect(labelOf(line([], { credit_debit_indicator: "CRDT" }), false, [])).toBe(
 			"Virement entrant",

@@ -29,6 +29,7 @@ import {
 } from "./bank-connections.ts";
 import { resolveBankConnector } from "./bank-credentials.ts";
 import { includesPending } from "./bank-settings.ts";
+import { householdLocale } from "./household-locale.ts";
 import { ingest } from "./ledger/ingest.ts";
 import { runAutomaticRecurring } from "./recurring/pipeline.ts";
 import { runRulesAfterSync } from "./rules.ts";
@@ -235,6 +236,7 @@ async function runSync(
 				knownMerchants,
 				includePending,
 				psu,
+				await householdLocale(deps.db),
 			);
 			const { cutShort } = statement;
 

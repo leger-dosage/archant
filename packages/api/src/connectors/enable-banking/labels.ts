@@ -1,8 +1,10 @@
 import type { transactionSchema } from "./schemas.ts";
 import type { z } from "zod";
 
+import type { Locale } from "@archant/data/locales";
 import { MERCHANT_NAME_MAX_LENGTH } from "@archant/data/name-limits";
 
+import { IMPORT_LABELS } from "../../lib/import-labels.ts";
 import { LABEL_MAX_LENGTH } from "../../schemas/transactions.ts";
 
 type Line = z.output<typeof transactionSchema>;
@@ -112,7 +114,12 @@ const counterpartyOf = (line: Line, debit: boolean) =>
  * for a `CARD-` placeholder, the remittance; the bank's code description;
  * the remittance; else the direction.
  */
-export function labelOf(line: Line, debit: boolean, knownMerchants: readonly string[]): string {
+export function labelOf(
+	line: Line,
+	debit: boolean,
+	knownMerchants: readonly string[],
+	locale: Locale = "fr",
+): string {
 	const counterparty = counterpartyOf(line, debit);
 	const card = isCardPlaceholder(counterparty);
 	const remittance = primaryRemittance(line, knownMerchants);
@@ -121,7 +128,7 @@ export function labelOf(line: Line, debit: boolean, knownMerchants: readonly str
 		(card && remittance !== null ? truncated(remittance) : null) ??
 		line.bank_transaction_code?.description ??
 		(remittance === null ? null : truncated(remittance)) ??
-		(debit ? "Virement sortant" : "Virement entrant");
+		(debit ? IMPORT_LABELS[locale].transferOut : IMPORT_LABELS[locale].transferIn);
 
 	return capped(label, LABEL_MAX_LENGTH);
 }

@@ -8,6 +8,7 @@ import type { Transaction } from "./ledger/shared.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
 
 import { CATEGORY_NAME_MAX_LENGTH, newCategory } from "@archant/data/category-presets";
+import type { Locale } from "@archant/data/locales";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, parseDecimalAmount, toMinorUnits } from "@archant/data/money";
 import { TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
@@ -17,6 +18,7 @@ import { tags } from "@archant/data/schema/tags";
 
 import { addDays } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { IMPORT_LABELS } from "../lib/import-labels.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import { CREATE_NEW_KEY } from "../schemas/csv-imports.ts";
 import {
@@ -42,7 +44,6 @@ import { foldName } from "./sure-import-preflight.ts";
 // the ledger's pipeline (AD-4) under an import of their own.
 
 /** Sure's `default_row_name`, in French: a label Archant requires. */
-const DEFAULT_LABEL = "Opération importée";
 
 /** One row read whole: what its line needs once the mappings are applied. */
 type ReadRow = {
@@ -134,6 +135,7 @@ export function readRows(
 	sheet: Sheet,
 	accountCurrency: (key: string) => CurrencyCode | null,
 	errors: SureIssue[],
+	locale: Locale = "fr",
 ): ReadRow[] {
 	return sheet.table.rows.flatMap((row): ReadRow[] => {
 		const before = errors.length;
@@ -175,7 +177,7 @@ export function readRows(
 				date,
 				amount: signed(sheet, row, amount),
 				currency,
-				label: cut(label === "" ? DEFAULT_LABEL : label, LABEL_MAX_LENGTH),
+				label: cut(label === "" ? IMPORT_LABELS[locale].imported : label, LABEL_MAX_LENGTH),
 				notes: notes === "" ? null : cut(notes, NOTES_MAX_LENGTH),
 				account,
 				category: categoryOf(sheet, row),
@@ -356,6 +358,7 @@ export async function analyseTransactions(
 	db: Pick<Transaction, "select">,
 	sheet: Sheet,
 	mappings: Mappings | undefined,
+	locale: Locale = "fr",
 ): Promise<Analysis> {
 	const errors: SureIssue[] = [];
 	const { amountTypeStrategy, amountTypeIdentifier, amountTypeInflow, accountId } =
@@ -405,7 +408,7 @@ export async function analyseTransactions(
 
 		return currency !== undefined && isCurrencyCode(currency) ? currency : null;
 	};
-	const read = readRows(sheet, currencyFor, errors);
+	const read = readRows(sheet, currencyFor, errors, locale);
 
 	const classes = await classificationsOf(
 		db,

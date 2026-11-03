@@ -13,6 +13,7 @@ import type { balanceSchema } from "./schemas.ts";
 import type { KeyObject } from "node:crypto";
 import type { z } from "zod";
 
+import type { Locale } from "@archant/data/locales";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 import type { EnableBankingDetails, TransactionExtra } from "@archant/data/schema/transactions";
@@ -384,6 +385,7 @@ export function toTransaction(
 	raw: unknown,
 	since: IsoDate,
 	knownMerchants: readonly string[],
+	locale: Locale = "fr",
 ): NormalizedTransaction | RejectionCode | null {
 	const parsed = transactionSchema.safeParse(raw);
 
@@ -430,7 +432,7 @@ export function toTransaction(
 		date,
 		amount: toMinorUnits(debit ? -Math.abs(magnitude) : Math.abs(magnitude)),
 		currency: money.currency,
-		label: labelOf(line, debit, knownMerchants),
+		label: labelOf(line, debit, knownMerchants, locale),
 		keyLabel: keyLabelOf(line, debit),
 		reference: null,
 		// Every remittance line, the wallet included, as Sure's `notes`.
@@ -936,6 +938,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 			knownMerchants,
 			includePending,
 			psu = NO_PSU,
+			locale = "fr",
 		): Promise<BankStatement> {
 			const { lines, from, cutShort } = await fetchLines(uid, since, today, includePending, psu);
 			const unique = withoutRepeats(lines);
@@ -948,7 +951,7 @@ export function createEnableBankingConnector(config: EnableBankingConfig): BankC
 					unique.has(position) && unsettled.has(position) && (includePending || !isPending(raw));
 				// From the start asked for, as Sure's `filter_transactions_by_date`:
 				// a later page retried from a later start keeps the earlier pages' lines.
-				const mapped = kept ? toTransaction(raw, since, knownMerchants) : null;
+				const mapped = kept ? toTransaction(raw, since, knownMerchants, locale) : null;
 
 				if (typeof mapped === "string") {
 					statement.rejected.push({ ref: String(position), reason: mapped });

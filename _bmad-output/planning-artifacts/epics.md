@@ -8887,9 +8887,13 @@ So that an English household has no French line the server wrote.
 **When** a bank sync or an import writes them for an English household
 **Then** they are Sure's English, and the fingerprint key of a synced line never changes (AD-7)
 
-**Given** « Réinitialiser et précharger » and the assistant's tools
+**Given** « Réinitialiser et précharger »
 **When** the household is English
-**Then** the sample household's names and the amounts the tools write follow `en`
+**Then** the sample household's accounts, categories, labels and goals are named in English, with the same rows and amounts as the French load
+
+**Given** the assistant's tool descriptions and the language Enable Banking's consent page opens in
+**When** the household is English
+**Then** they stay French: no story takes them yet
 
 ### Story 37.3: Cover both languages end to end
 
