@@ -15,7 +15,7 @@ Know its limits before you install it:
 - One household. There is no public sign-up: an administrator invites each other member by a link, as an administrator or as a read-only viewer, and every member sees the whole household, with no per-account sharing.
 - Bank synchronisation goes through [Enable Banking](https://enablebanking.com) only, which covers European banks and needs an application registered with it. File import works without it.
 
-![The dashboard: accounts in the sidebar, net worth over six months, and the month's income and expenses by category, all made-up data](docs/images/dashboard.png)
+![The dashboard: accounts in the sidebar, net worth over six months, and the month's income and expenses by category, in English, all made-up data](docs/images/dashboard.png)
 
 ![The transaction list across accounts, grouped by day, with categories and an internal transfer, all made-up data](docs/images/transactions.png)
 

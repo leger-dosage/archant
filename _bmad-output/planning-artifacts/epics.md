@@ -8895,6 +8895,20 @@ So that an English household has no French line the server wrote.
 **When** the household is English
 **Then** they stay French: no story takes them yet
 
+### Story 37.5: Show the README in English
+
+As a visitor of the repository,
+I want the README's screenshots in English,
+So that the project reads as the international open-source project it is.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** `docs/images/dashboard.png` and `transactions.png`
+**When** this story ships
+**Then** they are taken again from an English household loaded with « Reset and load sample data », light theme, 1440×900, the dashboard on « 6M », and the alt texts say they are in English
+
 ### Story 37.3: Cover both languages end to end
 
 As the owner,

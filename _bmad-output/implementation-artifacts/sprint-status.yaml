@@ -396,4 +396,5 @@ development_status:
   37-2-give-the-household-a-language-for-its-data: done
   37-3-cover-both-languages-end-to-end: backlog
   37-4-write-an-imports-labels-and-the-sample-household-in-the-households-language: done
+  37-5-show-the-readme-in-english: done
   epic-37-retrospective: optional
