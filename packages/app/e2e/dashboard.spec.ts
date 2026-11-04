@@ -119,11 +119,24 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 
 const bilan = (page: Page) => page.getByRole("region", { name: "Bilan" });
 
-const sheetGroup = (page: Page, label: "Actifs" | "Passifs") =>
+const sheetGroup = (page: Page, label: "Actifs" | "Passif") =>
 	bilan(page).getByRole("group", { name: label, exact: true });
 
+/** A type's row: its `summary` opens and closes it. */
+const typeRow = (scope: ReturnType<Page["getByRole"]>, name: string) =>
+	scope.locator("summary", { hasText: name });
+
+/** A weight as Sure's `number_to_percentage(precision: 0)` reads it. */
 const shareText = (share: number) =>
-	new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 1 }).format(share);
+	new Intl.NumberFormat("fr-FR", { style: "percent", maximumFractionDigits: 0 }).format(share);
+
+/** An amount in whole euros, as Sure's `precision: 0`. */
+const wholeEuros = (amount: number) =>
+	new Intl.NumberFormat("fr-FR", {
+		style: "currency",
+		currency: "EUR",
+		maximumFractionDigits: 0,
+	}).format(amount / 100);
 
 const summary = (overrides: Record<string, unknown>) => ({
 	id: uniqueName("id"),
@@ -134,7 +147,7 @@ const summary = (overrides: Record<string, unknown>) => ({
 	...overrides,
 });
 
-test("« Bilan » splits each group by account type, and lists its active accounts", async ({
+test("« Bilan » groups each side by account type, each row opening on its accounts", async ({
 	page,
 }) => {
 	await mockAccounts(page, [
@@ -147,7 +160,7 @@ test("« Bilan » splits each group by account type, and lists its active accoun
 					name: "Compte joint",
 					type: "depository",
 					subtype: "checking",
-					balance: 2_500_000,
+					balance: 2_500_049,
 				}),
 				summary({ name: "Maison", type: "property", subtype: "apartment", balance: 7_500_000 }),
 				summary({
@@ -180,39 +193,151 @@ test("« Bilan » splits each group by account type, and lists its active accoun
 	await page.goto("/");
 
 	const assets = sheetGroup(page, "Actifs");
-	await expect(assets).toContainText(euros(10_000_000));
+	await expect(assets.getByRole("heading", { level: 3 })).toContainText(wholeEuros(10_000_000));
 	await expect(
 		assets.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
 	).toHaveText([`Comptes bancaires ${shareText(0.25)}`, `Bien immobilier ${shareText(0.75)}`]);
-	const accountRows = assets.getByRole("list", { name: "Comptes" }).getByRole("link");
-	await expect(accountRows).toHaveCount(3);
-	await expect(accountRows.nth(0)).toContainText("Compte joint");
-	await expect(accountRows.nth(0)).toContainText("Compte courant");
-	await expect(accountRows.nth(0)).toContainText(euros(2_500_000));
-	await expect(accountRows.nth(0).locator("svg.lucide-landmark")).toBeVisible();
-	// Outside the shares, but listed: the net worth notice names it.
-	await expect(accountRows.nth(2)).toContainText("Compte USD");
-	await expect(assets).not.toContainText("Ancien livret");
 	await expect(assets.locator("[data-type]")).toHaveCount(2);
 	await expect(assets.locator("[data-type]").first()).toHaveCSS("height", "6px");
-	// The accounts sit in a grey tray under an uppercase header, each with a 28 px type icon.
-	const tray = assets.getByRole("region", { name: "Comptes" });
-	await expect(tray).toHaveCSS("background-color", rgb("#f2f2f3"));
-	await expect(tray).toHaveCSS("border-radius", "12px");
-	await expect(tray.getByRole("heading", { name: "Comptes" })).toHaveCSS(
-		"text-transform",
-		"uppercase",
+	await Promise.all(
+		["Nom", "Poids", "Valeur"].map((column) =>
+			expect(assets.getByText(column, { exact: true })).toHaveCSS("text-transform", "uppercase"),
+		),
 	);
-	await expect(accountRows.nth(0).locator('[data-slot="tinted-icon"]')).toHaveCSS("width", "28px");
 
-	const liabilities = sheetGroup(page, "Passifs");
+	// One closed row per type, in Sure's order, the inactive account left out.
+	const rows = assets.locator("summary");
+	await expect(rows).toHaveCount(3);
+	await expect(rows.nth(0)).toContainText("Comptes bancaires");
+	await expect(rows.nth(0)).toContainText(shareText(0.25));
+	// Whole units, rounded half up: 25 000,49 € reads 25 000 €.
+	await expect(rows.nth(0)).toContainText(wholeEuros(2_500_000));
+	await expect(rows.nth(1)).toContainText("Investissement");
+	await expect(rows.nth(2)).toContainText("Bien immobilier");
+	await expect(rows.nth(2)).toContainText(shareText(0.75));
+	await expect(assets.getByRole("link", { name: "Compte joint" })).toBeHidden();
+	await expect(assets).not.toContainText("Ancien livret");
+
+	// Sure's five bars: 25 % lights two, the other three at 20 % opacity.
+	const bars = rows.nth(0).locator('[data-slot="weight-bar"]');
+	await expect(bars).toHaveCount(5);
+	await Promise.all(
+		["1", "1", "0.2", "0.2", "0.2"].map((opacity, index) =>
+			expect(bars.nth(index)).toHaveCSS("opacity", opacity),
+		),
+	);
+
+	await rows.nth(0).click();
+	const checking = assets.getByRole("list", { name: "Comptes bancaires" }).getByRole("listitem");
+	await expect(checking).toHaveCount(1);
+	await expect(checking.getByRole("link", { name: "Compte joint" })).toBeVisible();
+	await expect(checking).toContainText(shareText(0.25));
+	await expect(checking).toContainText(wholeEuros(2_500_000));
+	await expect(checking.locator("svg.lucide-landmark")).toBeVisible();
+
+	// A foreign account is listed with its own balance, and no weight.
+	await rows.nth(1).click();
+	const dollars = assets.getByRole("list", { name: "Investissement" }).getByRole("listitem");
+	await expect(dollars.getByRole("link", { name: "Compte USD" })).toBeVisible();
+	await expect(dollars).toContainText(
+		new Intl.NumberFormat("fr-FR", {
+			style: "currency",
+			currency: "USD",
+			maximumFractionDigits: 0,
+		}).format(5_000),
+	);
+	await expect(dollars.locator('[data-slot="weight-bar"]')).toHaveCount(0);
+
+	const liabilities = sheetGroup(page, "Passif");
 	await expect(
 		liabilities.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
 	).toHaveText([`Carte de crédit ${shareText(0.25)}`, `Prêt ${shareText(0.75)}`]);
-	await expect(liabilities.getByRole("list", { name: "Comptes" }).getByRole("link")).toHaveCount(2);
+	await expect(liabilities.locator("summary")).toHaveCount(2);
+
+	await checking.getByRole("link", { name: "Compte joint" }).click();
+	await expect(page).toHaveURL(/\/accounts\/[^/]+$/u);
+});
+
+test("« Tout développer » opens every type, then « Tout réduire » closes them", async ({
+	page,
+}) => {
+	await mockAccounts(page, [
+		{
+			classification: "asset",
+			total: 2_000_000,
+			excludedCount: 0,
+			accounts: [
+				summary({ name: "Livret", type: "depository", balance: 500_000 }),
+				summary({ name: "Voiture", type: "vehicle", balance: 1_500_000 }),
+			],
+		},
+		{
+			classification: "liability",
+			total: 200_000,
+			excludedCount: 0,
+			accounts: [summary({ name: "Prêt auto", type: "loan", subtype: "auto", balance: 200_000 })],
+		},
+	]);
+
+	await page.goto("/");
+
+	// A closed row's accounts are out of the accessibility tree.
+	const links = bilan(page).getByRole("link", { name: /^(Livret|Voiture|Prêt auto)$/u });
+	await expect(links).toHaveCount(0);
+
+	await bilan(page).getByRole("button", { name: "Tout développer" }).click();
+	await expect(links).toHaveText(["Livret", "Voiture", "Prêt auto"]);
+	const collapse = bilan(page).getByRole("button", { name: "Tout réduire" });
+	await expect(collapse).toHaveAttribute("aria-expanded", "true");
+
+	// Closing one row by hand: every row is no longer open.
+	await typeRow(sheetGroup(page, "Actifs"), "Véhicule").click();
+	await expect(bilan(page).getByRole("link", { name: "Voiture" })).toBeHidden();
+	await expect(bilan(page).getByRole("button", { name: "Tout développer" })).toBeVisible();
+
+	await bilan(page).getByRole("button", { name: "Tout développer" }).click();
+	await collapse.click();
+	await expect(links).toHaveCount(0);
+	await expect(bilan(page).getByRole("button", { name: "Tout développer" })).toBeVisible();
 
 	await bilan(page).getByRole("link", { name: "Tous les comptes" }).click();
 	await expect(page).toHaveURL(/\/accounts$/u);
+});
+
+test("an excluded account is weighed over its side's total, muted, and left out of its type's", async ({
+	page,
+}) => {
+	await mockAccounts(page, [
+		{
+			classification: "asset",
+			total: 1_000_000,
+			excludedCount: 1,
+			accounts: [
+				summary({ name: "Livret", type: "depository", balance: 1_000_000 }),
+				summary({
+					name: "Vieille voiture",
+					type: "vehicle",
+					balance: 800_000,
+					excludedFromReports: true,
+				}),
+			],
+		},
+		{ classification: "liability", accounts: [], total: 0, excludedCount: 0 },
+	]);
+
+	await page.goto("/");
+
+	const assets = sheetGroup(page, "Actifs");
+	const vehicle = typeRow(assets, "Véhicule");
+	await expect(vehicle).toContainText(shareText(0));
+	await expect(vehicle).toContainText(wholeEuros(0));
+
+	await vehicle.click();
+	const row = assets.getByRole("list", { name: "Véhicule" }).getByRole("listitem");
+	await expect(row.getByRole("link", { name: "Vieille voiture" })).toBeVisible();
+	await expect(row).toContainText(shareText(0.8));
+	await expect(row.locator("svg.lucide-eye-off")).toBeVisible();
+	await expect(row.getByText(wholeEuros(800_000))).toHaveCSS("color", rgb("#6c6b73"));
 });
 
 test("« Bilan » lists an other asset after the vehicles and an other liability after the loans, in Sure's colours", async ({
@@ -245,31 +370,35 @@ test("« Bilan » lists an other asset after the vehicles and an other liability
 	await expect(
 		assets.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
 	).toHaveText([`Véhicule ${shareText(0.75)}`, `Autres actifs ${shareText(0.25)}`]);
+	await expect(assets.locator("summary")).toHaveText([/^Véhicule/u, /^Autres actifs/u]);
 	await expect(assets.locator('[data-type="other_asset"]')).toHaveCSS(
 		"background-color",
 		rgb("#27a644"),
 	);
+
+	await bilan(page).getByRole("button", { name: "Tout développer" }).click();
 	await expect(
-		assets.getByRole("link", { name: /Bijoux/u }).getByText("Autre actif", { exact: true }),
-	).toBeVisible();
-	await expect(
-		assets.getByRole("link", { name: /Bijoux/u }).locator("svg.lucide-plus"),
+		assets.getByRole("listitem").filter({ hasText: "Bijoux" }).locator("svg.lucide-plus"),
 	).toBeVisible();
 
-	const liabilities = sheetGroup(page, "Passifs");
+	const liabilities = sheetGroup(page, "Passif");
 	await expect(
 		liabilities.getByRole("list", { name: "Répartition par type de compte" }).getByRole("listitem"),
 	).toHaveText([`Prêt ${shareText(0.5)}`, `Autres passifs ${shareText(0.5)}`]);
+	await expect(liabilities.locator("summary")).toHaveText([/^Prêt/u, /^Autres passifs/u]);
 	await expect(liabilities.locator('[data-type="other_liability"]')).toHaveCSS(
 		"background-color",
 		rgb("#737373"),
 	);
 	await expect(
-		liabilities.getByRole("link", { name: /Prêt de Marie/u }).locator("svg.lucide-minus"),
+		liabilities
+			.getByRole("listitem")
+			.filter({ hasText: "Prêt de Marie" })
+			.locator("svg.lucide-minus"),
 	).toBeVisible();
 });
 
-test("an overdrawn account alone draws no bar, and is still listed", async ({ page }) => {
+test("an overdrawn account alone draws no bar, and an empty side says so", async ({ page }) => {
 	await mockAccounts(page, [
 		{
 			classification: "asset",
@@ -290,10 +419,45 @@ test("an overdrawn account alone draws no bar, and is still listed", async ({ pa
 	await page.goto("/");
 
 	const assets = sheetGroup(page, "Actifs");
-	await expect(assets.getByRole("link", { name: /Compte à découvert/u })).toBeVisible();
 	await expect(assets.locator("[data-type]")).toHaveCount(0);
 	await expect(assets.getByRole("list", { name: "Répartition par type de compte" })).toHaveCount(0);
-	await expect(sheetGroup(page, "Passifs")).toHaveCount(0);
+	await typeRow(assets, "Comptes bancaires").click();
+	await expect(assets.getByRole("link", { name: "Compte à découvert" })).toBeVisible();
+
+	const liabilities = sheetGroup(page, "Passif");
+	await expect(liabilities).toContainText("Pas encore de passif");
+	await expect(liabilities).toContainText(
+		"Ajoutez vos comptes de passif pour voir une répartition complète",
+	);
+	await expect(liabilities.locator("svg.lucide-minus")).toBeVisible();
+	await expect(liabilities.locator("summary")).toHaveCount(0);
+});
+
+test("a side without an active account says so, beside a side with rows", async ({ page }) => {
+	await mockAccounts(page, [
+		{
+			classification: "asset",
+			total: 0,
+			excludedCount: 0,
+			accounts: [summary({ name: "Ancien livret", type: "depository", balance: 0, active: false })],
+		},
+		{
+			classification: "liability",
+			total: 100_000,
+			excludedCount: 0,
+			accounts: [summary({ name: "Carte Visa", type: "credit_card", balance: 100_000 })],
+		},
+	]);
+
+	await page.goto("/");
+
+	const assets = sheetGroup(page, "Actifs");
+	await expect(assets).toContainText("Aucun actif pour l'instant");
+	await expect(assets).toContainText(
+		"Ajoutez vos comptes d'actifs pour voir une répartition complète",
+	);
+	await expect(assets.locator("svg.lucide-plus")).toBeVisible();
+	await expect(bilan(page).getByRole("button", { name: "Tout développer" })).toBeVisible();
 });
 
 test("a checking account and a card move net worth, assets and liabilities", async ({
@@ -386,6 +550,7 @@ test("an account in another currency is named in the notice and left out of the 
 	);
 	await expect(headline(page)).toContainText(euros(before.netWorth));
 	await expect(total(page, "Actifs")).toContainText(euros(before.assets));
+	await typeRow(sheetGroup(page, "Actifs"), "Comptes bancaires").click();
 	await expect(
 		sheetGroup(page, "Actifs").getByRole("link", { name: new RegExp(dollars.name, "u") }),
 	).toBeVisible();

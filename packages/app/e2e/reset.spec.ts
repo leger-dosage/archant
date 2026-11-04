@@ -216,12 +216,9 @@ test("« Réinitialiser et précharger » asks first, then the dashboard lists S
 
 	await rail.getByRole("link", { name: "Accueil", exact: true }).click();
 	const bilan = page.getByRole("region", { name: "Bilan" });
-	const assets = bilan
-		.getByRole("group", { name: "Actifs", exact: true })
-		.getByRole("list", { name: "Comptes" });
-	const liabilities = bilan
-		.getByRole("group", { name: "Passifs", exact: true })
-		.getByRole("list", { name: "Comptes" });
+	await bilan.getByRole("button", { name: "Tout développer" }).click();
+	const assets = bilan.getByRole("group", { name: "Actifs", exact: true });
+	const liabilities = bilan.getByRole("group", { name: "Passif", exact: true });
 	await expect(assets.getByRole("link", { name: /Compte courant Chase Premier/u })).toBeVisible();
 	await expect(assets.getByRole("link", { name: /Résidence principale/u })).toBeVisible();
 	await expect(liabilities.getByRole("link", { name: /Prêt immobilier/u })).toBeVisible();

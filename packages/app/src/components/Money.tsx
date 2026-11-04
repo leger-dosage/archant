@@ -1,6 +1,6 @@
 import type { MinorUnits } from "@archant/data/money";
 
-import { formatMoney } from "@/lib/format-money";
+import { formatMoney, formatWholeMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
 type MoneyProps = {
@@ -18,6 +18,8 @@ type MoneyProps = {
 	plusSign?: boolean;
 	/** An amount left out of reports: muted, whatever its sign. */
 	muted?: boolean;
+	/** Rounded to the whole unit, as Sure's `precision: 0` in its balance sheet. */
+	whole?: boolean;
 	className?: string;
 };
 
@@ -32,6 +34,7 @@ export function Money({
 	signed = false,
 	plusSign = false,
 	muted = false,
+	whole = false,
 	className,
 }: MoneyProps) {
 	const inflow = amount > 0;
@@ -42,7 +45,7 @@ export function Money({
 	return (
 		<span className={cn("font-medium whitespace-nowrap tabular-nums", tone, className)}>
 			{(signed || plusSign) && inflow ? "+" : ""}
-			{formatMoney({ amount, currency })}
+			{whole ? formatWholeMoney(amount, currency) : formatMoney({ amount, currency })}
 		</span>
 	);
 }

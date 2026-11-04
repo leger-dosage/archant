@@ -94,7 +94,19 @@
 			"title": "Balance sheet",
 			"allAccounts": "All accounts",
 			"legend": "Breakdown by account type",
-			"accounts": "Accounts",
+			"name": "Name",
+			"weight": "Weight",
+			"value": "Value",
+			"expandAll": "Expand all",
+			"collapseAll": "Collapse all",
+			"classifications": {
+				"asset": "Assets",
+				"liability": "Liabilities"
+			},
+			"noAsset": "No assets yet",
+			"noLiability": "No liabilities yet",
+			"addAssetAccounts": "Add your asset accounts to see a full breakdown",
+			"addLiabilityAccounts": "Add your liability accounts to see a full breakdown",
 			"types": {
 				"depository": "Cash",
 				"investment": "Investments",
