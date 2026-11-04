@@ -1,17 +1,16 @@
 import { z } from "zod";
 
+import { DEFAULT_PERIOD, SURE_PERIODS } from "@archant/data/periods";
+
 /**
- * The chart periods, in the order the segmented control shows them. Shared by
- * the API query and the interface's search param, so a period the page offers
- * is one the API accepts.
+ * The chart reads' query, as Sure's `Periodable`: one of Sure's keys, an
+ * unknown one or an old link's « 1M » read as the default, or a custom range
+ * when both dates are given. The dates stay strings here: a range that does
+ * not parse falls back to the default in `resolveChartRange`, as Sure's,
+ * rather than leaving the key to apply.
  */
-export const BALANCE_PERIODS = ["1M", "3M", "6M", "1Y", "all"] as const;
-
-export type BalancePeriod = (typeof BALANCE_PERIODS)[number];
-
-/** Sure's default, `last_30_days`, rounded to a calendar month. */
-export const DEFAULT_BALANCE_PERIOD: BalancePeriod = "1M";
-
 export const balanceQuerySchema = z.object({
-	period: z.enum(BALANCE_PERIODS).default(DEFAULT_BALANCE_PERIOD),
+	period: z.enum(SURE_PERIODS).catch(DEFAULT_PERIOD).default(DEFAULT_PERIOD),
+	startDate: z.string().optional().catch(undefined),
+	endDate: z.string().optional().catch(undefined),
 });

@@ -50,6 +50,7 @@ describe("GET /api/preferences", () => {
 		await expect(response.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "name_asc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -84,6 +85,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(saved.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: order,
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -92,6 +94,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(read.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: order,
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -109,6 +112,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(saved.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "name_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -131,6 +135,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(off.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: false,
 				locale: null,
 				householdLocale: "fr",
@@ -139,6 +144,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(readOff.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: false,
 				locale: null,
 				householdLocale: "fr",
@@ -147,6 +153,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(on.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -165,6 +172,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(english.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: "en",
 				householdLocale: "fr",
@@ -173,6 +181,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(french.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: "fr",
 				householdLocale: "fr",
@@ -181,6 +190,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(browser.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "balance_desc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -222,6 +232,39 @@ describe("PATCH /api/preferences", () => {
 		});
 	});
 
+	it("saves the chart period, the rest untouched, as Sure's default_period", async () => {
+		const api = await preferencesApi();
+
+		const saved = await api.$patch({ json: { defaultPeriod: "last_90_days" } });
+		const read = await api.$get();
+
+		expect(saved.status).toBe(200);
+		await expect(read.json()).resolves.toEqual({
+			data: {
+				defaultAccountOrder: "name_asc",
+				defaultPeriod: "last_90_days",
+				showSplitGrouped: true,
+				locale: null,
+				householdLocale: "fr",
+			},
+		});
+	});
+
+	it("refuses an unknown period VALIDATION_ERROR, nothing saved", async () => {
+		const own = await ownDatabase();
+		const app = buildApp(own.db);
+
+		const refused = await patchRaw({ defaultPeriod: "1M" }, app);
+		const read = await app.request("/api/preferences");
+
+		expect(refused.status).toBe(400);
+		expect(errorBody.parse(refused.body).error).toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "defaultPeriod", code: "invalid_value" }],
+		});
+		await expect(read.json()).resolves.toMatchObject({ data: { defaultPeriod: "last_30_days" } });
+	});
+
 	it("refuses an unknown order VALIDATION_ERROR, as Sure's inclusion, nothing saved", async () => {
 		const own = await ownDatabase();
 		const app = buildApp(own.db);
@@ -237,6 +280,7 @@ describe("PATCH /api/preferences", () => {
 		await expect(read.json()).resolves.toEqual({
 			data: {
 				defaultAccountOrder: "name_asc",
+				defaultPeriod: "last_30_days",
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
@@ -316,6 +360,13 @@ describe("PATCH /api/preferences", () => {
 			expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
 		});
 
+		it("is refused FORBIDDEN on saving the chart period, as AD-21", async () => {
+			const refused = await patchRaw({ defaultPeriod: "last_90_days" }, viewer());
+
+			expect(refused.status).toBe(403);
+			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");
+		});
+
 		it("reads the default order, and is refused FORBIDDEN on a save, nothing written", async () => {
 			const refused = await patchRaw({ defaultAccountOrder: "balance_desc" }, viewer());
 			const read = await viewer().request("/api/preferences");
@@ -326,6 +377,7 @@ describe("PATCH /api/preferences", () => {
 			await expect(read.json()).resolves.toEqual({
 				data: {
 					defaultAccountOrder: "name_asc",
+					defaultPeriod: "last_30_days",
 					showSplitGrouped: true,
 					locale: null,
 					householdLocale: "fr",

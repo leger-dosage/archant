@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises";
 import { afterAll, afterEach, beforeAll, expect, vi } from "vitest";
 import { z } from "zod";
 
+import type { SurePeriod } from "@archant/data/periods";
 import { TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
 
 import { validateEnv } from "../env.ts";
@@ -323,7 +324,7 @@ export async function balanceOnDay(accountId: string, date: string) {
 	// The chart's data: every day since the opening date.
 	const response = await testClient(buildApp()).api.accounts[":id"].balances.$get({
 		param: { id: accountId },
-		query: { period: "all" },
+		query: { period: "all_time" },
 	});
 	const { points } = (await response.json()).data;
 
@@ -526,7 +527,7 @@ export async function ownRequest(method: string, path: string, body?: unknown) {
 }
 
 /** The I/O matrix of Story 6.1, each test in its own database. */
-export async function netWorthOf(period?: "1M" | "3M" | "6M" | "1Y" | "all") {
+export async function netWorthOf(period?: SurePeriod) {
 	own ??= await freshDatabase();
 	const response = await testClient(buildApp(own.db)).api.reports["net-worth"].$get({
 		query: period === undefined ? {} : { period },

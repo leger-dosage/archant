@@ -10,7 +10,7 @@ import { getCashFlow, getNetWorth } from "../services/reports.ts";
 export function reportsRoutes(deps: ServiceDeps) {
 	return new Hono()
 		.get("/net-worth", validated("query", balanceQuerySchema), async (c) =>
-			c.json({ data: await getNetWorth(deps, c.req.valid("query").period) }, 200),
+			c.json({ data: await getNetWorth(deps, c.req.valid("query")) }, 200),
 		)
 		.get("/cash-flow", validated("query", cashFlowQuerySchema), async (c) =>
 			c.json({ data: await getCashFlow(deps, c.req.valid("query").month) }, 200),

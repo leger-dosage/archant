@@ -1,6 +1,6 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
-import type { SureInterval, SurePeriod } from "../domain/balances/sure-periods.ts";
+import type { ChartQuery, SureInterval } from "../domain/balances/sure-periods.ts";
 import type { MonthRows } from "../domain/budgets/categories.ts";
 import type {
 	CashFlowBreakdown,
@@ -12,7 +12,6 @@ import type {
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
 import type { MonthlyCashFlowRow, Stats } from "../domain/statistics.ts";
-import type { BalancePeriod } from "../schemas/balances.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { Classification } from "@archant/data/account-types";
@@ -20,12 +19,18 @@ import { classificationOf, isTaxAdvantaged } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
+import type { SurePeriod } from "@archant/data/periods";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import type { Account } from "@archant/data/types";
 
-import { balanceChange, periodRange } from "../domain/balances/history.ts";
-import { seriesDates, seriesPointCount, surePeriodRange } from "../domain/balances/sure-periods.ts";
+import { balanceChange, clampRange } from "../domain/balances/history.ts";
+import {
+	resolveChartRange,
+	seriesDates,
+	seriesPointCount,
+	surePeriodRange,
+} from "../domain/balances/sure-periods.ts";
 import { grossCashFlow, netCashFlow } from "../domain/cash-flow.ts";
 import {
 	addDays,
@@ -39,7 +44,6 @@ import {
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { categoryStats, familyStats } from "../domain/statistics.ts";
 import { AppError } from "../lib/errors.ts";
-import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import {
 	cashFlowByCategory,
@@ -53,8 +57,11 @@ import { getReportingCurrency } from "./settings.ts";
 type LeftOutAccount = { id: string; name: string; currency: string };
 
 export type NetWorth = {
-	period: BalancePeriod;
-	/** First day of the series; `null` when no counted account has opened by today. */
+	/** Sure's key, `null` for a custom range. */
+	period: SurePeriod | null;
+	/** The period's own first day, before the clamp to the household's history. */
+	periodFrom: IsoDate;
+	/** First day of the series; `null` when no counted account has a day in the period. */
 	from: IsoDate | null;
 	to: IsoDate;
 	/** The reporting currency every amount below is in. */
@@ -64,7 +71,7 @@ export type NetWorth = {
 	assets: MinorUnits;
 	/** The amount owed, positive (AD-5). */
 	liabilities: MinorUnits;
-	/** Net worth at the end of every day of the period, oldest first, today last. */
+	/** Net worth at the end of every day of the period, oldest first, its last day last. */
 	points: DailyBalance[];
 	change: BalanceChange | null;
 	/** Active accounts included in reports but held in another currency, by name. */
@@ -131,24 +138,30 @@ async function countedBetween(
 	);
 }
 
-/** The dashboard's daily balances over a period ending today, never before the first counted account's history starts. */
-async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
-	const to = today(deps.timeZone);
+/**
+ * The dashboard's daily balances over a period, never before the first
+ * counted account's history starts nor past today.
+ */
+async function countedSeries(deps: ServiceDeps, query: ChartQuery) {
+	const asOf = today(deps.timeZone);
 	const { currency, counted, leftOut } = await reportedAccounts(deps);
 
 	const startDates = await Promise.all(counted.map((row) => historyStartOf(deps.db, row.id, null)));
 	const earliest = startDates
 		.filter((date): date is IsoDate => date !== null)
 		.reduce<IsoDate | null>((min, date) => (min === null || date < min ? date : min), null);
-	const range = earliest === null ? null : periodRange(PERIOD_MONTHS[period], to, earliest);
+	const { period, range } = resolveChartRange(query, asOf, earliest);
+	const charted = earliest === null ? null : clampRange(range, earliest, asOf);
 
-	const series = range === null ? [] : await countedBetween(deps, counted, range);
+	const series = charted === null ? [] : await countedBetween(deps, counted, charted);
 	const assets = totalOf(series, "asset");
 	const liabilities = totalOf(series, "liability");
 
 	return {
-		from: range?.from ?? null,
-		to,
+		period,
+		periodFrom: range.from,
+		from: charted?.from ?? null,
+		to: charted?.to ?? minDate(range.to, asOf),
 		currency,
 		series,
 		netWorth: toMinorUnits(assets - liabilities),
@@ -158,12 +171,12 @@ async function countedSeries(deps: ServiceDeps, period: BalancePeriod) {
 	};
 }
 
-/** The household's net worth over a period ending today, as the dashboard charts it. */
-export async function getNetWorth(deps: ServiceDeps, period: BalancePeriod): Promise<NetWorth> {
-	const { series, ...totals } = await countedSeries(deps, period);
+/** The household's net worth over a period, as the dashboard charts it. */
+export async function getNetWorth(deps: ServiceDeps, query: ChartQuery): Promise<NetWorth> {
+	const { series, ...totals } = await countedSeries(deps, query);
 	const points = netWorthSeries(series);
 
-	return { period, ...totals, points, change: balanceChange(points) };
+	return { ...totals, points, change: balanceChange(points) };
 }
 
 /**

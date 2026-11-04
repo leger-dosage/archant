@@ -1,21 +1,21 @@
 import type { NetWorthData } from "@/hooks/useNetWorth";
+import type { ChartPeriod } from "@/lib/periods";
 
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import type { BalancePeriod } from "@archant/api/schemas/balances";
-
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Money } from "@/components/Money";
-import { PeriodToggle } from "@/components/PeriodToggle";
 import { Section } from "@/components/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNetWorth } from "@/hooks/useNetWorth";
 import { changeText } from "@/lib/balance-change";
+import { comparisonText } from "@/lib/periods";
 
 /**
- * « +2,1 % sur 3 mois » after a trend arrow. Only the arrow takes the trend
+ * « +2,1 % vs. dernier trimestre » after a trend arrow, Sure's
+ * `comparison_label` whatever the household's history, as its dashboard. Only the arrow takes the trend
  * colour; the sign already says which way, so the arrow is decoration.
  */
 function NetWorthChange({ data }: { data: NetWorthData }) {
@@ -39,7 +39,7 @@ function NetWorthChange({ data }: { data: NetWorthData }) {
 			<span className="font-medium tabular-nums">
 				{t("dashboard.change", {
 					change: changeText(t, data.change, data.currency),
-					over: t(`balances.over.${data.period}`),
+					comparison: comparisonText(t, data),
 				})}
 			</span>
 		</p>
@@ -71,21 +71,20 @@ function Total({
  */
 export function NetWorthSection({
 	period,
-	onPeriodChange,
+	ready,
+	onRangeSelect,
 }: {
-	period: BalancePeriod;
-	onPeriodChange: (period: BalancePeriod) => void;
+	period: ChartPeriod;
+	/** False while the saved period loads. */
+	ready: boolean;
+	onRangeSelect: (from: string, to: string) => void;
 }) {
 	const { t } = useTranslation();
-	const netWorth = useNetWorth(period);
+	const netWorth = useNetWorth(period, ready);
 	const data = netWorth.data;
 
 	return (
-		<Section
-			id="net-worth-heading"
-			title={t("dashboard.netWorth")}
-			action={<PeriodToggle period={period} onPeriodChange={onPeriodChange} />}
-		>
+		<Section id="net-worth-heading" title={t("dashboard.netWorth")}>
 			<div className="flex flex-col gap-4 p-4">
 				<div className="flex flex-wrap items-end justify-between gap-4">
 					<div role="group" aria-labelledby="net-worth-heading" className="flex flex-col gap-1">
@@ -113,6 +112,7 @@ export function NetWorthSection({
 					summaryKey="dashboard.summary"
 					valueLabel={t("dashboard.netWorth")}
 					height={208}
+					onRangeSelect={onRangeSelect}
 				/>
 				{data !== undefined && <LeftOutNotice accounts={data.leftOut} />}
 			</div>

@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { toMinorUnits } from "@archant/data/money";
+import type { SurePeriod } from "@archant/data/periods";
 import { accounts } from "@archant/data/schema/accounts";
 import { rateLimits } from "@archant/data/schema/auth";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -1536,7 +1537,7 @@ describe("GET /api/accounts/:id/transactions", () => {
 	});
 });
 
-async function balancesOf(accountId: string, period?: "1M" | "3M" | "6M" | "1Y" | "all") {
+async function balancesOf(accountId: string, period?: SurePeriod) {
 	const response = await testClient(buildApp()).api.accounts[":id"].balances.$get({
 		param: { id: accountId },
 		query: period === undefined ? {} : { period },
@@ -1548,20 +1549,21 @@ async function balancesOf(accountId: string, period?: "1M" | "3M" | "6M" | "1Y" 
 }
 
 describe("GET /api/accounts/:id/balances", () => {
-	it("returns one point per day of the last month by default", async () => {
+	it("returns one point per day of the last 30 days by default, as Sure's", async () => {
 		const account = await openAccount({ openingDate: "2026-01-10" });
 
 		const data = await balancesOf(account.id);
 
 		expect(data).toMatchObject({
-			period: "1M",
-			from: "2026-08-21",
+			period: "last_30_days",
+			periodFrom: "2026-08-22",
+			from: "2026-08-22",
 			to: "2026-09-21",
 			currency: "EUR",
 			change: { amount: 0, percent: 0 },
 		});
-		expect(data.points).toHaveLength(32);
-		expect(data.points[0]).toEqual({ date: "2026-08-21", balance: 123456 });
+		expect(data.points).toHaveLength(31);
+		expect(data.points[0]).toEqual({ date: "2026-08-22", balance: 123456 });
 		expect(data.points.at(-1)).toEqual({ date: "2026-09-21", balance: 123456 });
 	});
 
@@ -1569,7 +1571,7 @@ describe("GET /api/accounts/:id/balances", () => {
 		const account = await openAccount({ openingDate: "2026-09-01" });
 		await postTransaction(account.id, { ...expense, date: "2026-08-20" });
 
-		const data = await balancesOf(account.id, "all");
+		const data = await balancesOf(account.id, "all_time");
 
 		expect(data.from).toBe("2026-08-20");
 		expect(data.points[0]).toEqual({ date: "2026-08-20", balance: -4290 });
@@ -1605,9 +1607,9 @@ describe("GET /api/accounts/:id/balances", () => {
 		const account = await openAccount({ openingDate: "2026-09-01" });
 		await postTransaction(account.id, { ...expense, amount: "12,40" });
 
-		const data = await balancesOf(account.id, "6M");
+		const data = await balancesOf(account.id, "last_365_days");
 
-		expect(data.from).toBe("2026-09-01");
+		expect(data).toMatchObject({ periodFrom: "2025-09-21", from: "2026-09-01" });
 		expect(data.points[0]).toEqual({ date: "2026-09-01", balance: 123456 });
 		expect(data.change).toEqual({ amount: 1240, percent: 1 });
 	});
@@ -1615,28 +1617,28 @@ describe("GET /api/accounts/:id/balances", () => {
 	it("covers every day since the opening date for all", async () => {
 		const account = await openAccount({ openingDate: "2024-02-29" });
 
-		const data = await balancesOf(account.id, "all");
+		const data = await balancesOf(account.id, "all_time");
 
 		expect(data.from).toBe("2024-02-29");
 		// 2024-02-29 to 2026-09-21: 307 days left in 2024, 365 in 2025, 264 in 2026.
 		expect(data.points).toHaveLength(936);
 	});
 
-	it("clamps the start of a month to the end of a shorter one", async () => {
+	it("starts last_month on the first of the month before and ends it on its last day", async () => {
 		vi.setSystemTime(new Date("2026-03-31T10:00:00Z"));
 		const account = await openAccount({ openingDate: "2026-01-01" });
 
-		const data = await balancesOf(account.id, "1M");
+		const data = await balancesOf(account.id, "last_month");
 
-		expect(data.from).toBe("2026-02-28");
-		expect(data.points[0]?.date).toBe("2026-02-28");
+		expect(data).toMatchObject({ from: "2026-02-01", to: "2026-02-28" });
+		expect(data.points).toHaveLength(28);
 	});
 
 	it("stops at today, leaving out the rows of a future transaction", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, { ...expense, date: "2026-10-01" });
 
-		const data = await balancesOf(account.id, "1M");
+		const data = await balancesOf(account.id, "last_30_days");
 
 		expect(data.points.at(-1)).toEqual({ date: "2026-09-21", balance: 123456 });
 	});
@@ -1668,21 +1670,45 @@ describe("GET /api/accounts/:id/balances", () => {
 	it("is empty for an account opening after today", async () => {
 		const account = await openAccount({ openingDate: "2026-09-30" });
 
-		const data = await balancesOf(account.id, "all");
+		const data = await balancesOf(account.id, "all_time");
 
 		expect(data).toMatchObject({ from: null, to: "2026-09-21", points: [], change: null });
 	});
 
-	it("refuses an unknown period", async () => {
-		const account = await openAccount();
+	it.each(["2W", "1M"])("reads %s as the last 30 days, as Sure's", async (period) => {
+		const account = await openAccount({ openingDate: "2026-01-10" });
 
-		const { status, body } = await request("GET", `/api/accounts/${account.id}/balances?period=2W`);
+		const { status, body } = await request(
+			"GET",
+			`/api/accounts/${account.id}/balances?period=${period}`,
+		);
 
-		expect(status).toBe(400);
-		expect(errorBody.parse(body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "period", code: "invalid_value" }],
+		expect(status).toBe(200);
+		expect(body).toMatchObject({ data: { period: "last_30_days", from: "2026-08-22" } });
+	});
+
+	it("charts a custom range without a key, from the history start at the earliest", async () => {
+		const account = await openAccount({ openingDate: "2026-09-10" });
+
+		const { body } = await request(
+			"GET",
+			`/api/accounts/${account.id}/balances?startDate=2026-09-05&endDate=2026-09-15`,
+		);
+
+		expect(body).toMatchObject({
+			data: { period: null, periodFrom: "2026-09-05", from: "2026-09-10", to: "2026-09-15" },
 		});
+	});
+
+	it("falls back to the last 30 days for a range that starts after it ends", async () => {
+		const account = await openAccount({ openingDate: "2026-01-10" });
+
+		const { body } = await request(
+			"GET",
+			`/api/accounts/${account.id}/balances?period=last_7_days&startDate=2026-09-15&endDate=2026-09-05`,
+		);
+
+		expect(body).toMatchObject({ data: { period: "last_30_days", from: "2026-08-22" } });
 	});
 
 	it("answers NOT_FOUND for an unknown account", async () => {
@@ -2990,7 +3016,7 @@ describe("a viewer on a loan or a position", () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
 		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
 
-		const read = await viewer.request(`/api/accounts/${loan.id}/payoff-chart?period=all`);
+		const read = await viewer.request(`/api/accounts/${loan.id}/payoff-chart?period=all_time`);
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { scheduledPayoffDate: "2045-12-05" } });
@@ -4188,13 +4214,13 @@ describe("GET /api/accounts/:id/overview on a property or a vehicle", () => {
 	});
 });
 
-const payoffChart = (accountId: string, period: "1M" | "3M" | "6M" | "1Y" | "all") =>
+const payoffChart = (accountId: string, period: SurePeriod) =>
 	testClient(buildApp()).api.accounts[":id"]["payoff-chart"].$get({
 		param: { id: accountId },
 		query: { period },
 	});
 
-async function payoffChartOf(accountId: string, period: "1M" | "1Y" | "all" = "all") {
+async function payoffChartOf(accountId: string, period: SurePeriod = "all_time") {
 	const response = await payoffChart(accountId, period);
 
 	expect(response.status).toBe(200);
@@ -4216,7 +4242,7 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		expect(data).toMatchObject({
 			asOf: "2026-10-06",
 			currency: "EUR",
-			period: "all",
+			period: "all_time",
 			from: "2020-12-05",
 			to: "2045-12-05",
 			balance: 10_472_454,
@@ -4257,10 +4283,10 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		});
 		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
 
-		const data = await payoffChartOf(loan.id, "1Y");
+		const data = await payoffChartOf(loan.id, "last_365_days");
 
 		expect(data).toMatchObject({
-			period: "1Y",
+			period: "last_365_days",
 			from: "2025-10-06",
 			to: "2026-10-06",
 			visible: ["actual", "scheduled"],
@@ -4397,14 +4423,35 @@ describe("GET /api/accounts/:id/payoff-chart", () => {
 		expect(answers).toEqual([null, null, null]);
 	});
 
-	it("refuses an unknown period, and answers NOT_FOUND for an unknown account", async () => {
+	it("opens current_month on its first day, a window the loan chart offers", async () => {
+		const loan = await openAccount({ ...mortgage, details: ingTerms });
+		vi.setSystemTime(new Date("2026-10-06T10:00:00Z"));
+
+		await expect(payoffChartOf(loan.id, "current_month")).resolves.toMatchObject({
+			period: "current_month",
+			from: "2026-10-01",
+			to: "2026-10-06",
+		});
+	});
+
+	it.each([
+		["a period the loan chart does not offer", "period=last_7_days"],
+		["an old link's « 1M »", "period=1M"],
+		["a custom range", "startDate=2026-09-01&endDate=2026-09-10"],
+	])("spans the whole life for %s, as Sure's", async (_, query) => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
 
-		const refused = await buildApp().request(`/api/accounts/${loan.id}/payoff-chart?period=2Y`);
-		const unknown = await payoffChart("nope", "all");
+		const response = await buildApp().request(`/api/accounts/${loan.id}/payoff-chart?${query}`);
 
-		expect(refused.status).toBe(400);
-		expect(errorBody.parse(await refused.json()).error.code).toBe("VALIDATION_ERROR");
+		expect(response.status).toBe(200);
+		expect(await response.json()).toMatchObject({
+			data: { from: "2020-12-05", to: "2045-12-05" },
+		});
+	});
+
+	it("answers NOT_FOUND for an unknown account", async () => {
+		const unknown = await payoffChart("nope", "all_time");
+
 		expect(unknown.status).toBe(404);
 		expect(errorBody.parse(await unknown.json()).error.code).toBe("NOT_FOUND");
 	});

@@ -2,7 +2,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { z } from "zod";
 
-import { daysAgo, expect, rgb, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, expect, periodPicker, rgb, test, uniqueName } from "./fixtures.ts";
 import { WEB_URL } from "./settings.ts";
 
 // Story 14.4: the remaining screens at Sure's proportions. Each list is a
@@ -684,7 +684,7 @@ test("an account's tabs, the creation and import dialogs, the bank picker and a 
 	expect(found).toEqual([]);
 });
 
-test("a small button and a small toggle set their label at 14 px", async ({ page, api }) => {
+test("a small button and the period picker set their label at 14 px", async ({ page, api }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(60) });
 	// 51 rows: one more than a page, so the pagination shows.
 	await api.addDailyTransactions(account.id, 51, uniqueName("Page"));
@@ -698,7 +698,8 @@ test("a small button and a small toggle set their label at 14 px", async ({ page
 	await expect(next).toHaveCSS("font-size", "14px");
 	await expect(next).toHaveCSS("height", "28px");
 
-	const period = page.getByRole("radiogroup", { name: "Période" }).getByRole("radio").first();
+	const period = periodPicker(page);
+	await expect(period).toHaveAttribute("data-size", "sm");
 	await expect(period).toHaveCSS("font-size", "14px");
 	await expect(period).toHaveCSS("height", "28px");
 });

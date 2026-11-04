@@ -2,11 +2,12 @@ import type { ChartConfig } from "@/components/ui/chart";
 import type { BalanceHistoryData } from "@/hooks/useBalanceHistory";
 import type { ChartHeight } from "@/lib/chart-heights";
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { TooltipContentProps, XAxisTickContentProps } from "recharts";
+import type { MouseEvent } from "react";
+import type { MouseHandlerDataParam, TooltipContentProps, XAxisTickContentProps } from "recharts";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Area, AreaChart, XAxis, YAxis } from "recharts";
+import { Area, AreaChart, ReferenceArea, XAxis, YAxis } from "recharts";
 
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -30,20 +31,29 @@ import {
 import { balanceDomain, edgeDates } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { formatMoney } from "@/lib/format-money";
+import { comparisonText, isShortHistory } from "@/lib/periods";
 
 /**
  * What the chart draws: an account's balance history or the household's net
  * worth, both one point per day of a period with its change.
  */
-export type ChartHistory = Pick<BalanceHistoryData, "period" | "currency" | "points" | "change">;
+export type ChartHistory = Pick<
+	BalanceHistoryData,
+	"period" | "periodFrom" | "from" | "to" | "currency" | "points" | "change"
+>;
 
 type Point = ChartHistory["points"][number];
 
 /** The sentence above the chart, which names what the line is. */
 type SummaryKey = "balances.summary" | "dashboard.summary";
 
+/**
+ * Sure's account chart says « par rapport à l'historique disponible » when the
+ * account starts after the period does; its dashboard always names the period.
+ */
 function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: SummaryKey }) {
 	const { t } = useTranslation();
+	const shortHistory = summaryKey === "balances.summary" && isShortHistory(history);
 	const last = history.points.at(-1);
 
 	if (last === undefined || history.change === null) {
@@ -57,7 +67,7 @@ function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: S
 			{t(summaryKey, {
 				balance: formatMoney({ amount: last.balance, currency: history.currency }),
 				change,
-				over: t(`balances.over.${history.period}`),
+				comparison: comparisonText(t, history, shortHistory),
 			})}
 		</p>
 	);
@@ -135,16 +145,34 @@ function ChartEmpty({ height }: { height: ChartHeight }) {
 	);
 }
 
+type Drag = { from: string; to: string };
+
+const minDay = (a: string, b: string) => (a < b ? a : b);
+const maxDay = (a: string, b: string) => (a < b ? b : a);
+
+const labelOf = (state: MouseHandlerDataParam) =>
+	typeof state.activeLabel === "string" ? state.activeLabel : undefined;
+
 function Chart({
 	history,
 	valueLabel,
 	height,
+	onRangeSelect,
 }: {
 	history: ChartHistory;
 	valueLabel: string;
 	height: ChartHeight;
+	onRangeSelect: ((from: string, to: string) => void) | undefined;
 }) {
 	const gradientId = useId();
+	// The ref is what a release reads, so a release right after the last move
+	// keeps its day; the state only draws the shaded area.
+	const dragRef = useRef<Drag | null>(null);
+	const [drag, setDrag] = useState<Drag | null>(null);
+	const moveDrag = (next: Drag | null) => {
+		dragRef.current = next;
+		setDrag(next);
+	};
 	const config = {
 		balance: { label: valueLabel, color: "var(--accent-brand)" },
 	} satisfies ChartConfig;
@@ -157,14 +185,55 @@ function Chart({
 	const balances = history.points.map((point) => point.balance);
 	const domain = balanceDomain(balances, history.currency);
 	const ticks = edgeDates(history.points);
+	// Sure's `_drawDragSelectOverlay`: a mouse drag across the chart picks the
+	// days it covers, snapped to the plotted points. Mouse only, as Sure's
+	// brush, so a finger still scrolls the page.
+	const selectable =
+		onRangeSelect === undefined
+			? {}
+			: {
+					onMouseDown: (state: MouseHandlerDataParam, event: MouseEvent) => {
+						const label = labelOf(state);
+
+						// The primary button only, as d3-brush's default filter.
+						if (event.button === 0 && label !== undefined) {
+							moveDrag({ from: label, to: label });
+						}
+					},
+					onMouseMove: (state: MouseHandlerDataParam) => {
+						const label = labelOf(state);
+						const current = dragRef.current;
+
+						if (current !== null && label !== undefined && label !== current.to) {
+							moveDrag({ ...current, to: label });
+						}
+					},
+					onMouseUp: (state: MouseHandlerDataParam) => {
+						const current = dragRef.current;
+						const to = labelOf(state) ?? current?.to;
+
+						// A drag that snaps to one day would chart a single point; it picks nothing.
+						if (current !== null && to !== undefined && current.from !== to) {
+							onRangeSelect(minDay(current.from, to), maxDay(current.from, to));
+						}
+
+						moveDrag(null);
+					},
+					onMouseLeave: () => moveDrag(null),
+				};
 
 	return (
-		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHTS[height]}`}>
+		<ChartContainer
+			config={config}
+			// A drag must not select the text around the chart.
+			className={`aspect-auto w-full select-none ${CHART_HEIGHTS[height]}`}
+		>
 			{/* Arrow keys move the tooltip cursor one day at a time. */}
 			<AreaChart
 				accessibilityLayer
 				data={history.points}
 				margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
+				{...selectable}
 			>
 				<defs>
 					<linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -204,6 +273,17 @@ function Chart({
 					activeDot={{ r: 4 }}
 					isAnimationActive={false}
 				/>
+				{drag !== null && drag.from !== drag.to && (
+					<ReferenceArea
+						x1={drag.from}
+						x2={drag.to}
+						fill="var(--color-balance)"
+						fillOpacity={0.12}
+						stroke="var(--color-balance)"
+						strokeOpacity={0.5}
+						ifOverflow="hidden"
+					/>
+				)}
 			</AreaChart>
 		</ChartContainer>
 	);
@@ -255,6 +335,8 @@ export type BalanceChartProps = {
 	valueLabel: string;
 	/** In pixels, the table's as well as the chart's. */
 	height?: ChartHeight;
+	/** Given, a mouse drag across the chart picks a custom range, both days included. */
+	onRangeSelect?: (from: string, to: string) => void;
 };
 
 /**
@@ -267,6 +349,7 @@ export function BalanceChart({
 	summaryKey,
 	valueLabel,
 	height = DEFAULT_CHART_HEIGHT,
+	onRangeSelect,
 }: BalanceChartProps) {
 	const { t } = useTranslation();
 	const [showTable, setShowTable] = useState(false);
@@ -298,7 +381,12 @@ export function BalanceChart({
 					{showTable ? (
 						<DataTable history={data} id={tableId} valueLabel={valueLabel} height={height} />
 					) : (
-						<Chart history={data} valueLabel={valueLabel} height={height} />
+						<Chart
+							history={data}
+							valueLabel={valueLabel}
+							height={height}
+							onRangeSelect={onRangeSelect}
+						/>
 					)}
 					<div className="flex flex-wrap items-center justify-between gap-3">
 						<Summary history={data} summaryKey={summaryKey} />

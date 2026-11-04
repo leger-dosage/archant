@@ -621,7 +621,7 @@ describe("syncConnection", () => {
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
 		await syncConnection(deps(), connectionId);
-		const before = await getNetWorth(deps(), "6M");
+		const before = await getNetWorth(deps(), { period: "last_365_days" });
 		vi.setSystemTime(NOW + DAY);
 		mockProvider({ balances: () => HttpResponse.json(bankBalancesWith("1200.00")) });
 
@@ -636,7 +636,7 @@ describe("syncConnection", () => {
 		await expect(balanceOn(deps(), accountId, "2026-09-24")).resolves.toMatchObject({
 			amount: 123456,
 		});
-		const after = await getNetWorth(deps(), "6M");
+		const after = await getNetWorth(deps(), { period: "last_365_days" });
 		expect(after.points.filter(({ date }) => date <= "2026-09-24")).toEqual(before.points);
 		expect(after.netWorth).toBe(120000);
 	});

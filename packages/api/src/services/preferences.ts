@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import type { AccountOrder } from "@archant/data/account-orders";
 import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
 import type { Locale } from "@archant/data/locales";
+import type { SurePeriod } from "@archant/data/periods";
+import { DEFAULT_PERIOD } from "@archant/data/periods";
 import { users } from "@archant/data/schema/auth";
 
 import { householdLocale, saveHouseholdLocale } from "./household-locale.ts";
@@ -16,6 +18,8 @@ import { householdLocale, saveHouseholdLocale } from "./household-locale.ts";
  */
 export type Preferences = {
 	defaultAccountOrder: AccountOrder;
+	/** The chart period the dashboard and account pages open on when the address names none. */
+	defaultPeriod: SurePeriod;
 	showSplitGrouped: boolean;
 	/** Null follows the browser's language. */
 	locale: Locale | null;
@@ -29,6 +33,7 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 	const user = await deps.db
 		.select({
 			defaultAccountOrder: users.defaultAccountOrder,
+			defaultPeriod: users.defaultPeriod,
 			showSplitGrouped: users.showSplitGrouped,
 			locale: users.locale,
 		})
@@ -38,6 +43,7 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 
 	return {
 		defaultAccountOrder: user?.defaultAccountOrder ?? DEFAULT_ACCOUNT_ORDER,
+		defaultPeriod: user?.defaultPeriod ?? DEFAULT_PERIOD,
 		showSplitGrouped: user?.showSplitGrouped ?? true,
 		locale: user?.locale ?? null,
 	};
@@ -58,6 +64,7 @@ export async function updatePreferences(
 		...(input.defaultAccountOrder !== undefined && {
 			defaultAccountOrder: input.defaultAccountOrder,
 		}),
+		...(input.defaultPeriod !== undefined && { defaultPeriod: input.defaultPeriod }),
 		...(input.showSplitGrouped !== undefined && { showSplitGrouped: input.showSplitGrouped }),
 		...(input.locale !== undefined && { locale: input.locale }),
 	};

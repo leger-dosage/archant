@@ -1,77 +1,75 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
-import type { SureInterval, SurePeriod } from "../domain/balances/sure-periods.ts";
+import type { ChartQuery, SureInterval } from "../domain/balances/sure-periods.ts";
 import type { IsoDate } from "../domain/dates.ts";
-import type { BalancePeriod } from "../schemas/balances.ts";
 import type { AccountSummary } from "./accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { Classification } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import type { SurePeriod } from "@archant/data/periods";
 
-import { balanceChange, periodRange } from "../domain/balances/history.ts";
-import { periodInterval, seriesDates, surePeriodRange } from "../domain/balances/sure-periods.ts";
-import { addDays, maxDate, today } from "../domain/dates.ts";
+import { balanceChange, clampRange } from "../domain/balances/history.ts";
+import {
+	periodInterval,
+	resolveChartRange,
+	seriesDates,
+	surePeriodRange,
+} from "../domain/balances/sure-periods.ts";
+import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
 import { getAccount, listAccounts } from "./accounts.ts";
 import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
 
-export const PERIOD_MONTHS: Record<BalancePeriod, number | "all"> = {
-	"1M": 1,
-	"3M": 3,
-	"6M": 6,
-	"1Y": 12,
-	all: "all",
-};
-
 export type BalanceHistory = {
-	period: BalancePeriod;
-	/** First and last day of the period; `null` when the account opens after today. */
+	/** Sure's key, `null` for a custom range. */
+	period: SurePeriod | null;
+	/**
+	 * The period's own first day, before any clamp: later than `from`'s, the
+	 * account's history is shorter than the period, and the interface says
+	 * « par rapport à l'historique disponible », as Sure's `comparison_label`.
+	 */
+	periodFrom: IsoDate;
+	/** First and last day charted; `from` is `null` when the account has no day in the period. */
 	from: IsoDate | null;
 	to: IsoDate;
 	currency: string;
 	/**
 	 * The end-of-day stored balance (AD-5) of every day of the period, oldest
-	 * first, today last; a day without a write carries the previous balance.
+	 * first, the last day last; a day without a write carries the previous balance.
 	 */
 	points: DailyBalance[];
 	change: BalanceChange | null;
 };
 
 /**
- * The days of `period` an account whose history starts on `startDate` has,
- * ending `to`, and its balance on each; none when it starts after `to`.
- */
-async function historyOf(
-	deps: ServiceDeps,
-	accountId: string,
-	startDate: IsoDate,
-	period: BalancePeriod,
-	to: IsoDate,
-) {
-	const range = periodRange(PERIOD_MONTHS[period], to, startDate);
-	const points = range === null ? [] : await balancesBetween(deps, accountId, range.from, range.to);
-
-	return { from: range?.from ?? null, points };
-}
-
-/**
- * An account's daily balances over a period ending today, and how much they
- * moved. Rows past today, written for future-dated transactions, stay out: the
- * chart shows what has happened.
+ * An account's daily balances over a period, never before its history
+ * starts nor past today, and how much they moved. Rows past today, written
+ * for future-dated transactions, stay out: the chart shows what has happened.
  */
 export async function getBalanceHistory(
 	deps: ServiceDeps,
 	accountId: string,
-	period: BalancePeriod,
+	query: ChartQuery,
 ): Promise<BalanceHistory> {
 	const account = await getAccount(deps, accountId);
-	const to = today(deps.timeZone);
+	const asOf = today(deps.timeZone);
 	const startDate = await historyStartOf(deps.db, accountId, account.openingDate);
-	const { from, points } = await historyOf(deps, accountId, startDate, period, to);
+	const { period, range } = resolveChartRange(query, asOf, startDate);
+	const charted = clampRange(range, startDate, asOf);
+	const points =
+		charted === null ? [] : await balancesBetween(deps, accountId, charted.from, charted.to);
 
-	return { period, from, to, currency: account.currency, points, change: balanceChange(points) };
+	return {
+		period,
+		periodFrom: range.from,
+		from: charted?.from ?? null,
+		to: charted?.to ?? minDate(range.to, asOf),
+		currency: account.currency,
+		points,
+		change: balanceChange(points),
+	};
 }
 
 export type AssistantAccount = AccountSummary & {

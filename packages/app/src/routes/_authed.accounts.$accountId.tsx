@@ -14,8 +14,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
-import type { BalancePeriod } from "@archant/api/schemas/balances";
-import { BALANCE_PERIODS, DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import {
 	holdsSecurities,
 	propertyDetailsOf,
@@ -23,6 +21,8 @@ import {
 	vehicleDetailsOf,
 } from "@archant/data/account-types";
 import { isCurrencyCode } from "@archant/data/money";
+import type { SurePeriod } from "@archant/data/periods";
+import { LOAN_WINDOW_PERIODS, SURE_PERIODS } from "@archant/data/periods";
 
 import { AccountMenu } from "@/components/AccountMenu";
 import { AssetOverview, AssetOverviewSkeleton } from "@/components/AssetOverview";
@@ -38,7 +38,7 @@ import { Money } from "@/components/Money";
 import { OpeningBalanceSheet } from "@/components/OpeningBalanceSheet";
 import { PAGE_TITLE_ID, Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
-import { PeriodToggle } from "@/components/PeriodToggle";
+import { PeriodPicker } from "@/components/PeriodPicker";
 import { PositionList, PositionListSkeleton } from "@/components/PositionList";
 import { PositionSheet } from "@/components/PositionSheet";
 import { Section } from "@/components/Section";
@@ -61,6 +61,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAccount } from "@/hooks/useAccount";
 import { useAccountOverview } from "@/hooks/useAccountOverview";
 import { useBalanceHistory } from "@/hooks/useBalanceHistory";
+import { useChartPeriod } from "@/hooks/useChartPeriod";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
@@ -75,6 +76,7 @@ import { errorCodeOf } from "@/lib/api";
 import { addressText } from "@/lib/asset-details";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { pageSearch } from "@/lib/page-search";
+import { loanPickerSelection } from "@/lib/periods";
 
 const ACCOUNT_TABS = [
 	"transactions",
@@ -94,13 +96,16 @@ const DEFAULT_TAB: AccountTab = "transactions";
 // active tab has one, taken off here rather than in the copied component.
 const FLAT_TAB = "group-data-[variant=default]/tabs-list:data-active:shadow-none";
 
-// Absent means the first page, the default period and the Opérations tab, so
+// Absent means the first page, the saved period and the Opérations tab, so
 // links to an account need no search params. A value from an old or
 // hand-edited link that no longer exists, such as the former `tab=settings`,
 // falls back to the default rather than failing the page.
 const searchSchema = z.object({
 	page: z.number().int().min(1).optional().catch(undefined),
-	period: z.enum(BALANCE_PERIODS).optional().catch(undefined),
+	period: z.enum(SURE_PERIODS).optional().catch(undefined),
+	// Both make a custom range, dragged on the balance chart.
+	startDate: z.string().optional().catch(undefined),
+	endDate: z.string().optional().catch(undefined),
 	tab: z.enum(ACCOUNT_TABS).optional().catch(undefined),
 	snapshotsPage: z.number().int().min(1).optional().catch(undefined),
 	tradesPage: z.number().int().min(1).optional().catch(undefined),
@@ -468,6 +473,8 @@ function AccountPage() {
 	const {
 		page = 1,
 		period: requestedPeriod,
+		startDate,
+		endDate,
 		tab: requestedTab = DEFAULT_TAB,
 		snapshotsPage = 1,
 		tradesPage = 1,
@@ -531,15 +538,19 @@ function AccountPage() {
 		(schedule.isError ||
 			(schedule.data === undefined ? requestedTab === "schedule" : schedule.data !== null));
 	// A loan with a schedule charts where it is heading instead of its balance,
-	// as Sure's account page, and opens on its whole life, as Sure's loan chart
-	// does for any period it does not offer, its default among them. Until the
-	// schedule answers, neither chart is drawn.
+	// as Sure's account page, over the same saved period; the server shows its
+	// whole life for a period its chart does not offer. Until the schedule
+	// answers, neither chart is drawn.
 	const charted = loan && schedule.data !== undefined && schedule.data !== null;
 	const deciding = loan && schedule.isPending;
-	const defaultPeriod: BalancePeriod = charted ? "all" : DEFAULT_BALANCE_PERIOD;
-	const period = requestedPeriod ?? defaultPeriod;
-	const balanceHistory = useBalanceHistory(accountId, period, !charted && !deciding);
-	const payoffChart = useLoanPayoffChart(accountId, period, charted);
+	const chartPeriod = useChartPeriod({ period: requestedPeriod, startDate, endDate });
+	const period = chartPeriod.chart;
+	const balanceHistory = useBalanceHistory(
+		accountId,
+		period,
+		!charted && !deciding && chartPeriod.ready,
+	);
+	const payoffChart = useLoanPayoffChart(accountId, period, charted && chartPeriod.ready);
 	const tab =
 		(requestedTab === "trades" && account.data !== undefined && !tradesShown) ||
 		(requestedTab === "overview" && account.data !== undefined && !overviewed) ||
@@ -604,12 +615,22 @@ function AccountPage() {
 	const openNew = () => setSheet({ open: true, transaction: null });
 	const openNewSnapshot = () => setSnapshotDialog({ open: true, snapshot: null });
 	const openNewTrade = () => setTradeDialog({ open: true, trade: null });
-	const changePeriod = (next: BalancePeriod) =>
+	// Always in the address, so Back and Reload keep a viewer's pick too.
+	const pickPeriod = (next: SurePeriod) => {
 		void navigate({
 			search: (previous) => ({
 				...previous,
-				period: next === defaultPeriod ? undefined : next,
+				period: next,
+				startDate: undefined,
+				endDate: undefined,
 			}),
+			replace: true,
+		});
+		chartPeriod.save(next);
+	};
+	const selectRange = (from: string, to: string) =>
+		void navigate({
+			search: (previous) => ({ ...previous, period: undefined, startDate: from, endDate: to }),
 			replace: true,
 		});
 	const changeTab = (next: string) => {
@@ -683,7 +704,18 @@ function AccountPage() {
 			<Section
 				id="balance-heading"
 				title={t("balances.title")}
-				action={<PeriodToggle period={period} onPeriodChange={changePeriod} />}
+				action={
+					// Sure's loan chart offers its own periods, and reads « Tout » for any other.
+					charted ? (
+						<PeriodPicker
+							selected={{ period: loanPickerSelection(period) }}
+							options={LOAN_WINDOW_PERIODS}
+							onPick={pickPeriod}
+						/>
+					) : (
+						<PeriodPicker selected={period} onPick={pickPeriod} />
+					)
+				}
 			>
 				<div className="flex flex-col gap-4 p-4">
 					{deciding && (
@@ -698,6 +730,7 @@ function AccountPage() {
 							history={balanceHistory}
 							summaryKey="balances.summary"
 							valueLabel={t("balances.balance")}
+							onRangeSelect={selectRange}
 						/>
 					)}
 				</div>

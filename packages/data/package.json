@@ -21,6 +21,7 @@
 		"./money": "./money.ts",
 		"./months": "./months.ts",
 		"./name-limits": "./name-limits.ts",
+		"./periods": "./periods.ts",
 		"./qif-options": "./qif-options.ts",
 		"./recurring": "./recurring.ts",
 		"./rules": "./rules.ts",

@@ -120,7 +120,7 @@ describe("getBalanceSheet", () => {
 		});
 		await spend(checking, "2026-09-15", -20_000);
 
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 		const sheet = await getBalanceSheet(deps(), {
 			from: "2026-08-25",
 			to: "2026-09-21",
@@ -220,7 +220,7 @@ describe("getNetWorth", () => {
 			{ behavior: "immediate" },
 		);
 
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		// 18 873,50 € of cash and 10 shares at 650 €.
 		expect(netWorth.netWorth).toBe(1_887_350 + 650_000);
@@ -243,7 +243,7 @@ describe("getNetWorth", () => {
 		await spend(jewellery, "2026-09-10", 30_000);
 		await spend(relative, "2026-09-10", 50_000);
 
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(netWorth).toMatchObject({ assets: 500_000, liabilities: 200_000, netWorth: 300_000 });
 	});
@@ -330,7 +330,7 @@ describe("getCashFlow and Sure's tax treatment", () => {
 		await spend(blank, "2026-09-15", -1_000);
 
 		const cashFlow = await getCashFlow(deps(), "2026-09");
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.expenses).toBe(-3_000);
 		expect(netWorth.netWorth).toBe(3 * 100_000 - 7_000);
@@ -355,7 +355,7 @@ describe("getCashFlow and a crypto account's tax treatment", () => {
 		await spend(taxable, "2026-09-15", 2_000);
 
 		const cashFlow = await getCashFlow(deps(), "2026-09");
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.income).toBe(2_000);
 		expect(netWorth.netWorth).toBe(2 * 100_000 + 12_000);
@@ -391,7 +391,7 @@ describe("getCashFlow and an investment account's activity labels", () => {
 		await labelled(1_200, "Dividend");
 
 		const cashFlow = await getCashFlow(deps(), "2026-09");
-		const netWorth = await getNetWorth(deps(), "1M");
+		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.income).toBe(1_200);
 		expect(cashFlow.expenses).toBe(0);

@@ -1,25 +1,10 @@
 import type { IsoDate } from "../dates.ts";
 import type { DateRange } from "./history.ts";
 
+import type { SurePeriod } from "@archant/data/periods";
+import { DEFAULT_PERIOD, isCustomRange } from "@archant/data/periods";
+
 import { addDays, addMonths, daysBetween } from "../dates.ts";
-
-/** Sure's `Period::PERIODS` keys, in its order. */
-export const SURE_PERIODS = [
-	"last_day",
-	"current_week",
-	"last_7_days",
-	"current_month",
-	"last_month",
-	"last_30_days",
-	"last_90_days",
-	"current_year",
-	"last_365_days",
-	"last_5_years",
-	"last_10_years",
-	"all_time",
-] as const;
-
-export type SurePeriod = (typeof SURE_PERIODS)[number];
 
 /** Sure's `GetBalanceSheet::INTERVALS`, the steps of its history series. */
 export const SURE_INTERVALS = ["1 day", "1 week", "1 month"] as const;
@@ -63,6 +48,35 @@ export function surePeriodRange(
 	};
 
 	return ranges[key]();
+}
+
+/** A chart read's period: one of Sure's keys, or a custom range of two days. */
+export type ChartQuery = {
+	period: SurePeriod;
+	startDate?: IsoDate | undefined;
+	endDate?: IsoDate | undefined;
+};
+
+/**
+ * Sure's `Periodable#set_period`: both dates make a custom range, whose key is
+ * `null`; a range that does not parse or starts after it ends is
+ * `last_30_days`, as is an unknown key, which the query schema already maps.
+ * `oldestEntry` is `all_time`'s start.
+ */
+export function resolveChartRange(
+	query: ChartQuery,
+	today: IsoDate,
+	oldestEntry: IsoDate | null,
+): { period: SurePeriod | null; range: DateRange } {
+	const { startDate, endDate } = query;
+
+	if (startDate !== undefined && endDate !== undefined) {
+		return isCustomRange(startDate, endDate)
+			? { period: null, range: { from: startDate, to: endDate } }
+			: { period: DEFAULT_PERIOD, range: surePeriodRange(DEFAULT_PERIOD, today, oldestEntry) };
+	}
+
+	return { period: query.period, range: surePeriodRange(query.period, today, oldestEntry) };
 }
 
 /**
