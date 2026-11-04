@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
 import { LOCALES } from "@archant/data/locales";
+import { SURE_PERIODS } from "@archant/data/periods";
 
 /**
  * « Réglages › Préférences »: the order is one of Sure's, else
@@ -11,6 +12,8 @@ import { LOCALES } from "@archant/data/locales";
  */
 export const preferencesSchema = z.object({
 	defaultAccountOrder: z.enum(ACCOUNT_ORDERS).optional(),
+	// The chart period an administrator last picked, Sure's `default_period`.
+	defaultPeriod: z.enum(SURE_PERIODS).optional(),
 	showSplitGrouped: z.boolean().optional(),
 	// Null goes back to the browser's language, Sure's blank `locale`.
 	locale: z.enum(LOCALES).nullable().optional(),

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { SURE_PERIODS } from "../../domain/balances/sure-periods.ts";
+import { SURE_PERIODS } from "@archant/data/periods";
 
 /** `get_accounts`: today's balances, and with `include_balance_series` their history. */
 export const getAccountsInput = z.strictObject({

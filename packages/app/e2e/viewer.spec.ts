@@ -10,6 +10,8 @@ import {
 	daysAgo,
 	euros,
 	expect,
+	periodPicker,
+	pickPeriod,
 	sgml,
 	test,
 	uniqueName,
@@ -272,6 +274,26 @@ reader.describe("a viewer", () => {
 		// No row carries the menu that writes, whichever account it is.
 		await expect(page.getByRole("button", { name: /^Actions du compte /u })).toHaveCount(0);
 	});
+
+	reader(
+		"a period pick changes the address and saves nothing (AD-21)",
+		async ({ viewer: page }) => {
+			const writes: string[] = [];
+			page.on("request", (request) => {
+				if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
+					writes.push(`${request.method()} ${request.url()}`);
+				}
+			});
+
+			await page.goto("/");
+			await expect(periodPicker(page)).toHaveText("30J");
+			await pickPeriod(page, page, "AC", { saved: false });
+
+			await expect(page).toHaveURL(/[?&]period=current_year(&|$)/u);
+			await expect(periodPicker(page)).toHaveText("AC");
+			expect(writes).toEqual([]);
+		},
+	);
 
 	reader(
 		"an account shows its rows, snapshots and imports, and nothing to change them",

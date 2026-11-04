@@ -2,7 +2,17 @@ import type { Locator, Page } from "@playwright/test";
 
 import { z } from "zod";
 
-import { daysAgo, euros, expect, rgb, test, typed, uniqueName } from "./fixtures.ts";
+import {
+	daysAgo,
+	euros,
+	expect,
+	periodPicker,
+	pickPeriod,
+	rgb,
+	test,
+	typed,
+	uniqueName,
+} from "./fixtures.ts";
 import { chooseSubtype, startAccount } from "./new-account.ts";
 
 // Story 1.1: create an account and see it listed.
@@ -877,6 +887,50 @@ const clipOf = (group: Locator) =>
 
 const dayOf = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
 
+// Story 34.3: Sure's `Loan::PayoffChart::WINDOW_KEYS`, under the saved period.
+test("with « 7J » saved, a loan's picker offers its seven periods, « Tout » checked, and keeps the saved one", async ({
+	page,
+	api,
+}) => {
+	const loan = await api.openAccount({
+		name: uniqueName("Prêt immobilier"),
+		kind: "mortgage",
+		openingBalance: "94 724,54",
+		details: ingTerms,
+	});
+
+	try {
+		await api.setDefaultPeriod("last_7_days");
+		await page.goto(`/accounts/${loan.id}`);
+		const card = page.getByRole("region", { name: "Historique du solde" });
+
+		await expect(card.getByRole("list", { name: "Séries du graphique" })).toBeVisible();
+		await expect(periodPicker(card)).toHaveAccessibleName("Période : Tout");
+		await periodPicker(card).click();
+		await expect(page.getByRole("menuitemradio")).toHaveText([
+			"MC",
+			"90J",
+			"AC",
+			"365J",
+			"5A",
+			"10A",
+			"Tout",
+		]);
+		await expect(page.getByRole("menuitemradio", { name: "Tout" })).toHaveAttribute(
+			"aria-checked",
+			"true",
+		);
+		await page.keyboard.press("Escape");
+
+		// The saved period stays « 7J »: another account charts it.
+		const checking = await api.openAccount({ openingDate: daysAgo(60) });
+		await page.goto(`/accounts/${checking.id}`);
+		await expect(periodPicker(page)).toHaveText("7J");
+	} finally {
+		await api.setDefaultPeriod("last_30_days");
+	}
+});
+
 test("the ING mortgage repaid early charts its balance, its contract and where it leads, and the schedule names its payoff", async ({
 	page,
 	api,
@@ -892,8 +946,8 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 	const card = page.getByRole("region", { name: "Historique du solde" });
 	const legend = card.getByRole("list", { name: "Séries du graphique" });
 
-	// A loan's chart opens on its whole life, as Sure's.
-	await expect(card.getByRole("radio", { name: "Tout" })).toBeChecked();
+	// A loan's chart opens on its whole life for « 30J », which it does not offer, as Sure's.
+	await expect(periodPicker(card)).toHaveText("Tout");
 	await expect(legend.getByRole("listitem")).toHaveText([
 		"Solde enregistré",
 		"Échéancier du contrat",
@@ -979,63 +1033,69 @@ test("the ING mortgage repaid early charts its balance, its contract and where i
 	await surface.blur();
 	await expect.poll(async () => (await futureClip()).width).toBe(0);
 
-	// A window ends today, where the projection draws no line.
-	await card.getByRole("radio", { name: "1 A" }).click();
-	await expect(page).toHaveURL(/period=1Y/u);
-	await expect(legend.getByRole("listitem")).toHaveText([
-		"Solde enregistré",
-		"Échéancier du contrat",
-	]);
-	await expect(payoff).toContainText(/mois plus tôt que prévu$/u);
+	try {
+		// A window ends today, where the projection draws no line.
+		await pickPeriod(page, card, "365J");
+		await expect(page).toHaveURL(/period=last_365_days/u);
+		await expect(legend.getByRole("listitem")).toHaveText([
+			"Solde enregistré",
+			"Échéancier du contrat",
+		]);
+		await expect(payoff).toContainText(/mois plus tôt que prévu$/u);
 
-	// A payment a month apart: the split sits on the payment the tooltip heads with.
-	const oneYear = z
-		.object({
-			data: z.object({
-				from: z.string(),
-				to: z.string(),
-				scheduled: z.array(z.object({ date: z.string() })),
-			}),
-		})
-		.parse(
-			await (await page.request.get(`/api/accounts/${loan.id}/payoff-chart?period=1Y`)).json(),
-		).data;
-	const monthOf = new Intl.DateTimeFormat("fr-FR", {
-		month: "short",
-		year: "numeric",
-		timeZone: "UTC",
-	});
-	await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height / 2);
-	const heading = (await tooltip.locator("span").first().textContent()) ?? "";
-	const payment = oneYear.scheduled.find(
-		({ date }) =>
-			date >= oneYear.from && date <= oneYear.to && monthOf.format(dayOf(date)) === heading,
-	);
-	expect(payment, `no payment in ${heading}`).toBeDefined();
-	const paymentX =
-		plot!.x +
-		(plot!.width * (dayOf(payment!.date) - dayOf(oneYear.from))) /
-			(dayOf(oneYear.to) - dayOf(oneYear.from));
-	await expect.poll(async () => Math.abs((await futureClip()).x - paymentX)).toBeLessThan(2);
-	await page.mouse.move(0, 0);
+		// A payment a month apart: the split sits on the payment the tooltip heads with.
+		const oneYear = z
+			.object({
+				data: z.object({
+					from: z.string(),
+					to: z.string(),
+					scheduled: z.array(z.object({ date: z.string() })),
+				}),
+			})
+			.parse(
+				await (
+					await page.request.get(`/api/accounts/${loan.id}/payoff-chart?period=last_365_days`)
+				).json(),
+			).data;
+		const monthOf = new Intl.DateTimeFormat("fr-FR", {
+			month: "short",
+			year: "numeric",
+			timeZone: "UTC",
+		});
+		await page.mouse.move(plot!.x + plot!.width * 0.4, plot!.y + plot!.height / 2);
+		const heading = (await tooltip.locator("span").first().textContent()) ?? "";
+		const payment = oneYear.scheduled.find(
+			({ date }) =>
+				date >= oneYear.from && date <= oneYear.to && monthOf.format(dayOf(date)) === heading,
+		);
+		expect(payment, `no payment in ${heading}`).toBeDefined();
+		const paymentX =
+			plot!.x +
+			(plot!.width * (dayOf(payment!.date) - dayOf(oneYear.from))) /
+				(dayOf(oneYear.to) - dayOf(oneYear.from));
+		await expect.poll(async () => Math.abs((await futureClip()).x - paymentX)).toBeLessThan(2);
+		await page.mouse.move(0, 0);
 
-	await page.getByRole("tab", { name: "Échéancier" }).click();
-	const scheduled = page
-		.getByRole("tabpanel", { name: "Échéancier" })
-		.getByRole("group", { name: "Fin prévue" });
-	await expect(scheduled).toContainText(/^Fin prévue\d+ \p{L}+ 20\d\d$/u);
+		await page.getByRole("tab", { name: "Échéancier" }).click();
+		const scheduled = page
+			.getByRole("tabpanel", { name: "Échéancier" })
+			.getByRole("group", { name: "Fin prévue" });
+		await expect(scheduled).toContainText(/^Fin prévue\d+ \p{L}+ 20\d\d$/u);
 
-	// Shorter terms repay more each month, so both follow at once.
-	const before = await payoff.textContent();
-	const scheduledBefore = await scheduled.textContent();
-	await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
-	await page.getByRole("menuitem", { name: "Modifier" }).click();
-	const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
-	await dialog.getByLabel("Durée (mois)").fill("240");
-	await dialog.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(dialog).toBeHidden();
-	await expect(payoff).not.toHaveText(before ?? "");
-	await expect(scheduled).not.toHaveText(scheduledBefore ?? "");
+		// Shorter terms repay more each month, so both follow at once.
+		const before = await payoff.textContent();
+		const scheduledBefore = await scheduled.textContent();
+		await page.getByRole("button", { name: `Actions du compte ${loan.name}` }).click();
+		await page.getByRole("menuitem", { name: "Modifier" }).click();
+		const dialog = page.getByRole("dialog", { name: "Modifier le compte" });
+		await dialog.getByLabel("Durée (mois)").fill("240");
+		await dialog.getByRole("button", { name: "Enregistrer" }).click();
+		await expect(dialog).toBeHidden();
+		await expect(payoff).not.toHaveText(before ?? "");
+		await expect(scheduled).not.toHaveText(scheduledBefore ?? "");
+	} finally {
+		await api.setDefaultPeriod("last_30_days");
+	}
 });
 
 test("a loan its contract no longer clears names what is left at maturity, and the schedule says it is not paid off", async ({
@@ -1113,7 +1173,7 @@ test("a loan without an amount borrowed amortises its opening balance from its o
 
 	// The loan chart, from the opening balance.
 	const chart = page.getByRole("region", { name: "Historique du solde" });
-	await expect(chart.getByRole("radio", { name: "Tout" })).toBeChecked();
+	await expect(periodPicker(chart)).toHaveText("Tout");
 	await expect(chart.getByRole("list", { name: "Séries du graphique" })).toBeVisible();
 
 	await tabs.getByRole("tab", { name: "Aperçu" }).click();
@@ -1152,9 +1212,9 @@ test("a loan without a term has no « Échéancier » tab, and a link to it open
 	);
 	await expect(tabs.getByRole("tab")).toHaveText(["Opérations", "Aperçu", "Soldes", "Imports"]);
 
-	// Without a schedule, it keeps the account's balance chart and its month.
+	// Without a schedule, it keeps the account's balance chart and its period.
 	const chart = page.getByRole("region", { name: "Historique du solde" });
-	await expect(chart.getByRole("radio", { name: "1 M" })).toBeChecked();
+	await expect(periodPicker(chart)).toHaveText("30J");
 	await expect(chart.getByText(`Solde : ${euros(800_000)}`)).toBeVisible();
 	await expect(chart.getByRole("list", { name: "Séries du graphique" })).toHaveCount(0);
 

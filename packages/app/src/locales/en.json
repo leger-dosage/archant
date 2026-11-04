@@ -58,8 +58,8 @@
 		"netWorth": "Net worth",
 		"assets": "Assets",
 		"liabilities": "Liabilities",
-		"change": "{{change}} {{over}}",
-		"summary": "Net worth: {{balance}}, {{change}} {{over}}.",
+		"change": "{{change}} {{comparison}}",
+		"summary": "Net worth: {{balance}}, {{change}} {{comparison}}.",
 		"leftOut": "Left out of the totals, no conversion available: {{names}}.",
 		"greeting": "Hello",
 		"greetingWithName": "Hello {{name}}",
@@ -457,27 +457,69 @@
 	},
 	"balances": {
 		"title": "Balance history",
-		"period": "Period",
-		"periods": {
-			"1M": "1M",
-			"3M": "3M",
-			"6M": "6M",
-			"1Y": "1Y",
-			"all": "All"
-		},
-		"over": {
-			"1M": "over 1 month",
-			"3M": "over 3 months",
-			"6M": "over 6 months",
-			"1Y": "over 1 year",
-			"all": "since opening"
-		},
-		"summary": "Balance: {{balance}}, {{change}} {{over}}.",
+		"summary": "Balance: {{balance}}, {{change}} {{comparison}}.",
 		"changeWithPercent": "{{amount}} ({{percent}})",
 		"empty": "No balance in this period.",
 		"showData": "Show table",
 		"date": "Date",
 		"balance": "Balance"
+	},
+	"periods": {
+		"last_day": {
+			"short": "1D",
+			"comparison": "vs. yesterday"
+		},
+		"current_week": {
+			"short": "WTD",
+			"comparison": "vs. start of week"
+		},
+		"last_7_days": {
+			"short": "7D",
+			"comparison": "vs. last week"
+		},
+		"current_month": {
+			"short": "MTD",
+			"comparison": "vs. start of month"
+		},
+		"last_month": {
+			"short": "LM",
+			"comparison": "vs. last month"
+		},
+		"last_30_days": {
+			"short": "30D",
+			"comparison": "vs. last 30 days"
+		},
+		"last_90_days": {
+			"short": "90D",
+			"comparison": "vs. last quarter"
+		},
+		"current_year": {
+			"short": "YTD",
+			"comparison": "vs. start of year"
+		},
+		"last_365_days": {
+			"short": "365D",
+			"comparison": "vs. 1 year ago"
+		},
+		"last_5_years": {
+			"short": "5Y",
+			"comparison": "vs. 5 years ago"
+		},
+		"last_10_years": {
+			"short": "10Y",
+			"comparison": "vs. 10 years ago"
+		},
+		"all_time": {
+			"short": "All",
+			"comparison": "vs. beginning"
+		},
+		"custom": {
+			"short": "Custom",
+			"comparison": "{{startDate}} to {{endDate}}"
+		},
+		"range": "{{startDate}} – {{endDate}}",
+		"availableHistory": "vs. available history",
+		"ariaLabel": "Time period: {{period}}"
 	},
 	"transactions": {
 		"add": "Add transaction",

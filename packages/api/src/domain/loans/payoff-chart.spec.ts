@@ -23,50 +23,65 @@ const at = (date: string, balance: number): DailyBalance => ({
 });
 
 describe("chartDomain", () => {
-	it("runs « Tout » from origination to the later payoff", () => {
-		expect(chartDomain({ ...ing, months: "all", projectedPayoffDate: "2043-11-05" })).toEqual({
+	it("runs the whole life from origination to the later payoff", () => {
+		expect(chartDomain({ ...ing, range: null, projectedPayoffDate: "2043-11-05" })).toEqual({
 			from: "2020-12-05",
 			to: "2045-12-05",
 		});
-		expect(chartDomain({ ...ing, months: "all", projectedPayoffDate: "2046-01-05" })).toEqual({
+		expect(chartDomain({ ...ing, range: null, projectedPayoffDate: "2046-01-05" })).toEqual({
 			from: "2020-12-05",
 			to: "2046-01-05",
 		});
 	});
 
-	it("never ends « Tout » before today, with or without a projected payoff", () => {
+	it("never ends the whole life before today, with or without a projected payoff", () => {
 		const finished = { ...ing, scheduledPayoffDate: "2026-01-05" };
 
-		expect(chartDomain({ ...finished, months: "all", projectedPayoffDate: null })).toEqual({
+		expect(chartDomain({ ...finished, range: null, projectedPayoffDate: null })).toEqual({
 			from: "2020-12-05",
 			to: "2026-10-06",
 		});
-		expect(chartDomain({ ...ing, months: "all", projectedPayoffDate: null }).to).toBe("2045-12-05");
+		expect(chartDomain({ ...ing, range: null, projectedPayoffDate: null }).to).toBe("2045-12-05");
 	});
 
-	it("ends a period today and opens it a number of months back", () => {
-		expect(chartDomain({ ...ing, months: 12, projectedPayoffDate: "2045-12-05" })).toEqual({
-			from: "2025-10-06",
-			to: "2026-10-06",
-		});
+	it("spans a window as its period does", () => {
+		const range = { from: "2025-10-06", to: "2026-10-06" };
+
+		expect(chartDomain({ ...ing, range, projectedPayoffDate: "2045-12-05" })).toEqual(range);
 	});
 
-	it("never opens a period before origination", () => {
+	it("never opens a window before origination", () => {
 		expect(
-			chartDomain({ ...ing, months: 12, originationDate: "2026-03-05", projectedPayoffDate: null }),
-		).toEqual({
-			from: "2026-03-05",
-			to: "2026-10-06",
-		});
+			chartDomain({
+				...ing,
+				range: { from: "2025-10-06", to: "2026-10-06" },
+				originationDate: "2026-03-05",
+				projectedPayoffDate: null,
+			}),
+		).toEqual({ from: "2026-03-05", to: "2026-10-06" });
+	});
+
+	it("never ends a window past the whole life's end", () => {
+		const finished = { ...ing, scheduledPayoffDate: "2026-01-05", asOf: "2025-12-20" };
+
+		expect(
+			chartDomain({
+				...finished,
+				range: { from: "2025-12-01", to: "2026-03-01" },
+				projectedPayoffDate: null,
+			}),
+		).toEqual({ from: "2025-12-01", to: "2026-01-05" });
 	});
 
 	it("keeps a day of axis for a loan originated today", () => {
 		expect(
-			chartDomain({ ...ing, months: 1, originationDate: "2026-10-06", projectedPayoffDate: null }),
-		).toEqual({
-			from: "2026-10-06",
-			to: "2026-10-07",
-		});
+			chartDomain({
+				...ing,
+				range: { from: "2026-10-01", to: "2026-10-06" },
+				originationDate: "2026-10-06",
+				projectedPayoffDate: null,
+			}),
+		).toEqual({ from: "2026-10-06", to: "2026-10-07" });
 	});
 });
 

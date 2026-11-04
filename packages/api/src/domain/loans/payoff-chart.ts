@@ -7,7 +7,7 @@ import type { PayoffProjection } from "./payoff-projection.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { addDays, addMonths, maxDate } from "../dates.ts";
+import { addDays, maxDate, minDate } from "../dates.ts";
 
 /** Sure's `Loan::PayoffChart::SERIES`, in the order its legend lists them. */
 const PAYOFF_SERIES = ["actual", "scheduled", "projected"] as const;
@@ -24,8 +24,8 @@ type PayoffSeries = {
 };
 
 type DomainInput = {
-	/** The account chart's period: calendar months back from today, or the whole life. */
-	months: number | "all";
+	/** The window a period picks, Sure's `period`; `null` for the loan's whole life. */
+	range: DateRange | null;
 	asOf: IsoDate;
 	originationDate: IsoDate;
 	scheduledPayoffDate: IsoDate;
@@ -34,31 +34,29 @@ type DomainInput = {
 };
 
 /**
- * The dates the chart spans, as Sure's `domain_start` and `domain_end`. A
- * period opens where it would on any account chart, never before the loan:
+ * The dates the chart spans, as Sure's `domain_start` and `domain_end`. The
+ * whole life runs from origination to the later payoff, and never ends
+ * before today. A window opens where its period does, never before the loan:
  * a lead-in before origination would read as a balance that was not there.
- * It ends today, so the forecasts draw under « Tout » alone; « Tout » runs
- * from origination to the later payoff, and never ends before today. A
- * window is at least a day wide, so a loan originated today still has an
- * axis.
+ * It ends where the period does, never past the whole life's end, and is at
+ * least a day wide, so a loan originated today still has an axis.
  */
 export function chartDomain({
-	months,
+	range,
 	asOf,
 	originationDate,
 	scheduledPayoffDate,
 	projectedPayoffDate,
 }: DomainInput): DateRange {
-	if (months === "all") {
-		return {
-			from: originationDate,
-			to: [scheduledPayoffDate, projectedPayoffDate ?? asOf].reduce(maxDate, asOf),
-		};
+	const wholeLifeEnd = [scheduledPayoffDate, projectedPayoffDate ?? asOf].reduce(maxDate, asOf);
+
+	if (range === null) {
+		return { from: originationDate, to: wholeLifeEnd };
 	}
 
-	const from = maxDate(addMonths(asOf, -months), originationDate);
+	const from = maxDate(range.from, originationDate);
 
-	return { from, to: maxDate(asOf, addDays(from, 1)) };
+	return { from, to: maxDate(minDate(range.to, wholeLifeEnd), addDays(from, 1)) };
 }
 
 const minor = (amount: bigint): MinorUnits => toMinorUnits(Number(amount));

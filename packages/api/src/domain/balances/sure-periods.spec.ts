@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { periodInterval, seriesDates, seriesPointCount, surePeriodRange } from "./sure-periods.ts";
+import { LOAN_WINDOW_PERIODS, SURE_PERIODS } from "@archant/data/periods";
+
+import {
+	periodInterval,
+	resolveChartRange,
+	seriesDates,
+	seriesPointCount,
+	surePeriodRange,
+} from "./sure-periods.ts";
 
 describe("surePeriodRange", () => {
 	// A Wednesday.
@@ -42,6 +50,58 @@ describe("surePeriodRange", () => {
 			from: "2026-02-01",
 			to: "2026-02-28",
 		});
+	});
+});
+
+describe("resolveChartRange", () => {
+	const today = "2026-10-31";
+
+	it("gives a key its days", () => {
+		expect(resolveChartRange({ period: "last_90_days" }, today, null)).toEqual({
+			period: "last_90_days",
+			range: { from: "2026-08-02", to: today },
+		});
+	});
+
+	it("takes both dates as a custom range without a key, over any key", () => {
+		expect(
+			resolveChartRange(
+				{ period: "last_7_days", startDate: "2026-10-05", endDate: "2026-10-20" },
+				today,
+				null,
+			),
+		).toEqual({ period: null, range: { from: "2026-10-05", to: "2026-10-20" } });
+		expect(
+			resolveChartRange(
+				{ period: "last_7_days", startDate: "2026-10-05", endDate: "2026-10-05" },
+				today,
+				null,
+			).range,
+		).toEqual({ from: "2026-10-05", to: "2026-10-05" });
+	});
+
+	it("falls back to the last 30 days for a range that starts after it ends", () => {
+		expect(
+			resolveChartRange(
+				{ period: "last_7_days", startDate: "2026-10-20", endDate: "2026-10-05" },
+				today,
+				null,
+			),
+		).toEqual({ period: "last_30_days", range: { from: "2026-10-01", to: today } });
+	});
+
+	it("reads the key when one date is missing", () => {
+		expect(
+			resolveChartRange({ period: "current_month", startDate: "2026-10-05" }, today, null),
+		).toEqual({ period: "current_month", range: { from: "2026-10-01", to: today } });
+	});
+});
+
+describe("LOAN_WINDOW_PERIODS", () => {
+	it("is a subset of Sure's periods, in their order", () => {
+		expect(
+			SURE_PERIODS.filter((key) => LOAN_WINDOW_PERIODS.some((window) => window === key)),
+		).toEqual([...LOAN_WINDOW_PERIODS]);
 	});
 });
 

@@ -58,8 +58,8 @@
 		"netWorth": "Patrimoine net",
 		"assets": "Actifs",
 		"liabilities": "Passifs",
-		"change": "{{change}} {{over}}",
-		"summary": "Patrimoine net : {{balance}}, {{change}} {{over}}.",
+		"change": "{{change}} {{comparison}}",
+		"summary": "Patrimoine net : {{balance}}, {{change}} {{comparison}}.",
 		"leftOut": "Hors des totaux, faute de conversion : {{names}}.",
 		"greeting": "Bonjour",
 		"greetingWithName": "Bonjour {{name}}",
@@ -457,27 +457,69 @@
 	},
 	"balances": {
 		"title": "Historique du solde",
-		"period": "Période",
-		"periods": {
-			"1M": "1 M",
-			"3M": "3 M",
-			"6M": "6 M",
-			"1Y": "1 A",
-			"all": "Tout"
-		},
-		"over": {
-			"1M": "sur 1 mois",
-			"3M": "sur 3 mois",
-			"6M": "sur 6 mois",
-			"1Y": "sur 1 an",
-			"all": "depuis l'ouverture"
-		},
-		"summary": "Solde : {{balance}}, {{change}} {{over}}.",
+		"summary": "Solde : {{balance}}, {{change}} {{comparison}}.",
 		"changeWithPercent": "{{amount}} ({{percent}})",
 		"empty": "Aucun solde sur cette période.",
 		"showData": "Voir le tableau",
 		"date": "Date",
 		"balance": "Solde"
+	},
+	"periods": {
+		"last_day": {
+			"short": "1J",
+			"comparison": "vs hier"
+		},
+		"current_week": {
+			"short": "SC",
+			"comparison": "vs. début de la semaine"
+		},
+		"last_7_days": {
+			"short": "7J",
+			"comparison": "vs. dernière semaine"
+		},
+		"current_month": {
+			"short": "MC",
+			"comparison": "vs. début du mois"
+		},
+		"last_month": {
+			"short": "LM",
+			"comparison": "vs. mois dernier"
+		},
+		"last_30_days": {
+			"short": "30J",
+			"comparison": "vs. 30 derniers jours"
+		},
+		"last_90_days": {
+			"short": "90J",
+			"comparison": "vs. dernier trimestre"
+		},
+		"current_year": {
+			"short": "AC",
+			"comparison": "vs. début de l'année"
+		},
+		"last_365_days": {
+			"short": "365J",
+			"comparison": "vs il y a 1 an"
+		},
+		"last_5_years": {
+			"short": "5A",
+			"comparison": "vs il y a 5 ans"
+		},
+		"last_10_years": {
+			"short": "10A",
+			"comparison": "vs il y a 10 ans"
+		},
+		"all_time": {
+			"short": "Tout",
+			"comparison": "vs début"
+		},
+		"custom": {
+			"short": "Personnalisé",
+			"comparison": "{{startDate}} au {{endDate}}"
+		},
+		"range": "{{startDate}} – {{endDate}}",
+		"availableHistory": "par rapport à l'historique disponible",
+		"ariaLabel": "Période : {{period}}"
 	},
 	"transactions": {
 		"add": "Ajouter une opération",

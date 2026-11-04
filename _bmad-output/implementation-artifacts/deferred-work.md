@@ -484,3 +484,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-33-4-declare-a-bill-from-any-transaction.md`
   summary: Time « Rechercher dans toutes vos transactions » (`pickerTransactions`) with a query matching nothing in `history-volume.spec.ts`.
   evidence: Unverified medium. Its `LIKE` over label, notes and merchant scans every transaction when nothing matches, as the transactions search does; a volume run against NFR10's 150 ms would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-3-pick-the-dashboard-period.md`
+  summary: Retake `docs/images/dashboard.png` and the other README screenshots that show the former « 1 M, 3 M » toggle.
+  evidence: Story 34.3 replaced the toggle with Sure's period picker; the README screenshots were taken by Story 37.5 before it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-3-pick-the-dashboard-period.md`
+  summary: Test that the dashboard never reads « par rapport à l'historique disponible », on a household whose history is shorter than the period.
+  evidence: The shared e2e database holds years of history, so no dashboard test reaches the case; the rule is one condition in `BalanceChart`'s `Summary`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-3-pick-the-dashboard-period.md`
+  summary: Test that the dashboard's first chart read waits for the saved period when the URL names none.
+  evidence: Only the final state is asserted; setting `ready` to true would send one extra `last_30_days` read unnoticed.

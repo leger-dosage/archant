@@ -4,30 +4,20 @@ import type { DailyBalance } from "./forward.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { addDays, addMonths, maxDate } from "../dates.ts";
+import { addDays, addMonths, maxDate, minDate } from "../dates.ts";
 
 export type DateRange = { from: IsoDate; to: IsoDate };
 
 /**
- * The days a period covers: from `today` minus `months` calendar months, or
- * from `startDate` for `all`, to `today`. `startDate` is Sure's
- * `history_start_date`, the first day the account has a balance: the earlier
- * of its opening date and its oldest booked entry. Never before it, where no
- * balance exists. `null` when the account starts after today and the period
- * holds no day.
+ * The days of `range` an account or a household has a balance: never before
+ * `startDate`, Sure's `history_start_date`, the earlier of the opening date
+ * and the oldest booked entry, where no balance exists, and never past
+ * `today`, where the chart shows nothing yet. `null` when no day is left.
  */
-export function periodRange(
-	months: number | "all",
-	today: IsoDate,
-	startDate: IsoDate,
-): DateRange | null {
-	if (startDate > today) {
-		return null;
-	}
+export function clampRange(range: DateRange, startDate: IsoDate, today: IsoDate): DateRange | null {
+	const clamped = { from: maxDate(range.from, startDate), to: minDate(range.to, today) };
 
-	const start = months === "all" ? startDate : addMonths(today, -months);
-
-	return { from: maxDate(start, startDate), to: today };
+	return clamped.from > clamped.to ? null : clamped;
 }
 
 export type BalanceChange = {

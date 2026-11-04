@@ -1,4 +1,4 @@
-import type { APIRequestContext, APIResponse } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Locator, Page } from "@playwright/test";
 
 import { test as base, expect } from "@playwright/test";
 import { randomInt, randomUUID } from "node:crypto";
@@ -9,12 +9,12 @@ import type {
 	PropertyDetailsInput,
 	VehicleDetailsInput,
 } from "@archant/api/schemas/accounts";
-import type { BalancePeriod } from "@archant/api/schemas/balances";
-import { DEFAULT_BALANCE_PERIOD } from "@archant/api/schemas/balances";
 import type { AccountOrder } from "@archant/data/account-orders";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
+import type { SurePeriod } from "@archant/data/periods";
+import { DEFAULT_PERIOD } from "@archant/data/periods";
 import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
 
@@ -116,6 +116,34 @@ export const rgb = (hex: string) =>
 
 /** A line of an OFX statement built by `sgml`, dated `daysAgo` days before today. */
 export type Line = { daysAgo: number; amount: string; label: string; fitid: string };
+
+/** The trigger of Sure's period menu inside `scope`, named after the period it shows. */
+export const periodPicker = (scope: Page | Locator) =>
+	scope.getByRole("button", { name: /^Période : /u });
+
+/**
+ * Opens the period menu inside `scope` and picks `label`, as « 90J ». An
+ * administrator's pick is saved: it waits for that save's answer, so a test
+ * restoring the saved period afterwards is never overtaken by it. A viewer's
+ * sends nothing, so `saved` is false.
+ */
+export async function pickPeriod(
+	page: Page,
+	scope: Page | Locator,
+	label: string,
+	{ saved = true }: { saved?: boolean } = {},
+) {
+	const save = saved
+		? page.waitForResponse(
+				(response) =>
+					response.url().endsWith("/api/preferences") && response.request().method() === "PATCH",
+			)
+		: undefined;
+	await periodPicker(scope).click();
+	await page.getByRole("menuitemradio", { name: label, exact: true }).click();
+	await expect(page.getByRole("menu")).toBeHidden();
+	await save;
+}
 
 export const ofxDate = (days: number) => daysAgo(days).replaceAll("-", "");
 
@@ -376,6 +404,13 @@ export function apiHelpers(request: APIRequestContext) {
 		/** Saves the administrator's account order, one for the whole run: reset it after. */
 		async setAccountOrder(defaultAccountOrder: AccountOrder) {
 			const response = await request.patch("/api/preferences", { data: { defaultAccountOrder } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Saves the administrator's chart period, one for the whole run: reset it after. */
+		async setDefaultPeriod(defaultPeriod: SurePeriod) {
+			const response = await request.patch("/api/preferences", { data: { defaultPeriod } });
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},
@@ -677,7 +712,7 @@ export function apiHelpers(request: APIRequestContext) {
 		 * The dashboard's net worth, as the API computes it now: tests share one
 		 * database, so they assert a change from it rather than a fixed amount.
 		 */
-		async netWorth(period: BalancePeriod = DEFAULT_BALANCE_PERIOD) {
+		async netWorth(period: SurePeriod = DEFAULT_PERIOD) {
 			const response = await request.get(`/api/reports/net-worth?period=${period}`);
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);

@@ -1,5 +1,6 @@
 import type { AccountOrder } from "../account-orders.ts";
 import type { Locale } from "../locales.ts";
+import type { SurePeriod } from "../periods.ts";
 import type { UserRole } from "../user-roles.ts";
 
 import { sql } from "drizzle-orm";
@@ -7,6 +8,7 @@ import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-cor
 
 import { ACCOUNT_ORDERS, DEFAULT_ACCOUNT_ORDER } from "../account-orders.ts";
 import { LOCALES } from "../locales.ts";
+import { DEFAULT_PERIOD, SURE_PERIODS } from "../periods.ts";
 import { USER_ROLES } from "../user-roles.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
@@ -62,6 +64,10 @@ export const users = sqliteTable(
 			.$type<AccountOrder>()
 			.notNull()
 			.default(DEFAULT_ACCOUNT_ORDER),
+		// Sure's `users.default_period`: the chart period the dashboard and the
+		// account pages open on when the address names none, saved by an
+		// administrator's pick. Existing users read Sure's default.
+		defaultPeriod: text("default_period").$type<SurePeriod>().notNull().default(DEFAULT_PERIOD),
 		// Sure's `users.locale`. Null follows the browser's language, so a user
 		// who never chose reads the language they travel with.
 		locale: text("locale").$type<Locale>(),
@@ -83,6 +89,7 @@ export const users = sqliteTable(
 			"users_default_account_order_check",
 			sql`${table.defaultAccountOrder} in ${inList(ACCOUNT_ORDERS)}`,
 		),
+		check("users_default_period_check", sql`${table.defaultPeriod} in ${inList(SURE_PERIODS)}`),
 		check(
 			"users_locale_check",
 			sql`${table.locale} is null or ${table.locale} in ${inList(LOCALES)}`,

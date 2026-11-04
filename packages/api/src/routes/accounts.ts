@@ -87,7 +87,7 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		.get("/:id/balances", validated("query", balanceQuerySchema), async (c) =>
 			c.json(
 				{
-					data: await getBalanceHistory(deps, c.req.param("id"), c.req.valid("query").period),
+					data: await getBalanceHistory(deps, c.req.param("id"), c.req.valid("query")),
 				},
 				200,
 			),
@@ -147,10 +147,7 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 			c.json({ data: await accountOverview(deps, c.req.param("id")) }, 200),
 		)
 		.get("/:id/payoff-chart", validated("query", balanceQuerySchema), async (c) =>
-			c.json(
-				{ data: await loanPayoffChart(deps, c.req.param("id"), c.req.valid("query").period) },
-				200,
-			),
+			c.json({ data: await loanPayoffChart(deps, c.req.param("id"), c.req.valid("query")) }, 200),
 		)
 		.put(
 			"/:id/holdings/:securityId/cost-basis",

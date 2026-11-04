@@ -6,8 +6,8 @@ import { queryKeys } from "./query-keys";
 describe("queryKeys.accounts.balances", () => {
 	it("goes stale when its account is invalidated, and only then", async () => {
 		const client = new QueryClient();
-		const own = queryKeys.accounts.balances("a", "3M");
-		const other = queryKeys.accounts.balances("b", "3M");
+		const own = queryKeys.accounts.balances("a", { period: "last_90_days" });
+		const other = queryKeys.accounts.balances("b", { period: "last_90_days" });
 		client.setQueryData(own, { points: [] });
 		client.setQueryData(other, { points: [] });
 
@@ -120,7 +120,7 @@ describe("queryKeys.transactions.ofAccount", () => {
 describe("queryKeys.accounts.netWorth", () => {
 	it("goes stale with any account write", async () => {
 		const client = new QueryClient();
-		const key = queryKeys.accounts.netWorth("3M");
+		const key = queryKeys.accounts.netWorth({ period: "last_90_days" });
 		client.setQueryData(key, { points: [] });
 
 		await client.invalidateQueries({ queryKey: queryKeys.accounts.all });

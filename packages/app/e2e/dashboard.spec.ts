@@ -10,9 +10,19 @@ import {
 	formatShortDate,
 	formatSignedPercent,
 	formatTableDate,
+	formatTick,
 } from "../src/lib/balance-change.ts";
 import { ofMonth } from "../src/lib/dates.ts";
-import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
+import {
+	daysAgo,
+	euros,
+	expect,
+	periodPicker,
+	pickPeriod,
+	rgb,
+	test,
+	uniqueName,
+} from "./fixtures.ts";
 import { ADMIN_FIRST_NAME } from "./settings.ts";
 
 // Story 6.1: net worth and its history. One database serves the whole run,
@@ -482,60 +492,171 @@ test("a checking account and a card move net worth, assets and liabilities", asy
 	await expect(total(page, "Passifs")).toContainText(euros(before.liabilities + 30_000));
 });
 
-test("« 3 M » keeps the period in the URL, and the summary and table follow it", async ({
+// Story 34.3: Sure's `UI::PeriodPicker`, one menu above the widgets.
+test("the picker lists Sure's twelve periods in order, « 30J » checked, above the widgets", async ({
+	page,
+	api,
+}) => {
+	await api.openAccount();
+
+	await page.goto("/");
+
+	const trigger = periodPicker(page);
+	await expect(trigger).toHaveText("30J");
+	await expect(card(page).getByRole("button", { name: /^Période : /u })).toHaveCount(0);
+	await trigger.click();
+	await expect(page.getByRole("menuitemradio")).toHaveText([
+		"1J",
+		"SC",
+		"7J",
+		"MC",
+		"LM",
+		"30J",
+		"90J",
+		"AC",
+		"365J",
+		"5A",
+		"10A",
+		"Tout",
+	]);
+	await expect(page.getByRole("menuitemradio", { name: "30J" })).toHaveAttribute(
+		"aria-checked",
+		"true",
+	);
+	await page.keyboard.press("Escape");
+	await expect(headline(page)).toContainText("vs. 30 derniers jours");
+});
+
+test("« 90J » goes to the URL and is saved for the next visit, the summary and table following it", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(200) });
 	await api.addTransaction(account.id, { date: daysAgo(10), label: "Loyer", amount: "-100,00" });
-	const expected = await api.netWorth("3M");
+	const expected = await api.netWorth("last_90_days");
 	const last = expected.points.at(-1);
 	const change = expected.change;
 
 	expect(last?.date).toBe(daysAgo(0));
 	expect(change?.percent).not.toBeNull();
 
-	await page.goto("/");
-	const periods = card(page).getByRole("radiogroup", { name: "Période" });
-	await expect(periods.getByRole("radio", { name: "1 M" })).toBeChecked();
-	await periods.getByRole("radio", { name: "3 M" }).click();
+	try {
+		await page.goto("/");
+		await pickPeriod(page, page, "90J");
 
-	await expect(page).toHaveURL(/[?&]period=3M(&|$)/u);
-	const amount = formatSignedMoney(toMinorUnits(change?.amount ?? 0), "EUR");
-	const percent = formatSignedPercent(change?.percent ?? 0);
-	await expect(card(page).getByText(/^Patrimoine net : /u)).toHaveText(
-		`Patrimoine net : ${euros(last?.balance ?? 0)}, ${amount} (${percent}) sur 3 mois.`,
-	);
-	await expect(headline(page)).toContainText(`${amount} (${percent}) sur 3 mois`);
+		await expect(page).toHaveURL(/[?&]period=last_90_days(&|$)/u);
+		await expect(periodPicker(page)).toHaveAccessibleName("Période : 90J");
+		const amount = formatSignedMoney(toMinorUnits(change?.amount ?? 0), "EUR");
+		const percent = formatSignedPercent(change?.percent ?? 0);
+		await expect(card(page).getByText(/^Patrimoine net : /u)).toHaveText(
+			`Patrimoine net : ${euros(last?.balance ?? 0)}, ${amount} (${percent}) vs. dernier trimestre.`,
+		);
+		await expect(headline(page)).toContainText(`${amount} (${percent}) vs. dernier trimestre`);
 
-	const showTable = card(page).getByRole("button", { name: "Voir le tableau" });
-	await showTable.click();
-	const table = card(page).getByRole("table");
-	const tableId = await showTable.getAttribute("aria-controls");
-	await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "208px");
-	await expect(table.getByRole("columnheader")).toHaveText(["Date", "Patrimoine net"]);
-	await expect(table.getByRole("row")).toHaveCount(expected.points.length + 1);
-	await expect(table.getByRole("row").nth(1)).toContainText(formatTableDate(daysAgo(0)));
-	await expect(table.getByRole("row").nth(1)).toContainText(euros(last?.balance ?? 0));
+		const showTable = card(page).getByRole("button", { name: "Voir le tableau" });
+		await showTable.click();
+		const table = card(page).getByRole("table");
+		const tableId = await showTable.getAttribute("aria-controls");
+		await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "208px");
+		await expect(table.getByRole("columnheader")).toHaveText(["Date", "Patrimoine net"]);
+		await expect(table.getByRole("row")).toHaveCount(expected.points.length + 1);
+		await expect(table.getByRole("row").nth(1)).toContainText(formatTableDate(daysAgo(0)));
+		await expect(table.getByRole("row").nth(1)).toContainText(euros(last?.balance ?? 0));
+
+		// Sure's `default_period`: the dashboard opens on it without the URL.
+		await page.goto("/");
+		await expect(periodPicker(page)).toHaveText("90J");
+		await expect(headline(page)).toContainText("vs. dernier trimestre");
+	} finally {
+		await api.setDefaultPeriod("last_30_days");
+	}
 });
 
-test("an unknown period in the URL falls back to one month, the default absent from the URL", async ({
+test("a drag across the chart picks a custom range, named on the trigger and checked last", async ({
 	page,
 	api,
 }) => {
+	await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(60) });
+
+	await page.goto("/");
+	const chart = card(page).locator('[data-slot="chart"]');
+	await expect(chart.locator(".recharts-area")).toBeVisible();
+	const box = await chart.boundingBox();
+
+	expect(box).not.toBeNull();
+	const y = (box?.y ?? 0) + (box?.height ?? 0) / 2;
+	await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.2, y);
+	await page.mouse.down();
+	await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) * 0.8, y, { steps: 8 });
+	await page.mouse.up();
+
+	await expect(page).toHaveURL(/[?&]startDate=\d{4}-\d{2}-\d{2}&endDate=\d{4}-\d{2}-\d{2}/u);
+	await expect(page).not.toHaveURL(/[?&]period=/u);
+	const url = new URL(page.url());
+	const start = url.searchParams.get("startDate") ?? "";
+	const end = url.searchParams.get("endDate") ?? "";
+	expect(start < end).toBe(true);
+	// Sure's `label_range`: the year dropped while both days sit in this one.
+	const year = daysAgo(0).slice(0, 4);
+	const short = (iso: string) =>
+		start.startsWith(year) && end.startsWith(year) ? formatTick(iso, false) : formatShortDate(iso);
+	await expect(periodPicker(page)).toHaveText(`${short(start)} – ${short(end)}`);
+	await expect(headline(page)).toContainText(
+		`${formatShortDate(start)} au ${formatShortDate(end)}`,
+	);
+
+	await periodPicker(page).click();
+	await expect(page.getByRole("menuitemradio").last()).toHaveText("Personnalisé");
+	await expect(page.getByRole("menuitemradio").last()).toHaveAttribute("aria-checked", "true");
+	await page.keyboard.press("Escape");
+
+	// A preset leaves the custom range, the dates out of the URL.
+	try {
+		await pickPeriod(page, page, "7J");
+		await expect(page).toHaveURL(/[?&]period=last_7_days(&|$)/u);
+		await expect(page).not.toHaveURL(/startDate=/u);
+	} finally {
+		await api.setDefaultPeriod("last_30_days");
+	}
+});
+
+test("an unknown period in the URL falls back to the saved one", async ({ page, api }) => {
 	await api.openAccount();
 
-	await page.goto("/?period=decennie");
+	try {
+		await api.setDefaultPeriod("last_90_days");
+		await page.goto("/?period=decennie");
 
-	await expect(pageHeader(page)).toBeVisible();
-	const periods = card(page).getByRole("radiogroup", { name: "Période" });
-	await expect(periods.getByRole("radio", { name: "1 M" })).toBeChecked();
+		await expect(pageHeader(page)).toBeVisible();
+		await expect(periodPicker(page)).toHaveText("90J");
+		await expect(headline(page)).toContainText("vs. dernier trimestre");
+	} finally {
+		await api.setDefaultPeriod("last_30_days");
+	}
+});
 
-	await periods.getByRole("radio", { name: "3 M" }).click();
-	await expect(page).toHaveURL(/[?&]period=3M(&|$)/u);
-	await periods.getByRole("radio", { name: "1 M" }).click();
-	await expect(periods.getByRole("radio", { name: "1 M" })).toBeChecked();
-	await expect(page).not.toHaveURL(/[?&]period=/u);
+test("a failed save says so, and the pick still applies through the URL", async ({ page, api }) => {
+	await api.openAccount();
+	await page.route("**/api/preferences", (route) =>
+		route.request().method() === "PATCH"
+			? route.fulfill({
+					status: 500,
+					json: { error: { code: "INTERNAL_ERROR", message: "Internal error" } },
+				})
+			: route.fallback(),
+	);
+
+	try {
+		await page.goto("/");
+		await pickPeriod(page, page, "90J");
+
+		await expect(page.getByText("Une erreur inattendue s'est produite.")).toBeVisible();
+		await expect(page).toHaveURL(/[?&]period=last_90_days(&|$)/u);
+		await expect(periodPicker(page)).toHaveText("90J");
+	} finally {
+		await page.unrouteAll();
+		await api.setDefaultPeriod("last_30_days");
+	}
 });
 
 test("an account in another currency is named in the notice and left out of the totals", async ({

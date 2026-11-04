@@ -1,20 +1,23 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange } from "../domain/balances/history.ts";
+import type { ChartQuery } from "../domain/balances/sure-periods.ts";
 import type { IsoDate } from "../domain/dates.ts";
 import type { AmortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import type { Instalment, LoanOverview } from "../domain/loans/overview.ts";
 import type { ScheduledPoint } from "../domain/loans/payoff-chart.ts";
 import type { PayoffProjection } from "../domain/loans/payoff-projection.ts";
 import type { RateResolver } from "../domain/loans/rate-resolver.ts";
-import type { BalancePeriod } from "../schemas/balances.ts";
 import type { AccountDetail } from "./accounts.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import { loanDetailsOf } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import type { SurePeriod } from "@archant/data/periods";
+import { LOAN_WINDOW_PERIODS } from "@archant/data/periods";
 
 import { balanceChange, sampleSeries } from "../domain/balances/history.ts";
+import { resolveChartRange } from "../domain/balances/sure-periods.ts";
 import { minDate, today } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import { originalBalance } from "../domain/loans/original-balance.ts";
@@ -28,7 +31,6 @@ import {
 import { payoffProjection } from "../domain/loans/payoff-projection.ts";
 import { rateResolver } from "../domain/loans/rate-resolver.ts";
 import { getAccount } from "./accounts.ts";
-import { PERIOD_MONTHS } from "./balances.ts";
 import { balancesBetween, openingAnchorOf } from "./ledger/balances.ts";
 
 type LoanSchedulePayment = {
@@ -271,7 +273,8 @@ export type LoanPayoffChartData = {
 	/** Today in `APP_TIMEZONE`, where the « Aujourd'hui » marker stands. */
 	asOf: IsoDate;
 	currency: string;
-	period: BalancePeriod;
+	/** Sure's key, `null` for a custom range. */
+	period: SurePeriod | null;
 	/** The dates the chart spans. */
 	from: IsoDate;
 	to: IsoDate;
@@ -301,7 +304,10 @@ export type LoanPayoffChartData = {
 /**
  * A loan's chart, as Sure's `Loan::PayoffChart`: the recorded balance, the
  * contract and the projection from today, over the account chart's period
- * clamped to the loan's life; computed on read, nothing stored. `null` for
+ * clamped to the loan's life, or the whole life for « Tout », a custom range
+ * or a period the loan chart does not offer, as Sure's `whole_life?`, since
+ * the period is shared with every account page; computed on read, nothing
+ * stored. `null` for
  * another type of account or a loan without a schedule, whose page keeps the
  * balance chart. Recorded balances are never read past today: carried
  * forward, they would draw a balance that never moves again.
@@ -309,7 +315,7 @@ export type LoanPayoffChartData = {
 export async function loanPayoffChart(
 	deps: ServiceDeps,
 	accountId: string,
-	period: BalancePeriod,
+	query: ChartQuery,
 ): Promise<LoanPayoffChartData | null> {
 	const account = await getAccount(deps, accountId);
 	const contract =
@@ -326,8 +332,11 @@ export async function loanPayoffChart(
 	const converged = projection?.converged === true ? projection : null;
 	// `amortizationSchedule` has none without a payment.
 	const scheduledPayoffDate = schedule.payments.at(-1)!.date;
+	const { period, range } = resolveChartRange(query, asOf, schedule.originationDate);
+	const window =
+		period !== null && period !== "all_time" && LOAN_WINDOW_PERIODS.some((key) => key === period);
 	const domain = chartDomain({
-		months: PERIOD_MONTHS[period],
+		range: window ? range : null,
 		asOf,
 		originationDate: schedule.originationDate,
 		scheduledPayoffDate,

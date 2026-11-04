@@ -1,6 +1,5 @@
+import type { ChartPeriod } from "@/lib/periods";
 import type { TransactionFilters } from "@/lib/transaction-filters";
-
-import type { BalancePeriod } from "@archant/api/schemas/balances";
 
 // One entry per resource, so an invalidation after a write names exactly the
 // queries it makes stale. `accounts.all` prefixes every account query.
@@ -14,7 +13,7 @@ export const queryKeys = {
 		 * Under `detail(id)`, so every transaction write, which invalidates the
 		 * account, redraws its chart with no change to the mutations.
 		 */
-		balances: (id: string, period: BalancePeriod) =>
+		balances: (id: string, period: ChartPeriod) =>
 			["accounts", "detail", id, "balances", period] as const,
 		/**
 		 * Under `detail(id)` too: a snapshot's gap depends on the transactions
@@ -47,7 +46,7 @@ export const queryKeys = {
 		 * Under `detail(id)` too: the chart reads the terms and the balances,
 		 * and every write to either invalidates the account.
 		 */
-		payoffChart: (id: string, period: BalancePeriod) =>
+		payoffChart: (id: string, period: ChartPeriod) =>
 			["accounts", "detail", id, "payoff-chart", period] as const,
 		/** A position sheet's trades, under `detail(id)` with the account's other trades. */
 		positionTrades: (id: string, securityId: string) =>
@@ -57,7 +56,7 @@ export const queryKeys = {
 		 * balance, flips an account's flags or adds an account already
 		 * invalidates `all`, so the dashboard follows with no change to them.
 		 */
-		netWorth: (period: BalancePeriod) => ["accounts", "net-worth", period] as const,
+		netWorth: (period: ChartPeriod) => ["accounts", "net-worth", period] as const,
 		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change
@@ -186,7 +185,8 @@ export const queryKeys = {
 	},
 	/**
 	 * The signed-in user's preferences, one query: a save sets it from its
-	 * answer, and invalidates `accounts.all`, whose lists follow the order.
+	 * answer, and invalidates `accounts.all`, whose lists follow the order;
+	 * a chart period's save sets it alone.
 	 */
 	preferences: {
 		all: ["preferences"] as const,

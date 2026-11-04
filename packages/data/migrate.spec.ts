@@ -372,6 +372,24 @@ describe("users and settings", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("gives an existing user Sure's default period when 0103 adds it, a known key only", async () => {
+		const before = await migratedBefore("0103");
+		await insertUser(before, "u1", "admin");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select default_period as defaultPeriod from users`),
+		).resolves.toEqual([{ defaultPeriod: "last_30_days" }]);
+		await expect(
+			database.run(sql`update users set default_period = '1M' where id = 'u1'`),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error && String(error.cause).includes("users_default_period_check"),
+		);
+	});
+
 	it("holds one pending invitation per email, a known role only, gone with its inviter", async () => {
 		const database = await migrated();
 		await insertUser(database, "u1", "admin");

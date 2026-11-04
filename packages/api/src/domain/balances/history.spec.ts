@@ -5,46 +5,42 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import { addDays } from "../dates.ts";
-import { balanceChange, fillDays, periodRange, sampleSeries } from "./history.ts";
+import { balanceChange, clampRange, fillDays, sampleSeries } from "./history.ts";
 
-describe("periodRange", () => {
-	it("goes back one, three, six or twelve calendar months from today", () => {
-		expect(periodRange(1, "2026-09-21", "2026-01-10")).toEqual({
-			from: "2026-08-21",
-			to: "2026-09-21",
+describe("clampRange", () => {
+	const today = "2026-09-21";
+
+	it("keeps a range inside the history", () => {
+		expect(clampRange({ from: "2026-08-22", to: today }, "2026-01-10", today)).toEqual({
+			from: "2026-08-22",
+			to: today,
 		});
-		expect(periodRange(3, "2026-09-21", "2020-01-01")?.from).toBe("2026-06-21");
-		expect(periodRange(6, "2026-09-21", "2020-01-01")?.from).toBe("2026-03-21");
-		expect(periodRange(12, "2026-09-21", "2020-01-01")?.from).toBe("2025-09-21");
-	});
-
-	it("clamps to the end of a shorter month", () => {
-		expect(periodRange(1, "2026-03-31", "2020-01-01")?.from).toBe("2026-02-28");
 	});
 
 	it("never starts before the history start", () => {
-		expect(periodRange(6, "2026-09-21", "2026-09-01")).toEqual({
+		expect(clampRange({ from: "2026-06-23", to: today }, "2026-09-01", today)).toEqual({
 			from: "2026-09-01",
-			to: "2026-09-21",
+			to: today,
 		});
 	});
 
-	it("starts at the history start for all, an entry before the opening date included", () => {
-		expect(periodRange("all", "2026-09-21", "2024-02-29")).toEqual({
-			from: "2024-02-29",
-			to: "2026-09-21",
+	it("never ends after today", () => {
+		expect(clampRange({ from: "2026-09-01", to: "2026-10-01" }, "2020-01-01", today)).toEqual({
+			from: "2026-09-01",
+			to: today,
 		});
 	});
 
 	it("holds a single day when the history starts today", () => {
-		expect(periodRange(1, "2026-09-21", "2026-09-21")).toEqual({
-			from: "2026-09-21",
-			to: "2026-09-21",
+		expect(clampRange({ from: "2026-08-22", to: today }, today, today)).toEqual({
+			from: today,
+			to: today,
 		});
 	});
 
-	it("is empty when the history starts after today", () => {
-		expect(periodRange("all", "2026-09-21", "2026-09-22")).toBeNull();
+	it("is empty when the history starts after the range ends", () => {
+		expect(clampRange({ from: "2026-08-22", to: today }, "2026-09-22", today)).toBeNull();
+		expect(clampRange({ from: "2026-08-01", to: "2026-08-31" }, "2026-09-01", today)).toBeNull();
 	});
 });
 

@@ -1286,7 +1286,7 @@ describe("reading reports", () => {
 			interval: "1 day",
 		});
 		const sheet = balanceSheet.parse(result.structuredContent);
-		const route = await routeData("/api/reports/net-worth?period=1M");
+		const route = await routeData("/api/reports/net-worth?period=last_30_days");
 		const points = z.array(z.object({ date: z.string(), balance: z.number() })).parse(route.points);
 		const assets = z.number().parse(route.assets);
 		const liabilities = z.number().parse(route.liabilities);
@@ -1329,7 +1329,7 @@ describe("reading reports", () => {
 				})
 			).structuredContent,
 		);
-		const route = await routeData("/api/reports/net-worth?period=1Y");
+		const route = await routeData("/api/reports/net-worth?period=last_365_days");
 
 		expect(sheet.net_worth.monthly_history).toMatchObject({ interval: "1 month" });
 		expect(sheet.net_worth.current).toBe(eur(route.netWorth));
@@ -1346,7 +1346,7 @@ describe("reading reports", () => {
 		);
 		const netWorth = z
 			.number()
-			.parse((await routeData("/api/reports/net-worth?period=all")).netWorth);
+			.parse((await routeData("/api/reports/net-worth?period=all_time")).netWorth);
 
 		expect(sheet.net_worth.monthly_history).toMatchObject({
 			start_date: "2016-09-21",
@@ -1532,7 +1532,7 @@ describe("reading accounts, recurring series and one transaction", () => {
 				series_period: "last_90_days",
 			}),
 		);
-		const route = await routeData(`/api/accounts/${account.id}/balances?period=6M`);
+		const route = await routeData(`/api/accounts/${account.id}/balances?period=last_365_days`);
 		const byDate = new Map(
 			z
 				.array(z.object({ date: z.string(), balance: z.number() }))

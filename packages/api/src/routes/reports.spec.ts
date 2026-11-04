@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
 	buildApp,
@@ -12,6 +13,7 @@ import {
 	netWorthOf,
 	openOwn,
 	own,
+	ownRequest,
 	ownCard,
 	ownCategory,
 	pea,
@@ -75,7 +77,8 @@ describe("GET /api/reports/net-worth", () => {
 		const data = await netWorthOf();
 
 		expect(data).toMatchObject({
-			period: "1M",
+			period: "last_30_days",
+			periodFrom: "2026-08-22",
 			from: "2026-09-01",
 			to: "2026-09-21",
 			currency: "EUR",
@@ -98,7 +101,7 @@ describe("GET /api/reports/net-worth", () => {
 			openingBalance: "500,00",
 		});
 
-		const data = await netWorthOf("3M");
+		const data = await netWorthOf("last_90_days");
 
 		expect(data.from).toBe("2026-07-23");
 		expect(data.points[0]).toEqual({ date: "2026-07-23", balance: 100000 });
@@ -193,8 +196,9 @@ describe("GET /api/reports/net-worth", () => {
 	});
 
 	it("is empty without any account", async () => {
-		await expect(netWorthOf("all")).resolves.toEqual({
-			period: "all",
+		await expect(netWorthOf("all_time")).resolves.toEqual({
+			period: "all_time",
+			periodFrom: "2021-09-21",
 			from: null,
 			to: "2026-09-21",
 			currency: "EUR",
@@ -221,15 +225,76 @@ describe("GET /api/reports/net-worth", () => {
 		});
 	});
 
-	it("refuses an unknown period", async () => {
-		const { status, body } = await request("GET", "/api/reports/net-worth?period=2W");
+	it("reads an unknown period and an old link's « 1M » as the last 30 days, as Sure's", async () => {
+		await openOwn({ openingDate: "2026-07-01", openingBalance: "1 000,00" });
 
-		expect(status).toBe(400);
-		expect(errorBody.parse(body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "period", code: "invalid_value" }],
+		const answers = await Promise.all(
+			["2W", "1M"].map(async (period) =>
+				ownRequest("GET", `/api/reports/net-worth?period=${period}`),
+			),
+		);
+
+		expect(answers).toMatchObject(
+			Array.from({ length: 2 }, () => ({
+				status: 200,
+				body: { data: { period: "last_30_days", from: "2026-08-22", to: "2026-09-21" } },
+			})),
+		);
+	});
+
+	it("charts a custom range without a key, both days included", async () => {
+		await openOwn({ openingDate: "2026-07-01", openingBalance: "1 000,00" });
+
+		const { body } = await ownRequest(
+			"GET",
+			"/api/reports/net-worth?period=last_7_days&startDate=2026-08-05&endDate=2026-08-20",
+		);
+		const data = netWorthBody.parse(body).data;
+
+		expect(data).toMatchObject({
+			period: null,
+			periodFrom: "2026-08-05",
+			from: "2026-08-05",
+			to: "2026-08-20",
+		});
+		expect(data.points).toHaveLength(16);
+	});
+
+	it.each([
+		["reversed", "startDate=2026-08-20&endDate=2026-08-05"],
+		["unparsable", "startDate=2026-02-30&endDate=2026-08-05"],
+	])("falls back to the last 30 days for a %s range", async (_, query) => {
+		await openOwn({ openingDate: "2026-07-01", openingBalance: "1 000,00" });
+
+		const { body } = await ownRequest("GET", `/api/reports/net-worth?period=last_90_days&${query}`);
+
+		expect(netWorthBody.parse(body).data).toMatchObject({
+			period: "last_30_days",
+			from: "2026-08-22",
 		});
 	});
+
+	it("starts current_month on the first day in APP_TIMEZONE, at a month's boundary", async () => {
+		await openOwn({ openingDate: "2026-07-01", openingBalance: "1 000,00" });
+		// 00:30 on 1 October in Paris, still 30 September in UTC.
+		vi.setSystemTime(new Date("2026-09-30T22:30:00Z"));
+
+		await expect(netWorthOf("current_month")).resolves.toMatchObject({
+			period: "current_month",
+			from: "2026-10-01",
+			to: "2026-10-01",
+		});
+	});
+});
+
+const netWorthBody = z.object({
+	data: z.object({
+		period: z.string().nullable(),
+		periodFrom: z.string(),
+		from: z.string().nullable(),
+		to: z.string(),
+		points: z.array(z.unknown()),
+	}),
 });
 
 /** A line of the cash-flow breakdown, in the colour and icon `category()` gives. */

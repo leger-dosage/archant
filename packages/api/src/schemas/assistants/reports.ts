@@ -1,6 +1,8 @@
 import { z } from "zod";
 
-import { SURE_INTERVALS, SURE_PERIODS } from "../../domain/balances/sure-periods.ts";
+import { SURE_PERIODS } from "@archant/data/periods";
+
+import { SURE_INTERVALS } from "../../domain/balances/sure-periods.ts";
 import { MAX_TAG_FILTER } from "../transactions.ts";
 import { requiredLoose } from "./fields.ts";
 
