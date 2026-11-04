@@ -7,6 +7,7 @@ import { shiftMonth } from "@archant/data/months";
 
 import {
 	formatSignedMoney,
+	formatShortDate,
 	formatSignedPercent,
 	formatTableDate,
 } from "../src/lib/balance-change.ts";
@@ -104,17 +105,22 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 	await expect(card(page).locator('[data-slot="chart"]')).toHaveCSS("height", "208px");
 	await expect(total(page, "Actifs")).toBeVisible();
 	await expect(total(page, "Passifs")).toBeVisible();
-	// Abbreviated labels, « 275 k€ », never an amount to the cent.
-	const ticks = card(page).locator(".recharts-cartesian-axis-tick-value", { hasText: /€$/u });
-	await expect(ticks.first()).toBeVisible();
-	const labels = await ticks.allTextContents();
-	expect(labels).not.toContainEqual(expect.stringMatching(/,\d{2}\s€$/u));
-	// Round labels inside Sure's scale: two never read the same, and none is
-	// negative under a net worth that never was, though Sure's scale may dip below zero.
-	expect(new Set(labels).size).toBe(labels.length);
-	if (points.every((point) => point.balance >= 0)) {
-		expect(labels).not.toContainEqual(expect.stringMatching(/^−/u));
-	}
+	// Sure's axes: no vertical label and no grid, the first and last dates
+	// only, each inside its edge of the chart.
+	const chart = card(page).locator('[data-slot="chart"]');
+	await expect(chart.locator(".recharts-yAxis")).toHaveCount(0);
+	await expect(chart.getByText(/€$/u)).toHaveCount(0);
+	await expect(chart.locator(".recharts-cartesian-grid")).toHaveCount(0);
+	const dates = chart.locator('[data-slot="axis-date"]');
+	await expect(dates).toHaveText([
+		formatShortDate(points[0]!.date),
+		formatShortDate(points.at(-1)!.date),
+	]);
+	const plot = (await chart.locator(".recharts-surface").boundingBox())!;
+	const first = (await dates.first().boundingBox())!;
+	const last = (await dates.last().boundingBox())!;
+	expect(first.x).toBeGreaterThanOrEqual(plot.x - 0.5);
+	expect(last.x + last.width).toBeLessThanOrEqual(plot.x + plot.width + 0.5);
 });
 
 const bilan = (page: Page) => page.getByRole("region", { name: "Bilan" });

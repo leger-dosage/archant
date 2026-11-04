@@ -2,13 +2,11 @@ import type { ChartConfig } from "@/components/ui/chart";
 import type { BalanceHistoryData } from "@/hooks/useBalanceHistory";
 import type { ChartHeight } from "@/lib/chart-heights";
 import type { UseQueryResult } from "@tanstack/react-query";
-import type { TooltipContentProps } from "recharts";
+import type { TooltipContentProps, XAxisTickContentProps } from "recharts";
 
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
-
-import { toMinorUnits } from "@archant/data/money";
+import { Area, AreaChart, XAxis, YAxis } from "recharts";
 
 import { Money } from "@/components/Money";
 import { Button } from "@/components/ui/button";
@@ -25,12 +23,11 @@ import {
 import { errorCodeOf } from "@/lib/api";
 import {
 	changeText,
-	formatCompactMoney,
+	formatShortDate,
 	formatTableDate,
-	formatTick,
 	formatTooltipDate,
 } from "@/lib/balance-change";
-import { axisTicks, balanceDomain } from "@/lib/chart-axis";
+import { balanceDomain, edgeDates } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { formatMoney } from "@/lib/format-money";
 
@@ -44,10 +41,6 @@ type Point = ChartHistory["points"][number];
 
 /** The sentence above the chart, which names what the line is. */
 type SummaryKey = "balances.summary" | "dashboard.summary";
-
-// Past about six months the axis spans a year boundary or its own day, so
-// ticks name the month and year instead of the day.
-const LONG_RANGE_POINTS = 200;
 
 function Summary({ history, summaryKey }: { history: ChartHistory; summaryKey: SummaryKey }) {
 	const { t } = useTranslation();
@@ -95,6 +88,53 @@ function BalanceTooltip({
 	);
 }
 
+/**
+ * One of the two dates under the chart, kept inside its edge: the first reads
+ * from the left edge, the last ends at the right one, where Sure shifts both
+ * by a fixed 5 em that a short French date would overshoot.
+ */
+function EdgeTick({ x, y, payload, index }: XAxisTickContentProps) {
+	return (
+		<text
+			x={x}
+			y={y}
+			dy="0.71em"
+			textAnchor={index === 0 ? "start" : "end"}
+			data-slot="axis-date"
+			className="fill-muted-foreground"
+		>
+			{formatShortDate(String(payload.value))}
+		</text>
+	);
+}
+
+/**
+ * Sure's `_drawEmpty`: a lone point, such as an account opened today, has no
+ * line to draw, so a dashed vertical line and a dot mark it at the centre.
+ */
+function ChartEmpty({ height }: { height: ChartHeight }) {
+	return (
+		<svg data-slot="chart-empty" aria-hidden="true" className={`w-full ${CHART_HEIGHTS[height]}`}>
+			<line
+				data-slot="chart-empty-line"
+				x1="50%"
+				y1="0"
+				x2="50%"
+				y2="100%"
+				stroke="var(--border)"
+				strokeDasharray="4 4"
+			/>
+			<circle
+				data-slot="chart-empty-dot"
+				cx="50%"
+				cy="50%"
+				r={4}
+				className="fill-muted-foreground"
+			/>
+		</svg>
+	);
+}
+
 function Chart({
 	history,
 	valueLabel,
@@ -108,11 +148,15 @@ function Chart({
 	const config = {
 		balance: { label: valueLabel, color: "var(--accent-brand)" },
 	} satisfies ChartConfig;
+
+	if (history.points.length === 1) {
+		return <ChartEmpty height={height} />;
+	}
+
 	const byDate = new Map(history.points.map((point) => [point.date, point]));
-	const longRange = history.points.length > LONG_RANGE_POINTS;
 	const balances = history.points.map((point) => point.balance);
 	const domain = balanceDomain(balances, history.currency);
-	const ticks = axisTicks(domain, history.currency, balances);
+	const ticks = edgeDates(history.points);
 
 	return (
 		<ChartContainer config={config} className={`aspect-auto w-full ${CHART_HEIGHTS[height]}`}>
@@ -120,7 +164,7 @@ function Chart({
 			<AreaChart
 				accessibilityLayer
 				data={history.points}
-				margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+				margin={{ top: 8, right: 0, bottom: 0, left: 0 }}
 			>
 				<defs>
 					<linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -128,26 +172,17 @@ function Chart({
 						<stop offset="100%" stopColor="var(--color-balance)" stopOpacity={0} />
 					</linearGradient>
 				</defs>
-				<CartesianGrid vertical={false} stroke="var(--grid)" />
+				{/* Sure's `time_series_chart_controller` draws no grid and no vertical axis. */}
 				<XAxis
 					dataKey="date"
+					ticks={ticks}
+					interval={0}
 					tickLine={false}
 					axisLine={false}
 					tickMargin={8}
-					minTickGap={32}
-					tickFormatter={(value: string) => formatTick(value, longRange)}
+					tick={(props: XAxisTickContentProps) => <EdgeTick {...props} />}
 				/>
-				<YAxis
-					domain={[...domain]}
-					ticks={ticks}
-					tickLine={false}
-					axisLine={false}
-					tickMargin={4}
-					width={64}
-					tickFormatter={(value: number) =>
-						formatCompactMoney(toMinorUnits(value), history.currency)
-					}
-				/>
+				<YAxis domain={[...domain]} hide />
 				<ChartTooltip
 					cursor={{ stroke: "var(--border)" }}
 					isAnimationActive={false}
@@ -166,8 +201,6 @@ function Chart({
 					stroke="var(--color-balance)"
 					strokeWidth={1.5}
 					fill={`url(#${CSS.escape(gradientId)})`}
-					// A lone point, such as an account opened today, draws no line.
-					dot={history.points.length === 1}
 					activeDot={{ r: 4 }}
 					isAnimationActive={false}
 				/>

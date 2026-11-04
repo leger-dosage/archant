@@ -352,7 +352,7 @@ development_status:
 
   epic-34: in-progress
   34-1-group-the-balance-sheet-by-account-type: done
-  34-2-draw-charts-axes-as-sure: backlog
+  34-2-draw-charts-axes-as-sure: done
   34-3-pick-the-dashboard-period: backlog
   34-4-cash-flow-widgets: backlog
   34-5-investment-summary-on-the-dashboard: backlog
