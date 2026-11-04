@@ -94,7 +94,19 @@
 			"title": "Bilan",
 			"allAccounts": "Tous les comptes",
 			"legend": "Répartition par type de compte",
-			"accounts": "Comptes",
+			"name": "Nom",
+			"weight": "Poids",
+			"value": "Valeur",
+			"expandAll": "Tout développer",
+			"collapseAll": "Tout réduire",
+			"classifications": {
+				"asset": "Actifs",
+				"liability": "Passif"
+			},
+			"noAsset": "Aucun actif pour l'instant",
+			"noLiability": "Pas encore de passif",
+			"addAssetAccounts": "Ajoutez vos comptes d'actifs pour voir une répartition complète",
+			"addLiabilityAccounts": "Ajoutez vos comptes de passif pour voir une répartition complète",
 			"types": {
 				"depository": "Comptes bancaires",
 				"investment": "Investissement",

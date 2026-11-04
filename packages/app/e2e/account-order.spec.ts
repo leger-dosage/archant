@@ -13,12 +13,19 @@ const column = (page: Page) => page.getByRole("complementary", { name: "Liste de
 /** The rail, the app's main navigation. */
 const rail = (page: Page) => page.getByRole("navigation", { name: "Navigation principale" });
 
-/** « Bilan »'s assets on the dashboard. */
+/** « Bilan »'s checking accounts on the dashboard, once their type is open. */
 const bilanAssets = (page: Page) =>
 	page
 		.getByRole("region", { name: "Bilan" })
-		.getByRole("group", { name: "Actifs" })
-		.getByRole("list", { name: "Comptes" });
+		.getByRole("group", { name: "Actifs", exact: true })
+		.getByRole("list", { name: "Comptes bancaires" });
+
+/** Opens every type of « Bilan », whose rows start closed. */
+const expandBilan = (page: Page) =>
+	page
+		.getByRole("region", { name: "Bilan" })
+		.getByRole("button", { name: "Tout développer" })
+		.click();
 
 /** The given accounts' links inside `scope`, in the order they are listed. */
 const linksOf = (scope: ReturnType<Page["getByRole"]>, prefix: string) =>
@@ -41,6 +48,7 @@ test("« Préférences » sorts every account list by balance, highest first", a
 		await test.step("the accounts page, the column and « Bilan » list them by name first", async () => {
 			const byName = [new RegExp(alpha), new RegExp(bravo), new RegExp(charlie)];
 			await page.goto("/");
+			await expandBilan(page);
 			await expect(linksOf(bilanAssets(page), prefix)).toHaveText(byName);
 			await rail(page).getByRole("link", { name: "Comptes" }).click();
 			await expect(linksOf(page.getByRole("region", { name: "Actifs" }), prefix)).toHaveText(
@@ -87,6 +95,7 @@ test("« Préférences » sorts every account list by balance, highest first", a
 			await expect(linksOf(column(page), prefix)).toHaveText(byBalance);
 
 			await rail(page).getByRole("link", { name: "Accueil" }).click();
+			await expandBilan(page);
 			await expect(linksOf(bilanAssets(page), prefix)).toHaveText(byBalance);
 		});
 

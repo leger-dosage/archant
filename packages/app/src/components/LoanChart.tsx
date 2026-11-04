@@ -21,7 +21,7 @@ import {
 } from "recharts";
 
 import type { MinorUnits } from "@archant/data/money";
-import { isCurrencyCode, minorUnitsOf, toMinorUnits } from "@archant/data/money";
+import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { SummaryCard } from "@/components/SummaryCard";
@@ -38,8 +38,7 @@ import {
 import { axisTicks, loanDomain } from "@/lib/chart-axis";
 import { CHART_HEIGHTS, DEFAULT_CHART_HEIGHT } from "@/lib/chart-heights";
 import { longDate } from "@/lib/dates";
-import { formatMoney } from "@/lib/format-money";
-import { intlLocale } from "@/lib/locale";
+import { formatMoney, formatWholeMoney } from "@/lib/format-money";
 import { atMidnight, isoOf, nearestDate, payoffStops, splitDay } from "@/lib/payoff-cursor";
 import { cn } from "@/lib/utils";
 
@@ -119,20 +118,6 @@ function pointNear<P extends ChartPoint>(points: readonly P[], date: string): P 
 	);
 
 	return points.find((point) => point.date === nearest);
-}
-
-/** `104 725 €`: Sure's tooltip rounds to the whole unit, here half up and in integers. */
-function formatWholeMoney(amount: MinorUnits, currency: string): string {
-	const unit = 10n ** BigInt(isCurrencyCode(currency) ? minorUnitsOf(currency) : 2);
-	const whole = (BigInt(Math.abs(amount)) + unit / 2n) / unit;
-
-	return new Intl.NumberFormat(intlLocale, {
-		style: "currency",
-		currency,
-		maximumFractionDigits: 0,
-	})
-		.format(amount < 0 ? -whole : whole)
-		.replace("-", "−");
 }
 
 function PayoffTooltip({
