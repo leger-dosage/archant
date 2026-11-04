@@ -137,7 +137,7 @@ export const formatTooltipDate = (iso: string) => tooltipDate.format(atMidnight(
 /** `21 septembre 2026`, in the data table. */
 export const formatTableDate = (iso: string) => tableDate.format(atMidnight(iso));
 
-/** `12 sept. 2026`, where a sentence names a day. */
+/** `12 sept. 2026`, where a sentence or a balance chart's axis names a day. */
 export const formatShortDate = (iso: string) => shortDate.format(atMidnight(iso));
 
 /**

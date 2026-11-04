@@ -65,6 +65,29 @@ test("« Voir le tableau » shows the series as a table", async ({ page, api }) 
 	await expect(table).toBeHidden();
 });
 
+test("an account opened today shows Sure's empty chart, its day still in the table", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000,00", openingDate: daysAgo(0) });
+
+	await page.goto(`/accounts/${account.id}`);
+	const card = page.getByRole("region", { name: "Historique du solde" });
+
+	// Sure's `_drawEmpty`: one point draws no line, but a dashed line and a dot.
+	const empty = card.locator('[data-slot="chart-empty"]');
+	await expect(empty).toBeVisible();
+	await expect(empty.locator('[data-slot="chart-empty-line"]')).toHaveAttribute(
+		"stroke-dasharray",
+		"4 4",
+	);
+	await expect(empty.locator('[data-slot="chart-empty-dot"]')).toHaveCount(1);
+	await expect(card.locator(".recharts-wrapper")).toHaveCount(0);
+
+	await card.getByRole("button", { name: "Voir le tableau" }).click();
+	await expect(card.getByRole("row", { name: dayRow(daysAgo(0)) })).toContainText(euros(100_000));
+});
+
 test("an unknown period in the URL falls back to one month", async ({ page, api }) => {
 	const account = await api.openAccount();
 

@@ -154,3 +154,14 @@ export function axisTicks(
 	// `+ 0` turns `-0` into zero, which would print signed.
 	return Array.from({ length: last - first + 1 }, (_, index) => (first + index) * step + 0);
 }
+
+/**
+ * The dates a balance chart names: the series' first and last, as Sure's
+ * `_drawXAxisLabels` passes two `tickValues`, however long the series.
+ */
+export function edgeDates(points: readonly { date: string }[]): string[] {
+	const first = points.at(0);
+	const last = points.at(-1);
+
+	return first === undefined || last === undefined ? [] : [first.date, last.date];
+}

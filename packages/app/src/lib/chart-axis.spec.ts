@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { toMinorUnits } from "@archant/data/money";
 
 import { formatCompactMoney } from "./balance-change";
-import { axisTicks, balanceDomain, goalDomain, loanDomain } from "./chart-axis";
+import { axisTicks, balanceDomain, edgeDates, goalDomain, loanDomain } from "./chart-axis";
 
 /** Plain integers as the minor units the domains take. */
 const minor = (values: readonly number[]) => values.map(toMinorUnits);
@@ -188,5 +188,27 @@ describe("axisTicks", () => {
 		expect(ticks.at(0)).toBeLessThan(0);
 		expect(ticks).toContain(0);
 		expect(ticks.at(-1)).toBeGreaterThan(0);
+	});
+});
+
+/** One point a day from `start`, as the API's series. */
+const daily = (start: string, days: number) =>
+	Array.from({ length: days }, (_, index) => ({
+		date: new Date(Date.parse(`${start}T00:00:00Z`) + index * 86_400_000)
+			.toISOString()
+			.slice(0, 10),
+	}));
+
+describe("edgeDates", () => {
+	it("names the first and last day of a month, as Sure's two `tickValues`", () => {
+		expect(edgeDates(daily("2026-10-04", 31))).toEqual(["2026-10-04", "2026-11-03"]);
+	});
+
+	it("names only the two ends of ten years", () => {
+		expect(edgeDates(daily("2016-11-04", 3_652))).toEqual(["2016-11-04", "2026-11-03"]);
+	});
+
+	it("names both days of a two-day series", () => {
+		expect(edgeDates(daily("2026-11-03", 2))).toEqual(["2026-11-03", "2026-11-04"]);
 	});
 });
