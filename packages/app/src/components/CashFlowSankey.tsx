@@ -147,6 +147,11 @@ export function CashFlowSankey({
 	// Filled while recharts draws the nodes, read once it has: label hiding
 	// needs every node's place in its column.
 	const laidOut = useRef(new Map<number, LaidOutNode>());
+	// Chromium hit-tests SVG text on its glyphs alone, so a click between a
+	// label's name and its amount reached the link under it: a transparent
+	// box the size of each label, measured once drawn, takes the click.
+	const labelElements = useRef(new Map<number, SVGTextElement>());
+	const [labelBoxes, setLabelBoxes] = useState<ReadonlyMap<number, DOMRect>>(new Map());
 
 	const graph = zoomRoot === null ? data.sankey : zoomSankey(data.sankey, zoomRoot);
 	const nameOf = (node: FlowNode) =>
@@ -167,6 +172,18 @@ export function CashFlowSankey({
 
 		setHidden((current) =>
 			current.size === next.size && [...next].every((index) => current.has(index)) ? current : next,
+		);
+
+		const boxes = new Map(
+			[...labelElements.current].map(([index, text]) => [index, text.getBBox()]),
+		);
+		const sameBox = (a: DOMRect | undefined, b: DOMRect) =>
+			a !== undefined && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+		setLabelBoxes((current) =>
+			current.size === boxes.size &&
+			[...boxes].every(([index, box]) => sameBox(current.get(index), box))
+				? current
+				: boxes,
 		);
 	});
 
@@ -273,6 +290,7 @@ export function CashFlowSankey({
 		const labelShown = connected === null ? !hidden.has(index) : connected.nodes.has(index);
 		const zooms = sankeyNodeHasChildren(graph, node.id);
 		const labelOpens = isCategoryNode(node) || zooms;
+		const labelBox = labelBoxes.get(index);
 
 		return (
 			<g
@@ -289,7 +307,26 @@ export function CashFlowSankey({
 					onMouseLeave={leave}
 					onClick={() => zoomInto(node)}
 				/>
+				{labelShown && labelBox !== undefined && (
+					<rect
+						x={labelBox.x}
+						y={labelBox.y}
+						width={labelBox.width}
+						height={labelBox.height}
+						fill="transparent"
+						style={{ cursor: labelOpens ? "pointer" : "default" }}
+						onMouseEnter={(event) => showNode(event, index)}
+						onMouseMove={(event) => showNode(event, index)}
+						onMouseLeave={leave}
+						onClick={() => openTransactions(node)}
+					/>
+				)}
 				<text
+					ref={(element) => {
+						if (element !== null) {
+							labelElements.current.set(index, element);
+						}
+					}}
 					x={onLeft ? props.x + props.width + 6 : props.x - 6}
 					y={props.y + props.height / 2}
 					dy="-0.2em"
@@ -376,6 +413,7 @@ export function CashFlowSankey({
 	};
 
 	laidOut.current = new Map();
+	labelElements.current = new Map();
 
 	return (
 		<div className="flex h-full flex-col gap-2">

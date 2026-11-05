@@ -116,6 +116,7 @@ context: []
 | 26 | Repeated error and placeholder blocks, helpers in `dashboard-months.ts`, `CENTRE_ID` copied | low | reject | Each block matches the existing sections' pattern; the id is Sure's fixed key, tested on both sides. |
 | 27 | Donut has no skeleton while loading | low | reject | Sure hides the widget until it has categories; the Sankey above holds the space. |
 | 28 | Visual QA: « Dépenses » drew no money axis nor grid and clipped day 1 | medium | patch | Sure's `spending-chart` draws four dashed lines, a compact money axis on the right and anchors day 1 at its start; fixed and checked in the browser. |
+| 29 | CI: a click between a Sankey label's name and amount reached the link under it | medium | patch | Chromium hit-tests SVG text on glyphs only; a transparent box measured with `getBBox` now takes the click, and the e2e test checks every point of the label's box. |
 
 ## Verification
 

@@ -1265,6 +1265,23 @@ test("a click on a Sankey node zooms onto its sub-category, « Retour à la tré
 	await expect(label("Excédent")).toHaveCount(1);
 	await expect(label("Sans catégorie")).toHaveCount(1);
 
+	// Chromium hit-tests SVG text on its glyphs alone: every point of a label's
+	// box, the gap between its name and its amount included, must reach the
+	// label rather than the link drawn under it.
+	const misses = await label(child.name).evaluate((text) => {
+		const box = text.getBoundingClientRect();
+		const group = text.closest("g[data-node]");
+
+		return [0.1, 0.5, 0.9].flatMap((fx) =>
+			[0.2, 0.5, 0.8].flatMap((fy) => {
+				const hit = document.elementFromPoint(box.x + box.width * fx, box.y + box.height * fy);
+
+				return hit?.closest("g[data-node]") === group ? [] : [`${fx},${fy}`];
+			}),
+		);
+	});
+	expect(misses).toEqual([]);
+
 	await label(child.name).click();
 
 	await expect(page).toHaveURL(/\/transactions\?/u);
