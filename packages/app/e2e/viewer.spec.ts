@@ -268,6 +268,16 @@ reader.describe("a viewer", () => {
 		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
 		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
 
+		// An empty period: the Sankey says so, and offers a viewer nothing to add.
+		await page.goto("/?startDate=2000-01-01&endDate=2000-01-31");
+		const flows = page.getByRole("region", { name: "Flux de trésorerie" });
+		await expect(
+			flows.getByRole("heading", {
+				name: "Aucune donnée de flux de trésorerie pour cette période",
+			}),
+		).toBeVisible();
+		await expect(flows.getByRole("button", { name: "Ajouter une transaction" })).toHaveCount(0);
+
 		await page.goto("/accounts");
 		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
 		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);

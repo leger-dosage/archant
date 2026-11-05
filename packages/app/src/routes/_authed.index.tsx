@@ -9,17 +9,21 @@ import type { SurePeriod } from "@archant/data/periods";
 import { SURE_PERIODS } from "@archant/data/periods";
 
 import { BalanceSheetSection } from "@/components/BalanceSheetSection";
-import { CashFlowSection } from "@/components/CashFlowSection";
+import { CashFlowSankeySection } from "@/components/CashFlowSankeySection";
 import { DashboardEmpty } from "@/components/DashboardEmpty";
 import { GoalsSection } from "@/components/GoalsSection";
 import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
+import { MoneyFlowSection } from "@/components/MoneyFlowSection";
 import { NetWorthSection } from "@/components/NetWorthSection";
+import { OutflowsDonut } from "@/components/OutflowsDonut";
 import { Page } from "@/components/Page";
 import { PeriodPicker } from "@/components/PeriodPicker";
+import { SpendingTrendSection } from "@/components/SpendingTrendSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useChartPeriod } from "@/hooks/useChartPeriod";
+import { useDashboardCashFlow } from "@/hooks/useDashboardCashFlow";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoMonth } from "@/lib/dates";
@@ -31,8 +35,17 @@ const searchSchema = z.object({
 	period: z.enum(SURE_PERIODS).optional().catch(undefined),
 	startDate: z.string().optional().catch(undefined),
 	endDate: z.string().optional().catch(undefined),
-	// Absent means this month, in the browser's own time zone.
-	month: monthSchema.optional().catch(undefined),
+	// The months of « Entrées / sorties d'argent » and « Dépenses », Sure's
+	// `money_flow_month` and `spending_month`: absent is this month, and the
+	// server reads a later one as this month too.
+	moneyFlowMonth: monthSchema.optional().catch(undefined),
+	// Absent is every account the widget counts; the server drops an unknown id.
+	moneyFlowAccountIds: z
+		.union([z.string().transform((id) => [id]), z.array(z.string())])
+		.pipe(z.array(z.string()).min(1))
+		.optional()
+		.catch(undefined),
+	spendingMonth: monthSchema.optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_authed/")({
@@ -43,9 +56,10 @@ export const Route = createFileRoute("/_authed/")({
 function DashboardPage() {
 	const { t } = useTranslation();
 	const accounts = useAccounts();
-	const currentMonth = toIsoMonth();
-	const { period, startDate, endDate, month = currentMonth } = Route.useSearch();
+	const { period, startDate, endDate, moneyFlowMonth, moneyFlowAccountIds, spendingMonth } =
+		Route.useSearch();
 	const chartPeriod = useChartPeriod({ period, startDate, endDate });
+	const cashFlow = useDashboardCashFlow(chartPeriod.chart, chartPeriod.ready);
 	const navigate = Route.useNavigate();
 	const admin = useIsAdmin();
 	const [creatingAccount, setCreatingAccount] = useState(false);
@@ -76,12 +90,17 @@ function DashboardPage() {
 			replace: true,
 		});
 
-	const changeMonth = (next: string) =>
+	// Each pick keeps the other params, where Sure's links rebuild the address
+	// and lose the period; this month is the default, so it leaves the address.
+	const pickMonth = (key: "moneyFlowMonth" | "spendingMonth") => (next: string) =>
 		void navigate({
-			search: (previous) => ({
-				...previous,
-				month: next === currentMonth ? undefined : next,
-			}),
+			search: (previous) => ({ ...previous, [key]: next === toIsoMonth() ? undefined : next }),
+			replace: true,
+		});
+
+	const pickAccounts = (next: string[] | undefined) =>
+		void navigate({
+			search: (previous) => ({ ...previous, moneyFlowAccountIds: next }),
 			replace: true,
 		});
 
@@ -123,28 +142,39 @@ function DashboardPage() {
 				<>
 					{hasAccounts ? (
 						<div className="flex flex-col gap-4">
-							{/* Sure's dashboard: one picker above the widgets for the period charts; the month's flow keeps its own arrows, Sure's `money_flow` month. */}
+							{/* Sure's dashboard: one picker above the widgets for the period charts; « Entrées / sorties d'argent » and « Dépenses » keep their own month. */}
 							<div className="flex items-center justify-end">
 								<PeriodPicker selected={chartPeriod.chart} onPick={pickPeriod} />
 							</div>
 							{/* One column, as Sure's: beside the rail and the accounts column, a
-							    1440 px screen leaves about 950 px, too narrow for two cards. */}
+							    1440 px screen leaves about 950 px, too narrow for two cards. From
+							    1536 px, two, in Sure's default order, the Sankey across both. */}
 							<div className="grid grid-cols-1 gap-6 2xl:grid-cols-2 2xl:items-start">
+								<CashFlowSankeySection
+									cashFlow={cashFlow}
+									accounts={accounts.data}
+									className="2xl:col-span-2"
+								/>
+								{cashFlow.data !== undefined && (
+									<OutflowsDonut data={cashFlow.data} placeholder={cashFlow.isPlaceholderData} />
+								)}
 								<NetWorthSection
 									period={chartPeriod.chart}
 									ready={chartPeriod.ready}
 									onRangeSelect={selectRange}
 								/>
-								{/* From 1536 px the month's flow spans two rows, so the balance sheet
-								    climbs under the net worth, as Sure's masonry does, rather than
-								    waiting below the taller of the first two cards. */}
-								<CashFlowSection
-									month={month}
-									current={currentMonth}
-									onMonthChange={changeMonth}
-									className="2xl:row-span-2"
-								/>
 								<BalanceSheetSection list={accounts.data} />
+								<MoneyFlowSection
+									month={moneyFlowMonth}
+									accountIds={moneyFlowAccountIds}
+									accounts={accounts.data}
+									onMonthChange={pickMonth("moneyFlowMonth")}
+									onAccountsChange={pickAccounts}
+								/>
+								<SpendingTrendSection
+									month={spendingMonth}
+									onMonthChange={pickMonth("spendingMonth")}
+								/>
 								<GoalsSection />
 							</div>
 						</div>

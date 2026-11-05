@@ -65,30 +65,50 @@
 		"greetingWithName": "Bonjour {{name}}",
 		"intro": "Voici où en sont les finances du foyer.",
 		"introEmpty": "Archant est prêt. Il ne manque que vos comptes.",
-		"cashFlow": {
-			"title": "Flux {{ofMonth}}",
-			"previous": "Mois précédent",
-			"next": "Mois suivant",
-			"income": "Revenus",
-			"expenses": "Dépenses",
-			"savings": "Épargne du mois",
-			"side": "Répartition affichée",
-			"breakdown": {
-				"income": "Revenus par catégorie",
-				"expense": "Dépenses par catégorie"
-			},
-			"donut": {
-				"income_one": "Répartition des revenus {{ofMonth}} : {{total}} sur {{count}} catégorie.",
-				"income_other": "Répartition des revenus {{ofMonth}} : {{total}} sur {{count}} catégories.",
-				"expense_one": "Répartition des dépenses {{ofMonth}} : {{total}} sur {{count}} catégorie.",
-				"expense_other": "Répartition des dépenses {{ofMonth}} : {{total}} sur {{count}} catégories."
-			},
-			"uncategorised": "Sans catégorie",
-			"emptySide": {
-				"income": "Aucun revenu ce mois-ci.",
-				"expense": "Aucune dépense ce mois-ci."
-			},
-			"empty": "Aucune opération ce mois-ci."
+		"monthPicker": "Sélectionner un mois : {{month}}",
+		"uncategorised": "Sans catégorie",
+		"cashflowSankey": {
+			"title": "Flux de trésorerie",
+			"cashFlow": "Flux de trésorerie",
+			"surplus": "Excédent",
+			"flow": "{{source}} → {{target}}",
+			"summary": "Flux de trésorerie de la période : {{income}} d'entrées, {{expenses}} de sorties.",
+			"zoomOut": "Retour à la trésorerie totale",
+			"expand": "Développer",
+			"noDataTitle": "Aucune donnée de flux de trésorerie pour cette période",
+			"noDataDescription": "Ajoutez des transactions pour afficher les données de flux de trésorerie ou étendez la période",
+			"addTransaction": "Ajouter une transaction"
+		},
+		"outflowsDonut": {
+			"title": "Sorties",
+			"totalOutflows": "Total des sorties",
+			"categories": "Catégories",
+			"value": "Valeur",
+			"weight": "Poids",
+			"chart_one": "Sorties de la période : {{total}} sur {{count}} catégorie.",
+			"chart_other": "Sorties de la période : {{total}} sur {{count}} catégories."
+		},
+		"moneyFlow": {
+			"title": "Entrées / sorties d'argent",
+			"dateRange": "Du {{startDate}} au {{endDate}}",
+			"periodScopeHint": "Affiche les mois que vous sélectionnez ici — indépendant de la période du tableau de bord en haut.",
+			"filterAccounts": "Filtrer les comptes ({{count}})",
+			"filterAccountsAll": "Tous les comptes",
+			"searchAccounts": "Rechercher un compte",
+			"apply": "Appliquer",
+			"balance": "Balance des opérations",
+			"chartSpan": "{{months}} derniers mois",
+			"income": "Entrées",
+			"expenses": "Sorties"
+		},
+		"spendingTrend": {
+			"title": "Dépenses",
+			"dateRange": "du {{startDate}} au {{endDate}}",
+			"dateRangeShort": "{{startDay}}–{{endDay}} {{month}} {{year}}",
+			"dateRangeShortSingle": "{{day}} {{month}} {{year}}",
+			"periodScopeHint": "Affiche le mois choisi ici, indépendamment de la période sélectionnée en haut du tableau de bord.",
+			"noData": "Aucune dépense pour ce mois-ci",
+			"previousComparisonDays": "(1-{{endDay}})"
 		},
 		"balanceSheet": {
 			"title": "Bilan",

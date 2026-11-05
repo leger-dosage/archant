@@ -129,15 +129,19 @@ describe("queryKeys.accounts.netWorth", () => {
 	});
 });
 
-describe("queryKeys.transactions.cashFlow", () => {
-	it("goes stale on every transaction write, which invalidates `transactions.all`", async () => {
+describe("the dashboard's cash flow widgets", () => {
+	it("go stale on every transaction write, which invalidates `transactions.all`", async () => {
 		const client = new QueryClient();
-		const key = queryKeys.transactions.cashFlow("2026-09");
-		client.setQueryData(key, { lines: { income: [], expense: [] } });
+		const keys = [
+			queryKeys.transactions.cashFlow({ period: "last_30_days" }),
+			queryKeys.transactions.moneyFlow("2026-09", ["a"]),
+			queryKeys.transactions.spendingTrend(undefined),
+		];
+		keys.forEach((key) => client.setQueryData(key, {}));
 
 		await client.invalidateQueries({ queryKey: queryKeys.transactions.all });
 
-		expect(client.getQueryState(key)?.isInvalidated).toBe(true);
+		expect(keys.map((key) => client.getQueryState(key)?.isInvalidated)).toEqual([true, true, true]);
 	});
 });
 

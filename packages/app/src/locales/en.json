@@ -65,30 +65,50 @@
 		"greetingWithName": "Hello {{name}}",
 		"intro": "Here is where the household's finances stand.",
 		"introEmpty": "Archant is ready. Only your accounts are missing.",
-		"cashFlow": {
-			"title": "Cash flow for {{ofMonth}}",
-			"previous": "Previous month",
-			"next": "Next month",
+		"monthPicker": "Select month: {{month}}",
+		"uncategorised": "Uncategorized",
+		"cashflowSankey": {
+			"title": "Cashflow",
+			"cashFlow": "Cash Flow",
+			"surplus": "Surplus",
+			"flow": "{{source}} → {{target}}",
+			"summary": "Cash flow for the period: {{income}} in, {{expenses}} out.",
+			"zoomOut": "Back to full cashflow",
+			"expand": "Expand",
+			"noDataTitle": "No cash flow data for this time period",
+			"noDataDescription": "Add transactions to display cash flow data or expand the time period",
+			"addTransaction": "Add transaction"
+		},
+		"outflowsDonut": {
+			"title": "Outflows",
+			"totalOutflows": "Total Outflows",
+			"categories": "Categories",
+			"value": "Value",
+			"weight": "Weight",
+			"chart_one": "Outflows for the period: {{total}} across {{count}} category.",
+			"chart_other": "Outflows for the period: {{total}} across {{count}} categories."
+		},
+		"moneyFlow": {
+			"title": "Money In / Out",
+			"dateRange": "{{startDate}} to {{endDate}}",
+			"periodScopeHint": "Shows the months you pick here — independent of the dashboard's time period at the top.",
+			"filterAccounts": "Filter accounts ({{count}})",
+			"filterAccountsAll": "All accounts",
+			"searchAccounts": "Search accounts",
+			"apply": "Apply",
+			"balance": "Transaction balance",
+			"chartSpan": "Last {{months}} months",
 			"income": "Income",
-			"expenses": "Expenses",
-			"savings": "Savings for the month",
-			"side": "Breakdown shown",
-			"breakdown": {
-				"income": "Income by category",
-				"expense": "Expenses by category"
-			},
-			"donut": {
-				"income_one": "Income breakdown for {{ofMonth}}: {{total}} across {{count}} category.",
-				"income_other": "Income breakdown for {{ofMonth}}: {{total}} across {{count}} categories.",
-				"expense_one": "Expense breakdown for {{ofMonth}}: {{total}} across {{count}} category.",
-				"expense_other": "Expense breakdown for {{ofMonth}}: {{total}} across {{count}} categories."
-			},
-			"uncategorised": "Uncategorized",
-			"emptySide": {
-				"income": "No income this month.",
-				"expense": "No expenses this month."
-			},
-			"empty": "No transactions this month."
+			"expenses": "Expenses"
+		},
+		"spendingTrend": {
+			"title": "Spending",
+			"dateRange": "{{startDate}} to {{endDate}}",
+			"dateRangeShort": "{{month}} {{startDay}} - {{endDay}}, {{year}}",
+			"dateRangeShortSingle": "{{month}} {{day}}, {{year}}",
+			"periodScopeHint": "Shows the month you pick here — independent of the dashboard's time period at the top.",
+			"noData": "No spending data for this month",
+			"previousComparisonDays": "(1-{{endDay}})"
 		},
 		"balanceSheet": {
 			"title": "Balance sheet",

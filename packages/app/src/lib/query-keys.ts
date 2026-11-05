@@ -260,12 +260,18 @@ export const queryKeys = {
 		 */
 		attachments: (transactionId: string) => ["transactions", "attachments", transactionId] as const,
 		/**
-		 * The dashboard's income and expenses of a month. Under `all`: every
-		 * transaction, category-assignment, transfer and account-flag write
-		 * already invalidates it, and so does a category's own edit, which
-		 * renames or recolours a line.
+		 * The dashboard's net cash flow over its period, the Sankey's and the
+		 * donut's. Under `all`: every transaction, category-assignment,
+		 * transfer and account-flag write already invalidates it, and so does
+		 * a category's own edit, which renames or recolours a line.
 		 */
-		cashFlow: (month: string) => ["transactions", "cash-flow", month] as const,
+		cashFlow: (period: ChartPeriod) => ["transactions", "cash-flow", period] as const,
+		/** « Entrées / sorties d'argent » of a month and its accounts, under `all` as `cashFlow`. */
+		moneyFlow: (month: string | undefined, accountIds: readonly string[] | undefined) =>
+			["transactions", "money-flow", month ?? null, accountIds ?? null] as const,
+		/** « Dépenses » of a month, under `all` as `cashFlow`. */
+		spendingTrend: (month: string | undefined) =>
+			["transactions", "spending-trend", month ?? null] as const,
 		/**
 		 * A month's budget with its actuals and suggestions. Under `all`, as
 		 * `cashFlow`: every write that moves the month's cash flow refreshes it.

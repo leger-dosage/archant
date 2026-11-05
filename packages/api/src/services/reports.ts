@@ -2,6 +2,7 @@ import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
 import type { ChartQuery, SureInterval } from "../domain/balances/sure-periods.ts";
 import type { MonthRows } from "../domain/budgets/categories.ts";
+import type { CashFlowSankey } from "../domain/cash-flow-sankey.ts";
 import type {
 	CashFlowBreakdown,
 	CashFlowCategory,
@@ -31,7 +32,8 @@ import {
 	seriesPointCount,
 	surePeriodRange,
 } from "../domain/balances/sure-periods.ts";
-import { grossCashFlow, netCashFlow } from "../domain/cash-flow.ts";
+import { cashFlowSankey } from "../domain/cash-flow-sankey.ts";
+import { grossCashFlow, netCashFlow, sideOf } from "../domain/cash-flow.ts";
 import {
 	addDays,
 	addMonths,
@@ -291,23 +293,284 @@ type CashFlowWithRows = {
 	categories: CashFlowCategory[];
 };
 
+type DashboardCashFlow = Omit<CashFlow, "month"> & {
+	/** Sure's key, `null` for a custom range. */
+	period: SurePeriod | null;
+	sankey: CashFlowSankey;
+};
+
 /**
- * A calendar month's net view (AD-9), Sure's `net_category_totals` as its
- * dashboard shows them: each top-level category on the side of its net, over
- * the accounts net worth counts but the tax-advantaged ones. The whole month
- * counts, future-dated rows included, so a line's drill-down covers the same
- * dates. That list filters on category and dates only, so it can also show
- * excluded rows, rows of accounts excluded from reports and of tax-advantaged
- * accounts, which this report leaves out, and transfer sides that kept a
- * category; a deactivated account's rows are hidden from both.
+ * The net view (AD-9) over the dashboard's period, Sure's
+ * `net_category_totals` as its `cashflow_sankey` and `outflows_donut` read
+ * it: each top-level category on the side of its net, over the accounts net
+ * worth counts but the tax-advantaged ones, and the Sankey graph built from
+ * it. `all_time` starts at the oldest entry, as Sure's. A line's drill-down
+ * filters on category and dates only, so it can also show excluded rows,
+ * rows of accounts excluded from reports and of tax-advantaged accounts,
+ * which this report leaves out, and transfer sides that kept a category; a
+ * deactivated account's rows are hidden from both.
  */
-export async function getCashFlow(deps: ServiceDeps, month: IsoMonth): Promise<CashFlow> {
-	return (await getCashFlowWithRows(deps, month)).cashFlow;
+export async function getDashboardCashFlow(
+	deps: ServiceDeps,
+	query: ChartQuery,
+): Promise<DashboardCashFlow> {
+	const asOf = today(deps.timeZone);
+	const { period, range } = resolveChartRange(query, asOf, await oldestEntryDate(deps));
+	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
+	const [rows, allCategories] = await Promise.all([
+		cashFlowByCategory(deps, { ...range, accountIds: counted.map((row) => row.id) }),
+		breakdownCategories(deps),
+	]);
+	const { subcategories, ...gross } = grossCashFlow(rows, allCategories);
+	const net = netCashFlow(gross);
+
+	return {
+		period,
+		from: range.from,
+		to: range.to,
+		currency,
+		...net,
+		leftOut,
+		sankey: cashFlowSankey(net, subcategories, allCategories),
+	};
+}
+
+/** Sure's `MONEY_FLOW_CHART_MONTHS`: the bars end at the month picked. */
+const MONEY_FLOW_CHART_MONTHS = 6;
+
+/**
+ * Sure's `money_flow_month_param` and `spending_trend_month_param`: a month
+ * after this one, or none, is this month. No lower bound.
+ */
+function pickedMonth(month: IsoMonth | undefined, asOf: IsoDate): IsoMonth {
+	const current = asOf.slice(0, 7);
+
+	return month === undefined || month > current ? current : month;
+}
+
+/** A month's days, the last one cut to `asOf` while the month runs. */
+function monthToDate(month: IsoMonth, asOf: IsoDate): DateRange {
+	const { from, to } = monthRange(month);
+
+	return { from, to: minDate(to, asOf) };
+}
+
+/** One bar of Sure's `money_flow`: a month's gross income and expenses. */
+type MoneyFlowBar = PeriodTotals & {
+	month: IsoMonth;
+	/** The month picked. */
+	highlighted: boolean;
+	/** The month runs on past today. */
+	partial: boolean;
+};
+
+type MoneyFlow = PeriodTotals & {
+	month: IsoMonth;
+	currency: string;
+	/** Sure's « Balance des opérations »: gross income less gross expenses. */
+	balance: MinorUnits;
+	/** The accounts picked, among `accounts`; `null` for all of them. */
+	accountIds: string[] | null;
+	/** Sure's `eligible_accounts`, by name, for the filter. */
+	accounts: { id: string; name: string }[];
+	/** Six months, oldest first, the month picked last. */
+	bars: MoneyFlowBar[];
+};
+
+/** Gross income and expenses of the rows dated within `range`. */
+function grossTotalsIn(
+	rows: readonly (CashFlowRow & { date: IsoDate })[],
+	range: DateRange,
+): PeriodTotals {
+	let income = 0;
+	let expenses = 0;
+
+	for (const row of rows) {
+		if (row.date >= range.from && row.date <= range.to) {
+			if (sideOf(row.amount) === "income") {
+				income += row.amount;
+			} else {
+				expenses += row.amount;
+			}
+		}
+	}
+
+	return { ...range, income: toMinorUnits(income), expenses: toMinorUnits(expenses) };
 }
 
 /**
- * `getCashFlow` with the rows it counted and the categories it read, so a
- * budget computes each category's spending from the same rows (AD-9).
+ * Sure's `build_money_flow_data`: the gross view (AD-9) of the month picked
+ * and the five before it, each cut to today, over `cashFlowAccounts`' accounts
+ * or those of them picked. An id that is not one of them is dropped, as
+ * Sure's `money_flow_account_ids_param`; none left is all of them.
+ */
+export async function getMoneyFlow(
+	deps: ServiceDeps,
+	query: { month?: IsoMonth | undefined; accountIds?: readonly string[] | undefined },
+): Promise<MoneyFlow> {
+	const asOf = today(deps.timeZone);
+	const month = pickedMonth(query.month, asOf);
+	const { currency, counted } = await cashFlowAccounts(deps);
+	const eligible = new Set(counted.map((row) => row.id));
+	const picked = [...new Set(query.accountIds ?? [])].filter((id) => eligible.has(id));
+	const accountIds = picked.length === 0 ? null : picked;
+	const months = Array.from({ length: MONEY_FLOW_CHART_MONTHS }, (_, index) =>
+		shiftMonth(month, index - MONEY_FLOW_CHART_MONTHS + 1),
+	);
+	const ranges = months.map((each) => monthToDate(each, asOf));
+	const rows = await cashFlowByDay(deps, {
+		from: ranges[0]?.from ?? monthRange(month).from,
+		to: monthToDate(month, asOf).to,
+		accountIds: accountIds ?? [...eligible],
+	});
+	const bars = months.map((each, index) => {
+		const range = ranges[index] ?? monthToDate(each, asOf);
+
+		return {
+			month: each,
+			...grossTotalsIn(rows, range),
+			highlighted: each === month,
+			partial: range.to < monthRange(each).to,
+		};
+	});
+	const selected = grossTotalsIn(rows, monthToDate(month, asOf));
+
+	return {
+		month,
+		...selected,
+		currency,
+		balance: toMinorUnits(selected.income + selected.expenses),
+		accountIds,
+		accounts: counted
+			.toSorted((a, b) => byName.compare(a.name, b.name))
+			.map((row) => ({ id: row.id, name: row.name })),
+		bars,
+	};
+}
+
+/** A day of Sure's cumulative spending curve. */
+type SpendingPoint = {
+	/** The axis slot, 1 for the month's first day. */
+	day: number;
+	/** The day the amount runs to: a folded last point keeps the true last day. */
+	date: IsoDate;
+	/** Spending from the month's first day to `date`, never positive (AD-5). */
+	amount: MinorUnits;
+};
+
+type SpendingTrend = {
+	month: IsoMonth;
+	/** The month picked, cut to today while it runs. */
+	from: IsoDate;
+	to: IsoDate;
+	previousMonth: IsoMonth;
+	currency: string;
+	/** The axis: the month picked's days, whatever the previous month's. */
+	days: number;
+	current: SpendingPoint[];
+	/** The previous month's whole curve, folded into `days` points. */
+	previous: SpendingPoint[];
+	currentTotal: MinorUnits;
+	/** The previous month over as many days as the month picked has run. */
+	previousTotal: MinorUnits;
+	/** The day `previousTotal` stops at, while it stops before the previous month's end. */
+	previousComparisonDay: number | null;
+};
+
+/** Sure's `cumulative_spending_series`: one point per day, a day without spending flat. */
+function cumulativeSpending(
+	range: DateRange,
+	daily: ReadonlyMap<IsoDate, MinorUnits>,
+): SpendingPoint[] {
+	const points: SpendingPoint[] = [];
+	let total = toMinorUnits(0);
+
+	for (let date = range.from; date <= range.to; date = addDays(date, 1)) {
+		total = toMinorUnits(total + (daily.get(date) ?? 0));
+		points.push({ day: points.length + 1, date, amount: total });
+	}
+
+	return points;
+}
+
+/**
+ * Sure's `fold_extra_days`: a longer previous month's extra days fold into
+ * the axis' last point, which keeps its slot and takes the true end's date
+ * and total, so the curve still ends at the month's total.
+ */
+function foldExtraDays(series: readonly SpendingPoint[], days: number): SpendingPoint[] {
+	const last = series.at(-1);
+
+	if (series.length <= days || last === undefined) {
+		return [...series];
+	}
+
+	return series
+		.slice(0, days)
+		.map((point, index) =>
+			index === days - 1 ? { ...point, date: last.date, amount: last.amount } : point,
+		);
+}
+
+/**
+ * Sure's `build_spending_trend_data`: the month picked's cumulative daily
+ * spending, cut to today while it runs, against the previous month's whole
+ * curve, over `cashFlowAccounts`' accounts. Only the expense side counts, as
+ * Sure's `DailyExpenseTotals`, so a refund never lowers spending. The
+ * previous total compares as many days as the month picked has run when it
+ * is this month, the whole previous month otherwise.
+ */
+export async function getSpendingTrend(
+	deps: ServiceDeps,
+	monthAsked: IsoMonth | undefined,
+): Promise<SpendingTrend> {
+	const asOf = today(deps.timeZone);
+	const month = pickedMonth(monthAsked, asOf);
+	const previousMonth = shiftMonth(month, -1);
+	const currentRange = monthToDate(month, asOf);
+	const previousRange = monthRange(previousMonth);
+	const { currency, counted } = await cashFlowAccounts(deps);
+	const rows = await cashFlowByDay(deps, {
+		from: previousRange.from,
+		to: currentRange.to,
+		accountIds: counted.map((row) => row.id),
+	});
+	const daily = new Map<IsoDate, MinorUnits>();
+
+	for (const row of rows) {
+		if (sideOf(row.amount) === "expense") {
+			daily.set(row.date, toMinorUnits((daily.get(row.date) ?? 0) + row.amount));
+		}
+	}
+
+	const days = daysBetween(monthRange(month).from, monthRange(month).to) + 1;
+	const current = cumulativeSpending(currentRange, daily);
+	const previousWhole = cumulativeSpending(previousRange, daily);
+	const comparisonDays =
+		month === asOf.slice(0, 7)
+			? Math.min(current.length, previousWhole.length)
+			: previousWhole.length;
+
+	return {
+		month,
+		from: currentRange.from,
+		to: currentRange.to,
+		previousMonth,
+		currency,
+		days,
+		current,
+		previous: foldExtraDays(previousWhole, days),
+		currentTotal: current.at(-1)?.amount ?? toMinorUnits(0),
+		previousTotal: previousWhole[comparisonDays - 1]?.amount ?? toMinorUnits(0),
+		previousComparisonDay:
+			comparisonDays > 0 && comparisonDays < previousWhole.length ? comparisonDays : null,
+	};
+}
+
+/**
+ * A calendar month's net view (AD-9), with the rows it counted and the
+ * categories it read, so a budget computes each category's spending from the
+ * same rows. The whole month counts, future-dated rows included.
  */
 export async function getCashFlowWithRows(
 	deps: ServiceDeps,
@@ -365,7 +628,7 @@ export function historyBefore(rows: readonly MonthlyCashFlowRow[], before: IsoMo
 }
 
 /**
- * The counted rows of every month before `before`, over `getCashFlow`'s
+ * The counted rows of every month before `before`, over `cashFlowAccounts`'
  * accounts, read in one query: what the budget's rollover chain takes.
  */
 export async function getCashFlowHistory(
@@ -382,7 +645,7 @@ export async function getCashFlowHistory(
 }
 
 /**
- * Every counted row of the history over `getCashFlow`'s accounts, keyed by
+ * Every counted row of the history over `cashFlowAccounts`' accounts, keyed by
  * month, no bound on either side: one read from which a budget takes both its
  * rollover history, through `historyBefore`, and its statistics.
  */
@@ -408,7 +671,7 @@ export function statisticsOf(rows: readonly MonthlyCashFlowRow[]): CashFlowStati
 }
 
 /**
- * The statistics over the accounts `getCashFlow` counts, as Sure's
+ * The statistics over `cashFlowAccounts`' accounts, as Sure's
  * `IncomeStatement#median_expense`, `avg_expense` and `median_income`: what
  * the goals' reserve reads.
  */
@@ -495,7 +758,7 @@ function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
 /**
  * Sure's `get_income_statement` over any period, from the dashboard's
  * counted rows (AD-9) in the gross view, Sure's `IncomeStatement::Totals`:
- * `getCashFlow`'s accounts and categories, over days rather than a month. An
+ * `cashFlowAccounts`' accounts and categories, over days rather than a month. An
  * account outside those, inactive, excluded from reports, tax-advantaged, in
  * another currency or unknown, is refused, as Sure refuses one its totals
  * would silently report as zero.

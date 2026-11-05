@@ -12,6 +12,7 @@ import { z } from "zod";
 import type { SurePeriod } from "@archant/data/periods";
 import { TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
 
+import { monthRange } from "../domain/dates.ts";
 import { validateEnv } from "../env.ts";
 import { createLogger } from "../lib/logger.ts";
 import { bankDepsFromEnv } from "../services/bank-connections.ts";
@@ -545,11 +546,15 @@ export const ownCard = {
 	openingBalance: "300,00",
 } as const;
 
-/** The I/O matrix of Story 6.2, each test in its own database. */
+/**
+ * The I/O matrix of Story 6.2, each test in its own database: the dashboard's
+ * cash flow over `month` as a custom range.
+ */
 export async function cashFlowOf(month: string) {
 	own ??= await freshDatabase();
+	const { from, to } = monthRange(month);
 	const response = await testClient(buildApp(own.db)).api.reports["cash-flow"].$get({
-		query: { month },
+		query: { startDate: from, endDate: to },
 	});
 
 	expect(response.status).toBe(200);
