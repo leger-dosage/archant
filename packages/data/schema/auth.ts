@@ -1,4 +1,5 @@
 import type { AccountOrder } from "../account-orders.ts";
+import type { StoredDashboardLayout } from "../dashboard-sections.ts";
 import type { Locale } from "../locales.ts";
 import type { SurePeriod } from "../periods.ts";
 import type { UserRole } from "../user-roles.ts";
@@ -82,6 +83,11 @@ export const users = sqliteTable(
 			.notNull()
 			.default(false),
 		rulePromptDismissedAt: integer("rule_prompt_dismissed_at", { mode: "timestamp_ms" }),
+		// Sure's dashboard keys of `users.preferences`: this user's widget order,
+		// collapsed and hidden widgets and sizes. Null is Sure's default layout;
+		// a key the code no longer knows is dropped on read, so a widget removed
+		// later needs no data migration.
+		dashboardLayout: text("dashboard_layout", { mode: "json" }).$type<StoredDashboardLayout>(),
 	},
 	(table) => [
 		check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`),

@@ -199,6 +199,11 @@ export const queryKeys = {
 	preferences: {
 		all: ["preferences"] as const,
 	},
+	/**
+	 * The signed-in user's dashboard layout, one query: each save sets it
+	 * from its answer, and no other query depends on it.
+	 */
+	dashboardLayout: ["dashboard-layout"] as const,
 	/** The household's members, one query: a role change or a removal invalidates `all`. */
 	members: {
 		all: ["members"] as const,

@@ -170,6 +170,30 @@
 			"onPace": "Tout est dans les temps",
 			"list": "Objectifs en cours",
 			"all": "Tous les objectifs"
+		},
+		"sections": "Sections du tableau de bord",
+		"toggleSection": "Afficher/masquer la section",
+		"dragToReorder": "Glisser pour réorganiser la section",
+		"widgetInstructions": "Section {{title}}. Appuyez sur Entrée ou Espace pour la saisir, puis sur les flèches pour la déplacer.",
+		"customize": {
+			"start": "Personnaliser",
+			"done": "Terminé",
+			"hide": "Masquer {{title}}",
+			"hiddenTitle": "Widgets masqués",
+			"hiddenDescription": "Rajoutez un widget au tableau de bord.",
+			"noneHidden": "Tous les widgets sont affichés. Masquez-en un avec son bouton en forme d'œil.",
+			"allHiddenTitle": "Tous les widgets sont masqués",
+			"allHiddenDescription": "Personnalisez le tableau de bord pour en rajouter."
+		},
+		"widgetSize": {
+			"label": "Ajuster la taille",
+			"widthLabel": "Largeur",
+			"half": "Moitié",
+			"full": "Plein",
+			"heightLabel": "Hauteur",
+			"compact": "Compact",
+			"auto": "Auto",
+			"tall": "Grand"
 		}
 	},
 	"accounts": {

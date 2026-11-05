@@ -13,6 +13,8 @@
 		"./category-presets": "./category-presets.ts",
 		"./client": "./client.ts",
 		"./csv-mapping": "./csv-mapping.ts",
+		"./dashboard-layout": "./dashboard-layout.ts",
+		"./dashboard-sections": "./dashboard-sections.ts",
 		"./decimals": "./decimals.ts",
 		"./goals": "./goals.ts",
 		"./locales": "./locales.ts",

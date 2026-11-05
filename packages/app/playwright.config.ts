@@ -37,18 +37,29 @@ export default defineConfig({
 		{ name: "setup", testMatch: /auth\.setup\.ts$/u, use: DESKTOP },
 		{
 			name: "chromium",
-			// Everything but the reset, the password change, two-factor and the
-			// sign-in ceiling, which the projects below run once nothing needs
-			// a session or the shared data any more.
+			// Everything but the dashboard layout, the reset, the password
+			// change, two-factor and the sign-in ceiling, which the projects
+			// below run once nothing needs a session or the shared data any more.
 			testIgnore: [
 				/reset\.spec\.ts$/u,
 				/password\.spec\.ts$/u,
 				/two-factor\.spec\.ts$/u,
 				/assistants\.spec\.ts$/u,
 				/sign-in-ceiling\.spec\.ts$/u,
+				/dashboard-layout\.spec\.ts$/u,
 			],
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
+		},
+		// After every `chromium` test: the dashboard layout is the single
+		// administrator's, and a `chromium` test reading the dashboard while
+		// this one hides or moves a widget would find it elsewhere. Each test
+		// puts Sure's default back.
+		{
+			name: "layout",
+			testMatch: /dashboard-layout\.spec\.ts$/u,
+			use: { ...DESKTOP, storageState: ADMIN_STATE },
+			dependencies: ["chromium"],
 		},
 		// After every test that reads the shared data: a reset deletes every
 		// account and what goes with them, other tests' rows included. Before
@@ -57,7 +68,7 @@ export default defineConfig({
 			name: "reset",
 			testMatch: /reset\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
-			dependencies: ["chromium"],
+			dependencies: ["layout"],
 		},
 		// After `reset`, because changing the password revokes every session of the single
 		// user, the saved administrator session included: run in the middle, it

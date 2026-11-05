@@ -6,12 +6,14 @@ import { useTranslation } from "react-i18next";
 import { toMinorUnits } from "@archant/data/money";
 
 import { DashboardMonthPicker } from "@/components/DashboardMonthPicker";
+import { useDashboardWidget } from "@/components/DashboardWidget";
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSpendingTrend } from "@/hooks/useSpendingTrend";
 import { errorCodeOf } from "@/lib/api";
+import { CHART_HEIGHTS, DASHBOARD_FALLBACK_HEIGHT } from "@/lib/chart-heights";
 import { capitalised, spendingDelta } from "@/lib/dashboard-months";
 import { longDate, monthLabel } from "@/lib/dates";
 import { intlLocale } from "@/lib/locale";
@@ -77,6 +79,7 @@ function SpendingTrend({
 	onMonthChange: (month: string) => void;
 }) {
 	const { t } = useTranslation();
+	const height = CHART_HEIGHTS[useDashboardWidget()?.heightPx ?? DASHBOARD_FALLBACK_HEIGHT];
 	const delta = spendingDelta(data.currentTotal, data.previousTotal);
 	const hasData = [...data.current, ...data.previous].some((point) => point.amount < 0);
 	const current = capitalised(monthLabel(data.month));
@@ -173,11 +176,11 @@ function SpendingTrend({
 			</div>
 
 			{hasData ? (
-				<Suspense fallback={<div className="h-52" />}>
-					<SpendingTrendChart data={data} labels={{ current, previous }} />
+				<Suspense fallback={<div className={height} />}>
+					<SpendingTrendChart data={data} labels={{ current, previous }} className={height} />
 				</Suspense>
 			) : (
-				<div className="flex h-52 items-center justify-center">
+				<div className={cn("flex items-center justify-center", height)}>
 					<p className="text-sm text-muted-foreground">{t("dashboard.spendingTrend.noData")}</p>
 				</div>
 			)}
