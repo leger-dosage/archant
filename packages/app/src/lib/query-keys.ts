@@ -58,6 +58,14 @@ export const queryKeys = {
 		 */
 		netWorth: (period: ChartPeriod) => ["accounts", "net-worth", period] as const,
 		/**
+		 * The dashboard's « Investissements », under `all` as `netWorth`: every
+		 * trade, balance and account write already invalidates `all`. Fetching
+		 * prices, which sets `prices.status` alone, and a cost basis lock, which
+		 * invalidates `holdings(id)`, refresh it only once it is stale, as
+		 * `netWorth`.
+		 */
+		investmentSummary: (period: ChartPeriod) => ["accounts", "investment-summary", period] as const,
+		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change
 		 * to the mutations. A goal's own write invalidates `goals`, and so does

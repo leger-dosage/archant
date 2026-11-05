@@ -7,6 +7,7 @@ import { balanceQuerySchema } from "../schemas/balances.ts";
 import { moneyFlowQuerySchema, spendingTrendQuerySchema } from "../schemas/reports.ts";
 import {
 	getDashboardCashFlow,
+	getInvestmentSummary,
 	getMoneyFlow,
 	getNetWorth,
 	getSpendingTrend,
@@ -19,6 +20,9 @@ export function reportsRoutes(deps: ServiceDeps) {
 		)
 		.get("/cash-flow", validated("query", balanceQuerySchema), async (c) =>
 			c.json({ data: await getDashboardCashFlow(deps, c.req.valid("query")) }, 200),
+		)
+		.get("/investment-summary", validated("query", balanceQuerySchema), async (c) =>
+			c.json({ data: await getInvestmentSummary(deps, c.req.valid("query")) }, 200),
 		)
 		.get("/money-flow", validated("query", moneyFlowQuerySchema), async (c) =>
 			c.json({ data: await getMoneyFlow(deps, c.req.valid("query")) }, 200),

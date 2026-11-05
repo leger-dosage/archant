@@ -12,6 +12,7 @@ import { BalanceSheetSection } from "@/components/BalanceSheetSection";
 import { CashFlowSankeySection } from "@/components/CashFlowSankeySection";
 import { DashboardEmpty } from "@/components/DashboardEmpty";
 import { GoalsSection } from "@/components/GoalsSection";
+import { InvestmentSummarySection } from "@/components/InvestmentSummarySection";
 import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { MoneyFlowSection } from "@/components/MoneyFlowSection";
 import { NetWorthSection } from "@/components/NetWorthSection";
@@ -158,6 +159,7 @@ function DashboardPage() {
 								{cashFlow.data !== undefined && (
 									<OutflowsDonut data={cashFlow.data} placeholder={cashFlow.isPlaceholderData} />
 								)}
+								<InvestmentSummarySection period={chartPeriod.chart} ready={chartPeriod.ready} />
 								<NetWorthSection
 									period={chartPeriod.chart}
 									ready={chartPeriod.ready}

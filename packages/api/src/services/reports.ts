@@ -11,12 +11,14 @@ import type {
 	SubcategoryLines,
 } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
+import type { PortfolioReturn, TrendDirection } from "../domain/holdings/portfolio.ts";
 import type { CountedAccount } from "../domain/net-worth.ts";
 import type { MonthlyCashFlowRow, Stats } from "../domain/statistics.ts";
 import type { ServiceDeps } from "./deps.ts";
 
 import type { Classification } from "@archant/data/account-types";
-import { classificationOf, isTaxAdvantaged } from "@archant/data/account-types";
+import { classificationOf, holdsSecurities, isTaxAdvantaged } from "@archant/data/account-types";
+import { formatMicros } from "@archant/data/micros";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
@@ -43,15 +45,18 @@ import {
 	monthRange,
 	today,
 } from "../domain/dates.ts";
+import { returnOf, topHoldings } from "../domain/holdings/portfolio.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { categoryStats, familyStats } from "../domain/statistics.ts";
 import { AppError } from "../lib/errors.ts";
-import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { currentHoldings } from "./ledger/holdings.ts";
 import {
 	cashFlowByCategory,
 	cashFlowByDay,
 	cashFlowByMonth,
 	oldestEntryDate,
+	tradeTotals,
 } from "./ledger/queries.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -92,13 +97,14 @@ function totalOf(series: readonly CountedAccount[], classification: Classificati
 
 /**
  * The accounts every report totals, as `listAccounts` does: active, included
- * in reports, held in the reporting currency. Active, included accounts in
- * another currency are `leftOut`, by name, for the net worth notice.
+ * in reports, held in the reporting currency, and those of them `kept`
+ * keeps. Active, included accounts in another currency are `leftOut`, by
+ * name, for the net worth notice.
  */
-async function reportedAccounts(deps: ServiceDeps) {
+async function reportedAccounts(deps: ServiceDeps, kept: (row: Account) => boolean = () => true) {
 	const currency = getReportingCurrency();
 	const rows = await deps.db.select().from(accounts);
-	const reported = rows.filter((row) => row.active && !row.excludedFromReports);
+	const reported = rows.filter((row) => row.active && !row.excludedFromReports && kept(row));
 	const counted: Account[] = reported.filter((row) => row.currency === currency);
 	const leftOut: LeftOutAccount[] = reported
 		.filter((row) => row.currency !== currency)
@@ -332,6 +338,123 @@ export async function getDashboardCashFlow(
 		...net,
 		leftOut,
 		sankey: cashFlowSankey(net, subcategories, allCategories),
+	};
+}
+
+/** Sure's `top_holdings(limit: 5)`, as its dashboard calls it. */
+const TOP_HOLDINGS = 5;
+
+/**
+ * A return as the API answers it, Sure's `Trend`: `percent` a plain decimal
+ * string of percentage points, or `"Infinity"` and `"-Infinity"` on a zero
+ * book value, which `Number` reads back.
+ */
+type ReturnData = { gain: MinorUnits; percent: string; trend: TrendDirection };
+
+type InvestmentHolding = {
+	security: { id: string; name: string; ticker: string | null };
+	amount: MinorUnits;
+	/** Percent of the larger of `value` and the holdings' total. */
+	weight: string | null;
+	/** Percent of the book value of its rows with a cost basis; `null` when none has one. */
+	returnPercent: string | null;
+	/** Sure's `Trend#direction` of that return, which picks its colour; `null` with it. */
+	returnTrend: TrendDirection | null;
+};
+
+type InvestmentSummary =
+	| { available: false }
+	| {
+			available: true;
+			/** Sure's key, `null` for a custom range. */
+			period: SurePeriod | null;
+			from: IsoDate;
+			to: IsoDate;
+			currency: string;
+			/** Sure's `portfolio_value`: the accounts' balances today, cash included. */
+			value: MinorUnits;
+			/** Sure's `unrealized_gains_trend`; `null` when no holding has a cost basis. */
+			totalReturn: ReturnData | null;
+			/** The five largest securities, largest first. */
+			holdings: InvestmentHolding[];
+			/** Sure's `InvestmentStatement::Totals` over the period. */
+			activity: { contributions: MinorUnits; withdrawals: MinorUnits; trades: number };
+			/** Investment accounts in another currency, left out of every figure, by name. */
+			leftOut: LeftOutAccount[];
+	  };
+
+function percentText(percent: PortfolioReturn["percent"]): string {
+	if (percent === "+infinity") {
+		return "Infinity";
+	}
+
+	return percent === "-infinity" ? "-Infinity" : formatMicros(percent);
+}
+
+/** A sum of minor units read as text, refused past a safe integer as any amount is. */
+const amountOf = (sum: bigint): MinorUnits => toMinorUnits(Number(sum));
+
+/**
+ * Sure's `pages/dashboard/_investment_summary` from its `InvestmentStatement`:
+ * over Sure's `investment_accounts`, every active account included in
+ * reports that holds securities, a PEA and every tax-advantaged one among
+ * them, the portfolio's value today, cash included, the return of every
+ * holding with a cost basis, the five largest securities rolled up across
+ * accounts, and the period's trades. Sure converts every currency; until
+ * exchange rates exist, an account in another currency is left out and
+ * named (AD-6). `available` is false without any such account, so the
+ * interface hides the widget, as Sure's `investment_accounts.any?`.
+ */
+export async function getInvestmentSummary(
+	deps: ServiceDeps,
+	query: ChartQuery,
+): Promise<InvestmentSummary> {
+	const { currency, counted, leftOut } = await reportedAccounts(deps, (row) =>
+		holdsSecurities(row.type),
+	);
+
+	if (counted.length === 0 && leftOut.length === 0) {
+		return { available: false };
+	}
+
+	const asOf = today(deps.timeZone);
+	const { period, range } = resolveChartRange(query, asOf, await oldestEntryDate(deps));
+	const accountIds = counted.map((row) => row.id);
+	const [balances, held, totals] = await Promise.all([
+		Promise.all(accountIds.map(async (id) => (await balanceOn(deps, id, asOf))?.amount ?? 0)),
+		Promise.all(accountIds.map(async (id) => (await currentHoldings(deps.db, id, asOf)).holdings)),
+		tradeTotals(deps, { accountIds, ...range }),
+	]);
+	const value = toMinorUnits(balances.reduce<number>((sum, balance) => sum + balance, 0));
+	const rows = held.flat();
+	const totalReturn = returnOf(rows, currency);
+
+	return {
+		available: true,
+		period,
+		from: range.from,
+		to: range.to,
+		currency,
+		value,
+		totalReturn:
+			totalReturn === null ? null : { ...totalReturn, percent: percentText(totalReturn.percent) },
+		holdings: topHoldings(rows, value, TOP_HOLDINGS, currency).map((holding) => ({
+			security: {
+				id: holding.security.id,
+				name: holding.security.name,
+				ticker: holding.security.ticker,
+			},
+			amount: holding.amount,
+			weight: holding.weight === null ? null : formatMicros(holding.weight),
+			returnPercent: holding.return === null ? null : percentText(holding.return.percent),
+			returnTrend: holding.return?.trend ?? null,
+		})),
+		activity: {
+			contributions: amountOf(totals.contributions),
+			withdrawals: amountOf(totals.withdrawals),
+			trades: totals.trades,
+		},
+		leftOut,
 	};
 }
 
