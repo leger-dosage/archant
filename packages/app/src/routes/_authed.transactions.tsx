@@ -1,6 +1,4 @@
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
-import type { AccountChoice } from "@/components/TransactionForm";
-import type { AccountListData } from "@/hooks/useAccounts";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { FilterKind, OperationsSearch } from "@/lib/transaction-filters";
 
@@ -10,8 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
 
-import { eligibleForTransactionDefault } from "@archant/data/account-types";
-import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
+import { isCurrencyCode } from "@archant/data/money";
 
 import { BulkBar } from "@/components/BulkBar";
 import { EmptyNote } from "@/components/EmptyState";
@@ -42,6 +39,7 @@ import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
 import { useTransactionTotals, useTransactions } from "@/hooks/useTransactions";
+import { accountChoiceOf } from "@/lib/account-choice";
 import { accountsByName } from "@/lib/account-list";
 import { errorCodeOf } from "@/lib/api";
 import { intlLocale } from "@/lib/locale";
@@ -163,37 +161,6 @@ function OperationSheet({
 			onOpenChange={onOpenChange}
 		/>
 	);
-}
-
-const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: true });
-
-/**
- * What « Ajouter une opération » offers, as Sure's `set_new_transaction_form_options`:
- * the active accounts no bank feeds, sorted by name, starting on the user's default
- * while it is eligible, as `default_account_for_transactions`.
- */
-function accountChoiceOf(list: AccountListData): AccountChoice {
-	const accounts = list.groups
-		.flatMap((group) => group.accounts)
-		.filter((account) => account.active && !account.linked)
-		.toSorted((a, b) => byName.compare(a.name, b.name))
-		.flatMap(({ id, name, currency, type, subtype }) =>
-			isCurrencyCode(currency) ? [{ id, name, currency, type, subtype }] : [],
-		);
-	// Looked up among the options, so the select never starts on one it does not offer.
-	const stored = list.groups
-		.flatMap((group) => group.accounts)
-		.find((account) => account.id === list.defaultAccountId);
-	const offered = accounts.some((account) => account.id === stored?.id);
-
-	return {
-		accounts,
-		initialAccountId:
-			stored !== undefined && offered && eligibleForTransactionDefault(stored) ? stored.id : null,
-		fallbackCurrency: isCurrencyCode(list.reportingCurrency)
-			? list.reportingCurrency
-			: DEFAULT_CURRENCY,
-	};
 }
 
 function OperationsPage() {

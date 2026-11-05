@@ -420,16 +420,17 @@ test("a repayment into a loan shows « Remboursement de prêt », lowers what it
 		euros(17_880_000),
 	);
 
-	await page.goto("/?month=2024-06");
-	const june = page.getByRole("region", { name: "Flux de juin 2024" });
-	await expect(june.getByRole("group", { name: "Dépenses", exact: true })).toContainText(
-		euros(-125_000),
-	);
+	await page.goto("/?startDate=2024-06-01&endDate=2024-06-30&moneyFlowMonth=2024-06");
 	await expect(
-		june
-			.getByRole("list", { name: "Dépenses par catégorie" })
-			.getByRole("link", { name: housing.name }),
-	).toContainText(euros(-120_000));
+		page
+			.getByRole("region", { name: "Entrées / sorties d'argent" })
+			.getByRole("link", { name: /^Sorties/u }),
+	).toContainText(euros(125_000));
+	await expect(
+		page
+			.getByRole("region", { name: "Sorties", exact: true })
+			.getByRole("link", { name: new RegExp(housing.name, "u") }),
+	).toContainText(euros(120_000));
 
 	// Dissociated, the outflow is a standard row that keeps its category; the
 	// pair refused above, no later line proposes it again.
@@ -550,12 +551,12 @@ test("a contribution into a PEA shows « Versement », raises its value and coun
 		euros(2_550_000),
 	);
 
-	await page.goto("/?month=2024-07");
+	await page.goto("/?moneyFlowMonth=2024-07");
 	await expect(
 		page
-			.getByRole("region", { name: "Flux de juillet 2024" })
-			.getByRole("group", { name: "Dépenses", exact: true }),
-	).toContainText(euros(-50_000));
+			.getByRole("region", { name: "Entrées / sorties d'argent" })
+			.getByRole("link", { name: /^Sorties/u }),
+	).toContainText(euros(50_000));
 });
 
 test("« Supprimer le virement » gives both rows their category chip back and drops the caption", async ({

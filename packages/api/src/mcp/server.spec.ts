@@ -1404,7 +1404,7 @@ describe("reading reports", () => {
 			end_date: "2026-08-31",
 		});
 		const statement = incomeStatement.parse(result.structuredContent);
-		const route = await routeData("/api/reports/cash-flow?month=2026-08");
+		const route = await routeData("/api/reports/cash-flow?startDate=2026-08-01&endDate=2026-08-31");
 
 		expect(statement).toMatchObject({
 			currency: "EUR",

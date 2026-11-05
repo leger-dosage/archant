@@ -5,7 +5,6 @@ import {
 	buildApp,
 	car,
 	cashFlowOf,
-	errorBody,
 	expense,
 	home,
 	listed,
@@ -18,7 +17,6 @@ import {
 	ownCategory,
 	pea,
 	postOwn,
-	request,
 	sendOwn,
 	useSignedInApp,
 } from "../testing/app.ts";
@@ -312,16 +310,6 @@ const line = (
 	share,
 });
 
-const refusedReport = async (query: string, code: string) => {
-	const { status, body } = await request("GET", `/api/reports/cash-flow${query}`);
-
-	expect(status).toBe(400);
-	expect(errorBody.parse(body).error).toMatchObject({
-		code: "VALIDATION_ERROR",
-		fields: [{ path: "month", code }],
-	});
-};
-
 async function spend(accountId: string, amount: string, categoryId?: string, date = "2026-09-10") {
 	const id = await postOwn(accountId, { date, label: "Opération", amount });
 
@@ -346,7 +334,7 @@ describe("GET /api/reports/cash-flow", () => {
 		const data = await cashFlowOf("2026-09");
 
 		expect(data).toEqual({
-			month: "2026-09",
+			period: null,
 			from: "2026-09-01",
 			to: "2026-09-30",
 			currency: "EUR",
@@ -354,6 +342,17 @@ describe("GET /api/reports/cash-flow", () => {
 			expenses: -5000,
 			lines: { income: [], expense: [line(courses, "Courses", -5000)] },
 			leftOut: [],
+			sankey: {
+				nodes: [
+					expect.objectContaining({ id: "cash_flow_node", amount: 0 }),
+					expect.objectContaining({ id: `expense_${courses}`, amount: 5000, share: 1 }),
+					expect.objectContaining({ id: `expense_sub_${bio}`, amount: 2000, share: 0.4 }),
+				],
+				links: [
+					expect.objectContaining({ source: 0, target: 1, amount: 5000 }),
+					expect.objectContaining({ source: 1, target: 2, amount: 2000 }),
+				],
+			},
 		});
 	});
 
@@ -615,7 +614,7 @@ describe("GET /api/reports/cash-flow", () => {
 		await openOwn(august);
 
 		await expect(cashFlowOf("2026-02")).resolves.toEqual({
-			month: "2026-02",
+			period: null,
 			from: "2026-02-01",
 			to: "2026-02-28",
 			currency: "EUR",
@@ -623,12 +622,214 @@ describe("GET /api/reports/cash-flow", () => {
 			expenses: 0,
 			lines: { income: [], expense: [] },
 			leftOut: [],
+			sankey: { nodes: [expect.objectContaining({ id: "cash_flow_node" })], links: [] },
 		});
 	});
 
-	it("refuses a month that does not exist, or none", async () => {
-		await refusedReport("?month=2026-13", "invalid_format");
-		await refusedReport("?month=2026-9", "invalid_format");
-		await refusedReport("", "invalid_type");
+	it("reads the dashboard's period: the last 30 days by default, a key, and a range that does not parse as the default", async () => {
+		const account = await openOwn(august);
+		await spend(account.id, "-1,00", undefined, "2026-08-21");
+		await spend(account.id, "-2,00", undefined, "2026-08-22");
+		await spend(account.id, "-4,00", undefined, "2026-09-21");
+
+		const byDefault = await ownRequest("GET", "/api/reports/cash-flow");
+		const currentMonth = await ownRequest("GET", "/api/reports/cash-flow?period=current_month");
+		const broken = await ownRequest(
+			"GET",
+			"/api/reports/cash-flow?startDate=2026-09-30&endDate=2026-09-01",
+		);
+
+		expect(cashFlowBody.parse(byDefault.body).data).toMatchObject({
+			period: "last_30_days",
+			from: "2026-08-22",
+			to: "2026-09-21",
+			expenses: -600,
+		});
+		expect(cashFlowBody.parse(currentMonth.body).data).toMatchObject({
+			period: "current_month",
+			from: "2026-09-01",
+			expenses: -400,
+		});
+		expect(cashFlowBody.parse(broken.body).data).toMatchObject({ period: "last_30_days" });
+	});
+});
+
+const cashFlowBody = z.object({
+	data: z.object({
+		period: z.string().nullable(),
+		from: z.string(),
+		to: z.string(),
+		expenses: z.number(),
+	}),
+});
+
+const moneyFlowBody = z.object({
+	data: z.object({
+		month: z.string(),
+		from: z.string(),
+		to: z.string(),
+		income: z.number(),
+		expenses: z.number(),
+		balance: z.number(),
+		accountIds: z.array(z.string()).nullable(),
+		accounts: z.array(z.object({ id: z.string(), name: z.string() })),
+		bars: z.array(
+			z.object({
+				month: z.string(),
+				income: z.number(),
+				expenses: z.number(),
+				highlighted: z.boolean(),
+				partial: z.boolean(),
+			}),
+		),
+	}),
+});
+
+async function moneyFlowOf(query: string) {
+	const { status, body } = await ownRequest("GET", `/api/reports/money-flow${query}`);
+
+	expect(status).toBe(200);
+
+	return moneyFlowBody.parse(body).data;
+}
+
+describe("GET /api/reports/money-flow", () => {
+	const may = { openingDate: "2026-05-01" } as const;
+
+	it("gives six months of gross income and expenses, the month picked last and highlighted, this one cut to today", async () => {
+		const account = await openOwn({ ...may, name: "Courant" });
+		await spend(account.id, "2 000,00", undefined, "2026-09-01");
+		await spend(account.id, "-80,00", undefined, "2026-09-10");
+		await spend(account.id, "30,00", undefined, "2026-09-12");
+		await spend(account.id, "-500,00", undefined, "2026-09-25");
+		await spend(account.id, "-40,00", undefined, "2026-06-15");
+
+		const data = await moneyFlowOf("");
+
+		expect(data).toMatchObject({
+			month: "2026-09",
+			from: "2026-09-01",
+			to: "2026-09-21",
+			income: 203000,
+			expenses: -8000,
+			balance: 195000,
+			accountIds: null,
+			accounts: [{ id: account.id, name: "Courant" }],
+		});
+		expect(data.bars.map((bar) => bar.month)).toEqual([
+			"2026-04",
+			"2026-05",
+			"2026-06",
+			"2026-07",
+			"2026-08",
+			"2026-09",
+		]);
+		expect(data.bars.at(-1)).toMatchObject({ highlighted: true, partial: true });
+		expect(data.bars[2]).toMatchObject({
+			expenses: -4000,
+			income: 0,
+			highlighted: false,
+			partial: false,
+		});
+	});
+
+	it("reads a month after this one, or one that does not parse, as this month, and an earlier one as asked", async () => {
+		await openOwn(may);
+
+		await expect(moneyFlowOf("?month=2027-03")).resolves.toMatchObject({ month: "2026-09" });
+		await expect(moneyFlowOf("?month=abc")).resolves.toMatchObject({ month: "2026-09" });
+		await expect(moneyFlowOf("?month=2026-06")).resolves.toMatchObject({
+			month: "2026-06",
+			from: "2026-06-01",
+			to: "2026-06-30",
+		});
+		const early = await moneyFlowOf("?month=2019-02");
+		expect(early.bars[0]?.month).toBe("2018-09");
+	});
+
+	it("totals the accounts picked, drops an unknown id, reads none left as all, and never offers a PEA", async () => {
+		const checking = await openOwn({ ...may, name: "Courant" });
+		const livret = await openOwn({ ...may, name: "Livret", subtype: "savings" });
+		const account = await openOwn({ ...may, ...pea });
+		await spend(checking.id, "-10,00");
+		await spend(livret.id, "25,00");
+
+		const lone = await moneyFlowOf(`?accountIds=${checking.id}`);
+		const picked = await moneyFlowOf(`?accountIds=${livret.id}&accountIds=unknown`);
+		const unknown = await moneyFlowOf("?accountIds=unknown");
+		const ineligible = await moneyFlowOf(`?accountIds=${account.id}`);
+
+		// A lone key reaches the schema as a string.
+		expect(lone).toMatchObject({ accountIds: [checking.id], income: 0, expenses: -1000 });
+		expect(picked).toMatchObject({ accountIds: [livret.id], income: 2500, expenses: 0 });
+		expect(unknown).toMatchObject({ accountIds: null, income: 2500, expenses: -1000 });
+		expect(ineligible.accountIds).toBeNull();
+		expect(picked.accounts.map((row) => row.name)).toEqual(["Courant", "Livret"]);
+	});
+});
+
+const spendingTrendBody = z.object({
+	data: z.object({
+		month: z.string(),
+		previousMonth: z.string(),
+		days: z.number(),
+		current: z.array(z.object({ day: z.number(), date: z.string(), amount: z.number() })),
+		previous: z.array(z.object({ day: z.number(), date: z.string(), amount: z.number() })),
+		currentTotal: z.number(),
+		previousTotal: z.number(),
+		previousComparisonDay: z.number().nullable(),
+	}),
+});
+
+async function spendingTrendOf(query: string) {
+	const { status, body } = await ownRequest("GET", `/api/reports/spending-trend${query}`);
+
+	expect(status).toBe(200);
+
+	return spendingTrendBody.parse(body).data;
+}
+
+describe("GET /api/reports/spending-trend", () => {
+	const july = { openingDate: "2026-07-01" } as const;
+
+	it("compares this month's spending to day 21 with the previous month's same days, its whole curve drawn", async () => {
+		const account = await openOwn(july);
+		await spend(account.id, "-10,00", undefined, "2026-08-05");
+		await spend(account.id, "-90,00", undefined, "2026-08-30");
+		await spend(account.id, "-25,00", undefined, "2026-09-02");
+		await spend(account.id, "15,00", undefined, "2026-09-03");
+
+		const data = await spendingTrendOf("");
+
+		expect(data).toMatchObject({
+			month: "2026-09",
+			previousMonth: "2026-08",
+			days: 30,
+			currentTotal: -2500,
+			previousTotal: -1000,
+			previousComparisonDay: 21,
+		});
+		expect(data.current).toHaveLength(21);
+		expect(data.current[2]).toEqual({ day: 3, date: "2026-09-03", amount: -2500 });
+		// August's 31 days fold into September's 30, its last point holding the 31st's total.
+		expect(data.previous).toHaveLength(30);
+		expect(data.previous.at(-1)).toEqual({ day: 30, date: "2026-08-31", amount: -10000 });
+	});
+
+	it("compares a past month with the whole previous one, and reads a future month as this one", async () => {
+		const account = await openOwn(july);
+		await spend(account.id, "-10,00", undefined, "2026-07-31");
+		await spend(account.id, "-30,00", undefined, "2026-08-31");
+
+		await expect(spendingTrendOf("?month=2026-08")).resolves.toMatchObject({
+			month: "2026-08",
+			days: 31,
+			currentTotal: -3000,
+			previousTotal: -1000,
+			previousComparisonDay: null,
+		});
+		await expect(spendingTrendOf("?month=2027-01")).resolves.toMatchObject({
+			month: "2026-09",
+		});
 	});
 });

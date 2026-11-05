@@ -186,7 +186,7 @@ export function BudgetCategories({
 	// The sheet keeps the last card it opened while it slides out.
 	const [opened, setOpened] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
-	const uncategorisedName = t("dashboard.cashFlow.uncategorised");
+	const uncategorisedName = t("dashboard.uncategorised");
 	const envelopes: Envelope[] = [
 		...budget.categories.map((line): Envelope => ({ kind: "category", line })),
 		{ kind: "uncategorised", line: budget.uncategorised },

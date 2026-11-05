@@ -81,7 +81,7 @@ test("the dashboard draws its charts without the date picker, which comes with t
 	await api.addTransaction(account.id, { date: "2024-05-06", label: "Courses", amount: "-40,00" });
 	const scripts = scriptsOf(page);
 
-	await page.goto("/?month=2024-05");
+	await page.goto("/?startDate=2024-05-01&endDate=2024-05-31");
 
 	await expect(
 		page.getByRole("region", { name: "Patrimoine net" }).locator(".recharts-area"),
@@ -89,7 +89,7 @@ test("the dashboard draws its charts without the date picker, which comes with t
 	// The database is shared: other tests' rows of that month may add segments.
 	await expect(
 		page
-			.getByRole("img", { name: /^Répartition des /u })
+			.getByRole("img", { name: /^Sorties de la période/u })
 			.locator(".recharts-pie-sector")
 			.first(),
 	).toBeVisible();

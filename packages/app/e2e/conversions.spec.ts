@@ -199,10 +199,10 @@ test("a dividend line converted from its sheet becomes a trade, which the month'
 	).toContainText("Dividende");
 
 	// Sure counts no trade and no tax-advantaged account: 15,34 € before Story 27.6.
-	await page.goto("/?month=2024-10");
+	await page.goto("/?moneyFlowMonth=2024-10");
 	await expect(
 		page
-			.getByRole("region", { name: "Flux d'octobre 2024" })
-			.getByRole("group", { name: "Revenus", exact: true }),
+			.getByRole("region", { name: "Entrées / sorties d'argent" })
+			.getByRole("link", { name: /^Entrées/u }),
 	).toContainText(euros(0));
 });

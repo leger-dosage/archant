@@ -71,7 +71,7 @@ function Allocation({ budget, currency }: { budget: BudgetData; currency: Curren
 							currency={currency}
 							amount={budget.uncategorised.budgetedSpending}
 							median={budget.uncategorised.median}
-							name={t("dashboard.cashFlow.uncategorised")}
+							name={t("dashboard.uncategorised")}
 							color="var(--muted-foreground)"
 						/>
 					</div>

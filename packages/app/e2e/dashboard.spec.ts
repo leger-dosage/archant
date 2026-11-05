@@ -12,7 +12,7 @@ import {
 	formatTableDate,
 	formatTick,
 } from "../src/lib/balance-change.ts";
-import { ofMonth } from "../src/lib/dates.ts";
+import { longDate, monthLabel } from "../src/lib/dates.ts";
 import {
 	daysAgo,
 	euros,
@@ -581,6 +581,8 @@ test("a drag across the chart picks a custom range, named on the trigger and che
 	await page.goto("/");
 	const chart = card(page).locator('[data-slot="chart"]');
 	await expect(chart.locator(".recharts-area")).toBeVisible();
+	// Below the cash flow widgets since Story 34.4: the mouse only reaches it on screen.
+	await chart.scrollIntoViewIfNeeded();
 	const box = await chart.boundingBox();
 
 	expect(box).not.toBeNull();
@@ -712,32 +714,53 @@ test("a household without accounts sees the empty state", async ({ page }) => {
 	await expect(page.getByRole("dialog", { name: "Que voulez-vous ajouter ?" })).toBeVisible();
 });
 
-// Story 6.2: monthly income and expenses by category. Each test owns a month
-// of 2024, which no other test writes to, so its totals are exact.
+// Story 6.2, then Story 34.4: Sure's cash flow widgets. Each test owns a
+// month, which no other test writes to, so its totals are exact: the period
+// in the URL is that month, as a custom range, and « Entrées / sorties
+// d'argent » reads it through its own `moneyFlowMonth`.
 
 /** Opened before every month these tests use, so any day of 2024 is accepted. */
 const before2024 = { openingBalance: "0", openingDate: "2023-12-01" } as const;
 
-/** « Flux de mars 2024 » for `2024-03`. */
-const heading = (month: string) => `Flux ${ofMonth(month)}`;
+/** A `YYYY-MM` month's last day. */
+const monthEnd = (month: string) =>
+	new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0))
+		.toISOString()
+		.slice(0, 10);
 
-/** The month's flow section of a `YYYY-MM` month. */
-const flows = (page: Page, month: string) => page.getByRole("region", { name: heading(month) });
+/** The dashboard with `month` as its period and as the money flow's month. */
+const dashboardOf = (month: string) =>
+	`/?startDate=${month}-01&endDate=${monthEnd(month)}&moneyFlowMonth=${month}`;
 
-/** One of the three figures: « Revenus », « Dépenses » or « Épargne du mois ». */
-const cell = (page: Page, month: string, label: "Revenus" | "Dépenses" | "Épargne du mois") =>
-	flows(page, month).getByRole("group", { name: label, exact: true });
+const sankey = (page: Page) => page.getByRole("region", { name: "Flux de trésorerie" });
 
-/** The category rows of the side the segmented control shows. */
-const rowsOf = (page: Page, month: string, side: "Revenus" | "Dépenses") =>
-	flows(page, month)
-		.getByRole("list", { name: `${side} par catégorie` })
-		.getByRole("link");
+const outflows = (page: Page) => page.getByRole("region", { name: "Sorties", exact: true });
 
-const donut = (page: Page, month: string) =>
-	flows(page, month).getByRole("img", { name: /^Répartition des /u });
+/** « Sorties »'s rows, largest first. */
+const outflowRows = (page: Page) =>
+	outflows(page).getByRole("list", { name: "Sorties" }).getByRole("link");
 
-test("« Revenus » and « Dépenses » count only the month's counted rows", async ({ page, api }) => {
+const donut = (page: Page) => outflows(page).getByRole("img", { name: /^Sorties de la période/u });
+
+const moneyFlow = (page: Page) => page.getByRole("region", { name: "Entrées / sorties d'argent" });
+
+/** The money flow's row to a side's transactions. */
+const flowRow = (page: Page, side: "Entrées" | "Sorties") =>
+	moneyFlow(page).getByRole("link", { name: new RegExp(`^${side}`, "u") });
+
+/** « Novembre 2026 », the month picker's label for `2026-11`. */
+const pickerLabel = (month: string) => {
+	const text = monthLabel(month);
+
+	return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
+const spending = (page: Page) => page.getByRole("region", { name: "Dépenses", exact: true });
+
+test("« Sorties » and « Entrées / sorties d'argent » count only the month's counted rows", async ({
+	page,
+	api,
+}) => {
 	const checking = await api.openAccount(before2024);
 	const livret = await api.openAccount({ ...before2024, kind: "savings" });
 	const creditCard = await api.openAccount({ ...before2024, kind: "credit_card" });
@@ -781,54 +804,31 @@ test("« Revenus » and « Dépenses » count only the month's counted rows", as
 		amount: "-77,00",
 	});
 
-	await page.goto("/?month=2024-03");
+	await page.goto(dashboardOf("2024-03"));
 
-	await expect(cell(page, "2024-03", "Revenus")).toContainText(`+${euros(20_000)}`);
-	await expect(cell(page, "2024-03", "Dépenses")).toContainText(euros(-4_000));
-	await expect(cell(page, "2024-03", "Épargne du mois")).toContainText(euros(16_000));
-	await expect(cell(page, "2024-03", "Épargne du mois")).not.toContainText("+");
-	await expect(cell(page, "2024-03", "Revenus").locator(".amount-summary")).toHaveCSS(
-		"font-size",
-		"20px",
+	await expect(donut(page)).toHaveAccessibleName(
+		`Sorties de la période : ${euros(4_000)} sur 1 catégorie.`,
 	);
-
-	// « Dépenses » first, then « Revenus » swaps the rows and the donut.
-	const sides = flows(page, "2024-03").getByRole("radiogroup", { name: "Répartition affichée" });
-	await expect(sides.getByRole("radio")).toHaveText(["Dépenses", "Revenus"]);
-	await expect(sides.getByRole("radio", { name: "Dépenses" })).toBeChecked();
-	await expect(rowsOf(page, "2024-03", "Dépenses")).toHaveCount(1);
-	await expect(rowsOf(page, "2024-03", "Dépenses")).toContainText(groceries.name);
-	const categories = flows(page, "2024-03").getByRole("region", { name: "Dépenses par catégorie" });
-	await expect(categories).toHaveCSS("background-color", rgb("#f2f2f3"));
-	await expect(categories.getByRole("heading", { name: "Dépenses par catégorie" })).toHaveCSS(
-		"text-transform",
-		"uppercase",
-	);
+	await expect(donut(page)).toContainText("Total des sorties");
+	await expect(donut(page)).toContainText(euros(4_000));
+	await expect(donut(page).locator(".recharts-pie-sector path")).toHaveAttribute("fill", "#e99537");
+	await expect(outflows(page)).toContainText("Catégories·1");
+	await expect(outflowRows(page)).toHaveCount(1);
+	await expect(outflowRows(page)).toContainText(groceries.name);
+	// Sure's figures are unsigned: an outflow reads 40,00 €, at 100 %.
+	await expect(outflowRows(page)).toContainText(euros(4_000));
+	await expect(outflowRows(page)).not.toContainText("−");
+	await expect(outflowRows(page)).toContainText("100 %");
 	// `createCategory` gives the icon `tag`: the row shows it, not the uncategorised one.
-	await expect(
-		rowsOf(page, "2024-03", "Dépenses").locator('[data-slot="tinted-icon"] svg.lucide-tag'),
-	).toBeVisible();
-	await expect(donut(page, "2024-03")).toHaveAccessibleName(
-		`Répartition des dépenses de mars 2024 : ${euros(4_000)} sur 1 catégorie.`,
-	);
-	await expect(donut(page, "2024-03")).toContainText(euros(4_000));
-	await expect(donut(page, "2024-03").locator(".recharts-pie-sector path")).toHaveAttribute(
-		"fill",
-		"#e99537",
-	);
+	await expect(outflowRows(page).locator('[data-slot="tinted-icon"] svg.lucide-tag')).toBeVisible();
 
-	await sides.getByRole("radio", { name: "Revenus" }).click();
-
-	await expect(rowsOf(page, "2024-03", "Revenus")).toHaveCount(1);
-	await expect(rowsOf(page, "2024-03", "Revenus")).toContainText("Sans catégorie");
-	await expect(rowsOf(page, "2024-03", "Revenus")).toContainText(`+${euros(20_000)}`);
-	await expect(rowsOf(page, "2024-03", "Dépenses")).toHaveCount(0);
-	await expect(donut(page, "2024-03")).toHaveAccessibleName(
-		`Répartition des revenus de mars 2024 : ${euros(20_000)} sur 1 catégorie.`,
-	);
+	await expect(moneyFlow(page)).toContainText("Du 1 mars 2024 au 31 mars 2024");
+	await expect(flowRow(page, "Entrées")).toContainText(euros(20_000));
+	await expect(flowRow(page, "Sorties")).toContainText(euros(4_000));
+	await expect(moneyFlow(page)).toContainText(`Balance des opérations${euros(16_000)}`);
 });
 
-test("a category refunded beyond what it spent moves to « Revenus », where it drew no segment under « Dépenses »", async ({
+test("a category refunded beyond what it spent leaves « Sorties » for the Sankey's income side", async ({
 	page,
 	api,
 }) => {
@@ -848,29 +848,23 @@ test("a category refunded beyond what it spent moves to « Revenus », where it 
 	await api.categorise([spent], groceries.id);
 	await api.categorise([refund], clothes.id);
 
-	await page.goto("/?month=2024-08");
+	await page.goto(dashboardOf("2024-08"));
 
-	const rows = rowsOf(page, "2024-08", "Dépenses");
-	await expect(rows).toHaveCount(1);
-	await expect(rows).toContainText(groceries.name);
-	await expect(donut(page, "2024-08").locator(".recharts-pie-sector")).toHaveCount(1);
-	await expect(donut(page, "2024-08").locator(".recharts-pie-sector path")).toHaveAttribute(
-		"fill",
-		"#e99537",
+	await expect(outflowRows(page)).toHaveCount(1);
+	await expect(outflowRows(page)).toContainText(groceries.name);
+	await expect(donut(page).locator(".recharts-pie-sector")).toHaveCount(1);
+	await expect(donut(page).locator(".recharts-pie-sector path")).toHaveAttribute("fill", "#e99537");
+	const chart = sankey(page).getByRole("img", { name: /^Flux de trésorerie de la période/u });
+	await expect(chart).toHaveAccessibleName(
+		`Flux de trésorerie de la période : ${euros(2_000)} d'entrées, ${euros(4_000)} de sorties.`,
 	);
-
-	await flows(page, "2024-08").getByRole("radio", { name: "Revenus" }).click();
-
-	await expect(rowsOf(page, "2024-08", "Revenus")).toHaveCount(1);
-	await expect(rowsOf(page, "2024-08", "Revenus")).toContainText(clothes.name);
-	await expect(rowsOf(page, "2024-08", "Revenus")).toContainText(`+${euros(2_000)}`);
-	await expect(donut(page, "2024-08").locator(".recharts-pie-sector path")).toHaveAttribute(
-		"fill",
-		"#4ea7fc",
-	);
+	await expect(chart.locator("text").filter({ hasText: clothes.name })).toHaveCount(1);
+	await expect(chart.locator("text").filter({ hasText: "Flux de trésorerie" })).toHaveCount(1);
+	// Expenses above income: neither a surplus nor a deficit, as Sure's.
+	await expect(chart.locator("text").filter({ hasText: "Excédent" })).toHaveCount(0);
 });
 
-test("a parent line rolls up its sub-category, beside « Sans catégorie »", async ({
+test("a parent line rolls up its sub-category, beside « Sans catégorie », which opens its rows of the period", async ({
 	page,
 	api,
 }) => {
@@ -896,19 +890,37 @@ test("a parent line rolls up its sub-category, beside « Sans catégorie »", as
 		amount: "-40,00",
 	});
 
-	await page.goto("/?month=2024-04");
+	await page.goto(dashboardOf("2024-04"));
 
-	await expect(cell(page, "2024-04", "Dépenses")).toContainText(euros(-10_000));
-	const rows = rowsOf(page, "2024-04", "Dépenses");
+	await expect(donut(page)).toContainText(euros(10_000));
+	const rows = outflowRows(page);
 	await expect(rows).toHaveCount(2);
 	await expect(rows.nth(0)).toContainText(parent.name);
 	await expect(rows.nth(0)).toContainText("60 %");
-	await expect(rows.nth(0)).toContainText(euros(-6_000));
+	await expect(rows.nth(0)).toContainText(euros(6_000));
 	await expect(rows.nth(1)).toContainText("Sans catégorie");
 	await expect(rows.nth(1)).toContainText("40 %");
-	await expect(rows.nth(1)).toContainText(euros(-4_000));
+	await expect(rows.nth(1)).toContainText(euros(4_000));
 	await expect(rows.nth(1).locator("svg.lucide-circle-dashed")).toBeVisible();
-	await expect(flows(page, "2024-04")).not.toContainText(child.name);
+	await expect(outflows(page)).not.toContainText(child.name);
+	// The Sankey hangs the sub-category from its parent.
+	await expect(sankey(page).locator("text").filter({ hasText: child.name })).toHaveCount(1);
+
+	// Sure's grey for « Sans catégorie », as the Sankey's.
+	await expect(donut(page).locator(".recharts-pie-sector path").nth(1)).toHaveAttribute(
+		"fill",
+		"#737373",
+	);
+	// A segment opens its rows, as its row does.
+	// The ring is 15 px thick and starts at noon: just right of its top is the first segment.
+	await donut(page).click({ position: { x: 140, y: 8 } });
+	await expect(page).toHaveURL(new RegExp(parent.id, "u"));
+	await expect(page).toHaveURL(/[?&]from=2024-04-01(&|$)/u);
+	await page.goBack();
+
+	await rows.nth(1).hover();
+	await expect(donut(page)).toContainText("Sans catégorie");
+	await expect(donut(page)).toContainText("40 %");
 
 	await rows.nth(1).click();
 
@@ -927,7 +939,7 @@ const tradesBody = z.object({
 	}),
 });
 
-test("« Revenus », « Dépenses » and each line read Sure's net view: a refund, a category's net income, a loan payment, and no dividend nor PEA line", async ({
+test("« Sorties » reads Sure's net view and « Entrées / sorties d'argent » its gross one: a refund, a category's net income, a loan payment, and no dividend nor PEA line", async ({
 	page,
 	api,
 	request,
@@ -983,29 +995,24 @@ test("« Revenus », « Dépenses » and each line read Sure's net view: a refun
 	});
 	await api.addTransaction(pea.id, { date: "2022-07-16", label: "Frais", amount: "-15,00" });
 
-	await page.goto("/?month=2022-07");
+	await page.goto(dashboardOf("2022-07"));
 
-	// Before Story 27.6: +12,00 € in, the dividend, and −555,00 € out:
-	// « Courses » −70,00 €, « Cadeaux » +30,00 € under « Dépenses » by its
-	// kind, the loan payment −500,00 € and the PEA's fee −15,00 €.
-	await expect(cell(page, "2022-07", "Revenus")).toContainText(`+${euros(3_000)}`);
-	await expect(cell(page, "2022-07", "Dépenses")).toContainText(euros(-57_000));
-	const spent = rowsOf(page, "2022-07", "Dépenses");
-	await expect(spent).toHaveCount(2);
-	await expect(spent.nth(0)).toContainText("Sans catégorie");
-	await expect(spent.nth(0)).toContainText(euros(-50_000));
-	await expect(spent.nth(1)).toContainText(groceries.name);
-	await expect(spent.nth(1)).toContainText(euros(-7_000));
+	// Before Story 27.6: the PEA's fee −15,00 € and « Cadeaux » under « Dépenses » by its kind.
+	await expect(donut(page)).toContainText(euros(57_000));
+	await expect(outflowRows(page)).toHaveCount(2);
+	await expect(outflowRows(page).nth(0)).toContainText("Sans catégorie");
+	await expect(outflowRows(page).nth(0)).toContainText(euros(50_000));
+	await expect(outflowRows(page).nth(1)).toContainText(groceries.name);
+	await expect(outflowRows(page).nth(1)).toContainText(euros(7_000));
+	await expect(outflows(page)).not.toContainText(gifts.name);
 
-	await flows(page, "2022-07").getByRole("radio", { name: "Revenus" }).click();
-
-	const earned = rowsOf(page, "2022-07", "Revenus");
-	await expect(earned).toHaveCount(1);
-	await expect(earned).toContainText(gifts.name);
-	await expect(earned).toContainText(`+${euros(3_000)}`);
+	// Gross: the refund and the gift received are income, without the dividend.
+	await expect(flowRow(page, "Entrées")).toContainText(euros(8_000));
+	await expect(flowRow(page, "Sorties")).toContainText(euros(62_000));
+	await expect(moneyFlow(page)).toContainText(`Balance des opérations${euros(-54_000)}`);
 });
 
-test("a transaction marked one-time in the sheet leaves « Dépenses », and the list keeps it with Sure's asterisk", async ({
+test("a transaction marked one-time in the sheet leaves « Sorties », and the list keeps it with Sure's asterisk", async ({
 	page,
 	api,
 }) => {
@@ -1015,8 +1022,8 @@ test("a transaction marked one-time in the sheet leaves « Dépenses », and the
 	await api.addTransaction(account.id, { date: "2022-09-05", label, amount: "-900,00" });
 	await api.addTransaction(account.id, { date: "2022-09-06", label: "Courses", amount: "-40,00" });
 
-	await page.goto("/?month=2022-09");
-	await expect(cell(page, "2022-09", "Dépenses")).toContainText(euros(-94_000));
+	await page.goto(dashboardOf("2022-09"));
+	await expect(donut(page)).toContainText(euros(94_000));
 
 	await page.goto(`/transactions?q=${encodeURIComponent(label)}`);
 	const listed = page.getByRole("main").getByRole("button", { name: new RegExp(label, "u") });
@@ -1034,11 +1041,12 @@ test("a transaction marked one-time in the sheet leaves « Dépenses », and the
 	await expect(listed).toHaveAccessibleName(/Dépense ponctuelle \(exclue des moyennes\)/u);
 	await expect(listed).toContainText(euros(-90_000));
 
-	await page.goto("/?month=2022-09");
-	await expect(cell(page, "2022-09", "Dépenses")).toContainText(euros(-4_000));
+	await page.goto(dashboardOf("2022-09"));
+	await expect(donut(page)).toContainText(euros(4_000));
+	await expect(flowRow(page, "Sorties")).toContainText(euros(4_000));
 });
 
-test("a month of a PEA's lines and a dividend alone shows no income and no expense", async ({
+test("a month of a PEA's lines and a dividend alone has no cash flow, hides « Sorties », and offers a transaction", async ({
 	page,
 	api,
 	request,
@@ -1066,17 +1074,26 @@ test("a month of a PEA's lines and a dividend alone shows no income and no expen
 	await api.addTransaction(pea.id, { date: "2022-08-16", label: "Frais", amount: "-15,00" });
 	await api.addTransaction(pea.id, { date: "2022-08-17", label: "Crédit", amount: "40,00" });
 
-	await page.goto("/?month=2022-08");
+	await page.goto(dashboardOf("2022-08"));
 
-	await expect(cell(page, "2022-08", "Revenus")).toContainText(euros(0));
-	await expect(cell(page, "2022-08", "Revenus")).not.toContainText(euros(1_200));
-	await expect(cell(page, "2022-08", "Revenus")).not.toContainText(euros(4_000));
-	await expect(cell(page, "2022-08", "Dépenses")).toContainText(euros(0));
-	await expect(cell(page, "2022-08", "Dépenses")).not.toContainText(euros(1_500));
-	await expect(rowsOf(page, "2022-08", "Dépenses")).toHaveCount(0);
+	await expect(
+		sankey(page).getByRole("heading", {
+			name: "Aucune donnée de flux de trésorerie pour cette période",
+		}),
+	).toBeVisible();
+	await expect(sankey(page)).toContainText(
+		"Ajoutez des transactions pour afficher les données de flux de trésorerie ou étendez la période",
+	);
+	await expect(sankey(page).getByRole("button", { name: "Développer" })).toHaveCount(0);
+	await expect(outflows(page)).toHaveCount(0);
+	await expect(flowRow(page, "Entrées")).toContainText(euros(0));
+	await expect(flowRow(page, "Sorties")).toContainText(euros(0));
+
+	await sankey(page).getByRole("button", { name: "Ajouter une transaction" }).click();
+	await expect(page.getByRole("dialog", { name: "Ajouter une opération" })).toBeVisible();
 });
 
-test("a category line opens its rows of the month in « Opérations »", async ({ page, api }) => {
+test("a category line opens its rows of the period in « Opérations »", async ({ page, api }) => {
 	const account = await api.openAccount(before2024);
 	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
 	const cinema = await api.createCategory({ name: uniqueName("Cinéma") });
@@ -1089,8 +1106,8 @@ test("a category line opens its rows of the month in « Opérations »", async (
 		amount: "-9,00",
 	});
 
-	await page.goto("/?month=2024-05");
-	await rowsOf(page, "2024-05", "Dépenses").filter({ hasText: leisure.name }).click();
+	await page.goto(dashboardOf("2024-05"));
+	await outflowRows(page).filter({ hasText: leisure.name }).click();
 
 	await expect(page).toHaveURL(/\/transactions\?/u);
 	await expect(page).toHaveURL(new RegExp(leisure.id, "u"));
@@ -1115,47 +1132,186 @@ test("a category line opens its rows of the month in « Opérations »", async (
 	await expect(row).toHaveCount(0);
 });
 
-test("« Mois précédent » moves the month in the URL and the heading", async ({ page, api }) => {
-	await api.openAccount();
-	const current = daysAgo(0).slice(0, 7);
-	const previous = shiftMonth(current, -1);
-	await page.goto("/");
-
-	const thisMonth = flows(page, current);
-	await expect(thisMonth.getByRole("heading", { name: heading(current) })).toBeVisible();
-	await expect(thisMonth.getByRole("button", { name: "Mois suivant" })).toBeDisabled();
-	await thisMonth.getByRole("button", { name: "Mois précédent" }).click();
-
-	await expect(page).toHaveURL(new RegExp(`[?&]month=${previous}(&|$)`, "u"));
-	const moved = flows(page, previous);
-	await expect(moved.getByRole("heading", { name: heading(previous) })).toBeVisible();
-	await moved.getByRole("button", { name: "Mois précédent" }).click();
-	await expect(page).toHaveURL(new RegExp(`[?&]month=${shiftMonth(previous, -1)}(&|$)`, "u"));
-
-	const earlier = flows(page, shiftMonth(previous, -1));
-	await earlier.getByRole("button", { name: "Mois suivant" }).click();
-	await expect(page).toHaveURL(new RegExp(`[?&]month=${previous}(&|$)`, "u"));
-	await moved.getByRole("button", { name: "Mois suivant" }).click();
-	await expect(page).not.toHaveURL(/[?&]month=/u);
-	await expect(thisMonth.getByRole("heading", { name: heading(current) })).toBeVisible();
-
-	await page.goto("/?month=2024-13");
-	await expect(thisMonth.getByRole("heading", { name: heading(current) })).toBeVisible();
-
-	await page.goto("/?month=2024-01");
-	await expect(flows(page, "2024-01").getByText("Aucune opération ce mois-ci.")).toBeVisible();
-});
-
-// Story 14.2: Sure's proportions. The dashboard's cards stack in one column
-// until 1536 px: beside the rail and the accounts column, a 1440 px screen
-// leaves about 950 px, too narrow for two.
-
-test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at 1600 px", async ({
+test("the month picker moves « Entrées / sorties d'argent » in the URL, keeping the period, and a later month reads as this one", async ({
 	page,
 	api,
 }) => {
 	await api.openAccount();
 	const current = daysAgo(0).slice(0, 7);
+	const previous = shiftMonth(current, -1);
+	await page.goto("/?period=last_90_days");
+
+	const picker = moneyFlow(page).getByRole("button", { name: "Sélectionner un mois" });
+	await expect(picker).toHaveText(pickerLabel(current));
+	// The trigger's name keeps the month it shows, as « Période : 30J ».
+	await expect(picker).toHaveAccessibleName(`Sélectionner un mois : ${pickerLabel(current)}`);
+	await expect(moneyFlow(page).getByRole("button", { name: "Tous les comptes" })).toBeVisible();
+	await picker.click();
+	const months = page.getByRole("menuitemradio");
+	await expect(months).toHaveCount(12);
+	await expect(months.first()).toHaveText(pickerLabel(current));
+	await expect(page.getByRole("menuitemradio", { name: pickerLabel(current) })).toBeChecked();
+	await page.getByRole("menuitemradio", { name: pickerLabel(previous) }).click();
+
+	await expect(page).toHaveURL(new RegExp(`[?&]moneyFlowMonth=${previous}(&|$)`, "u"));
+	await expect(page).toHaveURL(/[?&]period=last_90_days(&|$)/u);
+	await expect(picker).toHaveText(pickerLabel(previous));
+	await expect(moneyFlow(page)).toContainText(
+		`Du ${longDate(`${previous}-01`)} au ${longDate(monthEnd(previous))}`,
+	);
+	// « Dépenses » keeps its own month.
+	await expect(spending(page).getByRole("button", { name: "Sélectionner un mois" })).toHaveText(
+		pickerLabel(current),
+	);
+
+	await picker.click();
+	await page.getByRole("menuitemradio", { name: pickerLabel(current) }).click();
+	await expect(page).not.toHaveURL(/[?&]moneyFlowMonth=/u);
+
+	await page.goto(`/?moneyFlowMonth=${shiftMonth(current, 3)}`);
+	await expect(picker).toHaveText(pickerLabel(current));
+	await page.goto("/?moneyFlowMonth=abc");
+	await expect(picker).toHaveText(pickerLabel(current));
+});
+
+test("the account filter narrows « Entrées / sorties d'argent », and its « Sorties » row opens the month's confirmed expenses of those accounts", async ({
+	page,
+	api,
+}) => {
+	// July 2021 belongs to this test alone.
+	const opened = { openingBalance: "0", openingDate: "2021-06-01" } as const;
+	const first = await api.openAccount({ ...opened, name: uniqueName("Courant") });
+	const second = await api.openAccount({ ...opened, name: uniqueName("Joint") });
+	// A third account left out, so two ticked are never every account, run alone.
+	await api.openAccount({ ...opened, name: uniqueName("Livret"), kind: "savings" });
+	await api.addTransaction(first.id, { date: "2021-07-05", label: "Courses", amount: "-30,00" });
+	await api.addTransaction(second.id, { date: "2021-07-06", label: "Courses", amount: "-50,00" });
+
+	await page.goto(`/?moneyFlowMonth=2021-07&moneyFlowAccountIds=${first.id}`);
+
+	const trigger = moneyFlow(page).getByRole("button", { name: "Filtrer les comptes (1)" });
+	await expect(trigger).toBeVisible();
+	await expect(flowRow(page, "Sorties")).toContainText(euros(3_000));
+
+	await trigger.click();
+	const popover = page.getByRole("dialog");
+	await popover.getByRole("searchbox", { name: "Rechercher un compte" }).fill(second.name);
+	await popover.getByRole("checkbox").click();
+	await popover.getByRole("button", { name: "Appliquer" }).click();
+
+	// The router writes an array param as JSON.
+	await expect
+		.poll(() => new URL(page.url()).searchParams.get("moneyFlowAccountIds"))
+		.toBe(JSON.stringify([first.id, second.id]));
+	await expect(page).toHaveURL(/[?&]moneyFlowMonth=2021-07(&|$)/u);
+	await expect(
+		moneyFlow(page).getByRole("button", { name: "Filtrer les comptes (2)" }),
+	).toBeVisible();
+	await expect(flowRow(page, "Sorties")).toContainText(euros(8_000));
+
+	await flowRow(page, "Sorties").click();
+
+	await expect(page).toHaveURL(/\/transactions\?/u);
+	const param = (key: string) => new URL(page.url()).searchParams.get(key);
+	await expect.poll(() => param("direction")).toBe(JSON.stringify(["expense"]));
+	await expect.poll(() => param("status")).toBe(JSON.stringify(["confirmed"]));
+	await expect(page).toHaveURL(/[?&]from=2021-07-01(&|$)/u);
+	await expect(page).toHaveURL(/[?&]to=2021-07-31(&|$)/u);
+	await expect.poll(() => param("account")).toBe(JSON.stringify([first.id, second.id]));
+});
+
+test("a click on a Sankey node zooms onto its sub-category, « Retour à la trésorerie totale » zooms out, and a label opens its rows of the period", async ({
+	page,
+	api,
+}) => {
+	// September 2021 belongs to this test alone.
+	const account = await api.openAccount({ openingBalance: "0", openingDate: "2021-08-01" });
+	const parent = await api.createCategory({ name: uniqueName("Maison") });
+	const child = await api.createCategory({ name: uniqueName("Jardin"), parentId: parent.id });
+	await api.addTransaction(account.id, { date: "2021-09-01", label: "Paie", amount: "200,00" });
+	const inParent = await api.addTransaction(account.id, {
+		date: "2021-09-03",
+		label: "Meuble",
+		amount: "-30,00",
+	});
+	const childLabel = uniqueName("Graines");
+	const inChild = await api.addTransaction(account.id, {
+		date: "2021-09-04",
+		label: childLabel,
+		amount: "-20,00",
+	});
+	await api.categorise([inParent], parent.id);
+	await api.categorise([inChild], child.id);
+
+	await page.goto(dashboardOf("2021-09"));
+
+	const chart = sankey(page).getByRole("img", { name: /^Flux de trésorerie de la période/u });
+	const label = (name: string) => chart.locator("text").filter({ hasText: name });
+	await expect(label("Excédent")).toHaveCount(1);
+	await expect(label("Sans catégorie")).toHaveCount(1);
+
+	await chart.locator(`g[data-node="expense_${parent.id}"] path`).click();
+
+	const back = sankey(page).getByRole("button", { name: "Retour à la trésorerie totale" });
+	await expect(back).toBeVisible();
+	await expect(label(parent.name)).toHaveCount(1);
+	await expect(label(child.name)).toHaveCount(1);
+	await expect(label("Excédent")).toHaveCount(0);
+	await expect(label("Sans catégorie")).toHaveCount(0);
+
+	await back.click();
+
+	await expect(back).toHaveCount(0);
+	await expect(label("Excédent")).toHaveCount(1);
+	await expect(label("Sans catégorie")).toHaveCount(1);
+
+	await label(child.name).click();
+
+	await expect(page).toHaveURL(/\/transactions\?/u);
+	await expect(page).toHaveURL(new RegExp(child.id, "u"));
+	await expect(page).toHaveURL(/[?&]from=2021-09-01(&|$)/u);
+	await expect(page).toHaveURL(/[?&]to=2021-09-30(&|$)/u);
+	await expect(page.getByText(childLabel)).toBeVisible();
+});
+
+test("« Dépenses » compares a month's spending with the whole previous month, a refund never lowering it", async ({
+	page,
+	api,
+}) => {
+	// March 2021 and the February before belong to this test alone.
+	const account = await api.openAccount({ openingBalance: "0", openingDate: "2021-01-15" });
+	await api.addTransaction(account.id, { date: "2021-02-10", label: "Courses", amount: "-30,00" });
+	await api.addTransaction(account.id, { date: "2021-03-05", label: "Courses", amount: "-50,00" });
+	await api.addTransaction(account.id, { date: "2021-03-06", label: "Retour", amount: "20,00" });
+
+	await page.goto("/?spendingMonth=2021-03");
+
+	await expect(spending(page)).toContainText("du 1 mars 2021 au 31 mars 2021");
+	const march = spending(page).getByRole("group", { name: "Mars 2021" });
+	await expect(march).toContainText(euros(5_000));
+	// 20,00 € beyond February, in the destructive colour.
+	const delta = march.getByText(euros(2_000), { exact: true });
+	await expect(delta).toHaveCSS("color", rgb("#c91313"));
+	const february = spending(page).getByRole("group", { name: "Février 2021" });
+	await expect(february).toContainText(euros(3_000));
+	await expect(february).not.toContainText("(1-");
+	await expect(spending(page).locator(".recharts-line")).toHaveCount(2);
+
+	await page.goto("/?spendingMonth=2020-11");
+	await expect(spending(page).getByText("Aucune dépense pour ce mois-ci")).toBeVisible();
+});
+
+// Story 14.2 then 34.4: Sure's proportions and its default order. The
+// dashboard's cards stack in one column until 1536 px: beside the rail and
+// the accounts column, a 1440 px screen leaves about 950 px, too narrow for two.
+
+test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px and pair up at 1600 px, the Sankey across both", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingDate: daysAgo(40) });
+	// Today's expense, so « Sorties » has a line in any saved period.
+	await api.addTransaction(account.id, { date: daysAgo(0), label: "Pain", amount: "-2,00" });
 
 	await page.goto("/");
 
@@ -1164,58 +1320,47 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 	const title = card(page).getByRole("heading", { level: 2, name: "Patrimoine net" });
 	await expect(title).toHaveCSS("font-size", "16px");
 	await expect(title).toHaveCSS("font-weight", "510");
-	const cards = [card(page), flows(page, current), bilan(page)];
+	const cards = [
+		sankey(page),
+		outflows(page),
+		card(page),
+		bilan(page),
+		moneyFlow(page),
+		spending(page),
+	];
 	await Promise.all(cards.map((region) => expect(region).toHaveCSS("border-radius", "12px")));
+	await expect(page.getByRole("button", { name: "Mois précédent" })).toHaveCount(0);
 
-	const [netWorth, flow, sheet] = await Promise.all(cards.map((region) => region.boundingBox()));
-	expect(netWorth).not.toBeNull();
-	expect(flow).not.toBeNull();
-	expect(sheet).not.toBeNull();
-	expect(flow?.x).toBe(netWorth?.x);
-	expect(sheet?.x).toBe(netWorth?.x);
-	expect(flow?.width).toBe(netWorth?.width);
-	expect(flow?.y).toBeGreaterThan((netWorth?.y ?? 0) + (netWorth?.height ?? 0));
-	expect(sheet?.y).toBeGreaterThan((flow?.y ?? 0) + (flow?.height ?? 0));
+	const boxes = await Promise.all(cards.map((region) => region.boundingBox()));
+	expect(boxes.every((box) => box !== null)).toBe(true);
+	expect(new Set(boxes.map((box) => box?.x)).size).toBe(1);
+	const tops = boxes.map((box) => box?.y ?? 0);
+	expect(tops).toEqual(tops.toSorted((a, b) => a - b));
 
 	await page.setViewportSize({ width: 1600, height: 900 });
 
-	await expect
-		.poll(async () => {
-			const [wide, beside] = await Promise.all([
-				card(page).boundingBox(),
-				flows(page, current).boundingBox(),
-			]);
-
-			return (
-				wide !== null && beside !== null && beside.x > wide.x + wide.width && beside.y === wide.y
-			);
-		})
-		.toBe(true);
-
-	// The balance sheet climbs under the net worth, beside the month's flow.
 	// Polled: read once, right after the resize, the charts were still redrawing
 	// at their new width, and on 2026-10-06 the grid's rows had not settled.
 	await expect
 		.poll(async () => {
-			const [top, climbed] = await Promise.all([
+			const [wide, left, right] = await Promise.all([
+				sankey(page).boundingBox(),
+				outflows(page).boundingBox(),
 				card(page).boundingBox(),
-				bilan(page).boundingBox(),
 			]);
 
-			return top === null || climbed === null
-				? null
-				: { x: climbed.x - top.x, gap: climbed.y - (top.y + top.height) };
+			return (
+				wide !== null &&
+				left !== null &&
+				right !== null &&
+				left.x === wide.x &&
+				right.x > left.x + left.width &&
+				right.y === left.y &&
+				left.y > wide.y + wide.height &&
+				Math.round(right.x + right.width) === Math.round(wide.x + wide.width)
+			);
 		})
-		.toEqual({ x: 0, gap: 24 });
-
-	// In a half-width card, the month's three figures stack rather than overflow.
-	const cells = await Promise.all(
-		(["Revenus", "Dépenses", "Épargne du mois"] as const).map((label) =>
-			cell(page, current, label).boundingBox(),
-		),
-	);
-	expect(cells.every((box) => box !== null)).toBe(true);
-	expect(new Set(cells.map((box) => box?.x)).size).toBe(1);
+		.toBe(true);
 
 	await page.setViewportSize({ width: 390, height: 844 });
 
@@ -1223,14 +1368,14 @@ test("the greeting is 30 px, and the three cards stack at 1440 px and pair up at
 });
 
 // Story 15.5: queries stay fresh for 30 s, so the dashboard no longer refetches
-// on mount; a category's edit must invalidate the cash flow itself. This
-// month, since « Accueil » leads to it and a link keeps the cache a reload drops.
-test("a category renamed in « Réglages » is renamed in the dashboard's cash flow", async ({
+// on mount; a category's edit must invalidate the cash flow itself. Today,
+// since « Accueil » leads to the saved period and a link keeps the cache a
+// reload drops.
+test("a category renamed in « Réglages » is renamed in the dashboard's « Sorties »", async ({
 	page,
 	api,
 }) => {
 	const today = daysAgo(0);
-	const month = today.slice(0, 7);
 	const account = await api.openAccount({ openingDate: daysAgo(40) });
 	const category = await api.createCategory({ name: uniqueName("Jardin") });
 	const renamed = uniqueName("Potager");
@@ -1242,7 +1387,7 @@ test("a category renamed in « Réglages » is renamed in the dashboard's cash f
 	await api.categorise([id], category.id);
 
 	await page.goto("/");
-	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: category.name })).toBeVisible();
+	await expect(outflowRows(page).filter({ hasText: category.name })).toBeVisible();
 
 	await page.getByRole("link", { name: "Réglages", exact: true }).first().click();
 	await page.getByRole("link", { name: "Catégories" }).first().click();
@@ -1254,6 +1399,6 @@ test("a category renamed in « Réglages » is renamed in the dashboard's cash f
 	await expect(page.getByText(`Catégorie « ${renamed} » enregistrée.`)).toBeVisible();
 	await page.getByRole("link", { name: "Accueil", exact: true }).first().click();
 
-	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: renamed })).toBeVisible();
-	await expect(rowsOf(page, month, "Dépenses").filter({ hasText: category.name })).toHaveCount(0);
+	await expect(outflowRows(page).filter({ hasText: renamed })).toBeVisible();
+	await expect(outflowRows(page).filter({ hasText: category.name })).toHaveCount(0);
 });

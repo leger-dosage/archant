@@ -9,6 +9,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { categories } from "@archant/data/schema/categories";
 import { securityPrices } from "@archant/data/schema/securities";
 
+import { monthRange } from "../domain/dates.ts";
 import { quantity as qty, tradePrice } from "../testing/decimals.ts";
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
@@ -21,10 +22,12 @@ import { recordTrade } from "./ledger/trades.ts";
 import { matchTransfer } from "./ledger/transfers.ts";
 import {
 	getBalanceSheet,
-	getCashFlow,
 	getCashFlowStatistics,
+	getDashboardCashFlow,
 	getIncomeStatement,
+	getMoneyFlow,
 	getNetWorth,
+	getSpendingTrend,
 } from "./reports.ts";
 
 let temp: TempDatabase;
@@ -85,6 +88,14 @@ async function spend(accountId: string, date: string, amount: number, currency =
 
 	return created[0] ?? "";
 }
+
+/** The dashboard's cash flow over a calendar month, as a custom range. */
+const monthCashFlow = async (month: string) =>
+	getDashboardCashFlow(deps(), {
+		period: "last_30_days",
+		startDate: `${month}-01`,
+		endDate: monthRange(month).to,
+	});
 
 async function category(name: string) {
 	const id = crypto.randomUUID();
@@ -249,13 +260,13 @@ describe("getNetWorth", () => {
 	});
 });
 
-describe("getCashFlow", () => {
+describe("getDashboardCashFlow", () => {
 	it("names the accounts in another currency it leaves out", async () => {
 		await account();
 		const dollars = await account({ name: "Dollars", currency: "USD" });
 		await spend(dollars, "2026-09-15", -8_000, "USD");
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 
 		expect(cashFlow.expenses).toBe(0);
 		expect(cashFlow.leftOut).toEqual([{ id: dollars, name: "Dollars", currency: "USD" }]);
@@ -296,7 +307,7 @@ describe("getCashFlow", () => {
 
 		const contributions = (await findTransaction(deps(), outflow))?.categoryId ?? null;
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 
 		expect(cashFlow.income).toBe(0);
 		expect(cashFlow.expenses).toBe(-20_000);
@@ -316,7 +327,7 @@ describe("getCashFlow", () => {
 	});
 });
 
-describe("getCashFlow and Sure's tax treatment", () => {
+describe("getDashboardCashFlow and Sure's tax treatment", () => {
 	it("leaves a retirement account's expense out, counts a gold account's and a blank investment's, and keeps all three in net worth", async () => {
 		const retirement = await account({
 			name: "Retraite",
@@ -329,7 +340,7 @@ describe("getCashFlow and Sure's tax treatment", () => {
 		await spend(gold, "2026-09-15", -2_000);
 		await spend(blank, "2026-09-15", -1_000);
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.expenses).toBe(-3_000);
@@ -337,7 +348,7 @@ describe("getCashFlow and Sure's tax treatment", () => {
 	});
 });
 
-describe("getCashFlow and a crypto account's tax treatment", () => {
+describe("getDashboardCashFlow and a crypto account's tax treatment", () => {
 	it("leaves a tax-exempt crypto account's 100 € of income out, counts a taxable one's, and keeps both in net worth", async () => {
 		const exempt = await account({
 			name: "Crypto exonérée",
@@ -354,7 +365,7 @@ describe("getCashFlow and a crypto account's tax treatment", () => {
 		await spend(exempt, "2026-09-15", 10_000);
 		await spend(taxable, "2026-09-15", 2_000);
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.income).toBe(2_000);
@@ -362,7 +373,7 @@ describe("getCashFlow and a crypto account's tax treatment", () => {
 	});
 });
 
-describe("getCashFlow and one-time transactions", () => {
+describe("getDashboardCashFlow and one-time transactions", () => {
 	it("leaves a one-time expense out of the month, where it counted 900 €", async () => {
 		const checking = await account();
 		const appliances = await category("Électroménager");
@@ -370,13 +381,13 @@ describe("getCashFlow and one-time transactions", () => {
 		await updateTransaction(deps(), oneTime, { oneTime: true }, { origin: "user" });
 		await spend(checking, "2026-09-11", -2_000);
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 
 		expect(cashFlow.expenses).toBe(-2_000);
 	});
 });
 
-describe("getCashFlow and an investment account's activity labels", () => {
+describe("getDashboardCashFlow and an investment account's activity labels", () => {
 	// A brokerage account: a PEA is tax-advantaged, so none of its lines count.
 	it("leaves a sweep in, a sweep out, a transfer and an exchange out of the month, counts a dividend, and keeps them all in net worth", async () => {
 		const brokerage = await account({ name: "CTO", type: "investment", subtype: "brokerage" });
@@ -390,12 +401,109 @@ describe("getCashFlow and an investment account's activity labels", () => {
 		await labelled(30_000, "Exchange");
 		await labelled(1_200, "Dividend");
 
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 		const netWorth = await getNetWorth(deps(), { period: "last_30_days" });
 
 		expect(cashFlow.income).toBe(1_200);
 		expect(cashFlow.expenses).toBe(0);
 		expect(netWorth.netWorth).toBe(100_000 + 50_000 - 50_000 - 20_000 + 30_000 + 1_200);
+	});
+});
+
+describe("getDashboardCashFlow over the dashboard's period", () => {
+	it("starts `all_time` at the oldest entry and weighs the donut's lines to the net expense total", async () => {
+		const checking = await account({ openingDate: "2026-03-14" });
+		const groceries = await category("Courses");
+		const rent = await category("Loyer");
+		await categorised(checking, "2026-04-10", -30_000, groceries);
+		await categorised(checking, "2026-09-02", -50_000, rent);
+		await categorised(checking, "2026-09-03", 5_000, groceries);
+		await spend(checking, "2026-09-04", -7_000);
+
+		const cashFlow = await getDashboardCashFlow(deps(), { period: "all_time" });
+
+		expect(cashFlow).toMatchObject({
+			period: "all_time",
+			from: "2026-03-14",
+			to: "2026-09-21",
+			expenses: -82_000,
+		});
+		const shares = cashFlow.lines.expense.map((line) => line.share ?? 0);
+		expect(shares.reduce((sum, share) => sum + share, 0)).toBeCloseTo(1, 12);
+		expect(cashFlow.lines.expense.map((line) => line.amount)).toEqual([-50_000, -25_000, -7_000]);
+		expect(cashFlow.sankey.nodes.map((node) => node.id)).toEqual([
+			"cash_flow_node",
+			`expense_${rent}`,
+			`expense_${groceries}`,
+			"expense_uncategorised",
+		]);
+	});
+
+	it("reads a custom range as given, its key `null`", async () => {
+		const checking = await account();
+		await spend(checking, "2026-09-09", -1_000);
+		await spend(checking, "2026-09-10", -2_000);
+
+		const cashFlow = await getDashboardCashFlow(deps(), {
+			period: "last_30_days",
+			startDate: "2026-09-10",
+			endDate: "2026-09-12",
+		});
+
+		expect(cashFlow).toMatchObject({ period: null, from: "2026-09-10", expenses: -2_000 });
+	});
+});
+
+describe("getMoneyFlow", () => {
+	it("leaves a PEA out of the accounts it offers and totals", async () => {
+		const checking = await account();
+		const pea = await account({ name: "PEA", type: "investment", subtype: "pea" });
+		await spend(checking, "2026-09-10", -1_000);
+		await spend(pea, "2026-09-10", -4_000);
+
+		const flow = await getMoneyFlow(deps(), { accountIds: [pea] });
+
+		expect(flow).toMatchObject({
+			month: "2026-09",
+			accountIds: null,
+			accounts: [{ id: checking, name: "Courant" }],
+			expenses: -1_000,
+		});
+	});
+});
+
+describe("getSpendingTrend", () => {
+	it("climbs day by day on the expense side alone, so a refund never lowers it", async () => {
+		const checking = await account({ openingDate: "2026-08-01" });
+		await spend(checking, "2026-09-01", -1_000);
+		await spend(checking, "2026-09-03", 5_000);
+		await spend(checking, "2026-09-03", -500);
+
+		const trend = await getSpendingTrend(deps(), undefined);
+
+		expect(trend.current.slice(0, 4).map((point) => point.amount)).toEqual([
+			-1_000, -1_000, -1_500, -1_500,
+		]);
+		expect(trend.currentTotal).toBe(-1_500);
+	});
+
+	it("folds nothing of a shorter previous month, and stops the comparison at this month's day", async () => {
+		vi.setSystemTime(new Date("2026-03-04T10:00:00Z"));
+		const checking = await account({ openingDate: "2026-02-01" });
+		await spend(checking, "2026-02-03", -1_000);
+		await spend(checking, "2026-02-27", -2_000);
+
+		const trend = await getSpendingTrend(deps(), "2026-03");
+
+		expect(trend).toMatchObject({
+			days: 31,
+			currentTotal: 0,
+			previousTotal: -1_000,
+			previousComparisonDay: 4,
+		});
+		expect(trend.current).toHaveLength(4);
+		expect(trend.previous).toHaveLength(28);
+		expect(trend.previous.at(-1)).toMatchObject({ day: 28, amount: -3_000 });
 	});
 });
 
@@ -457,7 +565,7 @@ describe("getIncomeStatement", () => {
 			byMonth: false,
 			comparePrevious: false,
 		});
-		const cashFlow = await getCashFlow(deps(), "2026-09");
+		const cashFlow = await monthCashFlow("2026-09");
 
 		expect(statement).toMatchObject({ income: 3_000, expenses: -10_000 });
 		expect(statement.breakdown?.lines.income.map((line) => line.categoryId)).toEqual([groceries]);
