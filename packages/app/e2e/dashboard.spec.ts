@@ -13,6 +13,7 @@ import {
 	formatTick,
 } from "../src/lib/balance-change.ts";
 import { longDate, monthLabel } from "../src/lib/dates.ts";
+import { formatShare } from "../src/lib/trade-format.ts";
 import {
 	daysAgo,
 	euros,
@@ -757,6 +758,9 @@ const pickerLabel = (month: string) => {
 
 const spending = (page: Page) => page.getByRole("region", { name: "Dépenses", exact: true });
 
+const investments = (page: Page) =>
+	page.getByRole("region", { name: "Investissements", exact: true });
+
 test("« Sorties » and « Entrées / sorties d'argent » count only the month's counted rows", async ({
 	page,
 	api,
@@ -1322,13 +1326,15 @@ test("« Dépenses » compares a month's spending with the whole previous month,
 // dashboard's cards stack in one column until 1536 px: beside the rail and
 // the accounts column, a 1440 px screen leaves about 950 px, too narrow for two.
 
-test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px and pair up at 1600 px, the Sankey across both", async ({
+test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px, « Investissements » after « Sorties », and pair up at 1600 px, the Sankey across both", async ({
 	page,
 	api,
 }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(40) });
 	// Today's expense, so « Sorties » has a line in any saved period.
 	await api.addTransaction(account.id, { date: daysAgo(0), label: "Pain", amount: "-2,00" });
+	// A PEA, so « Investissements » shows.
+	await api.openAccount({ kind: "pea", openingBalance: "0" });
 
 	await page.goto("/");
 
@@ -1340,6 +1346,7 @@ test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px and pa
 	const cards = [
 		sankey(page),
 		outflows(page),
+		investments(page),
 		card(page),
 		bilan(page),
 		moneyFlow(page),
@@ -1363,7 +1370,7 @@ test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px and pa
 			const [wide, left, right] = await Promise.all([
 				sankey(page).boundingBox(),
 				outflows(page).boundingBox(),
-				card(page).boundingBox(),
+				investments(page).boundingBox(),
 			]);
 
 			return (
@@ -1418,4 +1425,105 @@ test("a category renamed in « Réglages » is renamed in the dashboard's « Sor
 
 	await expect(outflowRows(page).filter({ hasText: renamed })).toBeVisible();
 	await expect(outflowRows(page).filter({ hasText: category.name })).toHaveCount(0);
+});
+
+// Story 34.5: Sure's investment summary. May 2019 belongs to the next test
+// alone, so its activity is exact; the value and the weights read every
+// investment account of the shared database, so they are compared with what
+// the API answers.
+
+const investmentSummaryBody = z.object({
+	data: z.object({
+		value: z.number(),
+		totalReturn: z
+			.object({ gain: z.number(), percent: z.string(), trend: z.enum(["up", "down", "flat"]) })
+			.nullable(),
+		holdings: z.array(
+			z.object({ security: z.object({ name: z.string() }), weight: z.string().nullable() }),
+		),
+	}),
+});
+
+test("« Investissements » shows a PEA's month of trades as Sure's activity, and its holding's value, weight and return", async ({
+	page,
+	api,
+	request,
+}) => {
+	const pea = await api.openAccount({
+		kind: "pea",
+		openingBalance: "1 000 000,00",
+		openingDate: "2019-04-01",
+	});
+	const name = uniqueName("Fonds");
+	await api.recordTrade(pea.id, {
+		security: { source: "manual", name },
+		date: "2019-05-10",
+		quantity: "10",
+		price: "100000",
+	});
+	const listed = await request.get(`/api/accounts/${pea.id}/trades`);
+	const securityId = tradesBody.parse(await listed.json()).data.items[0]?.security?.id ?? "";
+	const security = { source: "known", id: securityId };
+	await api.recordTrade(pea.id, {
+		side: "sell",
+		security,
+		date: "2019-05-20",
+		quantity: "4",
+		price: "125000",
+	});
+	await api.recordTrade(pea.id, {
+		side: "dividend",
+		security,
+		date: "2019-05-25",
+		amount: "12,00",
+	});
+
+	await page.goto(dashboardOf("2019-05"));
+
+	const widget = investments(page);
+	const activity = widget.getByRole("group", { name: "Activité Période personnalisée" });
+	await expect(activity.getByRole("group", { name: "Apports" })).toContainText(euros(100_000_000));
+	await expect(activity.getByRole("group", { name: "Retraits" })).toContainText(euros(50_000_000));
+	await expect(activity.getByRole("group", { name: "Transactions boursières" })).toContainText("3");
+
+	// Six shares at the sale's price, bought at 100 000 €: +25 %.
+	const row = widget.getByRole("row").filter({ hasText: name });
+	const cells = row.getByRole("cell");
+	await expect(cells.nth(2)).toHaveText(euros(75_000_000));
+	await expect(cells.nth(3)).toHaveText(formatShare("25"));
+	await expect(cells.nth(3).locator("span")).toHaveCSS("color", rgb("#27a644"));
+
+	// The shared database: another test may write between the page and the
+	// API's answer, so both are read again until they agree.
+	const trendColours = { up: "#27a644", down: "#eb5757", flat: "#6c6b73" } as const;
+	await expect(async () => {
+		await page.reload();
+		const answered = await request.get(
+			"/api/reports/investment-summary?startDate=2019-05-01&endDate=2019-05-31",
+		);
+		const answer = investmentSummaryBody.parse(await answered.json()).data;
+		const holding = answer.holdings.find((each) => each.security.name === name);
+		expect(holding).toBeDefined();
+		expect(answer.totalReturn).not.toBeNull();
+		const totalReturn = answer.totalReturn ?? { gain: 0, percent: "0", trend: "flat" };
+		const percent = Number(totalReturn.percent);
+		const percentText = Number.isFinite(percent)
+			? formatShare(totalReturn.percent)
+			: percent > 0
+				? "＋∞"
+				: "-∞";
+
+		await expect(widget.getByRole("group", { name: "Investissements" })).toContainText(
+			euros(answer.value),
+			{ timeout: 1000 },
+		);
+		await expect(cells.nth(1)).toHaveText(formatShare(holding?.weight ?? ""), { timeout: 1000 });
+		const figure = widget.getByText("Rendement total :").locator("xpath=following-sibling::span");
+		await expect(figure).toHaveText(`${euros(totalReturn.gain)} (${percentText})`, {
+			timeout: 1000,
+		});
+		await expect(figure).toHaveCSS("color", rgb(trendColours[totalReturn.trend]), {
+			timeout: 1000,
+		});
+	}).toPass();
 });

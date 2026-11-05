@@ -88,6 +88,22 @@
 			"chart_one": "Sorties de la période : {{total}} sur {{count}} catégorie.",
 			"chart_other": "Sorties de la période : {{total}} sur {{count}} catégories."
 		},
+		"investmentSummary": {
+			"title": "Investissements",
+			"totalReturn": "Rendement total :",
+			"holding": "Holding",
+			"weight": "Poids",
+			"value": "Valeur",
+			"return": "Rendement",
+			"none": "-",
+			"noTicker": "—",
+			"infinityUp": "＋∞",
+			"infinityDown": "-∞",
+			"periodActivity": "Activité {{period}}",
+			"contributions": "Apports",
+			"withdrawals": "Retraits",
+			"trades": "Transactions boursières"
+		},
 		"moneyFlow": {
 			"title": "Entrées / sorties d'argent",
 			"dateRange": "Du {{startDate}} au {{endDate}}",
@@ -487,55 +503,68 @@
 	"periods": {
 		"last_day": {
 			"short": "1J",
-			"comparison": "vs hier"
+			"comparison": "vs hier",
+			"label": "Dernier jour"
 		},
 		"current_week": {
 			"short": "SC",
-			"comparison": "vs. début de la semaine"
+			"comparison": "vs. début de la semaine",
+			"label": "Semaine en cours"
 		},
 		"last_7_days": {
 			"short": "7J",
-			"comparison": "vs. dernière semaine"
+			"comparison": "vs. dernière semaine",
+			"label": "7 derniers jours"
 		},
 		"current_month": {
 			"short": "MC",
-			"comparison": "vs. début du mois"
+			"comparison": "vs. début du mois",
+			"label": "Mois en cours"
 		},
 		"last_month": {
 			"short": "LM",
-			"comparison": "vs. mois dernier"
+			"comparison": "vs. mois dernier",
+			"label": "Le mois dernier"
 		},
 		"last_30_days": {
 			"short": "30J",
-			"comparison": "vs. 30 derniers jours"
+			"comparison": "vs. 30 derniers jours",
+			"label": "30 derniers jours"
 		},
 		"last_90_days": {
 			"short": "90J",
-			"comparison": "vs. dernier trimestre"
+			"comparison": "vs. dernier trimestre",
+			"label": "90 derniers jours"
 		},
 		"current_year": {
 			"short": "AC",
-			"comparison": "vs. début de l'année"
+			"comparison": "vs. début de l'année",
+			"label": "Année en cours"
 		},
 		"last_365_days": {
 			"short": "365J",
-			"comparison": "vs il y a 1 an"
+			"comparison": "vs il y a 1 an",
+			"label": "365 derniers jours"
 		},
 		"last_5_years": {
 			"short": "5A",
-			"comparison": "vs il y a 5 ans"
+			"comparison": "vs il y a 5 ans",
+			"label": "5 dernières années"
 		},
 		"last_10_years": {
 			"short": "10A",
-			"comparison": "vs il y a 10 ans"
+			"comparison": "vs il y a 10 ans",
+			"label": "10 dernières années"
 		},
 		"all_time": {
 			"short": "Tout",
-			"comparison": "vs début"
+			"comparison": "vs début",
+			"label": "Tout le temps"
 		},
 		"custom": {
 			"short": "Personnalisé",
-			"comparison": "{{startDate}} au {{endDate}}"
+			"comparison": "{{startDate}} au {{endDate}}",
+			"label": "Période personnalisée"
 		},
 		"range": "{{startDate}} – {{endDate}}",
 		"availableHistory": "par rapport à l'historique disponible",

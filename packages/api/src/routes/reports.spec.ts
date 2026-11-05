@@ -20,6 +20,7 @@ import {
 	sendOwn,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { insertSecurity } from "../testing/prices.ts";
 
 useSignedInApp();
 
@@ -830,6 +831,115 @@ describe("GET /api/reports/spending-trend", () => {
 		});
 		await expect(spendingTrendOf("?month=2027-01")).resolves.toMatchObject({
 			month: "2026-09",
+		});
+	});
+});
+
+const investmentBody = z.object({
+	data: z.discriminatedUnion("available", [
+		z.object({ available: z.literal(false) }),
+		z.object({
+			available: z.literal(true),
+			period: z.string().nullable(),
+			from: z.string(),
+			to: z.string(),
+			currency: z.string(),
+			value: z.number(),
+			totalReturn: z
+				.object({ gain: z.number(), percent: z.string(), trend: z.string() })
+				.nullable(),
+			holdings: z.array(
+				z.object({
+					security: z.object({ id: z.string(), name: z.string(), ticker: z.string().nullable() }),
+					amount: z.number(),
+					weight: z.string().nullable(),
+					returnPercent: z.string().nullable(),
+					returnTrend: z.enum(["up", "down", "flat"]).nullable(),
+				}),
+			),
+			activity: z.object({
+				contributions: z.number(),
+				withdrawals: z.number(),
+				trades: z.number(),
+			}),
+			leftOut: z.array(z.object({ id: z.string(), name: z.string(), currency: z.string() })),
+		}),
+	]),
+});
+
+async function investmentSummaryOf(query = "") {
+	const { status, body } = await ownRequest("GET", `/api/reports/investment-summary${query}`);
+
+	expect(status).toBe(200);
+
+	return investmentBody.parse(body).data;
+}
+
+describe("GET /api/reports/investment-summary", () => {
+	it("is unavailable for a household with a checking account alone", async () => {
+		await openOwn();
+
+		await expect(investmentSummaryOf()).resolves.toEqual({ available: false });
+	});
+
+	it("reads the dashboard's period: the last 30 days by default, and a custom range without a key", async () => {
+		const account = await openOwn({ ...pea, openingDate: "2026-07-01" });
+		if (own === undefined) {
+			throw new Error("openOwn() opens the test's own database.");
+		}
+
+		const securityId = await insertSecurity(own.db, {}, { held: false });
+		const security = { source: "known", id: securityId };
+		const trade = async (body: Record<string, unknown>) =>
+			expect((await ownRequest("POST", `/api/accounts/${account.id}/trades`, body)).status).toBe(
+				201,
+			);
+		await trade({
+			side: "buy",
+			security,
+			date: "2026-07-15",
+			quantity: "10",
+			price: "100",
+			fee: "5",
+		});
+		await trade({
+			side: "sell",
+			security,
+			date: "2026-09-10",
+			quantity: "4",
+			price: "125",
+			fee: "0",
+		});
+		await trade({ side: "dividend", security, date: "2026-09-11", amount: "12" });
+
+		const byDefault = await investmentSummaryOf();
+		const july = await investmentSummaryOf("?startDate=2026-07-01&endDate=2026-07-31");
+
+		expect(byDefault).toMatchObject({
+			available: true,
+			period: "last_30_days",
+			from: "2026-08-22",
+			to: "2026-09-21",
+			activity: { contributions: 0, withdrawals: 50_000, trades: 2 },
+		});
+		expect(july).toMatchObject({
+			period: null,
+			from: "2026-07-01",
+			to: "2026-07-31",
+			activity: { contributions: 100_500, withdrawals: 0, trades: 1 },
+		});
+		// 25 000 € − 1 005 € + 500 € + 12 € of cash, and 6 shares at 125 €,
+		// bought at 100,50 € with the fee: +147 € on 603 €.
+		expect(july).toMatchObject({
+			value: 2_450_700 + 75_000,
+			holdings: [
+				{
+					security: { id: securityId },
+					amount: 75_000,
+					returnPercent: "24.378109",
+					returnTrend: "up",
+				},
+			],
 		});
 	});
 });

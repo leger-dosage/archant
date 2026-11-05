@@ -1,11 +1,13 @@
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 
+import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
+import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import { securityPrices } from "@archant/data/schema/securities";
 
@@ -25,6 +27,7 @@ import {
 	getCashFlowStatistics,
 	getDashboardCashFlow,
 	getIncomeStatement,
+	getInvestmentSummary,
 	getMoneyFlow,
 	getNetWorth,
 	getSpendingTrend,
@@ -608,6 +611,237 @@ describe("getIncomeStatement", () => {
 		).rejects.toMatchObject({
 			code: "VALIDATION_ERROR",
 			fields: [{ path: "accountIds.1", code: "unknown_account" }],
+		});
+	});
+});
+
+/** September 2026 as a custom range. */
+const september = {
+	period: "last_30_days",
+	startDate: "2026-09-01",
+	endDate: "2026-09-30",
+} as const;
+const summaryOf = async (query: Parameters<typeof getInvestmentSummary>[1] = september) =>
+	getInvestmentSummary(deps(), query);
+const investmentAccount = async (overrides: Partial<NewAccountInput> = {}) =>
+	account({
+		name: "PEA",
+		type: "investment",
+		subtype: "pea",
+		openingDate: "2026-08-01",
+		...overrides,
+	});
+const tradeOn = async (accountId: string, input: Parameters<typeof recordTrade>[2]) =>
+	recordTrade(deps(), accountId, input, { origin: "user" });
+const buy = async (
+	accountId: string,
+	securityId: string,
+	date: string,
+	units: string,
+	price: string,
+) =>
+	tradeOn(accountId, {
+		side: "buy",
+		security: { source: "known", id: securityId },
+		date,
+		quantity: qty(units),
+		price: tradePrice(price),
+		fee: toMinorUnits(0),
+	});
+
+describe("getInvestmentSummary", () => {
+	it("is unavailable without an investment account, an inactive or excluded PEA counting as none", async () => {
+		await account();
+		const inactive = await investmentAccount();
+		const excluded = await investmentAccount({ name: "PEA exclu" });
+		await temp.db.update(accounts).set({ active: false }).where(eq(accounts.id, inactive));
+		await temp.db
+			.update(accounts)
+			.set({ excludedFromReports: true })
+			.where(eq(accounts.id, excluded));
+
+		await expect(summaryOf()).resolves.toEqual({ available: false });
+	});
+
+	it("gives a PEA that never traded its value alone: no return, no holding, no activity", async () => {
+		await investmentAccount({ openingBalance: toMinorUnits(250_000) });
+
+		await expect(summaryOf()).resolves.toEqual({
+			available: true,
+			period: null,
+			from: "2026-09-01",
+			to: "2026-09-30",
+			currency: "EUR",
+			value: 250_000,
+			totalReturn: null,
+			holdings: [],
+			activity: { contributions: 0, withdrawals: 0, trades: 0 },
+			leftOut: [],
+		});
+	});
+
+	it("totals the period's buys, fee included, its sales and every trade row, a dividend's too, and neither a cash deposit nor a trade before it", async () => {
+		const peaId = await investmentAccount({ openingBalance: toMinorUnits(500_000) });
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		await buy(peaId, lvmh, "2026-08-20", "1", "50");
+		await tradeOn(peaId, {
+			side: "buy",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-10",
+			quantity: qty("10"),
+			price: tradePrice("100"),
+			fee: toMinorUnits(500),
+		});
+		await tradeOn(peaId, {
+			side: "sell",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-12",
+			quantity: qty("4"),
+			price: tradePrice("100"),
+			fee: toMinorUnits(0),
+		});
+		await tradeOn(peaId, {
+			side: "dividend",
+			security: { source: "known", id: lvmh },
+			date: "2026-09-15",
+			amount: toMinorUnits(1_200),
+		});
+		await spend(peaId, "2026-09-16", 200_000);
+
+		const summary = await summaryOf();
+
+		expect(summary).toMatchObject({
+			activity: { contributions: 100_500, withdrawals: 40_000, trades: 3 },
+		});
+	});
+
+	it("rolls one security held in two PEAs into one row of 5 000 €, weighed over the portfolio, cash included", async () => {
+		const first = await investmentAccount({ openingBalance: toMinorUnits(300_000) });
+		const second = await investmentAccount({
+			name: "PEA-PME",
+			openingBalance: toMinorUnits(700_000),
+		});
+		const cw8 = await insertSecurity(
+			temp.db,
+			{ ticker: "CW8", isin: "LU1681043599", name: "Amundi MSCI World" },
+			{ held: false },
+		);
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		await buy(first, cw8, "2026-09-10", "30", "100");
+		await buy(second, cw8, "2026-09-10", "20", "100");
+		await buy(second, lvmh, "2026-09-11", "1", "600");
+
+		const summary = await summaryOf({ period: "last_30_days" });
+
+		// 10 000 € of cash and holdings, 5 600 € of them invested.
+		expect(summary).toMatchObject({
+			available: true,
+			period: "last_30_days",
+			value: 1_000_000,
+			totalReturn: { gain: 0, percent: "0", trend: "flat" },
+			holdings: [
+				{
+					security: { id: cw8, name: "Amundi MSCI World", ticker: "CW8" },
+					amount: 500_000,
+					weight: "50",
+					returnPercent: "0",
+					returnTrend: "flat",
+				},
+				{
+					security: { id: lvmh, ticker: "MC.PA" },
+					amount: 60_000,
+					weight: "6",
+					returnPercent: "0",
+					returnTrend: "flat",
+				},
+			],
+			activity: { contributions: 560_000, withdrawals: 0, trades: 3 },
+		});
+	});
+
+	it("measures the total return of every holding against its book value, as the price moved", async () => {
+		const peaId = await investmentAccount({ openingBalance: toMinorUnits(100_000) });
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		await buy(peaId, lvmh, "2026-09-10", "10", "50");
+		await temp.db.transaction(
+			async (tx) => {
+				await tx.insert(securityPrices).values({
+					securityId: lvmh,
+					date: "2026-09-11",
+					price: toMicros(45_000_000),
+					currency: "EUR",
+					source: "provider",
+				});
+				await revalueHoldings(tx, lvmh, "2026-09-11", "Europe/Paris", { origin: "provider" });
+			},
+			{ behavior: "immediate" },
+		);
+
+		const summary = await summaryOf();
+
+		// 450 € for 500 €: −50 €, −10 %; the cash of 500 € still counts in the value.
+		expect(summary).toMatchObject({
+			value: 95_000,
+			totalReturn: { gain: -5_000, percent: "-10", trend: "down" },
+			holdings: [
+				{ amount: 45_000, weight: "47.368421", returnPercent: "-10", returnTrend: "down" },
+			],
+		});
+	});
+
+	it("gives a free share's return as infinite, Sure's « ＋∞ », once it is priced", async () => {
+		const peaId = await investmentAccount({ openingBalance: toMinorUnits(0) });
+		const lvmh = await insertSecurity(temp.db, {}, { held: false });
+		await buy(peaId, lvmh, "2026-09-10", "2", "0");
+		await temp.db.transaction(
+			async (tx) => {
+				await tx.insert(securityPrices).values({
+					securityId: lvmh,
+					date: "2026-09-11",
+					price: toMicros(30_000_000),
+					currency: "EUR",
+					source: "provider",
+				});
+				await revalueHoldings(tx, lvmh, "2026-09-11", "Europe/Paris", { origin: "provider" });
+			},
+			{ behavior: "immediate" },
+		);
+
+		await expect(summaryOf()).resolves.toMatchObject({
+			totalReturn: { gain: 6_000, percent: "Infinity", trend: "up" },
+			holdings: [{ amount: 6_000, returnPercent: "Infinity", returnTrend: "up" }],
+		});
+	});
+
+	it("leaves a brokerage account in dollars out of every figure and names it", async () => {
+		await investmentAccount({ openingBalance: toMinorUnits(100_000) });
+		const dollars = await investmentAccount({
+			name: "Courtage US",
+			subtype: "brokerage",
+			currency: "USD",
+			openingBalance: toMinorUnits(900_000),
+		});
+		await account({ name: "Dollars", currency: "USD" });
+
+		const summary = await summaryOf();
+
+		expect(summary).toMatchObject({
+			value: 100_000,
+			leftOut: [{ id: dollars, name: "Courtage US", currency: "USD" }],
+		});
+	});
+
+	it("is available with a dollar account alone, to name it", async () => {
+		const dollars = await investmentAccount({
+			name: "Courtage US",
+			subtype: "brokerage",
+			currency: "USD",
+		});
+
+		await expect(summaryOf()).resolves.toMatchObject({
+			available: true,
+			value: 0,
+			leftOut: [{ id: dollars }],
 		});
 	});
 });

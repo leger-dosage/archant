@@ -88,6 +88,22 @@
 			"chart_one": "Outflows for the period: {{total}} across {{count}} category.",
 			"chart_other": "Outflows for the period: {{total}} across {{count}} categories."
 		},
+		"investmentSummary": {
+			"title": "Investments",
+			"totalReturn": "Total Return:",
+			"holding": "Holding",
+			"weight": "Weight",
+			"value": "Value",
+			"return": "Return",
+			"none": "-",
+			"noTicker": "—",
+			"infinityUp": "＋∞",
+			"infinityDown": "-∞",
+			"periodActivity": "{{period}} Activity",
+			"contributions": "Contributions",
+			"withdrawals": "Withdrawals",
+			"trades": "Trades"
+		},
 		"moneyFlow": {
 			"title": "Money In / Out",
 			"dateRange": "{{startDate}} to {{endDate}}",
@@ -487,55 +503,68 @@
 	"periods": {
 		"last_day": {
 			"short": "1D",
-			"comparison": "vs. yesterday"
+			"comparison": "vs. yesterday",
+			"label": "Last Day"
 		},
 		"current_week": {
 			"short": "WTD",
-			"comparison": "vs. start of week"
+			"comparison": "vs. start of week",
+			"label": "Current Week"
 		},
 		"last_7_days": {
 			"short": "7D",
-			"comparison": "vs. last week"
+			"comparison": "vs. last week",
+			"label": "Last 7 Days"
 		},
 		"current_month": {
 			"short": "MTD",
-			"comparison": "vs. start of month"
+			"comparison": "vs. start of month",
+			"label": "Current Month"
 		},
 		"last_month": {
 			"short": "LM",
-			"comparison": "vs. last month"
+			"comparison": "vs. last month",
+			"label": "Last Month"
 		},
 		"last_30_days": {
 			"short": "30D",
-			"comparison": "vs. last 30 days"
+			"comparison": "vs. last 30 days",
+			"label": "Last 30 Days"
 		},
 		"last_90_days": {
 			"short": "90D",
-			"comparison": "vs. last quarter"
+			"comparison": "vs. last quarter",
+			"label": "Last 90 Days"
 		},
 		"current_year": {
 			"short": "YTD",
-			"comparison": "vs. start of year"
+			"comparison": "vs. start of year",
+			"label": "Current Year"
 		},
 		"last_365_days": {
 			"short": "365D",
-			"comparison": "vs. 1 year ago"
+			"comparison": "vs. 1 year ago",
+			"label": "Last 365 Days"
 		},
 		"last_5_years": {
 			"short": "5Y",
-			"comparison": "vs. 5 years ago"
+			"comparison": "vs. 5 years ago",
+			"label": "Last 5 Years"
 		},
 		"last_10_years": {
 			"short": "10Y",
-			"comparison": "vs. 10 years ago"
+			"comparison": "vs. 10 years ago",
+			"label": "Last 10 Years"
 		},
 		"all_time": {
 			"short": "All",
-			"comparison": "vs. beginning"
+			"comparison": "vs. beginning",
+			"label": "All Time"
 		},
 		"custom": {
 			"short": "Custom",
-			"comparison": "{{startDate}} to {{endDate}}"
+			"comparison": "{{startDate}} to {{endDate}}",
+			"label": "Custom Period"
 		},
 		"range": "{{startDate}} – {{endDate}}",
 		"availableHistory": "vs. available history",

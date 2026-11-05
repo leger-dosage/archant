@@ -17,7 +17,7 @@ const SAFE = BigInt(Number.MAX_SAFE_INTEGER);
  * where a share would read backwards or divide by nothing, and past what a
  * number holds exactly, a gain of a million euros on a cent.
  */
-function percentOf(part: bigint, whole: bigint): Micros | null {
+export function percentOf(part: bigint, whole: bigint): Micros | null {
 	if (whole <= 0n) {
 		return null;
 	}
@@ -50,16 +50,13 @@ export type PositionFigures = {
 };
 
 /**
- * Sure's holding row: the book value at the average cost, the unrealised gain
- * and its percentage, and the weight in the account's total (AD-22).
+ * A position's book value at its average cost and its unrealised gain, in
+ * minor units; `null` without a cost basis or past what an amount holds.
  */
-export function positionFigures(
+export function bookFigures(
 	position: { quantity: Quantity; amount: MinorUnits; costBasis: Micros | null },
-	total: MinorUnits,
 	currency: string,
-): PositionFigures {
-	const weight = weightOf(position.amount, total);
-
+): { bookValue: bigint; gain: bigint } | null {
 	const bookValue =
 		position.costBasis === null
 			? null
@@ -73,10 +70,29 @@ export function positionFigures(
 		bookValue > BigInt(MAX_MINOR_UNITS) ||
 		bookValue < -BigInt(MAX_MINOR_UNITS)
 	) {
+		return null;
+	}
+
+	return { bookValue, gain: BigInt(position.amount) - bookValue };
+}
+
+/**
+ * Sure's holding row: the book value at the average cost, the unrealised gain
+ * and its percentage, and the weight in the account's total (AD-22).
+ */
+export function positionFigures(
+	position: { quantity: Quantity; amount: MinorUnits; costBasis: Micros | null },
+	total: MinorUnits,
+	currency: string,
+): PositionFigures {
+	const weight = weightOf(position.amount, total);
+	const figures = bookFigures(position, currency);
+
+	if (figures === null) {
 		return { bookValue: null, gain: null, gainPercent: null, weight };
 	}
 
-	const gain = BigInt(position.amount) - bookValue;
+	const { bookValue, gain } = figures;
 
 	return {
 		bookValue: toMinorUnits(Number(bookValue)),

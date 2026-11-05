@@ -12,8 +12,10 @@ import {
 	count,
 	desc,
 	eq,
+	gte,
 	inArray,
 	isNull,
+	lte,
 	not,
 	notInArray,
 	or,
@@ -35,6 +37,7 @@ import { entryKeys } from "@archant/data/schema/entry-keys";
 import type { FileSourceId } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
+import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { LockedFields, PostedMatchConfidence } from "@archant/data/schema/transactions";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
@@ -51,6 +54,9 @@ import {
 	counterpartIdOf,
 	inSequence,
 	notSplitParent,
+	quantityAboveZero,
+	quantityNotAboveZero,
+	quantityNotZero,
 	transferColumns,
 } from "./shared.ts";
 
@@ -798,4 +804,63 @@ export async function oldestEntryDate(deps: ServiceDeps): Promise<IsoDate | null
 		.limit(1);
 
 	return oldest?.date ?? null;
+}
+
+/** Sure's `InvestmentStatement::Totals` of a period, before its sums become amounts. */
+export type TradeTotals = {
+	/** The buys' amounts, fees included, as a size. */
+	contributions: bigint;
+	/** The sales' amounts, as a size. */
+	withdrawals: bigint;
+	/** Every trade row, a dividend's and interest's included. */
+	trades: number;
+};
+
+/** The size of the amounts of the trades `condition` holds for, as text, so no sum rounds through a float. */
+function sizeWhere(condition: SQL) {
+	return sql<string>`cast(coalesce(sum(case when ${condition} then abs(${entries.amount}) else 0 end), 0) as text)`;
+}
+
+/**
+ * Sure's `InvestmentStatement::Totals#aggregation_sql` over `accountIds`
+ * from `from` to `to`, both inclusive: a buy's amount counts as a
+ * contribution, a sale's as a withdrawal, and every trade, an income
+ * included, in the count. A cash deposit is a transaction, never a trade,
+ * and counts nowhere.
+ */
+export async function tradeTotals(
+	deps: ServiceDeps,
+	range: { accountIds: readonly string[]; from: IsoDate; to: IsoDate },
+): Promise<TradeTotals> {
+	if (range.accountIds.length === 0) {
+		return { contributions: 0n, withdrawals: 0n, trades: 0 };
+	}
+
+	const rows = await deps.db
+		.select({
+			contributions: sizeWhere(quantityAboveZero(trades.quantity)),
+			withdrawals: sizeWhere(
+				sql`(${quantityNotAboveZero(trades.quantity)} and ${quantityNotZero(trades.quantity)})`,
+			),
+			trades: count(),
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(
+			and(
+				inArray(entries.accountId, [...range.accountIds]),
+				gte(entries.date, range.from),
+				lte(entries.date, range.to),
+			),
+		);
+
+	// An aggregate without `group by` answers exactly one row.
+	return rows.reduce<TradeTotals>(
+		(totals, row) => ({
+			contributions: totals.contributions + BigInt(row.contributions),
+			withdrawals: totals.withdrawals + BigInt(row.withdrawals),
+			trades: totals.trades + row.trades,
+		}),
+		{ contributions: 0n, withdrawals: 0n, trades: 0 },
+	);
 }
