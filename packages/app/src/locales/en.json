@@ -170,6 +170,30 @@
 			"onPace": "Everything is on track",
 			"list": "Goals in progress",
 			"all": "All goals"
+		},
+		"sections": "Dashboard sections",
+		"toggleSection": "Toggle section visibility",
+		"dragToReorder": "Drag to reorder section",
+		"widgetInstructions": "{{title}} section. Press Enter or Space to grab for reordering, then use arrow keys to move.",
+		"customize": {
+			"start": "Customize",
+			"done": "Done",
+			"hide": "Hide {{title}}",
+			"hiddenTitle": "Hidden widgets",
+			"hiddenDescription": "Add a widget back to the dashboard.",
+			"noneHidden": "Every widget is shown. Hide one with its eye button.",
+			"allHiddenTitle": "Every widget is hidden",
+			"allHiddenDescription": "Customize the dashboard to add widgets back."
+		},
+		"widgetSize": {
+			"label": "Adjust size",
+			"widthLabel": "Width",
+			"half": "Half",
+			"full": "Full",
+			"heightLabel": "Height",
+			"compact": "Compact",
+			"auto": "Auto",
+			"tall": "Tall"
 		}
 	},
 	"accounts": {

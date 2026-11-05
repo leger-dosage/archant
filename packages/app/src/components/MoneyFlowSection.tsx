@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toMinorUnits } from "@archant/data/money";
 
 import { DashboardMonthPicker } from "@/components/DashboardMonthPicker";
+import { useDashboardWidget } from "@/components/DashboardWidget";
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
@@ -196,6 +197,8 @@ export function MoneyFlowSection({
 	const data = flow.data;
 	const placeholder = flow.isPlaceholderData;
 	const everyAccount = accounts.groups.flatMap((group) => group.accounts.map((each) => each.id));
+	// Sure's `stacked`: across both columns, the chart and the month's summary sit side by side.
+	const wide = useDashboardWidget()?.colSpan === "full";
 
 	return (
 		<Section title={t("dashboard.moneyFlow.title")}>
@@ -237,63 +240,65 @@ export function MoneyFlowSection({
 						</div>
 					</div>
 
-					<div className="flex flex-col gap-2">
-						<div className="flex items-center justify-between gap-4 px-1 text-xs text-muted-foreground">
-							<div className="flex items-center gap-4">
-								<span className="flex items-center gap-1.5">
-									<span
-										aria-hidden="true"
-										className="size-2 rounded-full"
-										style={{ backgroundColor: FLOW_COLOURS.income }}
-									/>
-									{t("dashboard.moneyFlow.income")}
-								</span>
-								<span className="flex items-center gap-1.5">
-									<span
-										aria-hidden="true"
-										className="size-2 rounded-full"
-										style={{ backgroundColor: FLOW_COLOURS.muted }}
-									/>
-									{t("dashboard.moneyFlow.expenses")}
-								</span>
+					<div className={cn("flex flex-col gap-6", wide && "xl:flex-row")}>
+						<div className={cn("flex w-full flex-col gap-2", wide && "xl:w-3/5")}>
+							<div className="flex items-center justify-between gap-4 px-1 text-xs text-muted-foreground">
+								<div className="flex items-center gap-4">
+									<span className="flex items-center gap-1.5">
+										<span
+											aria-hidden="true"
+											className="size-2 rounded-full"
+											style={{ backgroundColor: FLOW_COLOURS.income }}
+										/>
+										{t("dashboard.moneyFlow.income")}
+									</span>
+									<span className="flex items-center gap-1.5">
+										<span
+											aria-hidden="true"
+											className="size-2 rounded-full"
+											style={{ backgroundColor: FLOW_COLOURS.muted }}
+										/>
+										{t("dashboard.moneyFlow.expenses")}
+									</span>
+								</div>
+								<span>{t("dashboard.moneyFlow.chartSpan", { months: data.bars.length })}</span>
 							</div>
-							<span>{t("dashboard.moneyFlow.chartSpan", { months: data.bars.length })}</span>
+							<Suspense fallback={<div className="h-44" />}>
+								<MoneyFlowChart data={data} />
+							</Suspense>
 						</div>
-						<Suspense fallback={<div className="h-44" />}>
-							<MoneyFlowChart data={data} />
-						</Suspense>
-					</div>
 
-					<div className="flex flex-col gap-4">
-						<p className="text-sm font-medium">{capitalised(monthLabel(data.month))}</p>
-						<div className="flex items-center justify-between text-sm">
-							<span className="text-muted-foreground">{t("dashboard.moneyFlow.balance")}</span>
-							<Money
-								amount={data.balance}
-								currency={data.currency}
-								className={cn(
-									"text-lg",
-									data.balance < 0 && "text-destructive",
-									data.balance > 0 && "text-money-income",
+						<div className={cn("flex w-full flex-col gap-4", wide && "xl:w-2/5")}>
+							<p className="text-sm font-medium">{capitalised(monthLabel(data.month))}</p>
+							<div className="flex items-center justify-between text-sm">
+								<span className="text-muted-foreground">{t("dashboard.moneyFlow.balance")}</span>
+								<Money
+									amount={data.balance}
+									currency={data.currency}
+									className={cn(
+										"text-lg",
+										data.balance < 0 && "text-destructive",
+										data.balance > 0 && "text-money-income",
+									)}
+								/>
+							</div>
+							<FlowRow
+								direction="income"
+								data={data}
+								accounts={drilldownAccounts(
+									data.accountIds ?? data.accounts.map((each) => each.id),
+									everyAccount,
+								)}
+							/>
+							<FlowRow
+								direction="expense"
+								data={data}
+								accounts={drilldownAccounts(
+									data.accountIds ?? data.accounts.map((each) => each.id),
+									everyAccount,
 								)}
 							/>
 						</div>
-						<FlowRow
-							direction="income"
-							data={data}
-							accounts={drilldownAccounts(
-								data.accountIds ?? data.accounts.map((each) => each.id),
-								everyAccount,
-							)}
-						/>
-						<FlowRow
-							direction="expense"
-							data={data}
-							accounts={drilldownAccounts(
-								data.accountIds ?? data.accounts.map((each) => each.id),
-								everyAccount,
-							)}
-						/>
 					</div>
 				</div>
 			)}

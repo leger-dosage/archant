@@ -58,11 +58,9 @@ function Chart({ data, height }: { data: DashboardCashFlowData; height: number }
 export function CashFlowSankeySection({
 	cashFlow,
 	accounts,
-	className,
 }: {
 	cashFlow: UseQueryResult<DashboardCashFlowData>;
 	accounts: AccountListData;
-	className?: string;
 }) {
 	const { t } = useTranslation();
 	const admin = useIsAdmin();
@@ -78,7 +76,6 @@ export function CashFlowSankeySection({
 	return (
 		<Section
 			title={t("dashboard.cashflowSankey.title")}
-			{...(className === undefined ? {} : { className })}
 			action={
 				hasFlows ? (
 					<Button

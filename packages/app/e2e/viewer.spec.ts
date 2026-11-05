@@ -267,6 +267,14 @@ reader.describe("a viewer", () => {
 		await expect(page.getByRole("heading", { level: 1, name: `Bonjour ${name}` })).toBeVisible();
 		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
 		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
+		// Story 34.6: Sure's default layout, with nothing to arrange (AD-21).
+		await expect(page.getByRole("region", { name: "Bilan" })).toBeVisible();
+		await expectNone(page, [
+			{ role: "button", name: "Afficher/masquer la section" },
+			{ role: "button", name: "Glisser pour réorganiser la section" },
+			{ role: "button", name: "Ajuster la taille" },
+			{ role: "link", name: "Personnaliser" },
+		]);
 
 		// An empty period: the Sankey says so, and offers a viewer nothing to add.
 		await page.goto("/?startDate=2000-01-01&endDate=2000-01-31");

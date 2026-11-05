@@ -4,6 +4,7 @@ import type { ChartPeriod } from "@/lib/periods";
 import { TrendingDownIcon, TrendingUpIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useDashboardWidget } from "@/components/DashboardWidget";
 import { LazyBalanceChart } from "@/components/LazyBalanceChart";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
 import { Money } from "@/components/Money";
@@ -11,6 +12,7 @@ import { Section } from "@/components/Section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useNetWorth } from "@/hooks/useNetWorth";
 import { changeText } from "@/lib/balance-change";
+import { DASHBOARD_FALLBACK_HEIGHT } from "@/lib/chart-heights";
 import { comparisonText } from "@/lib/periods";
 
 /**
@@ -82,6 +84,7 @@ export function NetWorthSection({
 	const { t } = useTranslation();
 	const netWorth = useNetWorth(period, ready);
 	const data = netWorth.data;
+	const height = useDashboardWidget()?.heightPx ?? DASHBOARD_FALLBACK_HEIGHT;
 
 	return (
 		<Section id="net-worth-heading" title={t("dashboard.netWorth")}>
@@ -111,7 +114,7 @@ export function NetWorthSection({
 					history={netWorth}
 					summaryKey="dashboard.summary"
 					valueLabel={t("dashboard.netWorth")}
-					height={208}
+					height={height}
 					onRangeSelect={onRangeSelect}
 				/>
 				{data !== undefined && <LeftOutNotice accounts={data.leftOut} />}

@@ -10,6 +10,7 @@ import { formatCompactMoney } from "@/lib/balance-change";
 import { formatMoney } from "@/lib/format-money";
 import { intlLocale } from "@/lib/locale";
 import { FLOW_COLOURS } from "@/lib/money-flow";
+import { cn } from "@/lib/utils";
 
 const dayMonth = new Intl.DateTimeFormat(intlLocale, {
 	day: "numeric",
@@ -102,15 +103,18 @@ function SpendingTooltip({
 export function SpendingTrendChart({
 	data,
 	labels,
+	className,
 }: {
 	data: SpendingTrendData;
 	labels: { current: string; previous: string };
+	/** The chart's height class, the widget's preset. */
+	className: string;
 }) {
 	const slots = slotsOf(data);
 	const ticks = [1, Math.ceil(data.days / 2), data.days];
 
 	return (
-		<ChartContainer config={{}} className="aspect-auto h-52 w-full">
+		<ChartContainer config={{}} className={cn("aspect-auto w-full", className)}>
 			<LineChart data={slots} margin={{ top: 8, right: 4, bottom: 0, left: 4 }}>
 				{/* Sure's `spending-chart`: four dashed lines and a compact money axis on the right. */}
 				<CartesianGrid vertical={false} strokeDasharray="3 3" />

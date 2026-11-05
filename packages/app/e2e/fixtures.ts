@@ -9,8 +9,15 @@ import type {
 	PropertyDetailsInput,
 	VehicleDetailsInput,
 } from "@archant/api/schemas/accounts";
+import type { DashboardLayoutInput } from "@archant/api/schemas/dashboard-layout";
 import type { AccountOrder } from "@archant/data/account-orders";
 import type { CategoryIcon } from "@archant/data/category-presets";
+import {
+	DASHBOARD_SECTION_LAYOUTS,
+	DEFAULT_DASHBOARD_ORDER,
+	DEFAULT_HEIGHT_PRESET,
+	perSection,
+} from "@archant/data/dashboard-sections";
 import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { SurePeriod } from "@archant/data/periods";
@@ -411,6 +418,35 @@ export function apiHelpers(request: APIRequestContext) {
 		/** Saves the administrator's chart period, one for the whole run: reset it after. */
 		async setDefaultPeriod(defaultPeriod: SurePeriod) {
 			const response = await request.patch("/api/preferences", { data: { defaultPeriod } });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/**
+		 * Saves one change to the administrator's dashboard layout, one for the
+		 * whole run: `resetDashboardLayout` after.
+		 */
+		async setDashboardLayout(change: DashboardLayoutInput) {
+			const response = await request.patch("/api/dashboard/layout", { data: change });
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Puts the administrator's dashboard back to Sure's default layout. */
+		async resetDashboardLayout() {
+			const response = await request.patch("/api/dashboard/layout", {
+				data: {
+					sectionOrder: [...DEFAULT_DASHBOARD_ORDER],
+					collapsedSections: perSection(() => false),
+					hiddenSections: perSection(() => false),
+					sectionLayout: perSection((key) => ({
+						...(DASHBOARD_SECTION_LAYOUTS[key].grow ? { height: DEFAULT_HEIGHT_PRESET } : {}),
+						...(DASHBOARD_SECTION_LAYOUTS[key].widthToggle
+							? { colSpan: DASHBOARD_SECTION_LAYOUTS[key].colSpan }
+							: {}),
+					})),
+				} satisfies DashboardLayoutInput,
+			});
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
 		},

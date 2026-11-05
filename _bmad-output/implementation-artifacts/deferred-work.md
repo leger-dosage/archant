@@ -493,3 +493,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-34-3-pick-the-dashboard-period.md`
   summary: Test that the dashboard's first chart read waits for the saved period when the URL names none.
   evidence: Only the final state is asserted; setting `ready` to true would send one extra `last_30_days` read unnoticed.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-6-arrange-the-dashboard.md`
+  summary: Test that « Widgets masqués » offers « Investissements » only to a household with an active account that holds securities.
+  evidence: the shared e2e database always holds a PEA before the `reset` project, so the absent case cannot be reached; the predicate in `_authed.index.tsx` could move to `src/lib` and be unit-tested.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-6-arrange-the-dashboard.md`
+  summary: Test that « Entrées / sorties d'argent » set to « Plein » lays its chart and summary side by side at 1600 px.
+  evidence: `MoneyFlowSection.tsx` switches on `colSpan === "full"` and no test sets `money_flow` full.

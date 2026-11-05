@@ -113,7 +113,8 @@ test("the net worth shows its trend arrow in the trend colour, and its value unc
 	await expect(arrow).toHaveCSS("color", rgb(rising ? "#27a644" : "#eb5757"));
 	await expect(headline(page).locator(".amount-hero")).toHaveCSS("color", rgb("#282a30"));
 	await expect(headline(page).locator(".amount-hero")).toHaveCSS("font-size", "30px");
-	await expect(card(page).locator('[data-slot="chart"]')).toHaveCSS("height", "208px");
+	// Sure's `auto` height preset, a widget's default.
+	await expect(card(page).locator('[data-slot="chart"]')).toHaveCSS("height", "288px");
 	await expect(total(page, "Actifs")).toBeVisible();
 	await expect(total(page, "Passifs")).toBeVisible();
 	// Sure's axes: no vertical label and no grid, the first and last dates
@@ -558,7 +559,7 @@ test("« 90J » goes to the URL and is saved for the next visit, the summary and
 		await showTable.click();
 		const table = card(page).getByRole("table");
 		const tableId = await showTable.getAttribute("aria-controls");
-		await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "208px");
+		await expect(card(page).locator(`[id="${tableId}"]`)).toHaveCSS("height", "288px");
 		await expect(table.getByRole("columnheader")).toHaveText(["Date", "Patrimoine net"]);
 		await expect(table.getByRole("row")).toHaveCount(expected.points.length + 1);
 		await expect(table.getByRole("row").nth(1)).toContainText(formatTableDate(daysAgo(0)));
@@ -1317,16 +1318,18 @@ test("« Dépenses » compares a month's spending with the whole previous month,
 	await expect(february).toContainText(euros(3_000));
 	await expect(february).not.toContainText("(1-");
 	await expect(spending(page).locator(".recharts-line")).toHaveCount(2);
+	// Sure's `auto` height preset, a widget's default.
+	await expect(spending(page).locator('[data-slot="chart"]')).toHaveCSS("height", "288px");
 
 	await page.goto("/?spendingMonth=2020-11");
 	await expect(spending(page).getByText("Aucune dépense pour ce mois-ci")).toBeVisible();
 });
 
-// Story 14.2 then 34.4: Sure's proportions and its default order. The
-// dashboard's cards stack in one column until 1536 px: beside the rail and
+// Story 14.2 then 34.6: Sure's proportions and its effective default order.
+// The dashboard's cards stack in one column until 1536 px: beside the rail and
 // the accounts column, a 1440 px screen leaves about 950 px, too narrow for two.
 
-test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px, « Investissements » after « Sorties », and pair up at 1600 px, the Sankey across both", async ({
+test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px, « Investissements » after « Dépenses », and pack two columns at 1600 px, the Sankey across both", async ({
 	page,
 	api,
 }) => {
@@ -1346,11 +1349,11 @@ test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px, « In
 	const cards = [
 		sankey(page),
 		outflows(page),
-		investments(page),
 		card(page),
 		bilan(page),
 		moneyFlow(page),
 		spending(page),
+		investments(page),
 	];
 	await Promise.all(cards.map((region) => expect(region).toHaveCSS("border-radius", "12px")));
 	await expect(page.getByRole("button", { name: "Mois précédent" })).toHaveCount(0);
@@ -1363,25 +1366,65 @@ test("the greeting is 30 px, the widgets stack in Sure's order at 1440 px, « In
 
 	await page.setViewportSize({ width: 1600, height: 900 });
 
+	/**
+	 * Every shown widget, each column top to bottom, a full-width one in both:
+	 * between two consecutive cards, the 24 px gap and the masonry's rounding,
+	 * never an overlap nor a hole.
+	 */
+	const packed = async (leftX: number, rightX: number) => {
+		const cardBoxes = (
+			await page
+				.getByRole("list", { name: "Sections du tableau de bord" })
+				.locator("[data-section-key]")
+				.evaluateAll((items) =>
+					items.flatMap((item) => {
+						const { x, y, width, height } = item.getBoundingClientRect();
+
+						return height > 0 ? [{ x, y, width, height }] : [];
+					}),
+				)
+		).toSorted((a, b) => a.y - b.y);
+		const half = Math.max(...cardBoxes.map((box) => box.width)) / 2;
+
+		return [leftX, rightX].every((column) => {
+			const stack = cardBoxes.filter((box) => box.width > half + 1 || Math.abs(box.x - column) < 1);
+
+			return stack.slice(1).every((box, index) => {
+				const previous = stack[index]!;
+				const gap = box.y - (previous.y + previous.height);
+
+				return gap >= 0 && gap <= 25;
+			});
+		});
+	};
+
 	// Polled: read once, right after the resize, the charts were still redrawing
 	// at their new width, and on 2026-10-06 the grid's rows had not settled.
+	// Sure's masonry: the donut and the net worth side by side under the
+	// Sankey, then every card in one of the two columns, packed without a
+	// hole taller than the gap.
 	await expect
 		.poll(async () => {
-			const [wide, left, right] = await Promise.all([
-				sankey(page).boundingBox(),
-				outflows(page).boundingBox(),
-				investments(page).boundingBox(),
-			]);
+			const [wide, left, right, ...rest] = await Promise.all(
+				[sankey(page), outflows(page), card(page), ...cards.slice(3)].map((region) =>
+					region.boundingBox(),
+				),
+			);
 
 			return (
+				wide !== undefined &&
 				wide !== null &&
+				left !== undefined &&
 				left !== null &&
+				right !== undefined &&
 				right !== null &&
 				left.x === wide.x &&
 				right.x > left.x + left.width &&
-				right.y === left.y &&
-				left.y > wide.y + wide.height &&
-				Math.round(right.x + right.width) === Math.round(wide.x + wide.width)
+				Math.abs(right.y - left.y) < 1 &&
+				Math.round(left.y - (wide.y + wide.height)) === 24 &&
+				Math.round(right.x + right.width) === Math.round(wide.x + wide.width) &&
+				rest.every((box) => box !== null && (box.x === left.x || box.x === right.x)) &&
+				(await packed(left.x, right.x))
 			);
 		})
 		.toBe(true);
