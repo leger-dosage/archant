@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { z } from "zod";
 
 import { rateLimits, sessions, signInFailures, users } from "@archant/data/schema/auth";
-import { jwks, oauthConsents } from "@archant/data/schema/oauth";
+import { jwks, oauthClients, oauthConsents } from "@archant/data/schema/oauth";
 
 import { createLogger } from "../lib/logger.ts";
 import {
@@ -565,6 +565,23 @@ describe("the authorisation server's metadata", () => {
 	});
 });
 
+const registration = (redirectUri: string, extra: Record<string, unknown> = {}) => ({
+	client_name: "MCP client",
+	redirect_uris: [redirectUri],
+	token_endpoint_auth_method: "none",
+	grant_types: ["authorization_code", "refresh_token"],
+	response_types: ["code"],
+	...extra,
+});
+
+const storedType = async (clientId: string) =>
+	(
+		await temp.db
+			.select({ applicationType: oauthClients.applicationType })
+			.from(oauthClients)
+			.where(eq(oauthClients.clientId, clientId))
+	)[0]?.applicationType;
+
 describe("client registration", () => {
 	it.each(["/api/auth/oauth2/create-client", "/api/auth/oauth2/update-client"])(
 		"disables %s, even for the signed-in owner",
@@ -610,88 +627,52 @@ describe("client registration", () => {
 		);
 	});
 
-	describe("application_type inference (AD-22)", () => {
-		it("accepts loopback HTTP redirect URIs when application_type is omitted", async () => {
-			const { bare } = assistantServer();
-
-			const response = await tryRegisterClient(bare, {
-				client_name: "Cursor MCP client",
-				redirect_uris: ["http://localhost:8787/callback"],
-				token_endpoint_auth_method: "none",
-				grant_types: ["authorization_code", "refresh_token"],
-				response_types: ["code"],
-			});
-
-			expect(response.status).toBe(201);
-			const body = registered.parse(await response.json());
-			expect(body.client_id).toEqual(expect.any(String));
-		});
-
+	// MCP clients such as Cursor register without `application_type` and a
+	// loopback HTTP callback; Better Auth's `web` default refused them (AD-19).
+	describe("an omitted application_type", () => {
 		it.each([
-			["http://localhost:8787/callback", "localhost with port"],
-			["http://127.0.0.1:33418/callback", "127.0.0.1"],
-			["http://[::1]:8080/callback", "[::1]"],
-		])("infers native for %s (%s)", async (redirectUri, _description) => {
+			"http://localhost:8787/callback",
+			"http://127.0.0.1:33418/callback",
+			"http://[::1]:8080/callback",
+		])("registers a native client for the loopback callback %s", async (redirectUri) => {
 			const { bare } = assistantServer();
 
-			const response = await tryRegisterClient(bare, {
-				client_name: "Native MCP client",
-				redirect_uris: [redirectUri],
-				token_endpoint_auth_method: "none",
-				grant_types: ["authorization_code", "refresh_token"],
-				response_types: ["code"],
-			});
+			const response = await tryRegisterClient(bare, registration(redirectUri));
 
 			expect(response.status).toBe(201);
+			const { client_id } = registered.parse(await response.json());
+			expect(await storedType(client_id)).toBe("native");
 		});
 
-		it("refuses non-loopback HTTP redirect URIs for inferred web clients", async () => {
+		it("registers a web client for an HTTPS callback", async () => {
 			const { bare } = assistantServer();
 
-			const response = await tryRegisterClient(bare, {
-				client_name: "Attempted web client",
-				redirect_uris: ["http://example.com/callback"],
-				token_endpoint_auth_method: "none",
-				grant_types: ["authorization_code", "refresh_token"],
-				response_types: ["code"],
-			});
-
-			expect(response.status).toBe(400);
-			const body = await response.json();
-			expect(body).toMatchObject({
-				error: "invalid_redirect_uri",
-			});
-		});
-
-		it("still accepts HTTPS for inferred web clients", async () => {
-			const { bare } = assistantServer();
-
-			const response = await tryRegisterClient(bare, {
-				client_name: "HTTPS web client",
-				redirect_uris: ["https://example.com/callback"],
-				token_endpoint_auth_method: "none",
-				grant_types: ["authorization_code", "refresh_token"],
-				response_types: ["code"],
-			});
+			const response = await tryRegisterClient(bare, registration("https://example.com/callback"));
 
 			expect(response.status).toBe(201);
+			const { client_id } = registered.parse(await response.json());
+			expect(await storedType(client_id)).toBe("web");
 		});
 
-		it("does not override an explicit application_type", async () => {
+		it("refuses an HTTP callback on any other host, as a web client", async () => {
 			const { bare } = assistantServer();
 
-			const response = await tryRegisterClient(bare, {
-				client_name: "Explicit web client",
-				redirect_uris: ["http://localhost:8787/callback"],
-				application_type: "web",
-				token_endpoint_auth_method: "none",
-				grant_types: ["authorization_code", "refresh_token"],
-				response_types: ["code"],
-			});
+			const response = await tryRegisterClient(bare, registration("http://example.com/callback"));
 
-			// An explicit web application_type with loopback is refused: the inference
-			// does not override it.
 			expect(response.status).toBe(400);
+			await expect(response.json()).resolves.toMatchObject({ error: "invalid_redirect_uri" });
+		});
+
+		it("never overrides an explicit web application_type", async () => {
+			const { bare } = assistantServer();
+
+			const response = await tryRegisterClient(
+				bare,
+				registration("http://localhost:8787/callback", { application_type: "web" }),
+			);
+
+			expect(response.status).toBe(400);
+			await expect(response.json()).resolves.toMatchObject({ error: "invalid_redirect_uri" });
 		});
 	});
 });
