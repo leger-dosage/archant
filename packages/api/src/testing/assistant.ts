@@ -14,7 +14,7 @@ export const READ = "archant:read offline_access";
 
 export const READ_WRITE = "archant:read archant:write offline_access";
 
-const registered = z.object({ client_id: z.string() });
+export const registered = z.object({ client_id: z.string() });
 
 const tokens = z.object({
 	access_token: z.string(),
@@ -54,6 +54,21 @@ export async function registerClient(bare: TestApp, name = "Claude Code"): Promi
 	}
 
 	return registered.parse(await response.json()).client_id;
+}
+
+/**
+ * Attempts to register a client with the given metadata. Returns the response
+ * for positive and negative test cases.
+ */
+export async function tryRegisterClient(
+	bare: TestApp,
+	metadata: Record<string, unknown>,
+): Promise<Response> {
+	return bare.request("/api/auth/oauth2/register", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(metadata),
+	});
 }
 
 /** A PKCE pair: the verifier the client keeps, the S256 challenge it sends. */

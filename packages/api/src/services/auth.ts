@@ -132,6 +132,11 @@ function assistantPlugins(baseURL: string, fetchMetadata: ClientMetadataResource
 				// not publish a metadata document; nobody is signed in yet then.
 				allowDynamicClientRegistration: true,
 				allowUnauthenticatedClientRegistration: true,
+				// Treat omitted `application_type` as `native` when redirect URIs use
+				// a non-http(s) scheme or are loopback HTTP (AD-22). MCP clients that
+				// omit the field can then register without loosening web-client redirect
+				// policy.
+				clientRegistrationDefaultApplicationType: "infer",
 			}),
 		),
 		cimd({ fetchClientMetadataResource: fetchMetadata }),
