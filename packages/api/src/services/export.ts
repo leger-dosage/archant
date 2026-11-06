@@ -286,14 +286,14 @@ function escapeTagName(name: string): string {
  * in one would run when the owner opens the file. `all.ndjson`, which Sure
  * imports, keeps the text exact.
  */
-function textCell(value: string | null | undefined): string | null {
+export function textCell(value: string | null | undefined): string | null {
 	return value === null || value === undefined || !/^[=+\-@\t\r]/u.test(value)
 		? (value ?? null)
 		: `'${value}`;
 }
 
 /** One CSV chunk, each row ending in `\n` as Ruby's `CSV.generate` writes it. */
-function csv(rows: readonly (readonly unknown[])[]): string {
+export function csv(rows: readonly (readonly unknown[])[]): string {
 	return rows.length === 0
 		? ""
 		: `${Papa.unparse(

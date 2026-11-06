@@ -47,17 +47,18 @@ export default defineConfig({
 				/assistants\.spec\.ts$/u,
 				/sign-in-ceiling\.spec\.ts$/u,
 				/dashboard-layout\.spec\.ts$/u,
+				/reports-layout\.spec\.ts$/u,
 			],
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["setup"],
 		},
-		// After every `chromium` test: the dashboard layout is the single
-		// administrator's, and a `chromium` test reading the dashboard while
-		// this one hides or moves a widget would find it elsewhere. Each test
-		// puts Sure's default back.
+		// After every `chromium` test: the dashboard and reports layouts are
+		// the single administrator's, and a `chromium` test reading either page
+		// while this one hides or moves a section would find it elsewhere.
+		// Each test puts Sure's default back.
 		{
 			name: "layout",
-			testMatch: /dashboard-layout\.spec\.ts$/u,
+			testMatch: /(dashboard|reports)-layout\.spec\.ts$/u,
 			use: { ...DESKTOP, storageState: ADMIN_STATE },
 			dependencies: ["chromium"],
 		},

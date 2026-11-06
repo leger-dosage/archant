@@ -1,10 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
+import type { Auth } from "../services/auth.ts";
+
+import { sql } from "drizzle-orm";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createLogger } from "../lib/logger.ts";
 import {
 	buildApp,
 	car,
 	cashFlowOf,
+	errorBody,
 	expense,
 	home,
 	listed,
@@ -18,8 +23,10 @@ import {
 	pea,
 	postOwn,
 	sendOwn,
+	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
+import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 import { insertSecurity } from "../testing/prices.ts";
 
 useSignedInApp();
@@ -940,6 +947,189 @@ describe("GET /api/reports/investment-summary", () => {
 					returnTrend: "up",
 				},
 			],
+		});
+	});
+});
+
+const reportsPageBody = z.object({
+	data: z.object({
+		period: z.object({ type: z.string(), from: z.string(), to: z.string(), swapped: z.boolean() }),
+		navigation: z.object({ atLatest: z.boolean() }).nullable(),
+		hasTransactions: z.boolean(),
+		summary: z.object({ income: z.number(), expenses: z.number() }),
+		breakdown: z.object({
+			expense: z.array(z.object({ kind: z.string(), total: z.number() })),
+		}),
+	}),
+});
+
+describe("GET /api/reports/page", () => {
+	it("answers the period, the summary and the breakdown in one read", async () => {
+		const account = await openOwn({ openingBalance: "1 000,00" });
+		await postOwn(account.id, expense);
+
+		const read = await ownRequest(
+			"GET",
+			"/api/reports/page?periodType=monthly&startDate=2026-09-01&endDate=2026-09-30",
+		);
+
+		expect(read.status).toBe(200);
+		const { data } = reportsPageBody.parse(read.body);
+		expect(data.period).toEqual({
+			type: "monthly",
+			from: "2026-09-01",
+			to: "2026-09-30",
+			swapped: false,
+		});
+		expect(data.navigation?.atLatest).toBe(true);
+		expect(data.hasTransactions).toBe(true);
+		expect(data.summary).toEqual(expect.objectContaining({ income: 0, expenses: 4290 }));
+		expect(data.breakdown.expense).toEqual([
+			expect.objectContaining({ kind: "uncategorized", total: 4290 }),
+		]);
+	});
+
+	it("reads an unknown type as monthly and swaps a reversed custom range", async () => {
+		const unknown = await ownRequest("GET", "/api/reports/page?periodType=weekly&startDate=nope");
+		const reversed = await ownRequest(
+			"GET",
+			"/api/reports/page?periodType=custom&startDate=2026-09-20&endDate=2026-09-05",
+		);
+
+		expect(reportsPageBody.parse(unknown.body).data.period).toMatchObject({
+			type: "monthly",
+			from: "2026-09-01",
+			to: "2026-09-30",
+		});
+		const farOff = await ownRequest(
+			"GET",
+			"/api/reports/page?periodType=custom&startDate=0001-01-01&endDate=9999-12-31",
+		);
+
+		// Outside 1900 to 2100, a date is the type's default, as one that does not parse.
+		expect(reportsPageBody.parse(farOff.body).data.period).toMatchObject({
+			from: "2026-08-21",
+			to: "2026-09-21",
+		});
+		expect(reportsPageBody.parse(reversed.body).data).toMatchObject({
+			period: { from: "2026-09-05", to: "2026-09-20", swapped: true },
+			navigation: null,
+		});
+	});
+});
+
+describe("GET /api/reports/export", () => {
+	it("downloads the period's CSV under Sure's name", async () => {
+		const account = await openOwn({ openingBalance: "1 000,00" });
+		await postOwn(account.id, expense);
+
+		const response = await buildApp(own?.db).request(
+			"/api/reports/export?periodType=monthly&startDate=2026-09-01&endDate=2026-09-30",
+		);
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("text/csv; charset=utf-8");
+		expect(response.headers.get("content-disposition")).toContain(
+			'attachment; filename="transactions_breakdown_20260901_to_20260930.csv"',
+		);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		expect((await response.text()).split("\n").slice(0, 3)).toEqual([
+			"Category,Sep 2026,Total",
+			"EXPENSES,,",
+			expect.stringMatching(/^Uncategorized,/u),
+		]);
+	});
+});
+
+const reportsLayoutBody = z.object({
+	data: z.strictObject({
+		sectionOrder: z.array(z.string()),
+		collapsedSections: z.record(z.string(), z.boolean()),
+	}),
+});
+
+const storedReportsLayouts = async (db: typeof temp.db) =>
+	(await db.all<{ layout: string | null }>(sql`select reports_layout as layout from users`)).map(
+		(row) => row.layout,
+	);
+
+describe("/api/reports/layout", () => {
+	it("reads Sure's default, then each change merged, the order replaced", async () => {
+		await openOwn();
+		const first = await ownRequest("GET", "/api/reports/layout");
+
+		expect(reportsLayoutBody.parse(first.body).data).toEqual({
+			sectionOrder: ["trends_insights", "transactions_breakdown", "net_worth"],
+			collapsedSections: {
+				net_worth: false,
+				trends_insights: false,
+				transactions_breakdown: false,
+			},
+		});
+
+		await ownRequest("PATCH", "/api/reports/layout", { collapsedSections: { net_worth: true } });
+		await ownRequest("PATCH", "/api/reports/layout", {
+			sectionOrder: ["transactions_breakdown", "trends_insights", "net_worth"],
+		});
+		const read = await ownRequest("GET", "/api/reports/layout");
+
+		expect(reportsLayoutBody.parse(read.body).data).toEqual({
+			sectionOrder: ["transactions_breakdown", "trends_insights", "net_worth"],
+			collapsedSections: { net_worth: true, trends_insights: false, transactions_breakdown: false },
+		});
+	});
+
+	it("refuses an unknown key with its field, nothing stored", async () => {
+		await openOwn();
+		const refused = await ownRequest("PATCH", "/api/reports/layout", { sectionOrder: ["foo"] });
+
+		expect(refused.status).toBe(400);
+		const { error } = errorBody.parse(refused.body);
+		expect(error.code).toBe("VALIDATION_ERROR");
+		expect(error.fields).toEqual([expect.objectContaining({ path: "sectionOrder.0" })]);
+		expect(await storedReportsLayouts(own?.db ?? temp.db)).toEqual([null]);
+	});
+
+	it("refuses an order naming a section twice", async () => {
+		await openOwn();
+		const refused = await ownRequest("PATCH", "/api/reports/layout", {
+			sectionOrder: ["net_worth", "net_worth"],
+		});
+
+		expect(refused.status).toBe(400);
+		const { error } = errorBody.parse(refused.body);
+		expect(error.code).toBe("VALIDATION_ERROR");
+		expect(error.fields).toEqual([{ path: "sectionOrder", code: "duplicate_section" }]);
+	});
+
+	describe("as a viewer", () => {
+		const silent = createLogger("silent");
+		let auth: Auth;
+		let viewerCookie: string;
+
+		// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+		beforeAll(async () => {
+			auth = createTestAuth(temp.db, silent);
+			viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		});
+
+		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		it("is refused FORBIDDEN on a save, nothing written, and still downloads the CSV", async () => {
+			const refused = await viewer().request("/api/reports/layout", {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ collapsedSections: { net_worth: true } }),
+			});
+			const exported = await viewer().request("/api/reports/export");
+
+			expect(refused.status).toBe(403);
+			expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+			expect(await temp.db.all(sql`select 1 from users where reports_layout is not null`)).toEqual(
+				[],
+			);
+			expect(exported.status).toBe(200);
+			expect(exported.headers.get("content-type")).toBe("text/csv; charset=utf-8");
 		});
 	});
 });

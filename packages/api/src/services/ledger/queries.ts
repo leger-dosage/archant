@@ -673,14 +673,13 @@ export async function sumTransactionsByLabel(
 }
 
 /**
- * The rows every cash-flow query counts (AD-9): transactions of `accountIds`
- * in the range, neither excluded, one-time nor pending, no internal movement
- * of an investment account, and no transfer side but the outflow of a loan
- * payment or an investment contribution. One definition, so
- * the month's breakdown and the budget's history never disagree; `null` when
- * nothing can match. No trade counts, as Sure's `trades_subquery_sql`.
+ * The rows Sure's reports breakdown and export read: transactions of
+ * `accountIds` in the range, neither excluded nor one-time, and no transfer
+ * side but the outflow of a loan payment or an investment contribution, as
+ * its `BUDGET_EXCLUDED_KINDS`; `null` when nothing can match. Pending rows
+ * and internal movements count here, as in Sure's.
  */
-function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
+function activityCondition(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
 	const where = filterCondition(range, joinedTransferSide);
 
 	return where === null
@@ -690,6 +689,23 @@ function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: re
 				not(joinedTransferSide.uncounted),
 				eq(transactions.excluded, false),
 				eq(transactions.oneTime, false),
+			);
+}
+
+/**
+ * The rows every cash-flow query counts (AD-9): `activityCondition`'s
+ * without the pending rows and an investment account's internal movements.
+ * One definition, so the month's breakdown and the budget's history never
+ * disagree; `null` when nothing can match. No trade counts, as Sure's
+ * `trades_subquery_sql`.
+ */
+function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
+	const where = activityCondition(range);
+
+	return where === null
+		? null
+		: and(
+				where,
 				eq(transactions.pending, false),
 				// `not in` alone would drop unlabelled rows: a null never compares.
 				or(
@@ -790,6 +806,125 @@ export async function cashFlowByDay(
 	const rows = await cashFlowKeyed(deps, range, sql<IsoDate>`${entries.date}`);
 
 	return rows.map(({ key, ...row }) => ({ ...row, date: key }));
+}
+
+/**
+ * A category's rows on one side of Sure's reports breakdown, with how many
+ * there are. `outflow` is the side: Sure counts a zero amount as income, so
+ * the sum alone cannot tell.
+ */
+export type ActivityRow = CashFlowRow & { outflow: boolean; count: number };
+
+/** Sure's `entry.amount > 0 ? "expense" : "income"`, in Archant's signs (AD-5). */
+const outflowKey = sql<number>`${entries.amount} < 0`;
+
+/**
+ * `activityCondition`'s rows from `from` to `to`, both inclusive, summed and
+ * counted per category and per sign: Sure's `build_transactions_breakdown`
+ * before it groups sub-categories under their parent.
+ */
+export async function activityByCategory(
+	deps: ServiceDeps,
+	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+): Promise<ActivityRow[]> {
+	const where = activityCondition(range);
+
+	if (where === null) {
+		return [];
+	}
+
+	const rows = await deps.db
+		.select({
+			categoryId: transactions.categoryId,
+			outflow: outflowKey.mapWith(Boolean),
+			amount: sum(entries.amount).mapWith(Number),
+			count: count(),
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(where)
+		.groupBy(transactions.categoryId, outflowKey);
+
+	return rows.map(toRecord);
+}
+
+/**
+ * The trades of `accountIds` from `from` to `to`, both inclusive, summed and
+ * counted per sign: what Sure's breakdown lists under « Autres
+ * investissements », a trade having no category in Archant.
+ */
+export async function activityTrades(
+	deps: ServiceDeps,
+	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+): Promise<Omit<ActivityRow, "categoryId">[]> {
+	if (range.accountIds.length === 0) {
+		return [];
+	}
+
+	const rows = await deps.db
+		.select({
+			outflow: outflowKey.mapWith(Boolean),
+			amount: sum(entries.amount).mapWith(Number),
+			count: count(),
+		})
+		.from(trades)
+		.innerJoin(entries, eq(entries.id, trades.entryId))
+		.where(
+			and(
+				inArray(entries.accountId, [...range.accountIds]),
+				gte(entries.date, range.from),
+				lte(entries.date, range.to),
+			),
+		)
+		.groupBy(outflowKey);
+
+	return rows.map(toRecord);
+}
+
+/**
+ * `activityCondition`'s rows from `from` to `to`, summed per category, sign
+ * and calendar month: Sure's `build_monthly_breakdown_for_export`.
+ */
+export async function transactionsByCategoryMonth(
+	deps: ServiceDeps,
+	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+): Promise<(Omit<ActivityRow, "count"> & { month: IsoMonth })[]> {
+	const where = activityCondition(range);
+
+	if (where === null) {
+		return [];
+	}
+
+	const month = sql<IsoMonth>`substr(${entries.date}, 1, 7)`;
+	const rows = await deps.db
+		.select({
+			month,
+			categoryId: transactions.categoryId,
+			outflow: outflowKey.mapWith(Boolean),
+			amount: sum(entries.amount).mapWith(Number),
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(where)
+		.groupBy(month, transactions.categoryId, outflowKey);
+
+	return rows.map(toRecord);
+}
+
+/** Sure's `Current.family.transactions.any?`: whether any account holds a transaction. */
+export async function hasAnyTransaction(deps: ServiceDeps): Promise<boolean> {
+	const row = await deps.db
+		.select({ id: entries.id })
+		.from(entries)
+		.where(eq(entries.kind, "transaction"))
+		.limit(1)
+		.get();
+
+	return row !== undefined;
 }
 
 /**

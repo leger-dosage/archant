@@ -18,6 +18,7 @@ Bring Archant's dashboard, reports and a few layout details back to Sure's behav
 - Story 34.8: Import files and edit rules on a phone
 - Story 34.9: Sure's few hotkeys
 - Story 34.10: Sure's layout under Archant's visual style
+- Story 34.11: Sure's investment sections on the reports page
 
 ## Requirements & Constraints
 
@@ -35,5 +36,5 @@ Bring Archant's dashboard, reports and a few layout details back to Sure's behav
 ## Cross-Story Dependencies
 
 - Stories 34.1, 34.2, 34.8, 34.9 and 34.10 come in any order.
-- Story 34.3 comes before 34.4, 34.5 and 34.7; Story 34.6 follows 34.4 and 34.5.
+- Story 34.3 comes before 34.4, 34.5 and 34.7; Story 34.6 follows 34.4 and 34.5; Story 34.11 follows 34.7.
 - The transfer, bill, bulk-edit and split drawers belong to Stories 31.6, 33.7, 31.2 and 31.3; the goals card leaves the dashboard with Story 35.10.

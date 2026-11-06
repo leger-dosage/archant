@@ -10,6 +10,7 @@ import type {
 	VehicleDetailsInput,
 } from "@archant/api/schemas/accounts";
 import type { DashboardLayoutInput } from "@archant/api/schemas/dashboard-layout";
+import type { ReportsLayoutInput } from "@archant/api/schemas/reports";
 import type { AccountOrder } from "@archant/data/account-orders";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import {
@@ -22,6 +23,7 @@ import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { SurePeriod } from "@archant/data/periods";
 import { DEFAULT_PERIOD } from "@archant/data/periods";
+import { DEFAULT_REPORTS_ORDER } from "@archant/data/reports-sections";
 import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
 
@@ -446,6 +448,22 @@ export function apiHelpers(request: APIRequestContext) {
 							: {}),
 					})),
 				} satisfies DashboardLayoutInput,
+			});
+
+			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);
+		},
+
+		/** Puts the administrator's reports page back to Sure's default order, nothing collapsed. */
+		async resetReportsLayout() {
+			const response = await request.patch("/api/reports/layout", {
+				data: {
+					sectionOrder: [...DEFAULT_REPORTS_ORDER],
+					collapsedSections: {
+						net_worth: false,
+						trends_insights: false,
+						transactions_breakdown: false,
+					},
+				} satisfies ReportsLayoutInput,
 			});
 
 			expect(response.ok(), `${response.url()} answered ${await response.text()}`).toBe(true);

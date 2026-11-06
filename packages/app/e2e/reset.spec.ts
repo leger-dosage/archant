@@ -99,6 +99,23 @@ test("« Réinitialiser le compte » asks first, then empties every list without
 	).toBeVisible();
 });
 
+// Right after the reset, the one moment the household holds no transaction.
+test("« Rapports » of an empty household says so, offering an account, then a transaction once an account takes one", async ({
+	page,
+	api,
+}) => {
+	await page.goto("/reports");
+	const empty = page.getByRole("region", { name: "Aucune donnée disponible" });
+	await expect(empty).toBeVisible();
+	await expect(empty.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
+	await expect(empty.getByRole("button", { name: "Ajouter une transaction" })).toHaveCount(0);
+
+	await api.openAccount();
+	await page.reload();
+	await expect(empty.getByRole("button", { name: "Ajouter une transaction" })).toBeVisible();
+	await expect(empty.getByRole("button", { name: "Ajouter un compte" })).toBeVisible();
+});
+
 test("« Supprimer tout » deletes every category, then the empty page and a row's picker restore Sure's defaults", async ({
 	page,
 	api,

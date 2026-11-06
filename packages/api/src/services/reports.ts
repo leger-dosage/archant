@@ -120,7 +120,7 @@ async function reportedAccounts(deps: ServiceDeps, kept: (row: Account) => boole
  * tax-advantaged ones, a PEA, an assurance-vie, a retirement plan or a
  * crypto account held tax-exempt, whose money is set aside.
  */
-async function cashFlowAccounts(deps: ServiceDeps) {
+export async function cashFlowAccounts(deps: ServiceDeps) {
 	const { counted, ...rest } = await reportedAccounts(deps);
 
 	return { ...rest, counted: counted.filter((row) => !isTaxAdvantaged(row)) };
@@ -717,7 +717,7 @@ export async function getCashFlowWithRows(
 }
 
 /** Every category as `grossCashFlow` reads it. */
-async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[]> {
+export async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCategory[]> {
 	return deps.db
 		.select({
 			id: categories.id,
@@ -866,7 +866,7 @@ function statementStatistics(rows: readonly (CashFlowRow & { date: IsoDate })[])
 }
 
 /** Each calendar month from `from` to `to`, its first and last days cut to them. */
-function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
+export function monthBuckets(from: IsoDate, to: IsoDate): DateRange[] {
 	const buckets: DateRange[] = [];
 
 	for (let cursor = from; cursor <= to;) {

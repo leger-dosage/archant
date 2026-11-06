@@ -21,6 +21,7 @@ const DESTINATIONS = [
 	"Budgets",
 	"Objectifs",
 	"Factures",
+	"Rapports",
 	"Règles",
 	"Réglages",
 ];
@@ -28,7 +29,7 @@ const DESTINATIONS = [
 // Story 21.2: below 1024 px, four destinations and « Plus », whose menu holds the others.
 const PHONE_DESTINATIONS = ["Accueil", "Opérations", "Budgets", "Objectifs"];
 
-const MORE = ["Comptes", "Factures", "Règles", "Réglages"];
+const MORE = ["Comptes", "Factures", "Rapports", "Règles", "Réglages"];
 
 /** The labels of the bottom navigation that their entry cuts short. */
 async function cutLabels(page: Page): Promise<string[]> {
@@ -381,7 +382,7 @@ test.describe("on a phone", () => {
 		await expect(menu.getByRole("menuitem", { name: "Se déconnecter" })).toBeVisible();
 	});
 
-	test("the bottom navigation leads to each page, the last four through « Plus »", async ({
+	test("the bottom navigation leads to each page, the last five through « Plus »", async ({
 		page,
 	}) => {
 		await page.goto("/");
@@ -415,7 +416,7 @@ for (const width of [360, 390]) {
 	test.describe(`on a ${width} px screen`, () => {
 		test.use({ viewport: { width, height: 800 } });
 
-		test("every bottom-navigation label shows whole, and each of the eight destinations is reachable", async ({
+		test("every bottom-navigation label shows whole, and each of the nine destinations is reachable", async ({
 			page,
 		}) => {
 			await page.goto("/");

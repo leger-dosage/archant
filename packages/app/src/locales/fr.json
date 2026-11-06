@@ -28,6 +28,7 @@
 		"budgets": "Budgets",
 		"goals": "Objectifs",
 		"bills": "Factures",
+		"reports": "Rapports",
 		"rules": "Règles",
 		"settings": "Réglages",
 		"signOut": "Se déconnecter",
@@ -3107,6 +3108,150 @@
 			"description": "Êtes-vous sûr de vouloir supprimer toutes les règles ? Les opérations qu'elles ont déjà modifiées restent telles quelles. Ceci n'est pas réversible.",
 			"confirm": "Supprimer toutes les règles",
 			"deleted": "Toutes les règles supprimées"
+		}
+	},
+	"reports": {
+		"title": "Rapports",
+		"subtitle": "Aperçus complets de votre santé financière",
+		"printReport": "Imprimer le rapport",
+		"periodAria": "Période du rapport",
+		"periods": {
+			"monthly": "Mensuel",
+			"quarterly": "Trimestriel",
+			"ytd": "Depuis le début de l'année",
+			"last_6_months": "6 derniers mois",
+			"custom": "Plage personnalisée"
+		},
+		"dateRange": {
+			"from": "Du",
+			"to": "Au"
+		},
+		"previousPeriod": "Période précédente",
+		"nextPeriod": "Période suivante",
+		"shortcutHint": "{{action}} ({{key}})",
+		"today": "Aujourd'hui",
+		"periodLabel": {
+			"quarterly": "Q{{quarter}} {{year}}",
+			"ytd": "Depuis le début de l'année {{year}}",
+			"last6Months": "{{start}} – {{end}}"
+		},
+		"picker": {
+			"label": "Choisir la période",
+			"quarter": "Q{{quarter}} {{year}}",
+			"ytd": "Depuis le début de l'année {{year}}",
+			"previousYear": "Année précédente",
+			"nextYear": "Année suivante",
+			"previousDecade": "Décennie précédente",
+			"nextDecade": "Décennie suivante",
+			"months": "Mois de {{year}}",
+			"quarters": "Trimestres de {{year}}",
+			"years": "Années de {{start}} à {{end}}"
+		},
+		"invalidDateRange": "La date de fin ne peut pas être antérieure à la date de début. Les dates ont été inversées.",
+		"sections": "Sections du rapport",
+		"toggleSection": "Basculer la visibilité de la section",
+		"dragToReorder": "Glisser pour réorganiser la section",
+		"sectionInstructions": "Section {{title}}. Appuyez sur Entrée ou Espace pour la saisir, puis sur les flèches pour la déplacer.",
+		"summary": {
+			"label": "Résumé",
+			"totalIncome": "Revenus totaux",
+			"totalExpenses": "Dépenses totales",
+			"netSavings": "Épargne nette",
+			"budgetPerformance": "Performance budgétaire",
+			"vsPrevious": "vs période précédente",
+			"incomeMinusExpenses": "Revenus moins dépenses",
+			"ofBudgetUsed": "du budget utilisé",
+			"noBudgetData": "Aucune donnée budgétaire pour cette période"
+		},
+		"trends": {
+			"title": "Tendances et aperçus",
+			"monthlyBreakdown": "Répartition mensuelle",
+			"month": "Mois",
+			"income": "Revenus",
+			"expenses": "Dépenses",
+			"net": "Net",
+			"savingsRate": "Taux d'épargne",
+			"current": "actuel",
+			"avgMonthlyIncome": "Revenu mensuel moyen",
+			"avgMonthlyExpenses": "Dépenses mensuelles moyennes",
+			"avgMonthlySavings": "Épargne mensuelle moyenne",
+			"noData": "Aucune donnée de tendance disponible"
+		},
+		"emptyState": {
+			"title": "Aucune donnée disponible",
+			"description": "Commencez à suivre vos finances en ajoutant des transactions ou en connectant vos comptes pour voir des rapports complets",
+			"addTransaction": "Ajouter une transaction",
+			"addAccount": "Ajouter un compte"
+		},
+		"breakdown": {
+			"title": "Répartition des activités",
+			"noTransactions": "Aucune activité trouvée pour la période sélectionnée",
+			"csv": "CSV",
+			"income": "Revenus",
+			"expense": "Dépenses",
+			"category": "Catégorie",
+			"amount": "Montant",
+			"percentage": "% du total",
+			"entries_one": "{{count}} entrée",
+			"entries_other": "{{count}} entrées",
+			"showing_one": "Affichage de {{count}} entrée",
+			"showing_other": "Affichage de {{count}} entrées",
+			"uncategorized": "Sans catégorie",
+			"otherInvestments": "Autres investissements"
+		},
+		"netWorth": {
+			"title": "Patrimoine net",
+			"currentNetWorth": "Patrimoine net actuel",
+			"periodChange": "Variation sur la période",
+			"assetsVsLiabilities": "Actifs vs Passifs",
+			"totalAssets": "Actifs",
+			"totalLiabilities": "Passifs",
+			"noAssets": "Aucun actif",
+			"noLiabilities": "Aucun passif",
+			"chart": "Patrimoine net sur la période"
+		},
+		"print": {
+			"title": "Rapport financier",
+			"generatedOn": "Généré le {{date}}",
+			"loading": "Préparation du rapport…",
+			"summary": {
+				"title": "Résumé",
+				"income": "Revenus",
+				"expenses": "Dépenses",
+				"netSavings": "Épargne nette",
+				"budget": "Budget",
+				"vsPrior": "{{percent}} vs précédent",
+				"ofIncome": "{{percent}} des revenus",
+				"used": "utilisé"
+			},
+			"netWorth": {
+				"title": "Patrimoine net",
+				"currentBalance": "Solde actuel",
+				"thisPeriod": "cette période",
+				"assets": "Actifs",
+				"liabilities": "Passifs",
+				"noLiabilities": "Aucun passif"
+			},
+			"trends": {
+				"title": "Tendances mensuelles",
+				"month": "Mois",
+				"income": "Revenus",
+				"expenses": "Dépenses",
+				"net": "Net",
+				"savingsRate": "Taux d'épargne",
+				"average": "Moyenne",
+				"currentMonthNote": "* Mois en cours (données partielles)"
+			},
+			"spending": {
+				"title": "Dépenses par catégorie",
+				"income": "Revenus",
+				"expenses": "Dépenses",
+				"category": "Catégorie",
+				"amount": "Montant",
+				"percent": "%",
+				"moreCategories_one": "+ {{count}} autre catégorie",
+				"moreCategories_other": "+ {{count}} autres catégories"
+			}
 		}
 	},
 	"settings": {

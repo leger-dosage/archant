@@ -5,7 +5,9 @@ import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
 // Story 11.13: no command palette and no single-key shortcuts. The interface
 // keeps what the browser and Radix give: `Tab`, `Enter` on a focused button,
-// `Esc` on a layer, and the sheet's `⌘Enter`. One database serves the whole
+// `Esc` on a layer, and the sheet's `⌘Enter`. One exception is Sure's own:
+// « Rapports » clicks its period arrows on `←` and `→` (Story 34.7,
+// `reports.spec.ts`); Story 34.9 owns Sure's other keys. One database serves the whole
 // run, so lists are narrowed by a unique label prefix.
 
 const rows = (page: Page) => page.getByRole("main").locator("button[data-transaction-id]");

@@ -1,4 +1,4 @@
-import { Outlet, createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { Outlet, createFileRoute, redirect, useMatches, useRouter } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { AppShell } from "@/components/AppShell";
@@ -6,8 +6,15 @@ import { useFollowSavedLocale } from "@/hooks/useFollowSavedLocale";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { isAdmin, isSetupOpen, sessionQuery } from "@/lib/auth-client";
 
+declare module "@tanstack/react-router" {
+	interface StaticDataRouteOption {
+		/** A page drawn without the shell, such as the reports' print layout. */
+		bare?: boolean;
+	}
+}
+
 /**
- * Every page behind the sign-in, inside Sure's shell: the rail, the accounts
+ * Every page behind the sign-in, inside Sure's shell, but a `bare` one: the rail, the accounts
  * column and the page. Without a session, the visitor goes to setup on a
  * first launch, and to sign-in otherwise, carrying the URL to come back to.
  */
@@ -33,6 +40,7 @@ function AuthedLayout() {
 	const admin = useIsAdmin();
 	useFollowSavedLocale();
 	const loadedAsAdmin = isAdmin(Route.useRouteContext({ select: ({ session }) => session }));
+	const bare = useMatches({ select: (matches) => matches.at(-1)?.staticData.bare === true });
 
 	// The role changed under an open page, read again on a refusal or when the
 	// window comes back: the route guards run again, so a demoted member leaves
@@ -43,7 +51,9 @@ function AuthedLayout() {
 		}
 	}, [admin, loadedAsAdmin, router]);
 
-	return (
+	return bare ? (
+		<Outlet />
+	) : (
 		<AppShell>
 			<Outlet />
 		</AppShell>

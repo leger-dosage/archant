@@ -294,6 +294,35 @@ reader.describe("a viewer", () => {
 	});
 
 	reader(
+		"« Rapports » shows no chevron and no grip, and still exports and prints",
+		async ({ viewer: page, context }) => {
+			await context.addInitScript(() => {
+				window.print = () => undefined;
+			});
+			await page.goto("/reports");
+			await expect(page.getByRole("heading", { level: 1, name: "Rapports" })).toBeVisible();
+			await expect(page.getByRole("region", { name: "Patrimoine net", exact: true })).toBeVisible();
+			// Sure's default order, nothing to arrange (AD-21).
+			await expectNone(page, [
+				{ role: "button", name: "Basculer la visibilité de la section" },
+				{ role: "button", name: "Glisser pour réorganiser la section" },
+			]);
+
+			const download = page.waitForEvent("download");
+			await page.getByRole("link", { name: "CSV" }).click();
+			expect((await download).suggestedFilename()).toMatch(/^transactions_breakdown_/u);
+
+			const printed = context.waitForEvent("page");
+			await page.getByRole("link", { name: "Imprimer le rapport" }).click();
+			const print = await printed;
+			await expect(
+				print.getByRole("heading", { level: 1, name: "Rapport financier" }),
+			).toBeVisible();
+			await print.close();
+		},
+	);
+
+	reader(
 		"a period pick changes the address and saves nothing (AD-21)",
 		async ({ viewer: page }) => {
 			const writes: string[] = [];

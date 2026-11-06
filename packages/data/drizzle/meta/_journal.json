@@ -736,6 +736,13 @@
       "when": 1793886396638,
       "tag": "0104_dashboard_layout",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "6",
+      "when": 1793963614840,
+      "tag": "0105_reports_layout",
+      "breakpoints": true
     }
   ]
 }
