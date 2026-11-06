@@ -1,6 +1,5 @@
 import type { InvestmentSummaryData } from "@/hooks/useInvestmentSummary";
 import type { ChartPeriod } from "@/lib/periods";
-import type { TFunction } from "i18next";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -21,7 +20,7 @@ import {
 } from "@/components/ui/table";
 import { useInvestmentSummary } from "@/hooks/useInvestmentSummary";
 import { errorCodeOf } from "@/lib/api";
-import { formatShare } from "@/lib/trade-format";
+import { formatReturnPercent, formatShare } from "@/lib/trade-format";
 import { cn } from "@/lib/utils";
 
 type Summary = Extract<InvestmentSummaryData, { available: true }>;
@@ -44,21 +43,6 @@ const TREND_CLASS = {
 	flat: "text-muted-foreground",
 } as const;
 
-/** Sure's `Trend#percent_formatted`: one decimal, « ＋∞ » or « -∞ » on a zero book value. */
-function percentText(t: TFunction, percent: string): string {
-	const value = Number(percent);
-
-	if (Number.isFinite(value)) {
-		return formatShare(percent);
-	}
-
-	return t(
-		value > 0
-			? "dashboard.investmentSummary.infinityUp"
-			: "dashboard.investmentSummary.infinityDown",
-	);
-}
-
 function TotalReturn({ data }: { data: Summary }) {
 	const { t } = useTranslation();
 
@@ -71,7 +55,7 @@ function TotalReturn({ data }: { data: Summary }) {
 			<span className="text-muted-foreground">{t("dashboard.investmentSummary.totalReturn")}</span>
 			<span className={cn("font-medium", TREND_CLASS[data.totalReturn.trend])}>
 				<Money amount={data.totalReturn.gain} currency={data.currency} />{" "}
-				<span className="tabular-nums">({percentText(t, data.totalReturn.percent)})</span>
+				<span className="tabular-nums">({formatReturnPercent(t, data.totalReturn.percent)})</span>
 			</span>
 		</p>
 	);
@@ -143,7 +127,7 @@ function Holdings({ data }: { data: Summary }) {
 										</span>
 									) : (
 										<span className={TREND_CLASS[holding.returnTrend]}>
-											{percentText(t, holding.returnPercent)}
+											{formatReturnPercent(t, holding.returnPercent)}
 										</span>
 									)}
 								</TableCell>

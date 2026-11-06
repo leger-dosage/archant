@@ -13,6 +13,8 @@ import type { ReportsSection as ReportsSectionKey } from "@archant/data/reports-
 import { useDashboardSortable } from "@/components/DashboardWidget";
 import { Page } from "@/components/Page";
 import { ActivityBreakdown } from "@/components/reports/ActivityBreakdown";
+import { InvestmentFlows } from "@/components/reports/InvestmentFlows";
+import { InvestmentPerformance } from "@/components/reports/InvestmentPerformance";
 import { ReportsEmptyState } from "@/components/reports/ReportsEmptyState";
 import { ReportsNetWorth } from "@/components/reports/ReportsNetWorth";
 import { ReportsPeriodControls } from "@/components/reports/ReportsPeriodControls";
@@ -74,6 +76,8 @@ function ReportsPage() {
 			/>
 		),
 		net_worth: <ReportsNetWorth data={page} />,
+		investment_performance: <InvestmentPerformance data={page} />,
+		investment_flows: <InvestmentFlows data={page} />,
 	});
 
 	return (
@@ -123,7 +127,7 @@ function ReportsPage() {
 							void navigate({ search: { periodType: "custom", startDate, endDate } })
 						}
 					/>
-					{data.hasTransactions ? (
+					{data.hasTransactions || data.investments.available ? (
 						<>
 							<ReportsSummary data={data} />
 							{data.hasAccounts && !layoutReady && (
@@ -148,22 +152,30 @@ function ReportsPage() {
 										}
 									}}
 								>
-									{order.map((key) => (
-										<ReportsSection
-											key={key}
-											sectionKey={key}
-											collapsed={layout.collapsedSections[key]}
-											editable={admin}
-											sortable={sortable}
-											onToggle={() =>
-												updateLayout.mutate({
-													collapsedSections: { [key]: !layout.collapsedSections[key] },
-												})
-											}
-										>
-											{sections(data)[key]}
-										</ReportsSection>
-									))}
+									{order
+										.filter((key) =>
+											key === "investment_performance"
+												? data.investments.available
+												: key === "investment_flows"
+													? data.investmentFlows.available
+													: true,
+										)
+										.map((key) => (
+											<ReportsSection
+												key={key}
+												sectionKey={key}
+												collapsed={layout.collapsedSections[key]}
+												editable={admin}
+												sortable={sortable}
+												onToggle={() =>
+													updateLayout.mutate({
+														collapsedSections: { [key]: !layout.collapsedSections[key] },
+													})
+												}
+											>
+												{sections(data)[key]}
+											</ReportsSection>
+										))}
 									{sortable.dropAtEnd && (
 										<span aria-hidden="true" className="-mt-4 h-1 rounded-full bg-primary" />
 									)}

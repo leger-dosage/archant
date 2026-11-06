@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { investmentTaxTreatment } from "./account-types.ts";
 import {
 	ACCOUNT_SUBTYPES,
 	ACCOUNT_TYPE_IDS,
@@ -327,5 +328,32 @@ describe("account details", () => {
 		expect(vehicleDetailsOf({ type: "vehicle", details: property })).toBeNull();
 		expect(vehicleDetailsOf({ type: "property", details: vehicle })).toBeNull();
 		expect(vehicleDetailsOf({ type: "vehicle", details: null })).toBeNull();
+	});
+});
+
+describe("investmentTaxTreatment", () => {
+	it.each([
+		["pea", "tax_advantaged"],
+		["assurance_vie", "tax_advantaged"],
+		["pillar_3a", "tax_deferred"],
+		["riester", "tax_deferred"],
+		["pension", "tax_deferred"],
+		["retirement", "tax_deferred"],
+		["brokerage", "taxable"],
+		[null, "taxable"],
+	] as const)("classifies %s as %s", (subtype, expected) => {
+		expect(investmentTaxTreatment({ type: "investment", subtype, details: null })).toBe(expected);
+	});
+	it("retains crypto's three stored treatments and taxable default", () => {
+		expect(investmentTaxTreatment({ type: "crypto", subtype: null, details: null })).toBe(
+			"taxable",
+		);
+		expect(
+			investmentTaxTreatment({
+				type: "crypto",
+				subtype: null,
+				details: { taxTreatment: "tax_exempt" },
+			}),
+		).toBe("tax_exempt");
 	});
 });

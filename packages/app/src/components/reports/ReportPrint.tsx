@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
+import { ReportPrintInvestments } from "@/components/reports/ReportPrintInvestments";
 import { formatSignedMoney } from "@/lib/balance-change";
 import { longDate, monthLabel } from "@/lib/dates";
 import { formatMoney } from "@/lib/format-money";
@@ -383,6 +384,8 @@ export function ReportPrint({ data }: { data: ReportsPageData }) {
 							)}
 						</section>
 					)}
+
+					<ReportPrintInvestments data={data} />
 
 					{(breakdown.income.length > 0 || breakdown.expense.length > 0) && (
 						<section className="tufte-section tufte-keep-together">

@@ -101,7 +101,10 @@ function totalOf(series: readonly CountedAccount[], classification: Classificati
  * keeps. Active, included accounts in another currency are `leftOut`, by
  * name, for the net worth notice.
  */
-async function reportedAccounts(deps: ServiceDeps, kept: (row: Account) => boolean = () => true) {
+export async function reportedAccounts(
+	deps: ServiceDeps,
+	kept: (row: Account) => boolean = () => true,
+) {
 	const currency = getReportingCurrency();
 	const rows = await deps.db.select().from(accounts);
 	const reported = rows.filter((row) => row.active && !row.excludedFromReports && kept(row));
@@ -349,7 +352,7 @@ const TOP_HOLDINGS = 5;
  * string of percentage points, or `"Infinity"` and `"-Infinity"` on a zero
  * book value, which `Number` reads back.
  */
-type ReturnData = { gain: MinorUnits; percent: string; trend: TrendDirection };
+export type ReturnData = { gain: MinorUnits; percent: string; trend: TrendDirection };
 
 type InvestmentHolding = {
 	security: { id: string; name: string; ticker: string | null };
@@ -409,52 +412,68 @@ export async function getInvestmentSummary(
 	deps: ServiceDeps,
 	query: ChartQuery,
 ): Promise<InvestmentSummary> {
+	const asOf = today(deps.timeZone);
+	const { period, range } = resolveChartRange(query, asOf, await oldestEntryDate(deps));
+	const { summary } = await readInvestmentFigures(deps, range);
+	return summary.available ? { ...summary, period } : summary;
+}
+
+/** Current figures and explicit-range activity shared by the dashboard and Reports. */
+export async function readInvestmentFigures(deps: ServiceDeps, range: DateRange) {
 	const { currency, counted, leftOut } = await reportedAccounts(deps, (row) =>
 		holdsSecurities(row.type),
 	);
-
-	if (counted.length === 0 && leftOut.length === 0) {
-		return { available: false };
-	}
-
 	const asOf = today(deps.timeZone);
-	const { period, range } = resolveChartRange(query, asOf, await oldestEntryDate(deps));
 	const accountIds = counted.map((row) => row.id);
 	const [balances, held, totals] = await Promise.all([
 		Promise.all(accountIds.map(async (id) => (await balanceOn(deps, id, asOf))?.amount ?? 0)),
 		Promise.all(accountIds.map(async (id) => (await currentHoldings(deps.db, id, asOf)).holdings)),
 		tradeTotals(deps, { accountIds, ...range }),
 	]);
-	const value = toMinorUnits(balances.reduce<number>((sum, balance) => sum + balance, 0));
+	const value = toMinorUnits(Number(balances.reduce((sum, balance) => sum + BigInt(balance), 0n)));
 	const rows = held.flat();
 	const totalReturn = returnOf(rows, currency);
-
+	const summary: InvestmentSummary =
+		counted.length === 0 && leftOut.length === 0
+			? { available: false }
+			: {
+					available: true,
+					period: null,
+					from: range.from,
+					to: range.to,
+					currency,
+					value,
+					totalReturn:
+						totalReturn === null
+							? null
+							: { ...totalReturn, percent: percentText(totalReturn.percent) },
+					holdings: topHoldings(rows, value, TOP_HOLDINGS, currency).map((holding) => ({
+						security: {
+							id: holding.security.id,
+							name: holding.security.name,
+							ticker: holding.security.ticker,
+						},
+						amount: holding.amount,
+						weight: holding.weight === null ? null : formatMicros(holding.weight),
+						returnPercent: holding.return === null ? null : percentText(holding.return.percent),
+						returnTrend: holding.return?.trend ?? null,
+					})),
+					activity: {
+						contributions: amountOf(totals.contributions),
+						withdrawals: amountOf(totals.withdrawals),
+						trades: totals.trades,
+					},
+					leftOut,
+				};
 	return {
-		available: true,
-		period,
-		from: range.from,
-		to: range.to,
-		currency,
-		value,
-		totalReturn:
-			totalReturn === null ? null : { ...totalReturn, percent: percentText(totalReturn.percent) },
-		holdings: topHoldings(rows, value, TOP_HOLDINGS, currency).map((holding) => ({
-			security: {
-				id: holding.security.id,
-				name: holding.security.name,
-				ticker: holding.security.ticker,
-			},
-			amount: holding.amount,
-			weight: holding.weight === null ? null : formatMicros(holding.weight),
-			returnPercent: holding.return === null ? null : percentText(holding.return.percent),
-			returnTrend: holding.return?.trend ?? null,
+		summary,
+		accounts: counted.map((account, index) => ({
+			...account,
+			balance: toMinorUnits(balances[index] ?? 0),
 		})),
-		activity: {
-			contributions: amountOf(totals.contributions),
-			withdrawals: amountOf(totals.withdrawals),
-			trades: totals.trades,
-		},
-		leftOut,
+		positions: counted.flatMap((account, index) =>
+			(held[index] ?? []).map((position) => ({ ...position, accountId: account.id })),
+		),
 	};
 }
 

@@ -190,16 +190,35 @@ export function isTaxAdvantaged(account: {
 	subtype: string | null;
 	details: AccountDetails | null;
 }): boolean {
+	return investmentTaxTreatment(account) !== "taxable";
+}
+
+/** Sure's report groups; crypto keeps its separate three-choice form. */
+export const INVESTMENT_TAX_TREATMENTS = [
+	"taxable",
+	"tax_deferred",
+	"tax_exempt",
+	"tax_advantaged",
+] as const;
+export type InvestmentTaxTreatment = (typeof INVESTMENT_TAX_TREATMENTS)[number];
+
+export function investmentTaxTreatment(account: {
+	type: AccountType;
+	subtype: string | null;
+	details: AccountDetails | null;
+}): InvestmentTaxTreatment {
 	if (account.type === "crypto") {
-		const treatment = cryptoDetailsOf(account)?.taxTreatment ?? "taxable";
-
-		return treatment !== "taxable";
+		return cryptoDetailsOf(account)?.taxTreatment ?? "taxable";
 	}
-
-	return (
-		account.type === "investment" &&
-		TAX_ADVANTAGED_SUBTYPES.some((value) => value === account.subtype)
-	);
+	if (account.type !== "investment") {
+		return "taxable";
+	}
+	if (account.subtype === "pea" || account.subtype === "assurance_vie") {
+		return "tax_advantaged";
+	}
+	return TAX_ADVANTAGED_SUBTYPES.some((value) => value === account.subtype)
+		? "tax_deferred"
+		: "taxable";
 }
 
 /**

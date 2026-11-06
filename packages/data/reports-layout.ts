@@ -54,6 +54,8 @@ export function resolveReportsLayout(stored: StoredReportsLayout | null): Report
 			net_worth: clean.collapsedSections.net_worth === true,
 			trends_insights: clean.collapsedSections.trends_insights === true,
 			transactions_breakdown: clean.collapsedSections.transactions_breakdown === true,
+			investment_performance: clean.collapsedSections.investment_performance === true,
+			investment_flows: clean.collapsedSections.investment_flows === true,
 		},
 	};
 }

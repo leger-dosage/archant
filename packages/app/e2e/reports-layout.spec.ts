@@ -24,6 +24,19 @@ const layoutSaved = (page: Page) =>
 			response.ok(),
 	);
 
+test.beforeEach(async ({ page, api }) => {
+	const account = await api.openAccount({ kind: "pea", openingDate: daysAgo(40) });
+	const funding = await api.addTransaction(account.id, {
+		date: daysAgo(0),
+		label: "Financement rapport",
+		amount: "43,21",
+	});
+	const labeled = await page.request.patch("/api/transactions/" + funding, {
+		data: { investmentActivityLabel: "Contribution" },
+	});
+	expect(labeled.ok(), await labeled.text()).toBe(true);
+});
+
 test.afterEach(async ({ api }) => {
 	await api.resetReportsLayout();
 });
@@ -37,7 +50,13 @@ test("a section collapses and moves up by keyboard, and both stay after a reload
 
 	await page.goto("/reports");
 	await expect(section(page, "Patrimoine net")).toBeVisible();
-	expect(await order(page)).toEqual(["trends_insights", "transactions_breakdown", "net_worth"]);
+	expect(await order(page)).toEqual([
+		"trends_insights",
+		"transactions_breakdown",
+		"net_worth",
+		"investment_performance",
+		"investment_flows",
+	]);
 
 	const netWorth = page.getByRole("region", { name: "Patrimoine net", exact: true });
 	const collapsed = layoutSaved(page);
@@ -54,11 +73,23 @@ test("a section collapses and moves up by keyboard, and both stay after a reload
 	const moved = layoutSaved(page);
 	await page.keyboard.press("Space");
 	await moved;
-	expect(await order(page)).toEqual(["transactions_breakdown", "trends_insights", "net_worth"]);
+	expect(await order(page)).toEqual([
+		"transactions_breakdown",
+		"trends_insights",
+		"net_worth",
+		"investment_performance",
+		"investment_flows",
+	]);
 
 	await page.reload();
 	await expect(section(page, "Patrimoine net")).toBeVisible();
-	expect(await order(page)).toEqual(["transactions_breakdown", "trends_insights", "net_worth"]);
+	expect(await order(page)).toEqual([
+		"transactions_breakdown",
+		"trends_insights",
+		"net_worth",
+		"investment_performance",
+		"investment_flows",
+	]);
 	await expect(
 		page
 			.getByRole("region", { name: "Patrimoine net", exact: true })
@@ -93,7 +124,13 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 	// Folded, the three sections fit on the screen with room below them.
 	const folded = await page.request.patch("/api/reports/layout", {
 		data: {
-			collapsedSections: { net_worth: true, trends_insights: true, transactions_breakdown: true },
+			collapsedSections: {
+				net_worth: true,
+				trends_insights: true,
+				transactions_breakdown: true,
+				investment_performance: true,
+				investment_flows: true,
+			},
 		},
 	});
 	expect(folded.ok(), await folded.text()).toBe(true);
@@ -108,7 +145,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 		.getByRole("button", { name: "Glisser pour réorganiser la section" });
 	await grip.hover();
 	const from = await grip.boundingBox();
-	const last = await section(page, "Patrimoine net").boundingBox();
+	const last = await section(page, "Flux d'investissement").boundingBox();
 	expect(from).not.toBeNull();
 	expect(last).not.toBeNull();
 	await page.mouse.down();
@@ -123,9 +160,85 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 
 	await expect
 		.poll(async () => order(page))
-		.toEqual(["transactions_breakdown", "net_worth", "trends_insights"]);
+		.toEqual([
+			"transactions_breakdown",
+			"net_worth",
+			"investment_performance",
+			"investment_flows",
+			"trends_insights",
+		]);
 
 	await page.reload();
 	await expect(section(page, "Patrimoine net")).toBeVisible();
-	expect(await order(page)).toEqual(["transactions_breakdown", "net_worth", "trends_insights"]);
+	expect(await order(page)).toEqual([
+		"transactions_breakdown",
+		"net_worth",
+		"investment_performance",
+		"investment_flows",
+		"trends_insights",
+	]);
+});
+
+test("investment sections retain their order and collapse through reload, hiding and print", async ({
+	page,
+	context,
+}) => {
+	await context.addInitScript(() => {
+		window.print = () => undefined;
+	});
+	await page.goto("/reports");
+	await ["Performance des investissements", "Flux d'investissement"].reduce(
+		async (previous, title) => {
+			await previous;
+			const saved = layoutSaved(page);
+			await page
+				.getByRole("region", { name: title, exact: true })
+				.getByRole("button", { name: "Basculer la visibilité de la section" })
+				.click();
+			await saved;
+		},
+		Promise.resolve(),
+	);
+	const flow = section(page, "Flux d'investissement");
+	await flow.focus();
+	await page.keyboard.press("Space");
+	await [0, 1, 2, 3].reduce(async (previous) => {
+		await previous;
+		await page.keyboard.press("ArrowUp");
+	}, Promise.resolve());
+	const saved = layoutSaved(page);
+	await page.keyboard.press("Space");
+	await saved;
+	await page.reload();
+	await expect(flow).toBeVisible();
+	expect((await order(page))[0]).toBe("investment_flows");
+	await ["Performance des investissements", "Flux d'investissement"].reduce(
+		async (previous, title) => {
+			await previous;
+			await expect(
+				page
+					.getByRole("region", { name: title, exact: true })
+					.getByRole("button", { name: "Basculer la visibilité de la section" }),
+			).toHaveAttribute("aria-expanded", "false");
+		},
+		Promise.resolve(),
+	);
+	await page.goto("/reports?periodType=custom&startDate=2099-01-01&endDate=2099-01-31");
+	await expect(section(page, "Flux d'investissement")).toHaveCount(0);
+	await page.goto("/reports");
+	await expect(flow).toBeVisible();
+	expect((await order(page))[0]).toBe("investment_flows");
+	await expect(
+		page
+			.getByRole("region", { name: "Flux d'investissement", exact: true })
+			.getByRole("button", { name: "Basculer la visibilité de la section" }),
+	).toHaveAttribute("aria-expanded", "false");
+	const opened = context.waitForEvent("page");
+	await page.getByRole("link", { name: "Imprimer le rapport" }).click();
+	const print = await opened;
+	await expect(
+		print.getByRole("heading", { level: 2, name: "Investissements", exact: true }),
+	).toBeVisible();
+	await expect(print.getByText("Valeur du portefeuille")).toBeVisible();
+	await print.close();
 });

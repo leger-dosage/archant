@@ -299,7 +299,17 @@ reader.describe("a viewer", () => {
 			await context.addInitScript(() => {
 				window.print = () => undefined;
 			});
+			const preferences: string[] = [];
+			page.on("request", (request) => {
+				if (request.url().includes("/api/reports/layout")) {
+					preferences.push(request.method());
+				}
+			});
 			await page.goto("/reports");
+			await expect(
+				page.getByRole("region", { name: "Performance des investissements", exact: true }),
+			).toBeVisible();
+			expect(preferences).toEqual([]);
 			await expect(page.getByRole("heading", { level: 1, name: "Rapports" })).toBeVisible();
 			await expect(page.getByRole("region", { name: "Patrimoine net", exact: true })).toBeVisible();
 			// Sure's default order, nothing to arrange (AD-21).

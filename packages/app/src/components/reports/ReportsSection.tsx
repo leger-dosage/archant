@@ -20,6 +20,8 @@ const REPORTS_SECTION_TITLES = {
 	trends_insights: "reports.trends.title",
 	transactions_breakdown: "reports.breakdown.title",
 	net_worth: "reports.netWorth.title",
+	investment_performance: "reports.investments.title",
+	investment_flows: "reports.investmentFlows.title",
 } as const satisfies Record<ReportsSectionKey, string>;
 
 /**

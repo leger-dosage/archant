@@ -1,12 +1,15 @@
+import type { IsoDate } from "../domain/dates.ts";
 import type { NormalizedTransaction, ParsedStatement } from "../domain/statement.ts";
 import type { BankConnectionDeps } from "../services/bank-connections.ts";
+import type { ServiceDeps } from "../services/deps.ts";
 import type { NewAccountInput } from "../services/ledger/accounts.ts";
 import type { Origin } from "../services/ledger/shared.ts";
 import type { TempDatabase } from "./temp-database.ts";
 
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, lte, or } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, expect, vi } from "vitest";
 
+import type { Micros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 import { balances } from "@archant/data/schema/balances";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
@@ -14,6 +17,7 @@ import { bankConnections } from "@archant/data/schema/bank-connections";
 import { categories } from "@archant/data/schema/categories";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
+import { costBasisLocks, holdings } from "@archant/data/schema/holdings";
 import type { FileSourceId, ImportCounts } from "@archant/data/schema/imports";
 import { imports } from "@archant/data/schema/imports";
 import { merchants } from "@archant/data/schema/merchants";
@@ -775,4 +779,23 @@ export async function splitInTwo(
 	}
 
 	return { parent, food, home, amount };
+}
+
+/** An imported sale with missing materialized history, without changing its purchase history. */
+export async function removeReportSnapshots(
+	serviceDeps: ServiceDeps,
+	accountId: string,
+	through: IsoDate,
+) {
+	await serviceDeps.db
+		.delete(holdings)
+		.where(and(eq(holdings.accountId, accountId), lte(holdings.date, through)));
+}
+
+/** A dated manual lock fixture, independent from today's clock. */
+export async function seedReportLock(
+	serviceDeps: ServiceDeps,
+	lock: { accountId: string; securityId: string; costBasis: Micros; lockedOn: IsoDate },
+) {
+	await serviceDeps.db.insert(costBasisLocks).values(lock);
 }

@@ -1,3 +1,5 @@
+import type { TFunction } from "i18next";
+
 import { isCurrencyCode, isDecimalString, minorUnitsOf } from "@archant/data/money";
 
 import { intlLocale } from "@/lib/locale";
@@ -63,4 +65,17 @@ export function formatShare(percent: string): string {
 	return isDecimalString(percent)
 		? shareFormat.format(Number(percent) / 100).replace("-", "−")
 		: percent;
+}
+
+/** Sure's return percentage, including its translated infinite cases. */
+export function formatReturnPercent(t: TFunction, percent: string): string {
+	const value = Number(percent);
+	if (Number.isFinite(value)) {
+		return formatShare(percent);
+	}
+	return t(
+		value > 0
+			? "dashboard.investmentSummary.infinityUp"
+			: "dashboard.investmentSummary.infinityDown",
+	);
 }
