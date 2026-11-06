@@ -3251,7 +3251,70 @@
 				"percent": "%",
 				"moreCategories_one": "+ {{count}} autre catégorie",
 				"moreCategories_other": "+ {{count}} autres catégories"
+			},
+			"investments": {
+				"portfolioValue": "Valeur du portefeuille",
+				"totalReturn": "Rendement total",
+				"periodReturn": "Rendement de la période",
+				"topHoldings": "Principales positions",
+				"holding": "Position",
+				"weight": "Poids",
+				"value": "Valeur",
+				"return": "Rendement",
+				"title": "Investissements",
+				"contributions": "Contributions",
+				"withdrawals": "Retraits",
+				"thisPeriod": "cette période"
 			}
+		},
+		"investments": {
+			"title": "Performance des investissements",
+			"portfolioValue": "Valeur du portefeuille",
+			"totalReturn": "Rendement total",
+			"periodReturn": "Rendement de la période",
+			"contributions": "Contributions de la période",
+			"withdrawals": "Retraits de la période",
+			"topHoldings": "Principales positions",
+			"holding": "Position",
+			"weight": "Poids",
+			"value": "Valeur",
+			"return": "Rendement",
+			"accounts": "Comptes d'investissement",
+			"gainsByTaxTreatment": "Gains par traitement fiscal",
+			"unrealizedGains": "Plus-values latentes",
+			"realizedGains": "Plus-values réalisées",
+			"taxableRealizedNote": "Ces gains peuvent être soumis à l'impôt",
+			"noData": "-",
+			"viewDetails": "Voir les détails",
+			"holdingsCount_one": "{{count}} position",
+			"holdingsCount_other": "{{count}} positions",
+			"salesCount_one": "{{count}} vente",
+			"salesCount_other": "{{count}} ventes",
+			"holdings": "Positions",
+			"sales": "Ventes de titres",
+			"andMore": "+{{count}} de plus",
+			"treatments": {
+				"taxable": "Imposable",
+				"tax_deferred": "Imposition différée",
+				"tax_exempt": "Exonéré d'impôt",
+				"tax_advantaged": "Avantage fiscal"
+			},
+			"treatmentDescriptions": {
+				"taxable": "Les gains peuvent être soumis à l'impôt.",
+				"tax_deferred": "L'imposition des gains est différée.",
+				"tax_exempt": "Les gains sont exonérés d'impôt.",
+				"tax_advantaged": "Le compte bénéficie d'un régime fiscal avantageux."
+			}
+		},
+		"investmentFlows": {
+			"title": "Flux d'investissement",
+			"description": "Suivez les flux d'argent entrants et sortants de vos comptes d'investissement.",
+			"contributions": "Contributions",
+			"contributionsDescription": "Argent ajouté aux investissements",
+			"withdrawals": "Retraits",
+			"withdrawalsDescription": "Argent retiré des investissements",
+			"netFlow": "Flux net",
+			"netFlowDescription": "Variation nette totale"
 		}
 	},
 	"settings": {

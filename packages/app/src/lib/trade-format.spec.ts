@@ -1,6 +1,13 @@
+import { createInstance } from "i18next";
 import { describe, expect, it } from "vitest";
 
-import { decimalToText, formatPrice, formatQuantity, formatShare } from "./trade-format";
+import {
+	decimalToText,
+	formatPrice,
+	formatQuantity,
+	formatReturnPercent,
+	formatShare,
+} from "./trade-format";
 
 // `Intl` separates thousands and the currency with narrow and plain no-break spaces.
 const spaced = (text: string) => text.replaceAll(/[  ]/gu, " ");
@@ -46,5 +53,24 @@ describe("formatShare", () => {
 		expect(spaced(formatShare("33.333333"))).toBe("33,3 %");
 		expect(spaced(formatShare("-2.5"))).toBe("−2,5 %");
 		expect(formatShare("n/a")).toBe("n/a");
+	});
+});
+
+describe("formatReturnPercent", () => {
+	it("shares decimal and translated infinite returns across dashboard, report and print", async () => {
+		const i18n = createInstance();
+		await i18n.init({
+			lng: "fr",
+			resources: {
+				fr: {
+					translation: {
+						dashboard: { investmentSummary: { infinityUp: "＋∞", infinityDown: "-∞" } },
+					},
+				},
+			},
+		});
+		expect(spaced(formatReturnPercent(i18n.t, "-2.5"))).toBe("−2,5 %");
+		expect(formatReturnPercent(i18n.t, "Infinity")).toBe("＋∞");
+		expect(formatReturnPercent(i18n.t, "-Infinity")).toBe("-∞");
 	});
 });

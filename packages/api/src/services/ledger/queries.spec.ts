@@ -1,8 +1,10 @@
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import { toMinorUnits } from "@archant/data/money";
 import { securities } from "@archant/data/schema/securities";
+import { transactions } from "@archant/data/schema/transactions";
 
 import { countsInCashFlow } from "../../domain/cash-flow.ts";
 import { monthRange } from "../../domain/dates.ts";
@@ -38,6 +40,7 @@ import { createTempDatabase } from "../../testing/temp-database.ts";
 import { updateAccount } from "../accounts.ts";
 import { bulkUpdateTransactions, updateTransaction } from "./edits.ts";
 import {
+	investmentFunding,
 	cashFlowByCategory,
 	cashFlowByMonth,
 	entryOrigins,
@@ -920,5 +923,69 @@ describe("transactions of a deactivated account", () => {
 		);
 
 		expect(labelsOf(page)).toEqual(["Copie"]);
+	});
+});
+
+describe("investmentFunding", () => {
+	it("takes the absolute signed sum per label, over inclusive dates", async () => {
+		const account = await openPea();
+		const labeled = async (
+			amount: number,
+			label: ActivityLabel,
+			date = "2026-09-15",
+			pending = false,
+		) => {
+			const id = await addStandard(account.id, { date, amount: toMinorUnits(amount), pending });
+			await updateTransaction(deps(), id, { investmentActivityLabel: label }, asUser);
+			return id;
+		};
+		await labeled(5000, "Contribution", "2026-09-01");
+		await labeled(-1000, "Contribution", "2026-09-30");
+		await labeled(-2000, "Withdrawal");
+		await labeled(500, "Withdrawal");
+		await labeled(40000, "Contribution", "2026-10-01");
+		await labeled(1100, "Contribution", "2026-09-15", true);
+		const excluded = await labeled(1200, "Contribution");
+		const once = await labeled(1300, "Contribution");
+		await updateTransaction(deps(), excluded, { excluded: true }, asUser);
+		await updateTransaction(deps(), once, { oneTime: true }, asUser);
+		expect(
+			await investmentFunding(deps(), {
+				accountIds: [account.id],
+				from: "2026-09-01",
+				to: "2026-09-30",
+			}),
+		).toEqual({ contributions: 4000n, withdrawals: 1500n });
+		expect(
+			await investmentFunding(deps(), { accountIds: [], from: "2026-09-01", to: "2026-09-30" }),
+		).toEqual({ contributions: 0n, withdrawals: 0n });
+	});
+	it("keeps investment contributions but no other transfer kind or split parent", async () => {
+		const checking = await openChecking();
+		const pea = await openPea();
+		const contribution = await contributionOf(checking.id, pea.id);
+		await updateTransaction(
+			deps(),
+			contribution.inflow,
+			{ investmentActivityLabel: "Contribution" },
+			asUser,
+		);
+		const plainOut = await addStandard(checking.id, { amount: toMinorUnits(-1234) });
+		const plainIn = await addStandard(pea.id, { amount: toMinorUnits(1234) });
+		await insertTransfer(plainOut, plainIn, "internal_move");
+		await updateTransaction(deps(), plainIn, { investmentActivityLabel: "Contribution" }, asUser);
+		const split = await splitInTwo(pea.id);
+		await temp.db
+			.update(transactions)
+			.set({ investmentActivityLabel: "Contribution" })
+			.where(eq(transactions.entryId, split.parent));
+		const funding = await investmentFunding(deps(), {
+			accountIds: [checking.id, pea.id],
+			from: "2026-09-01",
+			to: "2026-09-30",
+		});
+		expect(funding.contributions).toBe(
+			BigInt((await findTransaction(deps(), contribution.inflow))?.amount ?? 0),
+		);
 	});
 });

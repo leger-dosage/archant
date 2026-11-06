@@ -26,9 +26,15 @@ import { confirmImport, createImport, previewImport } from "./imports.ts";
 import { createAccount } from "./ledger/accounts.ts";
 import { recomputeBalances } from "./ledger/balances.ts";
 import { transactionPages } from "./ledger/export.ts";
-import { liveCostBasisLocks, revalueHoldings } from "./ledger/holdings.ts";
+import {
+	holdingsValueOn,
+	reportSales,
+	liveCostBasisLocks,
+	revalueHoldings,
+} from "./ledger/holdings.ts";
 import { ROWS_PER_INSERT, inSequence } from "./ledger/shared.ts";
 import { proposalCandidateQuery } from "./ledger/transfers.ts";
+import { getReportInvestments } from "./report-investments.ts";
 import { getBalanceSheet, getCashFlowStatistics, getIncomeStatement } from "./reports.ts";
 import {
 	createTransaction,
@@ -819,5 +825,43 @@ describe("query plans at 100,000 transactions", () => {
 
 		expect(plan).toMatch(/SEARCH entries USING INDEX entries_account_date \(account_id=\?\)/u);
 		expect(plan).toMatch(WITHIN_A_DAY);
+	});
+});
+
+describe("report investment reads at household volume", () => {
+	it("reads decade boundaries and historical sales without materializing daily holdings", async () => {
+		const range = { from: dayOf(0), to: today(TIME_ZONE) };
+		const report = await getReportInvestments(deps(), range);
+		expect(report.investments.available).toBe(true);
+		if (!report.investments.available) {
+			throw new Error("Expected seeded investments");
+		}
+		expect(report.investments.gainsByTaxTreatment[0]?.sales.length).toBeGreaterThan(100);
+		await expect(timed(async () => getReportInvestments(deps(), range))).resolves.toBeLessThan(
+			REPORT_MS,
+		);
+		const statements = await statementsOf(async () =>
+			reportSales(temp.db, { ...range, accountIds: [peaId] }),
+		);
+		expect(statements).toHaveLength(3);
+		const sales = only(statements, /left join "holdings"/u);
+		const plan = await planOf(sales);
+		expect(plan).toMatch(/SEARCH holdings USING (?:COVERING )?INDEX sqlite_autoindex_holdings_1/u);
+		expect(plan).not.toMatch(/SCAN holdings/u);
+	});
+	it("reads a boundary by account and date index rather than all history", async () => {
+		const statements = await statementsOf(async () =>
+			holdingsValueOn(temp.db, peaId, today(TIME_ZONE)),
+		);
+		expect(statements).toHaveLength(2);
+		await Promise.all(
+			statements.map(async (statement) => {
+				const plan = await planOf(statement);
+				expect(plan).toMatch(
+					/SEARCH holdings USING (?:COVERING )?INDEX sqlite_autoindex_holdings_1/u,
+				);
+				expect(plan).not.toMatch(/SCAN holdings/u);
+			}),
+		);
 	});
 });

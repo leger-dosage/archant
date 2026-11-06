@@ -964,6 +964,14 @@ const reportsPageBody = z.object({
 });
 
 describe("GET /api/reports/page", () => {
+	it("requires a signed-in session before reading investment figures", async () => {
+		const silent = createLogger("silent");
+		const unsigned = buildTestApp(temp.db, silent, createTestAuth(temp.db, silent));
+		const read = await unsigned.request("/api/reports/page");
+		expect(read.status).toBe(401);
+		expect(errorBody.parse(await read.json()).error.code).toBe("UNAUTHORIZED");
+	});
+
 	it("answers the period, the summary and the breakdown in one read", async () => {
 		const account = await openOwn({ openingBalance: "1 000,00" });
 		await postOwn(account.id, expense);
@@ -1059,11 +1067,19 @@ describe("/api/reports/layout", () => {
 		const first = await ownRequest("GET", "/api/reports/layout");
 
 		expect(reportsLayoutBody.parse(first.body).data).toEqual({
-			sectionOrder: ["trends_insights", "transactions_breakdown", "net_worth"],
+			sectionOrder: [
+				"trends_insights",
+				"transactions_breakdown",
+				"net_worth",
+				"investment_performance",
+				"investment_flows",
+			],
 			collapsedSections: {
 				net_worth: false,
 				trends_insights: false,
 				transactions_breakdown: false,
+				investment_performance: false,
+				investment_flows: false,
 			},
 		});
 
@@ -1074,8 +1090,20 @@ describe("/api/reports/layout", () => {
 		const read = await ownRequest("GET", "/api/reports/layout");
 
 		expect(reportsLayoutBody.parse(read.body).data).toEqual({
-			sectionOrder: ["transactions_breakdown", "trends_insights", "net_worth"],
-			collapsedSections: { net_worth: true, trends_insights: false, transactions_breakdown: false },
+			sectionOrder: [
+				"transactions_breakdown",
+				"trends_insights",
+				"net_worth",
+				"investment_performance",
+				"investment_flows",
+			],
+			collapsedSections: {
+				net_worth: true,
+				trends_insights: false,
+				transactions_breakdown: false,
+				investment_performance: false,
+				investment_flows: false,
+			},
 		});
 	});
 
@@ -1111,15 +1139,36 @@ describe("/api/reports/layout", () => {
 		beforeAll(async () => {
 			auth = createTestAuth(temp.db, silent);
 			viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+			await insertSecurity(temp.db, { name: "Viewer report holding" });
 		});
 
 		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+
+		it("reads investment figures as a viewer without changing preferences", async () => {
+			const read = await viewer().request("/api/reports/page");
+			expect(read.status).toBe(200);
+			const report = z
+				.object({
+					data: z.object({
+						investments: z.object({
+							available: z.literal(true),
+							holdings: z.array(z.object({ security: z.object({ name: z.string() }) })),
+						}),
+					}),
+				})
+				.parse(await read.json());
+			expect(report.data.investments.holdings.map((holding) => holding.security.name)).toContain(
+				"Viewer report holding",
+			);
+		});
 
 		it("is refused FORBIDDEN on a save, nothing written, and still downloads the CSV", async () => {
 			const refused = await viewer().request("/api/reports/layout", {
 				method: "PATCH",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ collapsedSections: { net_worth: true } }),
+				body: JSON.stringify({
+					collapsedSections: { investment_performance: true, investment_flows: true },
+				}),
 			});
 			const exported = await viewer().request("/api/reports/export");
 
@@ -1131,5 +1180,24 @@ describe("/api/reports/layout", () => {
 			expect(exported.status).toBe(200);
 			expect(exported.headers.get("content-type")).toBe("text/csv; charset=utf-8");
 		});
+	});
+});
+
+it("accepts both investment section keys for administrator layout writes", async () => {
+	await openOwn();
+	const saved = await ownRequest("PATCH", "/api/reports/layout", {
+		sectionOrder: ["investment_flows", "investment_performance"],
+		collapsedSections: { investment_flows: true, investment_performance: true },
+	});
+	expect(saved.status).toBe(200);
+	expect(reportsLayoutBody.parse(saved.body).data).toMatchObject({
+		sectionOrder: [
+			"investment_flows",
+			"investment_performance",
+			"net_worth",
+			"trends_insights",
+			"transactions_breakdown",
+		],
+		collapsedSections: { investment_flows: true, investment_performance: true },
 	});
 });

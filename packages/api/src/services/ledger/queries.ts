@@ -999,3 +999,65 @@ export async function tradeTotals(
 		{ contributions: 0n, withdrawals: 0n, trades: 0 },
 	);
 }
+
+/** Labeled cash funding, separate from trades and including tax-advantaged accounts. */
+export async function investmentFunding(
+	deps: ServiceDeps,
+	range: { accountIds: readonly string[]; from: IsoDate; to: IsoDate },
+) {
+	if (range.accountIds.length === 0) {
+		return { contributions: 0n, withdrawals: 0n };
+	}
+	const rows = await deps.db
+		.select({
+			label: transactions.investmentActivityLabel,
+			amount: sql<string>`cast(sum(${entries.amount}) as text)`,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(
+			and(
+				inArray(entries.accountId, [...range.accountIds]),
+				gte(entries.date, range.from),
+				lte(entries.date, range.to),
+				eq(transactions.excluded, false),
+				eq(transactions.pending, false),
+				eq(transactions.oneTime, false),
+				notSplitParent,
+				inArray(transactions.investmentActivityLabel, ["Contribution", "Withdrawal"]),
+				or(isNull(asOutflow.id), eq(asOutflow.kind, "investment_contribution")),
+				or(isNull(asInflow.id), eq(asInflow.kind, "investment_contribution")),
+			),
+		)
+		.groupBy(transactions.investmentActivityLabel);
+	const absolute = (label: string) => {
+		const value = BigInt(rows.find((row) => row.label === label)?.amount ?? "0");
+		return value < 0n ? -value : value;
+	};
+	return { contributions: absolute("Contribution"), withdrawals: absolute("Withdrawal") };
+}
+
+/** Signed trade cash flows for Sure's telescoping period market return. Income has zero quantity. */
+export async function investmentMarketFlows(
+	deps: ServiceDeps,
+	range: { accountIds: readonly string[]; from: IsoDate; to: IsoDate },
+): Promise<bigint> {
+	if (range.accountIds.length === 0) {
+		return 0n;
+	}
+	const rows = await deps.db
+		.select({ amount: sql<string>`cast(coalesce(sum(${entries.amount}), 0) as text)` })
+		.from(entries)
+		.innerJoin(trades, eq(trades.entryId, entries.id))
+		.where(
+			and(
+				inArray(entries.accountId, [...range.accountIds]),
+				gte(entries.date, range.from),
+				lte(entries.date, range.to),
+				quantityNotZero(trades.quantity),
+			),
+		);
+	return rows.reduce((total, row) => total + BigInt(row.amount), 0n);
+}

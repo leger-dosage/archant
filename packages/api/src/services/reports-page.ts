@@ -33,6 +33,7 @@ import {
 	hasAnyTransaction,
 	transactionsByCategoryMonth,
 } from "./ledger/queries.ts";
+import { getReportInvestments } from "./report-investments.ts";
 import {
 	breakdownCategories,
 	cashFlowAccounts,
@@ -112,6 +113,8 @@ export type ReportsPage = {
 	trends: TrendRow[];
 	breakdown: { income: BreakdownGroup[]; expense: BreakdownGroup[] };
 	netWorth: ReportsNetWorth;
+	investments: Awaited<ReturnType<typeof getReportInvestments>>["investments"];
+	investmentFlows: Awaited<ReturnType<typeof getReportInvestments>>["investmentFlows"];
 };
 
 /** `numerator / denominator × 100`, one decimal, half away from zero as Ruby's `round(1)`. */
@@ -382,13 +385,15 @@ export async function getReportsPage(
 ): Promise<ReportsPage> {
 	const asOf = today(deps.timeZone);
 	const period = reportPeriod(query.periodType, query.startDate, query.endDate, asOf);
-	const [{ currency, counted }, allCategories, figures, netWorth, flags] = await Promise.all([
-		cashFlowAccounts(deps),
-		breakdownCategories(deps),
-		cashFlowFigures(deps, period, asOf),
-		netWorthOf(deps, period, asOf),
-		hasAny(deps),
-	]);
+	const [{ currency, counted }, allCategories, figures, netWorth, flags, investments] =
+		await Promise.all([
+			cashFlowAccounts(deps),
+			breakdownCategories(deps),
+			cashFlowFigures(deps, period, asOf),
+			netWorthOf(deps, period, asOf),
+			hasAny(deps),
+			getReportInvestments(deps, period),
+		]);
 	const range = { from: period.from, to: period.to, accountIds: counted.map((row) => row.id) };
 	const [rows, trades] = await Promise.all([
 		activityByCategory(deps, range),
@@ -402,6 +407,7 @@ export async function getReportsPage(
 		navigation: reportNavigation(period, asOf),
 		...flags,
 		...figures,
+		...investments,
 		breakdown: breakdownOf(rows, trades, allCategories),
 		netWorth,
 	};

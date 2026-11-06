@@ -4,21 +4,25 @@
 /**
  * The reports page's sortable sections, in the order Sure's
  * `build_reports_sections` lists them: the order a section a stored order
- * leaves out is appended in. Sure's two investment sections are not here yet.
+ * leaves out is appended in.
  */
-export const REPORTS_SECTIONS = ["net_worth", "trends_insights", "transactions_breakdown"] as const;
+export const REPORTS_SECTIONS = [
+	"net_worth",
+	"trends_insights",
+	"investment_performance",
+	"investment_flows",
+	"transactions_breakdown",
+] as const;
 
 export type ReportsSection = (typeof REPORTS_SECTIONS)[number];
 
 /**
  * The order a user who never moved a section sees: Sure's
- * `default_reports_section_order`, then `net_worth`, which it does not list
- * and `build_reports_sections` appends.
+ * `default_reports_section_order`, then the sections `build_reports_sections` appends.
  */
 export const DEFAULT_REPORTS_ORDER: readonly ReportsSection[] = [
 	"trends_insights",
 	"transactions_breakdown",
-	"net_worth",
 ];
 
 /**

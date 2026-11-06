@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
+import { z } from "zod";
 
-import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { daysAgo, euros, expect, test, uniqueName } from "./fixtures.ts";
 
 // Story 34.7: Sure's « Rapports », its CSV and its print layout. Reordering
 // and collapsing the sections changes the single administrator's layout, so
@@ -132,4 +133,185 @@ test("a reversed custom range is swapped and says so", async ({ page }) => {
 		"La date de fin ne peut pas être antérieure à la date de début. Les dates ont été inversées.",
 	);
 	await expect(page.getByRole("button", { name: "Période précédente" })).toHaveCount(0);
+});
+
+const investmentReport = z.object({
+	data: z.object({
+		investments: z.object({
+			available: z.literal(true),
+			value: z.number(),
+			holdings: z.array(z.object({ amount: z.number() })),
+			periodReturn: z.object({ gain: z.number(), percent: z.string() }).nullable(),
+			activity: z.object({ contributions: z.number(), withdrawals: z.number() }),
+			gainsByTaxTreatment: z.array(z.object({ treatment: z.string(), realizedGain: z.number() })),
+		}),
+		investmentFlows: z.object({
+			contributions: z.number(),
+			withdrawals: z.number(),
+			netFlow: z.number(),
+		}),
+	}),
+});
+
+test("investment trades, historical gains, cash funding and fixed print metrics follow the selected period", async ({
+	page,
+	context,
+	api,
+}, testInfo) => {
+	const from = "2021-02-01";
+	const to = "2021-02-28";
+	const query = "?periodType=custom&startDate=" + from + "&endDate=" + to;
+	const url = "/reports" + query;
+	const account = await api.openAccount({
+		kind: "brokerage",
+		openingBalance: "1000",
+		openingDate: "2021-01-01",
+	});
+	const foreign = await api.openAccount({
+		kind: "brokerage",
+		name: uniqueName("Investissements en dollars exclus"),
+		currency: "USD",
+		openingBalance: "9000",
+		openingDate: "2021-01-01",
+	});
+	const name = uniqueName(
+		"Fonds rapport dont le nom complet reste disponible même sans symbole boursier",
+	);
+	await api.recordTrade(account.id, {
+		security: { source: "manual", name },
+		date: "2021-01-15",
+		quantity: "10",
+		price: "100",
+		fee: "10",
+	});
+	const positions = z
+		.object({
+			data: z.object({ positions: z.array(z.object({ security: z.object({ id: z.string() }) })) }),
+		})
+		.parse(await (await page.request.get("/api/accounts/" + account.id + "/holdings")).json());
+	const securityId = positions.data.positions[0]?.security.id;
+	expect(securityId).toBeDefined();
+	const baseline = investmentReport.parse(
+		await (await page.request.get("/api/reports/page" + query)).json(),
+	).data;
+	await api.recordTrade(account.id, {
+		side: "sell",
+		security: { source: "known", id: securityId },
+		date: "2021-02-15",
+		quantity: "4",
+		price: "150",
+		fee: "5",
+	});
+	const price = await page.request.post("/api/securities/" + securityId + "/prices", {
+		data: { date: "2021-02-20", price: "160" },
+	});
+	expect(price.ok(), await price.text()).toBe(true);
+	// Other tests own larger positions. Rank this one today without changing the historical period.
+	const largest = Math.max(0, ...baseline.investments.holdings.map((holding) => holding.amount));
+	const currentPrice = await page.request.post("/api/securities/" + securityId + "/prices", {
+		data: { date: daysAgo(0), price: String(Math.floor(largest / 600) + 100) },
+	});
+	expect(currentPrice.ok(), await currentPrice.text()).toBe(true);
+	await (
+		[
+			["Contribution", "50", "2021-02-10"],
+			["Withdrawal", "-20", "2021-02-12"],
+		] as const
+	).reduce(async (previous, [label, amount, date]) => {
+		await previous;
+		const id = await api.addTransaction(account.id, { date, amount, label });
+		const labeled = await page.request.patch("/api/transactions/" + id, {
+			data: { investmentActivityLabel: label },
+		});
+		expect(labeled.ok(), await labeled.text()).toBe(true);
+	}, Promise.resolve());
+	const expected = investmentReport.parse(
+		await (await page.request.get("/api/reports/page" + query)).json(),
+	).data;
+	expect(expected.investments.periodReturn?.gain).toBe(
+		(baseline.investments.periodReturn?.gain ?? 0) + 55500,
+	);
+	const taxable = (report: typeof expected) =>
+		report.investments.gainsByTaxTreatment.find((group) => group.treatment === "taxable")
+			?.realizedGain ?? 0;
+	expect(taxable(expected) - taxable(baseline)).toBe(19600);
+	expect(expected.investmentFlows.contributions - baseline.investmentFlows.contributions).toBe(
+		5000,
+	);
+	expect(expected.investmentFlows.withdrawals - baseline.investmentFlows.withdrawals).toBe(2000);
+	await context.addInitScript(() => {
+		window.print = () => undefined;
+	});
+	await page.goto(url);
+	const performance = page.getByRole("region", {
+		name: "Performance des investissements",
+		exact: true,
+	});
+	const flows = page.getByRole("region", { name: "Flux d'investissement", exact: true });
+	await expect(performance).toBeVisible();
+	await expect(
+		performance
+			.getByRole("table", { name: "Principales positions", exact: true })
+			.getByTitle(name, { exact: true }),
+	).toBeVisible();
+	await expect(
+		performance.getByRole("link", { name: new RegExp(account.name, "u") }),
+	).toBeVisible();
+	await expect(
+		performance.getByRole("group", { name: "Rendement de la période", exact: true }),
+	).toContainText(euros(expected.investments.periodReturn?.gain ?? 0));
+	await performance
+		.getByText(/Voir les détails/u)
+		.first()
+		.click();
+	await expect(
+		performance.locator("details").getByText(euros(19600), { exact: true }),
+	).toBeVisible();
+	await expect(flows.getByRole("group", { name: "Contributions", exact: true })).toContainText(
+		euros(expected.investmentFlows.contributions),
+	);
+	await expect(flows.getByRole("group", { name: "Retraits", exact: true })).toContainText(
+		euros(expected.investmentFlows.withdrawals),
+	);
+	await expect(flows.getByRole("group", { name: "Flux net", exact: true })).toContainText(
+		euros(expected.investmentFlows.netFlow),
+	);
+	await page.goto("/reports?periodType=custom&startDate=" + from + "&endDate=2021-02-14");
+	await expect(
+		performance.getByRole("group", { name: "Rendement de la période", exact: true }),
+	).toContainText(euros(0));
+	await page.goto(url);
+	await expect(performance).toBeVisible();
+	const opened = context.waitForEvent("page");
+	await page.getByRole("link", { name: "Imprimer le rapport" }).click();
+	const print = await opened;
+	const printed = print.locator("section").filter({
+		has: print.getByRole("heading", { level: 2, name: "Investissements", exact: true }),
+	});
+	await expect(printed).toContainText(euros(expected.investments.value));
+	await expect(printed).toContainText(foreign.name);
+	await expect(printed).toContainText(euros(expected.investments.periodReturn?.gain ?? 0));
+	await expect(printed.getByText("Gains par traitement fiscal")).toHaveCount(0);
+	await expect(
+		print.getByRole("heading", { name: "Flux d'investissement", exact: true }),
+	).toHaveCount(0);
+	// Capture both themes and widths with the same fictional household.
+	await (["light", "dark"] as const)
+		.flatMap((colour) => [1440, 390].map((width) => ({ colour, width })))
+		.reduce(async (previous, { colour, width }) => {
+			await previous;
+			await page.emulateMedia({ colorScheme: colour });
+			await page.setViewportSize({ width, height: 900 });
+			await performance.scrollIntoViewIfNeeded();
+			await page.screenshot({
+				path: testInfo.outputPath("reports-" + colour + "-" + width + ".png"),
+				fullPage: true,
+			});
+			await print.setViewportSize({ width, height: 900 });
+			await print.screenshot({
+				path: testInfo.outputPath("print-" + colour + "-" + width + ".png"),
+				fullPage: true,
+			});
+		}, Promise.resolve());
+	await print.close();
 });

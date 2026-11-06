@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 import { toMicros } from "@archant/data/micros";
 import { toMinorUnits } from "@archant/data/money";
 
-import { quantity as q } from "../../testing/decimals.ts";
+import { quantity as q, tradePrice } from "../../testing/decimals.ts";
+import { historicalSaleGain } from "./historical-basis.ts";
 import { returnOf, rollUp, topHoldings } from "./portfolio.ts";
 
 const security = (id: string, name = id) => ({ id, name, ticker: null });
@@ -168,5 +169,117 @@ describe("returnOf", () => {
 			percent: 0,
 			trend: "flat",
 		});
+	});
+});
+
+describe("historical purchase fallback", () => {
+	it.each([
+		["EUR", "0.004", "0.006", 6000, 0],
+		["JPY", "0.4", "0.6", 600000, 0],
+		["KWD", "0.0004", "0.0006", 600, 0],
+		["EUR", "0.004", "0.009", 9000, 0],
+		["JPY", "0.4", "0.9", 900000, 0],
+		["KWD", "0.0004", "0.0009", 900, 0],
+		["EUR", "0.004", "0.019", 19000, -2],
+		["JPY", "0.4", "1.9", 1900000, -2],
+		["KWD", "0.0004", "0.0019", 1900, -2],
+	] as const)(
+		"rounds the exact gain once in %s at sale %s and basis %s",
+		(currency, price, purchasePrice, basis, expected) => {
+			const sale = {
+				quantity: q("-1"),
+				price: tradePrice(price),
+				costBasis: null,
+				costBasisLocked: false,
+				purchases: [{ quantity: q("1"), price: tradePrice(purchasePrice) }],
+			};
+			expect(historicalSaleGain(sale, currency)).toBe(expected);
+			expect(historicalSaleGain({ ...sale, costBasis: toMicros(basis) }, currency)).toBe(expected);
+		},
+	);
+
+	it("does not round a fractional millionth before multiplying by the sold quantity", () => {
+		expect(
+			historicalSaleGain(
+				{
+					quantity: q("-90000"),
+					price: tradePrice("1"),
+					costBasis: null,
+					costBasisLocked: false,
+					purchases: [
+						{ quantity: q("1"), price: tradePrice("0.000001") },
+						{ quantity: q("2"), price: tradePrice("0") },
+					],
+				},
+				"EUR",
+			),
+		).toBe(8_999_997);
+	});
+
+	it("keeps the exact average until the final minor-unit rounding", () => {
+		expect(
+			historicalSaleGain(
+				{
+					quantity: q("-1"),
+					price: tradePrice("1"),
+					costBasis: null,
+					costBasisLocked: false,
+					purchases: [{ quantity: q("3"), price: tradePrice("0.00015") }],
+				},
+				"EUR",
+			),
+		).toBe(100);
+	});
+	it("distinguishes unknown, locked zero and free-purchase zero", () => {
+		const sale = {
+			quantity: q("-2"),
+			price: tradePrice("20"),
+			costBasis: null,
+			costBasisLocked: false,
+			purchases: [],
+		};
+		expect(historicalSaleGain(sale, "EUR")).toBeNull();
+		expect(
+			historicalSaleGain({ ...sale, costBasis: toMicros(0), costBasisLocked: true }, "EUR"),
+		).toBe(4000);
+		expect(
+			historicalSaleGain(
+				{ ...sale, purchases: [{ quantity: q("2"), price: tradePrice("0") }] },
+				"EUR",
+			),
+		).toBe(4000);
+	});
+	it("includes all positive purchases, ignoring sales and fees in the fallback", () => {
+		const purchases = [
+			{ quantity: q("10"), price: tradePrice("10") },
+			{ quantity: q("-10"), price: tradePrice("20") },
+			{ quantity: q("10"), price: tradePrice("30") },
+		];
+		expect(
+			historicalSaleGain(
+				{
+					quantity: q("-10"),
+					price: tradePrice("30"),
+					costBasis: null,
+					costBasisLocked: false,
+					purchases,
+				},
+				"EUR",
+			),
+		).toBe(10000);
+	});
+	it("uses a positive snapshot basis including purchase fees and gross sale proceeds", () => {
+		expect(
+			historicalSaleGain(
+				{
+					quantity: q("-2"),
+					price: tradePrice("20"),
+					costBasis: toMicros(11_000_000),
+					costBasisLocked: false,
+					purchases: [],
+				},
+				"EUR",
+			),
+		).toBe(1800);
 	});
 });

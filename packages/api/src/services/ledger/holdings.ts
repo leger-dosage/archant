@@ -729,3 +729,126 @@ export async function remapPosition(
 		{ behavior: "immediate" },
 	);
 }
+
+/** Actual boundary holdings, including the zero rows a full sale leaves. */
+export async function holdingsValueOn(
+	db: Reader,
+	accountId: string,
+	day: IsoDate,
+): Promise<{ amount: bigint; hasHoldings: boolean }> {
+	const date = await lastHoldingsDay(db, accountId, day);
+	if (date === null) {
+		return { amount: 0n, hasHoldings: false };
+	}
+	const rows = await db
+		.select({
+			amount: sql<string>`cast(coalesce(sum(${holdings.amount}), 0) as text)`,
+			hasHoldings:
+				sql<number>`coalesce(max(case when ${holdings.quantity} <> '0' then 1 else 0 end), 0)`.mapWith(
+					Boolean,
+				),
+		})
+		.from(holdings)
+		.where(and(eq(holdings.accountId, accountId), eq(holdings.date, date)));
+	return rows.reduce<{ amount: bigint; hasHoldings: boolean }>(
+		(_, row) => ({ amount: BigInt(row.amount), hasHoldings: row.hasHoldings }),
+		{
+			amount: 0n,
+			hasHoldings: false,
+		},
+	);
+}
+
+/** Historical sales and their latest snapshot in one query, with indexed boundary seeks. */
+export async function reportSales(
+	db: Reader,
+	range: { accountIds: readonly string[]; from: IsoDate; to: IsoDate },
+) {
+	if (range.accountIds.length === 0) {
+		return { sales: [], purchases: [], locks: [] };
+	}
+	const snapshotDate = db
+		.select({ date: holdings.date })
+		.from(holdings)
+		.where(
+			and(
+				eq(holdings.accountId, entries.accountId),
+				eq(holdings.securityId, trades.securityId),
+				lte(holdings.date, entries.date),
+			),
+		)
+		.orderBy(desc(holdings.date))
+		.limit(1);
+	const sales = await db
+		.select({
+			id: entries.id,
+			accountId: entries.accountId,
+			date: entries.date,
+			quantity: trades.quantity,
+			price: trades.price,
+			security: { id: securities.id, name: securities.name, ticker: securities.ticker },
+			snapshotDate: holdings.date,
+			costBasis: holdings.costBasis,
+		})
+		.from(entries)
+		.innerJoin(trades, eq(trades.entryId, entries.id))
+		.innerJoin(securities, eq(securities.id, trades.securityId))
+		.leftJoin(
+			holdings,
+			and(
+				eq(holdings.accountId, entries.accountId),
+				eq(holdings.securityId, trades.securityId),
+				eq(holdings.date, sql`(${snapshotDate})`),
+			),
+		)
+		.where(
+			and(
+				inArray(entries.accountId, [...range.accountIds]),
+				gte(entries.date, range.from),
+				lte(entries.date, range.to),
+				sql`${trades.quantity} like '-%'`,
+			),
+		)
+		.orderBy(asc(entries.date), asc(entries.createdAt), asc(entries.id));
+	const securityIds = [...new Set(sales.map((sale) => sale.security.id))];
+	if (securityIds.length === 0) {
+		return { sales, purchases: [], locks: [] };
+	}
+	const [purchases, locks] = await Promise.all([
+		db
+			.select({
+				accountId: entries.accountId,
+				securityId: trades.securityId,
+				date: entries.date,
+				quantity: trades.quantity,
+				price: trades.price,
+			})
+			.from(entries)
+			.innerJoin(trades, eq(trades.entryId, entries.id))
+			.where(
+				and(
+					inArray(entries.accountId, [...range.accountIds]),
+					inArray(trades.securityId, securityIds),
+					lte(entries.date, range.to),
+					quantityAboveZero(trades.quantity),
+				),
+			)
+			.orderBy(asc(entries.date)),
+		db
+			.select({
+				accountId: costBasisLocks.accountId,
+				securityId: costBasisLocks.securityId,
+				costBasis: costBasisLocks.costBasis,
+				lockedOn: costBasisLocks.lockedOn,
+				endedOn: lockEndedOn(db),
+			})
+			.from(costBasisLocks)
+			.where(
+				and(
+					inArray(costBasisLocks.accountId, [...range.accountIds]),
+					inArray(costBasisLocks.securityId, securityIds),
+				),
+			),
+	]);
+	return { sales, purchases, locks };
+}

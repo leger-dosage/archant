@@ -462,6 +462,8 @@ export function apiHelpers(request: APIRequestContext) {
 						net_worth: false,
 						trends_insights: false,
 						transactions_breakdown: false,
+						investment_performance: false,
+						investment_flows: false,
 					},
 				} satisfies ReportsLayoutInput,
 			});

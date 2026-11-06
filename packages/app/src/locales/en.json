@@ -3251,7 +3251,70 @@
 				"percent": "%",
 				"moreCategories_one": "+ {{count}} more category",
 				"moreCategories_other": "+ {{count}} more categories"
+			},
+			"investments": {
+				"portfolioValue": "Portfolio value",
+				"totalReturn": "Total return",
+				"periodReturn": "Period return",
+				"topHoldings": "Top holdings",
+				"holding": "Holding",
+				"weight": "Weight",
+				"value": "Value",
+				"return": "Return",
+				"title": "Investments",
+				"contributions": "Contributions",
+				"withdrawals": "Withdrawals",
+				"thisPeriod": "this period"
 			}
+		},
+		"investments": {
+			"title": "Investment performance",
+			"portfolioValue": "Portfolio value",
+			"totalReturn": "Total return",
+			"periodReturn": "Period return",
+			"contributions": "Period contributions",
+			"withdrawals": "Period withdrawals",
+			"topHoldings": "Top holdings",
+			"holding": "Holding",
+			"weight": "Weight",
+			"value": "Value",
+			"return": "Return",
+			"accounts": "Investment accounts",
+			"gainsByTaxTreatment": "Gains by tax treatment",
+			"unrealizedGains": "Unrealized gains",
+			"realizedGains": "Realized gains",
+			"taxableRealizedNote": "These gains may be subject to taxes",
+			"noData": "-",
+			"viewDetails": "View details",
+			"holdingsCount_one": "{{count}} holding",
+			"holdingsCount_other": "{{count}} holdings",
+			"salesCount_one": "{{count}} sale",
+			"salesCount_other": "{{count}} sales",
+			"holdings": "Holdings",
+			"sales": "Sell trades",
+			"andMore": "+{{count}} more",
+			"treatments": {
+				"taxable": "Taxable",
+				"tax_deferred": "Tax deferred",
+				"tax_exempt": "Tax exempt",
+				"tax_advantaged": "Tax advantaged"
+			},
+			"treatmentDescriptions": {
+				"taxable": "Gains may be subject to taxes.",
+				"tax_deferred": "Taxation of gains is deferred.",
+				"tax_exempt": "Gains are exempt from tax.",
+				"tax_advantaged": "The account benefits from a preferential tax regime."
+			}
+		},
+		"investmentFlows": {
+			"title": "Investment flows",
+			"description": "Track money flowing into and out of your investment accounts through contributions and withdrawals.",
+			"contributions": "Contributions",
+			"contributionsDescription": "Money added to investments",
+			"withdrawals": "Withdrawals",
+			"withdrawalsDescription": "Money withdrawn from investments",
+			"netFlow": "Net flow",
+			"netFlowDescription": "Total net change"
 		}
 	},
 	"settings": {

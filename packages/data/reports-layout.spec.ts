@@ -5,17 +5,27 @@ import { mergeReportsLayout, resolveReportsLayout } from "./reports-layout.ts";
 describe("resolveReportsLayout", () => {
 	it("reads Sure's default order, nothing collapsed, for a user who stored nothing", () => {
 		expect(resolveReportsLayout(null)).toEqual({
-			sectionOrder: ["trends_insights", "transactions_breakdown", "net_worth"],
+			sectionOrder: [
+				"trends_insights",
+				"transactions_breakdown",
+				"net_worth",
+				"investment_performance",
+				"investment_flows",
+			],
 			collapsedSections: {
 				net_worth: false,
 				trends_insights: false,
 				transactions_breakdown: false,
+				investment_performance: false,
+				investment_flows: false,
 			},
 		});
 		expect(resolveReportsLayout({}).sectionOrder).toEqual([
 			"trends_insights",
 			"transactions_breakdown",
 			"net_worth",
+			"investment_performance",
+			"investment_flows",
 		]);
 	});
 
@@ -25,11 +35,19 @@ describe("resolveReportsLayout", () => {
 			collapsedSections: { foo: true, net_worth: true },
 		});
 
-		expect(layout.sectionOrder).toEqual(["net_worth", "trends_insights", "transactions_breakdown"]);
+		expect(layout.sectionOrder).toEqual([
+			"net_worth",
+			"trends_insights",
+			"investment_performance",
+			"investment_flows",
+			"transactions_breakdown",
+		]);
 		expect(layout.collapsedSections).toEqual({
 			net_worth: true,
 			trends_insights: false,
 			transactions_breakdown: false,
+			investment_performance: false,
+			investment_flows: false,
 		});
 	});
 });
@@ -54,5 +72,27 @@ describe("mergeReportsLayout", () => {
 		expect(mergeReportsLayout(null, { collapsedSections: { net_worth: false } })).toEqual({
 			collapsedSections: { net_worth: false },
 		});
+	});
+});
+
+it("keeps hidden investment sections' order and collapse when they reappear", () => {
+	const stored = mergeReportsLayout(null, {
+		sectionOrder: ["investment_flows", "net_worth", "investment_performance"],
+		collapsedSections: { investment_flows: true, investment_performance: true },
+	});
+	const otherChange = mergeReportsLayout(stored, { collapsedSections: { trends_insights: true } });
+	expect(resolveReportsLayout(otherChange)).toMatchObject({
+		sectionOrder: [
+			"investment_flows",
+			"net_worth",
+			"investment_performance",
+			"trends_insights",
+			"transactions_breakdown",
+		],
+		collapsedSections: {
+			investment_flows: true,
+			investment_performance: true,
+			trends_insights: true,
+		},
 	});
 });
