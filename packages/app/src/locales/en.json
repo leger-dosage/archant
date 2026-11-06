@@ -28,6 +28,7 @@
 		"budgets": "Budgets",
 		"goals": "Goals",
 		"bills": "Bills",
+		"reports": "Reports",
 		"rules": "Rules",
 		"settings": "Settings",
 		"signOut": "Sign out",
@@ -3107,6 +3108,150 @@
 			"description": "Are you sure you want to delete all rules? Transactions they already changed stay as they are. This cannot be undone.",
 			"confirm": "Delete all rules",
 			"deleted": "All rules deleted"
+		}
+	},
+	"reports": {
+		"title": "Reports",
+		"subtitle": "Comprehensive insights into your financial health",
+		"printReport": "Print Report",
+		"periodAria": "Report period",
+		"periods": {
+			"monthly": "Monthly",
+			"quarterly": "Quarterly",
+			"ytd": "Year to Date",
+			"last_6_months": "Last 6 Months",
+			"custom": "Custom Range"
+		},
+		"dateRange": {
+			"from": "From",
+			"to": "To"
+		},
+		"previousPeriod": "Previous period",
+		"nextPeriod": "Next period",
+		"shortcutHint": "{{action}} ({{key}})",
+		"today": "Today",
+		"periodLabel": {
+			"quarterly": "Q{{quarter}} {{year}}",
+			"ytd": "YTD {{year}}",
+			"last6Months": "{{start}} – {{end}}"
+		},
+		"picker": {
+			"label": "Pick the period",
+			"quarter": "Q{{quarter}} {{year}}",
+			"ytd": "YTD {{year}}",
+			"previousYear": "Previous year",
+			"nextYear": "Next year",
+			"previousDecade": "Previous decade",
+			"nextDecade": "Next decade",
+			"months": "Months of {{year}}",
+			"quarters": "Quarters of {{year}}",
+			"years": "Years {{start}} to {{end}}"
+		},
+		"invalidDateRange": "End date cannot be before start date. The dates have been swapped.",
+		"sections": "Reports sections",
+		"toggleSection": "Toggle section visibility",
+		"dragToReorder": "Drag to reorder section",
+		"sectionInstructions": "{{title}} section. Press Enter or Space to grab for reordering, then use arrow keys to move.",
+		"summary": {
+			"label": "Summary",
+			"totalIncome": "Total Income",
+			"totalExpenses": "Total Expenses",
+			"netSavings": "Net Savings",
+			"budgetPerformance": "Budget Performance",
+			"vsPrevious": "vs previous period",
+			"incomeMinusExpenses": "Income minus expenses",
+			"ofBudgetUsed": "of budget used",
+			"noBudgetData": "No budget data for this period"
+		},
+		"trends": {
+			"title": "Trends & Insights",
+			"monthlyBreakdown": "Monthly Breakdown",
+			"month": "Month",
+			"income": "Income",
+			"expenses": "Expenses",
+			"net": "Net",
+			"savingsRate": "Savings Rate",
+			"current": "current",
+			"avgMonthlyIncome": "Avg. Monthly Income",
+			"avgMonthlyExpenses": "Avg. Monthly Expenses",
+			"avgMonthlySavings": "Avg. Monthly Savings",
+			"noData": "No trend data available"
+		},
+		"emptyState": {
+			"title": "No Data Available",
+			"description": "Start tracking your finances by adding transactions or connecting your accounts to see comprehensive reports",
+			"addTransaction": "Add Transaction",
+			"addAccount": "Add Account"
+		},
+		"breakdown": {
+			"title": "Activity Breakdown",
+			"noTransactions": "No activity found for the selected period",
+			"csv": "CSV",
+			"income": "Income",
+			"expense": "Expenses",
+			"category": "Category",
+			"amount": "Amount",
+			"percentage": "% of Total",
+			"entries_one": "{{count}} entry",
+			"entries_other": "{{count}} entries",
+			"showing_one": "Showing {{count}} entry",
+			"showing_other": "Showing {{count}} entries",
+			"uncategorized": "Uncategorized",
+			"otherInvestments": "Other Investments"
+		},
+		"netWorth": {
+			"title": "Net Worth",
+			"currentNetWorth": "Current Net Worth",
+			"periodChange": "Period Change",
+			"assetsVsLiabilities": "Assets vs Liabilities",
+			"totalAssets": "Assets",
+			"totalLiabilities": "Liabilities",
+			"noAssets": "No assets",
+			"noLiabilities": "No liabilities",
+			"chart": "Net worth over the period"
+		},
+		"print": {
+			"title": "Financial Report",
+			"generatedOn": "Generated {{date}}",
+			"loading": "Preparing the report…",
+			"summary": {
+				"title": "Summary",
+				"income": "Income",
+				"expenses": "Expenses",
+				"netSavings": "Net Savings",
+				"budget": "Budget",
+				"vsPrior": "{{percent}} vs prior",
+				"ofIncome": "{{percent}} of income",
+				"used": "used"
+			},
+			"netWorth": {
+				"title": "Net Worth",
+				"currentBalance": "Current Balance",
+				"thisPeriod": "this period",
+				"assets": "Assets",
+				"liabilities": "Liabilities",
+				"noLiabilities": "No liabilities"
+			},
+			"trends": {
+				"title": "Monthly Trends",
+				"month": "Month",
+				"income": "Income",
+				"expenses": "Expenses",
+				"net": "Net",
+				"savingsRate": "Savings Rate",
+				"average": "Average",
+				"currentMonthNote": "* Current month (partial data)"
+			},
+			"spending": {
+				"title": "Spending by Category",
+				"income": "Income",
+				"expenses": "Expenses",
+				"category": "Category",
+				"amount": "Amount",
+				"percent": "%",
+				"moreCategories_one": "+ {{count}} more category",
+				"moreCategories_other": "+ {{count}} more categories"
+			}
 		}
 	},
 	"settings": {

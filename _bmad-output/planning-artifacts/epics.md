@@ -547,7 +547,33 @@ The household's bills behave as Sure's: detection leaves stale and renamed serie
 The owner reads the dashboard Sure shows: a balance sheet by account type, one period for every widget, Sure's cash flow and investment widgets in a layout each user arranges, and Sure's reports page with its CSV and print layout. Imports, rules, shortcuts and drawers work as in Sure, under Archant's own visual style.
 **FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Dashboard and reports », « Product-wide differences », « Accounts », « Entries and balances », « Other areas »
 
-### Epic 35: Budgets and goals as Sure
+#### Story 34.11: Sure's investment sections on the reports page
+
+As a member of the household,
+I want Sure's « Performance des investissements » and « Flux d'investissement » on « Rapports » and in its print layout,
+So that I review my investments over a period, as Sure.
+
+**Requirements:** none new
+
+**Acceptance Criteria:**
+
+**Given** an active investment or crypto account included in reports
+**When** « Rapports » renders
+**Then** « Performance des investissements » shows Sure's `build_investment_metrics`: « Valeur du portefeuille », « Rendement total », « Rendement de la période » over the period's market flows, « Contributions de la période », « Retraits de la période », « Principaux holdings », « Gains par traitement fiscal » with realized gains of the period's sales, and « Comptes d'investissement », as Sure's `_investment_performance.html.erb`
+
+**Given** contributions or withdrawals in the period
+**When** « Rapports » renders
+**Then** « Flux d'investissement » shows « Contributions », « Retraits » and « Flux net », as Sure's `InvestmentFlowStatement`
+
+**Given** both sections
+**When** the member reorders or collapses them, or opens « Imprimer le rapport »
+**Then** they take Sure's `investment_performance` and `investment_flows` keys in the order Story 34.7 stores, and print shows Sure's « Investissements »
+
+**Given** the finished story
+**When** `pnpm test` and `pnpm test:e2e` run
+**Then** Vitest covers the period return and a realized gain; Playwright reads both sections over a seeded trade
+
+## Epic 35: Budgets and goals as Sure
 
 The owner budgets every category over the household's own month, sees the cash and the bills beside each envelope, and runs savings goals as Sure does: pledges, spending, contributions, pace, a Plan page and the page's explanations.
 **FRs covered:** none new; parity with Sure, `docs/sure-parity.md` « Other areas » (Budgets, Savings goals)
@@ -7819,7 +7845,7 @@ What Sure does:
 - Shortcuts: `app/javascript/controllers/hotkey_controller.js` binds a few keys; nothing saves on `⌘Enter`.
 - Drawers: `app/components/DS/dialog.rb` opens `trades/show.html.erb` and `valuations/show.html.erb` as drawers that save each field as it changes, and `loans/tabs/_overview.html.erb` keeps three cards a row.
 
-Stories 34.1, 34.2, 34.8, 34.9 and 34.10 come in any order. Story 34.3 comes before 34.4, 34.5 and 34.7. Story 34.6 follows 34.4 and 34.5. The transfer drawer is Story 31.6, the bill drawer Story 33.7, bulk edit Story 31.2 and the split drawer Story 31.3; Story 34.10 leaves them to those stories. The goals card leaves the dashboard with Story 35.10. Privacy mode stays Later.
+Stories 34.1, 34.2, 34.8, 34.9 and 34.10 come in any order. Story 34.3 comes before 34.4, 34.5 and 34.7. Story 34.6 follows 34.4 and 34.5. Story 34.11 follows 34.7. The transfer drawer is Story 31.6, the bill drawer Story 33.7, bulk edit Story 31.2 and the split drawer Story 31.3; Story 34.10 leaves them to those stories. The goals card leaves the dashboard with Story 35.10. Privacy mode stays Later.
 
 ### Story 34.1: Group the balance sheet by account type
 
@@ -8017,7 +8043,7 @@ So that I review a month, a quarter or a year and keep a copy, as Sure.
 
 **Given** a period
 **When** the page renders
-**Then** it shows Sure's summary and « Performance budgétaire », then « Patrimoine net », « Tendances et aperçus », « Performance des investissements », « Flux d'investissement » and « Répartition des activités », each collapsible and reordered per user as Sure's `reports_section_order`; with no data, « Aucune donnée disponible »
+**Then** it shows Sure's summary, « Performance budgétaire » its fourth card, then « Tendances et aperçus », « Répartition des activités » and « Patrimoine net », each collapsible and reordered per user as Sure's `reports_section_order`; with no transaction in the household, « Aucune donnée disponible »; Sure's investment sections are Story 34.11
 
 **Given** « Exporter CSV »
 **When** the member downloads it

@@ -1,0 +1,276 @@
+/*
+  Sure's `print-report.css`: the Tufte-inspired printable financial report.
+  Utilities, so the class lint knows them and Tailwind emits them only where
+  the print layout uses them. Its colours are Tailwind's grey, green, red and
+  yellow, written out: the print layout keeps them in both themes.
+*/
+
+/* Named, so it sets the A4 margins of the report alone, not of every Archant page. */
+@page report {
+	size: A4;
+	margin: 15mm 18mm;
+}
+
+@utility print-body {
+	page: report;
+	min-height: 100svh;
+	background: #ffffff;
+	color: #111827;
+	line-height: 1.5;
+
+	@media print {
+		font-size: 10px;
+		-webkit-print-color-adjust: exact;
+		print-color-adjust: exact;
+	}
+}
+
+@utility print-container {
+	max-width: 680px;
+	margin: 0 auto;
+	padding: 32px 24px;
+
+	@media print {
+		max-width: none;
+		padding: 0;
+	}
+}
+
+@utility tufte-report {
+	font-size: 11px;
+	color: #111827;
+}
+
+@utility tufte-header {
+	margin-bottom: 24px;
+	padding-bottom: 12px;
+	border-bottom: 2px solid #111827;
+	break-after: avoid;
+}
+
+@utility tufte-title {
+	font-size: 20px;
+	font-weight: 700;
+	margin: 0 0 4px 0;
+	letter-spacing: -0.3px;
+}
+
+@utility tufte-period {
+	display: block;
+	font-size: 13px;
+	font-weight: 500;
+	color: #4b5563;
+	margin-top: 2px;
+}
+
+@utility tufte-meta {
+	font-size: 10px;
+	color: #6b7280;
+	margin: 8px 0 0 0;
+}
+
+@utility tufte-section {
+	margin-bottom: 24px;
+}
+
+@utility tufte-section-title {
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+	margin: 0 0 12px 0;
+	border-bottom: 1px solid #e5e7eb;
+	padding-bottom: 6px;
+	break-after: avoid;
+}
+
+@utility tufte-subsection {
+	font-size: 11px;
+	font-weight: 600;
+	margin: 16px 0 8px 0;
+	padding-bottom: 4px;
+	border-bottom: 1px solid #f3f4f6;
+}
+
+@utility tufte-metric-row {
+	display: flex;
+	gap: 32px;
+	flex-wrap: wrap;
+	margin-bottom: 8px;
+}
+
+@utility tufte-metric-card {
+	display: inline-block;
+	min-width: 100px;
+}
+
+@utility tufte-metric-card-label {
+	display: block;
+	font-size: 10px;
+	font-weight: 500;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: #6b7280;
+	margin-bottom: 4px;
+}
+
+@utility tufte-metric-card-value {
+	display: block;
+	font-size: 20px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	line-height: 1.1;
+	letter-spacing: -0.5px;
+}
+
+@utility tufte-metric-card-change {
+	display: inline-block;
+	font-size: 10px;
+	font-weight: 500;
+	margin-top: 4px;
+	padding: 1px 4px;
+	border-radius: 2px;
+}
+
+@utility tufte-metric-card-sm {
+	& .tufte-metric-card-value {
+		font-size: 16px;
+	}
+
+	& .tufte-metric-card-label {
+		font-size: 9px;
+	}
+}
+
+@utility tufte-sparkline {
+	display: block;
+	margin-top: 6px;
+}
+
+@utility tufte-income {
+	color: #15803d;
+}
+
+@utility tufte-expense {
+	color: #b91c1c;
+}
+
+@utility tufte-up {
+	color: #15803d;
+}
+
+@utility tufte-down {
+	color: #b91c1c;
+}
+
+@utility tufte-muted {
+	color: #6b7280;
+	font-size: 10px;
+}
+
+@utility tufte-secondary {
+	color: #4b5563;
+}
+
+@utility tufte-two-col {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 32px;
+	margin-top: 12px;
+	break-inside: avoid;
+}
+
+@utility tufte-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+
+	& thead {
+		display: table-header-group;
+	}
+
+	& thead th {
+		text-align: left;
+		font-weight: 600;
+		font-size: 9px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: #4b5563;
+		padding: 8px 12px 8px 0;
+		border-bottom: 2px solid #111827;
+	}
+
+	& tbody td {
+		padding: 6px 12px 6px 0;
+		border-bottom: 1px solid #e5e7eb;
+		vertical-align: middle;
+	}
+
+	& tbody tr:last-child td {
+		border-bottom: none;
+	}
+
+	& tfoot td {
+		padding: 8px 12px 6px 0;
+		border-top: 2px solid #111827;
+		font-weight: 600;
+	}
+
+	& tr {
+		break-inside: avoid;
+	}
+}
+
+@utility tufte-compact {
+	& thead th {
+		padding: 6px 8px 6px 0;
+	}
+
+	& tbody td {
+		padding: 5px 8px 5px 0;
+	}
+}
+
+@utility tufte-right {
+	text-align: right !important;
+	padding-right: 0 !important;
+}
+
+@utility tufte-highlight {
+	background: #fef9c3;
+
+	& td:first-child {
+		font-weight: 600;
+	}
+}
+
+@utility tufte-dot {
+	display: inline-block;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	margin-right: 6px;
+	vertical-align: middle;
+}
+
+@utility tufte-footnote {
+	font-size: 10px;
+	color: #6b7280;
+	margin-top: 8px;
+	font-style: italic;
+}
+
+@utility tufte-keep-together {
+	break-inside: avoid;
+}
+
+@utility tufte-footer {
+	margin-top: 32px;
+	padding-top: 12px;
+	border-top: 1px solid #e5e7eb;
+	font-size: 10px;
+	color: #6b7280;
+	text-align: center;
+	break-before: avoid;
+}

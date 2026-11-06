@@ -2,6 +2,7 @@ import type { AccountOrder } from "../account-orders.ts";
 import type { StoredDashboardLayout } from "../dashboard-sections.ts";
 import type { Locale } from "../locales.ts";
 import type { SurePeriod } from "../periods.ts";
+import type { StoredReportsLayout } from "../reports-sections.ts";
 import type { UserRole } from "../user-roles.ts";
 
 import { sql } from "drizzle-orm";
@@ -88,6 +89,9 @@ export const users = sqliteTable(
 		// a key the code no longer knows is dropped on read, so a widget removed
 		// later needs no data migration.
 		dashboardLayout: text("dashboard_layout", { mode: "json" }).$type<StoredDashboardLayout>(),
+		// Sure's `reports_section_order` and `reports_collapsed_sections`. Null
+		// is Sure's default order with nothing collapsed.
+		reportsLayout: text("reports_layout", { mode: "json" }).$type<StoredReportsLayout>(),
 	},
 	(table) => [
 		check("users_role_check", sql`${table.role} in ${inList(USER_ROLES)}`),

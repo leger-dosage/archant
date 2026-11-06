@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarIcon,
+	ChartColumnIcon,
 	EllipsisIcon,
 	FunnelIcon,
 	GoalIcon,
@@ -71,6 +72,7 @@ const DESTINATIONS = [
 	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false, phone: true },
 	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false, phone: true },
 	{ to: "/bills", label: "nav.bills", icon: CalendarIcon, exact: false, phone: false },
+	{ to: "/reports", label: "nav.reports", icon: ChartColumnIcon, exact: false, phone: false },
 	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false, phone: false },
 	{ to: "/settings", label: "nav.settings", icon: SettingsIcon, exact: false, phone: false },
 ] as const satisfies readonly {

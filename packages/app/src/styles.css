@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/inter";
 @import "@fontsource-variable/geist-mono";
+@import "./components/reports/report-print.css";
 
 @custom-variant dark (&:is(.dark *));
 

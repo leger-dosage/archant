@@ -15,6 +15,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthedBillsRouteImport } from './routes/_authed.bills'
 import { Route as AuthedRecurringRouteImport } from './routes/_authed.recurring'
+import { Route as AuthedReportsRouteImport } from './routes/_authed.reports'
 import { Route as AuthedRulesRouteImport } from './routes/_authed.rules'
 import { Route as AuthedSettingsRouteImport } from './routes/_authed.settings'
 import { Route as AuthedTransactionsRouteImport } from './routes/_authed.transactions'
@@ -27,6 +28,7 @@ import { Route as AuthedBudgetsIndexRouteImport } from './routes/_authed.budgets
 import { Route as AuthedBudgetsMonthRouteImport } from './routes/_authed.budgets.$month'
 import { Route as AuthedGoalsIndexRouteImport } from './routes/_authed.goals.index'
 import { Route as AuthedGoalsGoalIdRouteImport } from './routes/_authed.goals.$goalId'
+import { Route as AuthedReportsPrintRouteImport } from './routes/_authed.reports_.print'
 import { Route as AuthedSettingsIndexRouteImport } from './routes/_authed.settings.index'
 import { Route as AuthedSettingsAssistantsRouteImport } from './routes/_authed.settings.assistants'
 import { Route as AuthedSettingsBanksRouteImport } from './routes/_authed.settings.banks'
@@ -75,6 +77,11 @@ const AuthedBillsRoute = AuthedBillsRouteImport.update({
 const AuthedRecurringRoute = AuthedRecurringRouteImport.update({
   id: '/recurring',
   path: '/recurring',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedReportsRoute = AuthedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedRulesRoute = AuthedRulesRouteImport.update({
@@ -135,6 +142,11 @@ const AuthedGoalsIndexRoute = AuthedGoalsIndexRouteImport.update({
 const AuthedGoalsGoalIdRoute = AuthedGoalsGoalIdRouteImport.update({
   id: '/goals/$goalId',
   path: '/goals/$goalId',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedReportsPrintRoute = AuthedReportsPrintRouteImport.update({
+  id: '/reports_/print',
+  path: '/reports/print',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedSettingsIndexRoute = AuthedSettingsIndexRouteImport.update({
@@ -254,6 +266,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/bills': typeof AuthedBillsRouteWithChildren
   '/recurring': typeof AuthedRecurringRoute
+  '/reports': typeof AuthedReportsRoute
   '/rules': typeof AuthedRulesRoute
   '/settings': typeof AuthedSettingsRouteWithChildren
   '/transactions': typeof AuthedTransactionsRoute
@@ -263,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/bills/$billId': typeof AuthedBillsBillIdRoute
   '/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/goals/$goalId': typeof AuthedGoalsGoalIdRoute
+  '/reports/print': typeof AuthedReportsPrintRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -292,6 +306,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/bills': typeof AuthedBillsRouteWithChildren
   '/recurring': typeof AuthedRecurringRoute
+  '/reports': typeof AuthedReportsRoute
   '/rules': typeof AuthedRulesRoute
   '/transactions': typeof AuthedTransactionsRoute
   '/invitations/$token': typeof InvitationsTokenRoute
@@ -301,6 +316,7 @@ export interface FileRoutesByTo {
   '/bills/$billId': typeof AuthedBillsBillIdRoute
   '/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/goals/$goalId': typeof AuthedGoalsGoalIdRoute
+  '/reports/print': typeof AuthedReportsPrintRoute
   '/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/settings/banks': typeof AuthedSettingsBanksRoute
   '/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -332,6 +348,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/_authed/bills': typeof AuthedBillsRouteWithChildren
   '/_authed/recurring': typeof AuthedRecurringRoute
+  '/_authed/reports': typeof AuthedReportsRoute
   '/_authed/rules': typeof AuthedRulesRoute
   '/_authed/settings': typeof AuthedSettingsRouteWithChildren
   '/_authed/transactions': typeof AuthedTransactionsRoute
@@ -342,6 +359,7 @@ export interface FileRoutesById {
   '/_authed/bills/$billId': typeof AuthedBillsBillIdRoute
   '/_authed/budgets/$month': typeof AuthedBudgetsMonthRoute
   '/_authed/goals/$goalId': typeof AuthedGoalsGoalIdRoute
+  '/_authed/reports_/print': typeof AuthedReportsPrintRoute
   '/_authed/settings/assistants': typeof AuthedSettingsAssistantsRoute
   '/_authed/settings/banks': typeof AuthedSettingsBanksRoute
   '/_authed/settings/categories': typeof AuthedSettingsCategoriesRoute
@@ -374,6 +392,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/bills'
     | '/recurring'
+    | '/reports'
     | '/rules'
     | '/settings'
     | '/transactions'
@@ -383,6 +402,7 @@ export interface FileRouteTypes {
     | '/bills/$billId'
     | '/budgets/$month'
     | '/goals/$goalId'
+    | '/reports/print'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -412,6 +432,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/bills'
     | '/recurring'
+    | '/reports'
     | '/rules'
     | '/transactions'
     | '/invitations/$token'
@@ -421,6 +442,7 @@ export interface FileRouteTypes {
     | '/bills/$billId'
     | '/budgets/$month'
     | '/goals/$goalId'
+    | '/reports/print'
     | '/settings/assistants'
     | '/settings/banks'
     | '/settings/categories'
@@ -451,6 +473,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/_authed/bills'
     | '/_authed/recurring'
+    | '/_authed/reports'
     | '/_authed/rules'
     | '/_authed/settings'
     | '/_authed/transactions'
@@ -461,6 +484,7 @@ export interface FileRouteTypes {
     | '/_authed/bills/$billId'
     | '/_authed/budgets/$month'
     | '/_authed/goals/$goalId'
+    | '/_authed/reports_/print'
     | '/_authed/settings/assistants'
     | '/_authed/settings/banks'
     | '/_authed/settings/categories'
@@ -536,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/recurring'
       fullPath: '/recurring'
       preLoaderRoute: typeof AuthedRecurringRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/reports': {
+      id: '/_authed/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthedReportsRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/rules': {
@@ -620,6 +651,13 @@ declare module '@tanstack/react-router' {
       path: '/goals/$goalId'
       fullPath: '/goals/$goalId'
       preLoaderRoute: typeof AuthedGoalsGoalIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/reports_/print': {
+      id: '/_authed/reports_/print'
+      path: '/reports/print'
+      fullPath: '/reports/print'
+      preLoaderRoute: typeof AuthedReportsPrintRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/settings/': {
@@ -824,6 +862,7 @@ const AuthedSettingsRouteWithChildren = AuthedSettingsRoute._addFileChildren(
 interface AuthedRouteChildren {
   AuthedBillsRoute: typeof AuthedBillsRouteWithChildren
   AuthedRecurringRoute: typeof AuthedRecurringRoute
+  AuthedReportsRoute: typeof AuthedReportsRoute
   AuthedRulesRoute: typeof AuthedRulesRoute
   AuthedSettingsRoute: typeof AuthedSettingsRouteWithChildren
   AuthedTransactionsRoute: typeof AuthedTransactionsRoute
@@ -831,6 +870,7 @@ interface AuthedRouteChildren {
   AuthedAccountsAccountIdRoute: typeof AuthedAccountsAccountIdRoute
   AuthedBudgetsMonthRoute: typeof AuthedBudgetsMonthRoute
   AuthedGoalsGoalIdRoute: typeof AuthedGoalsGoalIdRoute
+  AuthedReportsPrintRoute: typeof AuthedReportsPrintRoute
   AuthedTransactionsCategorizeRoute: typeof AuthedTransactionsCategorizeRoute
   AuthedAccountsIndexRoute: typeof AuthedAccountsIndexRoute
   AuthedBudgetsIndexRoute: typeof AuthedBudgetsIndexRoute
@@ -842,6 +882,7 @@ interface AuthedRouteChildren {
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedBillsRoute: AuthedBillsRouteWithChildren,
   AuthedRecurringRoute: AuthedRecurringRoute,
+  AuthedReportsRoute: AuthedReportsRoute,
   AuthedRulesRoute: AuthedRulesRoute,
   AuthedSettingsRoute: AuthedSettingsRouteWithChildren,
   AuthedTransactionsRoute: AuthedTransactionsRoute,
@@ -849,6 +890,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAccountsAccountIdRoute: AuthedAccountsAccountIdRoute,
   AuthedBudgetsMonthRoute: AuthedBudgetsMonthRoute,
   AuthedGoalsGoalIdRoute: AuthedGoalsGoalIdRoute,
+  AuthedReportsPrintRoute: AuthedReportsPrintRoute,
   AuthedTransactionsCategorizeRoute: AuthedTransactionsCategorizeRoute,
   AuthedAccountsIndexRoute: AuthedAccountsIndexRoute,
   AuthedBudgetsIndexRoute: AuthedBudgetsIndexRoute,

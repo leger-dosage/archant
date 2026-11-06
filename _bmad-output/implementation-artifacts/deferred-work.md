@@ -499,3 +499,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-34-6-arrange-the-dashboard.md`
   summary: Test that « Entrées / sorties d'argent » set to « Plein » lays its chart and summary side by side at 1600 px.
   evidence: `MoneyFlowSection.tsx` switches on `colSpan === "full"` and no test sets `money_flow` full.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-7-the-reports-page-its-csv-and-print-layout.md`
+  summary: Sure's « Performance des investissements » and « Flux d'investissement » on the reports page and in print, now Story 34.11.
+  evidence: they need a period return over market flows, realized gains per sale and gains by tax treatment, which Archant does not compute; the rest of 34.7 ships without them.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-7-the-reports-page-its-csv-and-print-layout.md`
+  summary: Measure `activityByCategory` and `transactionsByCategoryMonth` in the `volume` project and drop the reports page's repeated account and category reads.
+  evidence: unverified medium; `history-volume.spec.ts` times NFR10 queries but not these two, and `getReportsPage` reads `cashFlowAccounts` and `breakdownCategories` twice; a timed run at 100,000 transactions would settle it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-7-the-reports-page-its-csv-and-print-layout.md`
+  summary: Document the shell-less `staticData.bare` route kind used by `/reports/print` in `AGENTS.md` or `docs/architecture.md`.
+  evidence: `_authed.tsx` now renders a leaf with `staticData.bare` outside `AppShell`; a later shell-less page could invent another mechanism.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-7-the-reports-page-its-csv-and-print-layout.md`
+  summary: Test the reports page's 150 ms touch hold before a section drags.
+  evidence: `ReportsSection.tsx` passes `holdDelay` 150 to `useTouchHold`; no test drives a touch hold.
+- source_spec: `_bmad-output/implementation-artifacts/spec-34-7-the-reports-page-its-csv-and-print-layout.md`
+  summary: Fix the local flake of `dashboard-layout.spec.ts` « a widget dragged by its grip lands before the one it is dropped on », whose first `page.mouse.move` after `mouse.down` hangs until the 30 s timeout.
+  evidence: on 2026-11-06 it failed 5 of 8 runs on `main` at `7396ed12` alone (setup plus this test) and as often on the Story 34.7 branch; CI on `main` stays green, so it shows on a loaded local machine; the trace stops inside the first move, before any drop.

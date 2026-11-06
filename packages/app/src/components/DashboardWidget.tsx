@@ -50,7 +50,8 @@ type DashboardWidgetContextValue = {
 	colSpan: DashboardColSpan;
 };
 
-const DashboardWidgetContext = createContext<DashboardWidgetContextValue | null>(null);
+/** Lent to a `Section` by a dashboard widget or a reports section, which arrange it. */
+export const DashboardWidgetContext = createContext<DashboardWidgetContextValue | null>(null);
 
 /** The dashboard widget a section sits in, null anywhere else. */
 export function useDashboardWidget(): DashboardWidgetContextValue | null {
@@ -189,46 +190,55 @@ function SizeMenu({
 /** Pointer moves past this many pixels before the hold ends cancel it, Sure's 10 px radius. */
 const HOLD_SLOP = 10;
 
-/** Sure's `holdDelay`: a deliberate press, so a scroll never picks a widget up. */
+/** Sure's dashboard `holdDelay`: a deliberate press, so a scroll never picks a widget up. */
 const HOLD_DELAY = 800;
 
 /** One reorder in progress, shared by every widget of the grid. */
-export type DashboardSortable = {
+export type DashboardSortable<Key extends string = DashboardSection> = {
 	/** The widget a keyboard user holds, if any. */
-	grabbed: DashboardSection | null;
+	grabbed: Key | null;
 	/** The widget a dragged one would land before. */
-	dropTarget: DashboardSection | null;
-	dragged: DashboardSection | null;
+	dropTarget: Key | null;
+	/** A dragged one would land after the last, as the reports page's drop does. */
+	dropAtEnd: boolean;
+	dragged: Key | null;
 	/** Whether a drag runs, read at once: the first `dragover` can come before the next render. */
 	dragging: () => boolean;
-	keyboard: (key: DashboardSection, action: "toggle" | "up" | "down" | "release") => void;
-	start: (key: DashboardSection) => void;
+	keyboard: (key: Key, action: "toggle" | "up" | "down" | "release") => void;
+	start: (key: Key) => void;
 	over: (x: number, y: number) => void;
 	drop: (x: number, y: number) => void;
 	end: () => void;
-	register: (key: DashboardSection, element: HTMLElement | null) => void;
+	register: (key: Key, element: HTMLElement | null) => void;
 };
 
 /**
- * Sure's `dashboard_sortable_controller.js`: a keyboard grab moves a widget
- * among the shown ones and saves on release; a mouse drag or a touch hold
- * drops it before the widget whose centre is nearest. Widgets that draw
+ * Where a drop lands: before the widget whose centre is nearest, Sure's
+ * dashboard grid, or before the first whose vertical midpoint is below the
+ * pointer, else last, Sure's reports column.
+ */
+type DropRule = "nearest" | "midpoint";
+
+/**
+ * Sure's `dashboard_sortable_controller.js` and `reports_sortable_controller.js`:
+ * a keyboard grab moves a widget among the shown ones and saves on release;
+ * a mouse drag or a touch hold drops it where `drop` says. Widgets that draw
  * nothing are skipped, as Sure never renders them.
  */
-export function useDashboardSortable(
-	order: readonly DashboardSection[],
-	onSave: (order: DashboardSection[]) => void,
-): { order: readonly DashboardSection[]; sortable: DashboardSortable } {
-	const [grabbed, setGrabbed] = useState<DashboardSection | null>(null);
-	const [draft, setDraft] = useState<DashboardSection[] | null>(null);
-	const [dragged, setDragged] = useState<DashboardSection | null>(null);
-	const [dropTarget, setDropTarget] = useState<DashboardSection | null>(null);
-	const draggedNow = useRef<DashboardSection | null>(null);
-	const elements = useRef(new Map<DashboardSection, HTMLElement>());
+export function useDashboardSortable<Key extends string = DashboardSection>(
+	order: readonly Key[],
+	onSave: (order: Key[]) => void,
+	{ drop: dropRule = "nearest" }: { drop?: DropRule } = {},
+): { order: readonly Key[]; sortable: DashboardSortable<Key> } {
+	const [grabbed, setGrabbed] = useState<Key | null>(null);
+	const [draft, setDraft] = useState<Key[] | null>(null);
+	const [dragged, setDragged] = useState<Key | null>(null);
+	const [dropTarget, setDropTarget] = useState<{ before: Key | null } | null>(null);
+	const draggedNow = useRef<Key | null>(null);
+	const elements = useRef(new Map<Key, HTMLElement>());
 	const shown = draft ?? order;
 
-	const rendered = (key: DashboardSection) =>
-		(elements.current.get(key)?.getClientRects().length ?? 0) > 0;
+	const rendered = (key: Key) => (elements.current.get(key)?.getClientRects().length ?? 0) > 0;
 
 	// React moves the node, and a moved node loses focus: the held widget keeps it.
 	useLayoutEffect(() => {
@@ -237,8 +247,28 @@ export function useDashboardSortable(
 		}
 	}, [grabbed, draft]);
 
-	const nearest = (x: number, y: number): DashboardSection | null => {
-		let closest: DashboardSection | null = null;
+	const others = () =>
+		shown.filter((key) => key !== draggedNow.current && elements.current.has(key) && rendered(key));
+
+	/** The widget a drop at the pointer lands before; `null` is last under `midpoint`. */
+	const landing = (x: number, y: number): { before: Key | null } | null => {
+		if (dropRule === "midpoint") {
+			const below = others().find((key) => {
+				const box = elements.current.get(key)!.getBoundingClientRect();
+
+				return y < box.top + box.height / 2;
+			});
+
+			return { before: below ?? null };
+		}
+
+		const closest = nearest(x, y);
+
+		return closest === null ? null : { before: closest };
+	};
+
+	const nearest = (x: number, y: number): Key | null => {
+		let closest: Key | null = null;
 		let distance = Number.POSITIVE_INFINITY;
 
 		for (const key of shown) {
@@ -260,7 +290,7 @@ export function useDashboardSortable(
 		return closest;
 	};
 
-	const move = (key: DashboardSection, step: -1 | 1) => {
+	const move = (key: Key, step: -1 | 1) => {
 		const current = [...shown];
 		const index = current.indexOf(key);
 		let target = index + step;
@@ -293,7 +323,8 @@ export function useDashboardSortable(
 		sortable: {
 			grabbed,
 			dragged,
-			dropTarget,
+			dropTarget: dropTarget?.before ?? null,
+			dropAtEnd: dropTarget !== null && dropTarget.before === null,
 			keyboard: (key, action) => {
 				if (action === "toggle") {
 					if (grabbed === key) {
@@ -314,14 +345,18 @@ export function useDashboardSortable(
 				draggedNow.current = key;
 				setDragged(key);
 			},
-			over: (x, y) => setDropTarget(nearest(x, y)),
+			over: (x, y) => setDropTarget(landing(x, y)),
 			drop: (x, y) => {
-				const target = nearest(x, y);
+				const target = landing(x, y);
 				const moving = draggedNow.current;
 
 				if (moving !== null && target !== null) {
 					const next = shown.filter((each) => each !== moving);
-					next.splice(next.indexOf(target), 0, moving);
+					next.splice(
+						target.before === null ? next.length : next.indexOf(target.before),
+						0,
+						moving,
+					);
 					onSave(next);
 				}
 
@@ -346,12 +381,12 @@ export function useDashboardSortable(
 }
 
 /**
- * Sure's touch reorder: an 800 ms hold picks the widget up, a move past
- * 10 px before then is a scroll and cancels it. Listeners of its own, not
- * React's, because a move must be able to stop the page scrolling, which a
- * passive listener cannot.
+ * Sure's touch reorder: a hold of `holdDelay`, 800 ms on the dashboard,
+ * picks the widget up, a move past 10 px before then is a scroll and cancels
+ * it. Listeners of its own, not React's, because a move must be able to stop
+ * the page scrolling, which a passive listener cannot.
  */
-function useTouchHold(
+export function useTouchHold(
 	element: RefObject<HTMLElement | null>,
 	enabled: boolean,
 	callbacks: {
@@ -360,6 +395,7 @@ function useTouchHold(
 		drop: (x: number, y: number) => void;
 		end: () => void;
 	},
+	holdDelay: number = HOLD_DELAY,
 ) {
 	const latest = useRef(callbacks);
 	latest.current = callbacks;
@@ -399,7 +435,7 @@ function useTouchHold(
 				active = true;
 				latest.current.start();
 				navigator.vibrate?.(30);
-			}, HOLD_DELAY);
+			}, holdDelay);
 		};
 
 		const onMove = (event: TouchEvent) => {
@@ -444,7 +480,7 @@ function useTouchHold(
 			node.removeEventListener("touchend", onEnd);
 			node.removeEventListener("touchcancel", onEnd);
 		};
-	}, [element, enabled]);
+	}, [element, enabled, holdDelay]);
 }
 
 /**

@@ -66,6 +66,13 @@ export const queryKeys = {
 		 */
 		investmentSummary: (period: ChartPeriod) => ["accounts", "investment-summary", period] as const,
 		/**
+		 * « Rapports » of a period, under `all` as `netWorth`: it reads the
+		 * balances and the transactions, and every write that moves a balance
+		 * invalidates `all`; a category's own edit refreshes it once stale.
+		 */
+		reportsPage: (period: { periodType: string; startDate?: string; endDate?: string }) =>
+			["accounts", "reports-page", period] as const,
+		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change
 		 * to the mutations. A goal's own write invalidates `goals`, and so does
@@ -204,6 +211,8 @@ export const queryKeys = {
 	 * from its answer, and no other query depends on it.
 	 */
 	dashboardLayout: ["dashboard-layout"] as const,
+	/** The signed-in user's reports layout, one query, as `dashboardLayout`. */
+	reportsLayout: ["reports-layout"] as const,
 	/** The household's members, one query: a role change or a removal invalidates `all`. */
 	members: {
 		all: ["members"] as const,

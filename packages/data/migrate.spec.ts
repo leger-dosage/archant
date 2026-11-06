@@ -390,6 +390,18 @@ describe("users and settings", () => {
 		);
 	});
 
+	it("reads no reports layout for an existing user when 0105 adds it", async () => {
+		const before = await migratedBefore("0105");
+		await insertUser(before, "u1", "admin");
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select reports_layout as reportsLayout from users`),
+		).resolves.toEqual([{ reportsLayout: null }]);
+	});
+
 	it("holds one pending invitation per email, a known role only, gone with its inviter", async () => {
 		const database = await migrated();
 		await insertUser(database, "u1", "admin");
