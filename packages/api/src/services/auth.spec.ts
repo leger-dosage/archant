@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { z } from "zod";
 
 import { rateLimits, sessions, signInFailures, users } from "@archant/data/schema/auth";
-import { jwks, oauthConsents } from "@archant/data/schema/oauth";
+import { jwks, oauthClients, oauthConsents } from "@archant/data/schema/oauth";
 
 import { createLogger } from "../lib/logger.ts";
 import {
@@ -20,6 +20,8 @@ import {
 	pkce,
 	refresh,
 	registerClient,
+	registered,
+	tryRegisterClient,
 } from "../testing/assistant.ts";
 import {
 	ADMIN,
@@ -563,6 +565,23 @@ describe("the authorisation server's metadata", () => {
 	});
 });
 
+const registration = (redirectUri: string, extra: Record<string, unknown> = {}) => ({
+	client_name: "MCP client",
+	redirect_uris: [redirectUri],
+	token_endpoint_auth_method: "none",
+	grant_types: ["authorization_code", "refresh_token"],
+	response_types: ["code"],
+	...extra,
+});
+
+const storedType = async (clientId: string) =>
+	(
+		await temp.db
+			.select({ applicationType: oauthClients.applicationType })
+			.from(oauthClients)
+			.where(eq(oauthClients.clientId, clientId))
+	)[0]?.applicationType;
+
 describe("client registration", () => {
 	it.each(["/api/auth/oauth2/create-client", "/api/auth/oauth2/update-client"])(
 		"disables %s, even for the signed-in owner",
@@ -606,6 +625,55 @@ describe("client registration", () => {
 		expect(new URL(response.headers.get("location") ?? "", TEST_ORIGIN).pathname).toBe(
 			"/oauth/consent",
 		);
+	});
+
+	// MCP clients such as Cursor register without `application_type` and a
+	// loopback HTTP callback; Better Auth's `web` default refused them (AD-19).
+	describe("an omitted application_type", () => {
+		it.each([
+			"http://localhost:8787/callback",
+			"http://127.0.0.1:33418/callback",
+			"http://[::1]:8080/callback",
+		])("registers a native client for the loopback callback %s", async (redirectUri) => {
+			const { bare } = assistantServer();
+
+			const response = await tryRegisterClient(bare, registration(redirectUri));
+
+			expect(response.status).toBe(201);
+			const { client_id } = registered.parse(await response.json());
+			expect(await storedType(client_id)).toBe("native");
+		});
+
+		it("registers a web client for an HTTPS callback", async () => {
+			const { bare } = assistantServer();
+
+			const response = await tryRegisterClient(bare, registration("https://example.com/callback"));
+
+			expect(response.status).toBe(201);
+			const { client_id } = registered.parse(await response.json());
+			expect(await storedType(client_id)).toBe("web");
+		});
+
+		it("refuses an HTTP callback on any other host, as a web client", async () => {
+			const { bare } = assistantServer();
+
+			const response = await tryRegisterClient(bare, registration("http://example.com/callback"));
+
+			expect(response.status).toBe(400);
+			await expect(response.json()).resolves.toMatchObject({ error: "invalid_redirect_uri" });
+		});
+
+		it("never overrides an explicit web application_type", async () => {
+			const { bare } = assistantServer();
+
+			const response = await tryRegisterClient(
+				bare,
+				registration("http://localhost:8787/callback", { application_type: "web" }),
+			);
+
+			expect(response.status).toBe(400);
+			await expect(response.json()).resolves.toMatchObject({ error: "invalid_redirect_uri" });
+		});
 	});
 });
 

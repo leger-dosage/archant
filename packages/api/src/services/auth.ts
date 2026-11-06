@@ -132,6 +132,10 @@ function assistantPlugins(baseURL: string, fetchMetadata: ClientMetadataResource
 				// not publish a metadata document; nobody is signed in yet then.
 				allowDynamicClientRegistration: true,
 				allowUnauthenticatedClientRegistration: true,
+				// MCP clients such as Cursor omit `application_type` and call back on
+				// loopback HTTP, which the `web` default refuses (AD-19). Inferring
+				// `native` from the callback leaves web clients on HTTPS only.
+				clientRegistrationDefaultApplicationType: "infer",
 			}),
 		),
 		cimd({ fetchClientMetadataResource: fetchMetadata }),

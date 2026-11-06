@@ -50,11 +50,15 @@ describe("GET /api/health", () => {
 				error: { code: "SERVICE_UNAVAILABLE", message: "The database does not answer." },
 			});
 			expect(body).not.toContain("stack");
-			expect(logLines).toHaveLength(1);
-			expect(logLines[0]).toMatch(/"error":"\w+"/u);
-			expect(logLines[0]).toContain('"msg":"health check failed"');
-			expect(logLines[0]).not.toContain("stack");
-			expect(logLines[0]).not.toContain("closed");
+			// Better Auth's OAuth provider also logs that it could not seed its
+			// resources from the closed database: only the health line is ours.
+			const health = logLines.filter((line) => line.includes('"msg":"health check failed"'));
+			expect(health).toHaveLength(1);
+			expect(health[0]).toMatch(/"error":"\w+"/u);
+			for (const line of logLines) {
+				expect(line).not.toContain("stack");
+				expect(line).not.toContain("closed");
+			}
 		} finally {
 			await closed.dispose();
 		}
