@@ -2415,6 +2415,22 @@
 		}
 	},
 	"goals": {
+		"pledge": {
+			"transfer": "Record a transfer you've made",
+			"save": "Record money set aside",
+			"amount": "Amount",
+			"account": "To account",
+			"preview": "Will reach {{percent}}, {{newTotal}} out of {{target}}.",
+			"record": "Record pledge",
+			"list": "Deposit pledges",
+			"pending_one": "Pending: {{amount}} to {{account}} · {{count}} day left",
+			"pending_other": "Pending: {{amount}} to {{account}} · {{count}} days left",
+			"expired": "Expired pledge: {{amount}} to {{account}}",
+			"extend": "Extend by 7 days",
+			"badge": "Pending pledge",
+			"matchedDate": "Last matched deposit on {{date}}",
+			"covered": "Pending pledges cover the shortfall."
+		},
 		"title": "Goals",
 		"description": "A goal fills up with the balance of the accounts that hold the money: what is set aside, what is left, and what to save each month.",
 		"add": "New goal",
@@ -3957,6 +3973,9 @@
 		"PRICE_PROVIDER_ERROR": "Yahoo Finance did not respond correctly. Try again later.",
 		"PRICE_UNAVAILABLE": "Yahoo Finance has no price for at least one security. After five failures in a row, a security is only updated by this button.",
 		"fields": {
+			"duplicate_open_pledge": "A pledge for the same amount is already pending on this account.",
+			"pledge_goal_inactive": "Only an active goal can receive a pledge.",
+			"pledge_not_open": "This pledge is no longer pending.",
 			"too_small": "This field is required.",
 			"too_big": "This text is too long.",
 			"split_sum_mismatch": "The lines must add up to the transaction amount.",

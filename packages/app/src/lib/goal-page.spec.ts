@@ -18,6 +18,7 @@ const goal = {
 	remaining: toMinorUnits(60_000),
 	pace: toMinorUnits(10_000),
 	monthlyNeeded: toMinorUnits(30_000),
+	catchUpAmount: toMinorUnits(20_000),
 } as const;
 
 beforeAll(async () => {
@@ -49,9 +50,22 @@ describe("goal page explanations", () => {
 		expect(behind.projection).toBe("Insuffisant au rythme actuel.");
 	});
 
+	it("uses the remaining shortfall after pending pledges", () => {
+		const partial = text({ catchUpAmount: toMinorUnits(5_000) });
+		expect(partial.status).toMatch(/^Épargnez 50,00\s€\/mois de plus pour rattraper le retard$/u);
+		expect(partial.panel).toMatchObject({ title: partial.status, action: "adjust" });
+
+		const covered = text({ catchUpAmount: toMinorUnits(0) });
+		expect(covered).toMatchObject({
+			status: "Les promesses en attente comblent le retard.",
+			panel: null,
+			projection: "Insuffisant au rythme actuel.",
+		});
+	});
+
 	it("distinguishes zero and negative measured pace from insufficient history", () => {
 		const zero = text({ pace: toMinorUnits(0) });
-		const negative = text({ pace: toMinorUnits(-500) });
+		const negative = text({ pace: toMinorUnits(-500), catchUpAmount: toMinorUnits(30_500) });
 		expect(zero.projection).toContain("rythme net est de zéro");
 		expect(zero.panel?.action).toBe("adjust");
 		expect(negative.projection).toBe("Insuffisant au rythme actuel.");

@@ -1,8 +1,6 @@
 import type { GoalData } from "@/hooks/useGoals";
 import type { TFunction } from "i18next";
 
-import { toMinorUnits } from "@archant/data/money";
-
 import { daysFrom, longDate } from "@/lib/dates";
 import { formatMoney } from "@/lib/format-money";
 import { intlLocale } from "@/lib/locale";
@@ -24,6 +22,7 @@ type Goal = Pick<
 	| "remaining"
 	| "pace"
 	| "monthlyNeeded"
+	| "catchUpAmount"
 >;
 
 type ActionPanel = {
@@ -113,16 +112,20 @@ function stateText(
 				projection: t("goals.projection.unknown"),
 			};
 		case "behind": {
-			const { monthlyNeeded, pace } = goal;
+			const { catchUpAmount, monthlyNeeded, pace } = goal;
 
-			if (monthlyNeeded === null || pace === null) {
+			if (catchUpAmount === null || monthlyNeeded === null || pace === null) {
 				// Never turn a missing amount into a measured shortfall.
 				return { ...noPanel, projection: null };
 			}
 
-			const status = t("goals.header.behind", {
-				amount: money(toMinorUnits(monthlyNeeded - pace)),
-			});
+			const projection = t(pace === 0 ? "goals.projection.zero" : "goals.projection.behind");
+
+			if (catchUpAmount === 0) {
+				return { status: t("goals.pledge.covered"), panel: null, projection };
+			}
+
+			const status = t("goals.header.behind", { amount: money(catchUpAmount) });
 
 			return {
 				status,
@@ -131,7 +134,7 @@ function stateText(
 					body: t("goals.panel.behind.body", { pace: money(pace), needed: money(monthlyNeeded) }),
 					action: "adjust",
 				},
-				projection: t(pace === 0 ? "goals.projection.zero" : "goals.projection.behind"),
+				projection,
 			};
 		}
 		case "on_track": {

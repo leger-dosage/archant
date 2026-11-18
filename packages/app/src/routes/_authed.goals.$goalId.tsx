@@ -15,6 +15,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { goalBadge } from "@/components/GoalCard";
 import { GoalDialog } from "@/components/GoalDialog";
 import { GoalMenu } from "@/components/GoalMenu";
+import { GoalPledgeDialog } from "@/components/GoalPledgeDialog";
+import { GoalPledges } from "@/components/GoalPledges";
 import { GoalStateBanner } from "@/components/GoalStateBanner";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
@@ -256,6 +258,8 @@ function GoalPage() {
 	const explanation =
 		data === undefined ? null : goalPageText(data, history.data?.to ?? toIsoDate(), t);
 	const panel = explanation?.panel ?? null;
+	const hasExplanation = explanation !== null && explanation.target !== null;
+	const matchedDate = data?.latestMatchedDepositDate ?? null;
 	const code = goal.isError ? errorCodeOf(goal.error) : null;
 	const title = data?.name ?? t("goals.title");
 
@@ -321,17 +325,26 @@ function GoalPage() {
 						),
 					})}
 			description={
-				explanation === null || explanation.target === null ? undefined : (
+				!hasExplanation && matchedDate === null ? undefined : (
 					<>
-						<span className="tabular-nums">{explanation.target}</span>
-						{explanation.daysLeft !== null && (
+						{hasExplanation && (
 							<>
-								{" · "}
-								<span className="whitespace-nowrap tabular-nums">{explanation.daysLeft}</span>
+								<span className="tabular-nums">{explanation.target}</span>
+								{explanation.daysLeft !== null && (
+									<>
+										{" · "}
+										<span className="whitespace-nowrap tabular-nums">{explanation.daysLeft}</span>
+									</>
+								)}
+								{explanation.status !== null && (
+									<span className="block tabular-nums">{explanation.status}</span>
+								)}
 							</>
 						)}
-						{explanation.status !== null && (
-							<span className="block tabular-nums">{explanation.status}</span>
+						{matchedDate !== null && (
+							<span className="block tabular-nums">
+								{t("goals.pledge.matchedDate", { date: formatShortDate(matchedDate) })}
+							</span>
 						)}
 					</>
 				)
@@ -339,6 +352,7 @@ function GoalPage() {
 			actions={
 				admin && data !== undefined ? (
 					<>
+						<GoalPledgeDialog key={data.id} goal={data} />
 						<Button variant="outline" onClick={openEditor}>
 							<PencilIcon aria-hidden="true" />
 							{t("goals.edit")}
@@ -403,6 +417,7 @@ function GoalPage() {
 							</div>
 						</Section>
 					)}
+					<GoalPledges goal={data} admin={admin} />
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
 						<Projection goal={data} history={history} summary={explanation?.projection ?? null} />
