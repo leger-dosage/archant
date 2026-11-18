@@ -62,3 +62,6 @@ export const BANK_KEY_FILE = fileURLToPath(new URL("./.auth/enable-banking.pem",
  * replaced each run.
  */
 export const SETUP_TOKEN_FILE = fileURLToPath(new URL("./.auth/setup-token", import.meta.url));
+
+export const PASSWORD_RESET_EMAIL = "recovery@archant.test";
+export const PASSWORD_RESET_LINK_FILE = join(tmpdir(), `archant-e2e-${PORT}`, "reset-link");

@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { startFakeEnableBanking } from "./fake-enable-banking.ts";
+import { startFakeSmtp } from "./fake-smtp.ts";
 import {
 	BANK_APPLICATION_ID,
 	BANK_KEY_FILE,
@@ -41,13 +42,15 @@ const bank = await startFakeEnableBanking({
 	redirectUrl: `${WEB_URL}/settings/banks/callback`,
 });
 
+const smtp = await startFakeSmtp();
+
 // A token left by an earlier run would be refused: each start prints a new one.
 await rm(SETUP_TOKEN_FILE, { force: true });
 
 const entrypoint = fileURLToPath(new URL("../../api/src/index.ts", import.meta.url));
 const api = spawn(process.execPath, [entrypoint], {
 	// stdout piped, to read the setup token the server prints on its empty
-	// database, as an owner reads it; every line is still passed through.
+	// database, as an owner reads it; ordinary lines are passed through.
 	stdio: ["inherit", "pipe", "inherit"],
 	env: {
 		...process.env,
@@ -66,6 +69,14 @@ const api = spawn(process.execPath, [entrypoint], {
 		// The origin the browser sends: Better Auth and the upload origin check
 		// refuse any other.
 		BETTER_AUTH_URL: WEB_URL,
+		// All mail stays on loopback. Shell credentials must never reach the fake.
+		SMTP_ADDRESS: "127.0.0.1",
+		SMTP_PORT: String(smtp.port),
+		SMTP_USERNAME: "",
+		SMTP_PASSWORD: "",
+		SMTP_TLS_ENABLED: "false",
+		SMTP_TLS_SKIP_VERIFY: "false",
+		EMAIL_SENDER: "sender@archant.test",
 		// A release build, as the image runs: « Réglages » then links its notes.
 		// version.spec.ts answers `/api/version` itself for a development build.
 		APP_VERSION: "1.2.3",
@@ -90,12 +101,13 @@ const api = spawn(process.execPath, [entrypoint], {
 });
 
 createInterface({ input: api.stdout }).on("line", (line) => {
-	process.stdout.write(`${line}\n`);
 	const token = /enter the setup token (\S+)\./u.exec(line)?.[1];
 
 	if (token !== undefined) {
 		// Before the server listens, so before Playwright starts the setup project.
 		void writeFile(SETUP_TOKEN_FILE, token, { mode: 0o600 });
+	} else {
+		process.stdout.write(`${line}\n`);
 	}
 });
 
@@ -111,6 +123,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 
 api.on("exit", (code) => {
 	bank.close();
+	smtp.close();
 	void rm(directory, { recursive: true, force: true }).finally(() => {
 		// Stopped by Playwright is a clean end; the API crashing or being killed
 		// on its own is not.

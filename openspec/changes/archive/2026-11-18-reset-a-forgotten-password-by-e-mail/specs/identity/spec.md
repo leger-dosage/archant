@@ -12,12 +12,12 @@ Archant SHALL let a member request a one-time password-reset link by email when 
 
 #### Scenario: Request a reset without exposing membership
 
-- **GIVEN** the sign-in page
+- **GIVEN** the sign-in page with mail delivery configured
 - **WHEN** a member follows « Mot de passe oublié ? » and submits an address
-- **THEN** the page answers « Veuillez vérifier votre boîte mail pour un lien de réinitialisation de votre mot de passe. » whether the address exists or not, as `password_resets_controller.rb#create`, and an existing user receives a link through Better Auth's `sendResetPassword`.
+- **THEN** the page answers « Veuillez vérifier votre boîte mail pour un lien de réinitialisation de votre mot de passe. » whether the address exists or not, as `password_resets_controller.rb#create`, and a user with a local password receives a link through Better Auth's `sendResetPassword`. Hide the reset entry point when mail is unavailable. Apply the local sign-in policy when OpenID Connect is enabled.
 
 #### Scenario: Use the link once
 
 - **GIVEN** the link
 - **WHEN** it is opened within 15 minutes and a new password is set under « Réinitialiser votre mot de passe »
-- **THEN** the password changes, « Votre mot de passe a été réinitialisé. » shows on the sign-in page, and the link no longer works; an expired or used link shows « Jeton invalide. ».
+- **THEN** the password changes, existing sessions and previously issued reset links are revoked, and « Votre mot de passe a été réinitialisé. » appears on the sign-in page. An expired or used link shows « Jeton invalide. ». The member still completes two-factor authentication on the next sign-in when it was enabled.

@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers both tolerances, the window, two pledges on one inflow, retries and rollback, a manual cash snapshot, expiry and extension. Cover newly booked direct and imported transfers, investment cash deposits and ineligible trades. Verify that manual matches and rules pairing already booked entries leave pledges unchanged. Playwright records, extends and cancels a pledge.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
