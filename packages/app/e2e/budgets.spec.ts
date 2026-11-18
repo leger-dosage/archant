@@ -8,6 +8,7 @@ import { shiftMonth } from "@archant/data/months";
 import { amountToText } from "../src/lib/amount-sign.ts";
 import { ofMonth } from "../src/lib/dates.ts";
 import { daysAgo, euros, expect, rgb, test, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Stories 17.1 to 17.4: a month's budget, its categories, then a copy and
 // moves, then rollover. One database serves the whole run, so each test owns
@@ -518,12 +519,6 @@ test("a month is copied from the latest one set up, then money moves between its
 	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
 	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
 	const salary = await api.createCategory({ name: uniqueName("Salaire") });
-	const income = await api.addTransaction(account.id, {
-		date: "2024-03-05",
-		label: "Salaire fictif",
-		amount: "2000",
-	});
-	await api.categorise([income], salary.id);
 	const setUp = await request.put("/api/budgets/2024-03", {
 		data: { budgetedSpending: "1 500,00", expectedIncome: "2 000,00" },
 	});
@@ -581,9 +576,24 @@ test("a month is copied from the latest one set up, then money moves between its
 		await expect(field(page, garden.name)).toHaveValue("0,00");
 		await expect(field(page, garden.name)).toHaveAttribute("placeholder", "Partagé");
 
-		await field(page, salary.name).fill("15");
-		await field(page, salary.name).press("Tab");
-		await expect(field(page, salary.name)).toHaveValue("15,00");
+		const income = await api.addTransaction(account.id, {
+			date: "2024-03-05",
+			label: "Salaire fictif",
+			amount: "2000",
+		});
+
+		try {
+			await api.categorise([income], salary.id);
+			await field(page, salary.name).fill("15");
+			await field(page, salary.name).press("Tab");
+			await expect(field(page, salary.name)).toHaveValue("15,00");
+		} finally {
+			// The dashboard also checks exact cash flow for March 2024.
+			const deleted = await request.delete(`/api/transactions/${income}`, {
+				headers: { origin: WEB_URL },
+			});
+			expect(deleted.ok(), await deleted.text()).toBe(true);
+		}
 	});
 
 	await test.step("only a category that can give some offers a move", async () => {
