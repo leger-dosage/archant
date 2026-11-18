@@ -17,6 +17,7 @@ import {
 } from "@archant/api/schemas/trades";
 import type { CurrencyCode } from "@archant/data/money";
 
+import { BlurNoteField } from "@/components/BlurNoteField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { securityLabel } from "@/components/SecurityCombobox";
@@ -134,7 +135,7 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 		trade?.security === null || trade === null ? null : securityLabel(trade.security),
 	);
 	// A converted trade keeps its transaction's date and amount: it is read
-	// only, and undoing the conversion is the one thing it offers.
+	// only in the details form. The note belongs to the trade itself.
 	const convertedFrom = trade?.convertedFrom ?? null;
 	const schema = useMemo(() => createTradeSchema(account.currency), [account.currency]);
 	const form = useForm<TradeFormInput>({
@@ -246,7 +247,13 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 				noValidate
 				className="flex flex-col gap-4"
 				onSubmit={(event) => void submit(event)}
+				aria-labelledby={trade === null ? undefined : "trade-details"}
 			>
+				{trade !== null && (
+					<h3 id="trade-details" className="text-base font-medium">
+						{t("trades.form.details")}
+					</h3>
+				)}
 				{convertedFrom !== null && (
 					<section aria-labelledby="trade-converted-title" className="flex flex-col gap-1.5">
 						<h3 id="trade-converted-title" className="text-sm font-medium">
@@ -401,27 +408,55 @@ function TradeForm({ account, trade, onClose }: TradeFormProps) {
 						</>
 					)}
 				</fieldset>
-			</form>
-
-			<DialogFooter className="flex-row items-center justify-between sm:justify-between">
-				{trade === null ? (
-					<span />
-				) : (
-					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
-						{t(convertedFrom === null ? "trades.delete.action" : "trades.undoConversion.action")}
-					</Button>
-				)}
-				<div className="flex gap-2">
-					<Button type="button" variant="outline" onClick={onClose}>
-						{t(convertedFrom === null ? "common.cancel" : "common.close")}
-					</Button>
-					{convertedFrom === null && (
-						<Button type="submit" form="trade-form" disabled={isSubmitting}>
+				{trade !== null && convertedFrom === null && (
+					<div className="flex justify-end">
+						<Button type="submit" disabled={isSubmitting}>
 							{t("trades.form.save")}
 						</Button>
-					)}
-				</div>
-			</DialogFooter>
+					</div>
+				)}
+			</form>
+
+			{trade === null ? (
+				<DialogFooter className="flex-row justify-end">
+					<Button type="button" variant="outline" onClick={onClose}>
+						{t("common.cancel")}
+					</Button>
+					<Button type="submit" form="trade-form" disabled={isSubmitting}>
+						{t("trades.form.save")}
+					</Button>
+				</DialogFooter>
+			) : (
+				<>
+					<section aria-labelledby="trade-additional" className="flex flex-col gap-3 border-t pt-4">
+						<h3 id="trade-additional" className="text-base font-medium">
+							{t("trades.form.additionalDetails")}
+						</h3>
+						<BlurNoteField
+							id="trade-note"
+							label={t("trades.form.note")}
+							initialNote={trade.notes}
+							placeholder={t("trades.form.notePlaceholder")}
+							onSave={(notes) => updateTrade.mutateAsync({ id: trade.id, input: { notes } })}
+						/>
+					</section>
+					<section aria-labelledby="trade-settings" className="flex flex-col gap-3 border-t pt-4">
+						<h3 id="trade-settings" className="text-base font-medium">
+							{t("trades.form.settings")}
+						</h3>
+						<div className="flex flex-wrap justify-between gap-2">
+							<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
+								{t(
+									convertedFrom === null ? "trades.delete.action" : "trades.undoConversion.action",
+								)}
+							</Button>
+							<Button type="button" variant="outline" onClick={onClose}>
+								{t(convertedFrom === null ? "common.cancel" : "common.close")}
+							</Button>
+						</div>
+					</section>
+				</>
+			)}
 
 			{trade !== null &&
 				(convertedFrom === null ? (
@@ -467,7 +502,7 @@ type TradeDialogProps = {
 
 /**
  * Records or edits a buy, a sale, a dividend or interest; a converted trade
- * opens read only, to undo its conversion. Focus goes back to what opened
+ * keeps its figures locked. Focus goes back to what opened
  * it, even when the edit moved its row.
  */
 export function TradeDialog({ account, open, trade, onOpenChange }: TradeDialogProps) {
@@ -489,7 +524,9 @@ export function TradeDialog({ account, open, trade, onOpenChange }: TradeDialogP
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
-				showCloseButton={false}
+				showCloseButton={trade !== null}
+				layout={trade === null ? "dialog" : "drawer"}
+				className={trade === null ? "max-h-[90dvh] overflow-y-auto" : undefined}
 				onOpenAutoFocus={() => {
 					opener.current =
 						document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -507,7 +544,7 @@ export function TradeDialog({ account, open, trade, onOpenChange }: TradeDialogP
 					}
 				}}
 			>
-				<DialogHeader>
+				<DialogHeader className={trade === null ? undefined : "pr-8"}>
 					<DialogTitle>
 						{t(trade === null ? "trades.form.addTitle" : "trades.form.editTitle")}
 					</DialogTitle>

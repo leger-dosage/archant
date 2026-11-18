@@ -9,13 +9,8 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { TransactionForm } from "@/components/TransactionForm";
 import { TransferDetails } from "@/components/TransferDetails";
 import { TransferForm } from "@/components/TransferForm";
-import {
-	Sheet,
-	SheetContent,
-	SheetDescription,
-	SheetHeader,
-	SheetTitle,
-} from "@/components/ui/sheet";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { formatShortDate } from "@/lib/balance-change";
 
@@ -33,9 +28,9 @@ type TransactionSheetProps = {
 };
 
 /**
- * Adds or edits one transaction. Saves on `⌘Enter` or Enregistrer; `Esc`,
- * Annuler and the close button ask before throwing away unsaved changes, and
- * only then (EXPERIENCE.md). Focus goes back to what opened it. A viewer
+ * Adds or edits one transaction. The form saves explicitly, and the edit
+ * drawer saves notes on blur. Escape, Annuler and the close button ask before
+ * throwing away unsaved changes. Focus goes back to what opened it. A viewer
  * reads it as « Opération », every field disabled: the sheet is the only
  * place a transaction's notes, tags and receipts show. A transfer row opens
  * the transfer's own drawer instead, as Sure's `open_path`.
@@ -83,6 +78,7 @@ export function TransactionSheet({
 	};
 	const transfer = transaction === null && type === "transfer";
 	const openedTransferId = transaction?.transfer?.id ?? null;
+	const Content = openedTransferId === null ? DialogContent : SheetContent;
 	const close = () => {
 		dirty.current = false;
 		onOpenChange(false);
@@ -91,7 +87,7 @@ export function TransactionSheet({
 	const fromAccountId = "accounts" in account ? account.initialAccountId : account.id;
 
 	return (
-		<Sheet
+		<Dialog
 			open={open}
 			onOpenChange={(next) => {
 				if (next) {
@@ -101,7 +97,7 @@ export function TransactionSheet({
 				}
 			}}
 		>
-			<SheetContent
+			<Content
 				onOpenAutoFocus={() => {
 					opener.current =
 						document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -121,14 +117,19 @@ export function TransactionSheet({
 						target.focus();
 					}
 				}}
-				// Sure's drawer: 550 px, 12 px off the viewport's edges with 12 px
-				// corners from 768 px; the whole screen below.
-				className="data-[side=right]:w-full data-[side=right]:border-l-0 data-[side=right]:sm:max-w-none data-[side=right]:md:inset-y-3 data-[side=right]:md:right-3 data-[side=right]:md:h-auto data-[side=right]:md:w-[550px] data-[side=right]:md:rounded-xl data-[side=right]:md:border motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
+				{...(openedTransferId === null && transaction !== null
+					? { layout: "drawer" as const }
+					: {})}
+				className={
+					openedTransferId === null
+						? "flex max-h-[calc(100dvh-2rem)] flex-col gap-4 overflow-hidden p-0 motion-reduce:animate-none"
+						: "data-[side=right]:w-full data-[side=right]:border-l-0 data-[side=right]:sm:max-w-none data-[side=right]:md:inset-y-3 data-[side=right]:md:right-3 data-[side=right]:md:h-auto data-[side=right]:md:w-[550px] data-[side=right]:md:rounded-xl data-[side=right]:md:border motion-reduce:transition-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
+				}
 			>
 				{openedTransferId !== null ? (
 					<TransferDetails key={session} transferId={openedTransferId} onClose={close} />
 				) : (
-					<SheetHeader className="border-b">
+					<SheetHeader className="shrink-0 border-b pr-12">
 						<SheetTitle>
 							{t(
 								transfer
@@ -203,7 +204,7 @@ export function TransactionSheet({
 						onOpenChange(false);
 					}}
 				/>
-			</SheetContent>
-		</Sheet>
+			</Content>
+		</Dialog>
 	);
 }

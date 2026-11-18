@@ -1751,3 +1751,41 @@ test("the theme switches between light and dark and is remembered", async ({ pag
 	await page.getByRole("menuitemradio", { name: "Clair" }).click();
 	await expect(root).not.toHaveClass(/dark/u);
 });
+
+test("a long loan amount fits three cards at 390 px and the cards reflow at 320 px", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: "Prêt fictif",
+		kind: "mortgage",
+		openingBalance: "987 654 321,09",
+		details: { originalAmount: "987 654 321,09" },
+	});
+	await page.setViewportSize({ width: 390, height: 840 });
+	await page.goto(`/accounts/${account.id}?tab=overview`);
+	const panel = page.getByRole("tabpanel", { name: "Aperçu" });
+	const card = panel.getByRole("group", { name: "Capital d'origine", exact: true });
+	const rate = panel.getByRole("group", { name: "Taux d'intérêt", exact: true });
+	await expect(card).toContainText(euros(98_765_432_109));
+	await card.scrollIntoViewIfNeeded();
+	const fits = () =>
+		card.evaluate((element) => {
+			const amount = element.lastElementChild;
+			return amount !== null && amount.scrollWidth <= amount.clientWidth;
+		});
+	expect((await card.boundingBox())?.y).toBe((await rate.boundingBox())?.y);
+	expect(await fits()).toBe(true);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+		page.viewportSize()?.width ?? 0,
+	);
+
+	await page.setViewportSize({ width: 320, height: 840 });
+	await expect
+		.poll(async () => (await rate.boundingBox())?.y ?? 0)
+		.toBeGreaterThan((await card.boundingBox())?.y ?? 0);
+	expect(await fits()).toBe(true);
+	expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+		page.viewportSize()?.width ?? 0,
+	);
+});

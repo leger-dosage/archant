@@ -1039,6 +1039,9 @@
 			"gap": "Écart"
 		},
 		"form": {
+			"overview": "Aperçu",
+			"details": "Détails",
+			"settings": "Paramètres",
 			"addTitle": "Ajouter un solde",
 			"editTitle": "Modifier le solde",
 			"description": "Le solde affiché par votre banque à la fin de cette journée, ou le montant dû pour une carte. Il remplace le solde calculé à partir de cette date.",
@@ -1111,6 +1114,11 @@
 			"amount": "Montant"
 		},
 		"form": {
+			"details": "Détails",
+			"additionalDetails": "Détails supplémentaires",
+			"note": "Note",
+			"notePlaceholder": "Ajoutez tout commentaire supplémentaire ici...",
+			"settings": "Paramètres",
 			"addTitle": "Ajouter un ordre",
 			"editTitle": "Modifier l'ordre",
 			"description": "Un achat, une vente, un dividende ou des intérêts. Quantité × prix plus les frais sortent du compte pour un achat ; quantité × prix moins les frais y entrent pour une vente ; le montant d'un dividende ou d'intérêts y entre.",
