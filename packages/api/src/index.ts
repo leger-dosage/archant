@@ -17,6 +17,7 @@ import { purgeStalePreviews } from "./services/imports.ts";
 import { recomputeLinkedBalances, recomputeNonCashBalances } from "./services/ledger/balances.ts";
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
 import { seedDefaults } from "./services/seed.ts";
+import { backfillHouseholdPreferences, householdTimeZone } from "./services/settings.ts";
 import { hasUser } from "./services/setup.ts";
 import { startSyncSchedule } from "./services/sync-schedule.ts";
 
@@ -109,41 +110,47 @@ try {
 } catch (error) {
 	logger.warn({ code: errorCode(error) }, "statistics refresh failed");
 }
+const existingHousehold = await hasUser({ db });
+let timeZone = env.APP_TIMEZONE;
+if (existingHousehold) {
+	await backfillHouseholdPreferences({ db, timeZone });
+	timeZone = await householdTimeZone(db, timeZone);
+}
 // Once per instance, not once per start: a default the user deleted stays deleted.
 // A new instance seeds at setup instead, in the household's language.
-const seeded = (await hasUser({ db })) ? await seedDefaults({ db }) : 0;
+const seeded = existingHousehold ? await seedDefaults({ db }) : 0;
 if (seeded > 0) {
 	logger.info({ seeded }, "default categories seeded");
 }
 // Once per instance: holdings stored before a buy's fee counted in its cost
 // basis get it. A failure stops the start, the claim rolled back with it, so
 // the next start tries again.
-const feeCostBases = await recomputeFeeCostBases({ db, timeZone: env.APP_TIMEZONE });
+const feeCostBases = await recomputeFeeCostBases({ db, timeZone });
 if (feeCostBases > 0) {
 	logger.info({ accounts: feeCostBases }, "cost bases recomputed with fees");
 }
 // Once per instance, as the cost bases: a property's or a vehicle's value
 // stored before Story 28.9 counted its transactions; only valuations move it.
-const nonCashBalances = await recomputeNonCashBalances({ db, timeZone: env.APP_TIMEZONE });
+const nonCashBalances = await recomputeNonCashBalances({ db, timeZone });
 if (nonCashBalances > 0) {
 	logger.info({ accounts: nonCashBalances }, "property and vehicle balances recomputed");
 }
 // Once per instance, as the cost bases: a linked account's history stored
 // before Story 28.17 ignored its opening balance.
-const linkedBalances = await recomputeLinkedBalances({ db, timeZone: env.APP_TIMEZONE });
+const linkedBalances = await recomputeLinkedBalances({ db, timeZone });
 if (linkedBalances > 0) {
 	logger.info({ accounts: linkedBalances }, "linked account balances recomputed");
 }
 // An unconfirmed preview keeps the uploaded file; a day is long enough to
 // come back to it, and short enough that bank statements do not pile up.
-const purged = await purgeStalePreviews({ db, timeZone: env.APP_TIMEZONE });
+const purged = await purgeStalePreviews({ db, timeZone });
 logger.info({ purged }, "stale import previews purged");
 // Whoever calls `/api/setup` first becomes the administrator, and a new
 // instance's address is public within minutes of its certificate. The token
 // proves access to the server. This is the one secret a log may carry: it is
 // worthless once setup is done, and a restart replaces it. `warn`, so the
 // owner sees it at `LOG_LEVEL=warn` too.
-const setupToken = (await hasUser({ db })) ? null : randomBytes(24).toString("base64url");
+const setupToken = existingHousehold ? null : randomBytes(24).toString("base64url");
 if (setupToken !== null) {
 	logger.warn(
 		`Setup is open. Open /setup and enter the setup token ${setupToken}. A new one is printed at every start.`,
@@ -162,7 +169,7 @@ await auth.$context;
 const bankDeps = bankDepsFromEnv(env);
 const app = createApp({
 	db,
-	timeZone: env.APP_TIMEZONE,
+	timeZone,
 	logger,
 	auth,
 	trustedOrigin: env.BETTER_AUTH_URL,
@@ -183,7 +190,7 @@ const app = createApp({
 });
 // Sure's daily sync at « Heure de synchronisation », for a host that stays
 // on; the first visit of the day still syncs one that slept through it.
-startSyncSchedule({ db, timeZone: env.APP_TIMEZONE, logger, ...bankDeps });
+startSyncSchedule({ db, timeZone, logger, ...bankDeps });
 
 // Vite proxies `/api` here in development; see packages/app/vite.config.ts.
 // With `WEB_DIST` set, as in the container, this port also serves the

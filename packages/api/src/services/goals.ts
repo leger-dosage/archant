@@ -229,7 +229,7 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
  * reporting currency, as Sure's Plan card. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
-	return goalsSummary(await listGoals(deps), getReportingCurrency());
+	return goalsSummary(await listGoals(deps), await getReportingCurrency(deps.db));
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
@@ -324,12 +324,15 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 }
 
 /** A stored currency as the schema reads amounts in; the reporting one if it is no longer known. */
-function currencyCode(currency: string | undefined): CurrencyCode {
+async function currencyCode(
+	db: Pick<ServiceDeps["db"], "select">,
+	currency: string | undefined,
+): Promise<CurrencyCode> {
 	if (currency !== undefined && isCurrencyCode(currency)) {
 		return currency;
 	}
 
-	return getReportingCurrency();
+	return getReportingCurrency(db);
 }
 
 function parse(input: GoalInput, currency: CurrencyCode): GoalRequest {
@@ -448,7 +451,7 @@ async function storedTarget(
 		return target.amount;
 	}
 
-	if (currency !== getReportingCurrency()) {
+	if (currency !== (await getReportingCurrency(deps.db))) {
 		throw fieldError("targetMonths", "not_reporting_currency");
 	}
 
@@ -532,7 +535,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 
 	await deps.db.transaction(
 		async (tx) => {
-			const currency = currencyCode(await firstFundableCurrency(tx, input.accounts));
+			const currency = await currencyCode(tx, await firstFundableCurrency(tx, input.accounts));
 			const goal = parse(input, currency);
 			const now = Date.now();
 
@@ -576,7 +579,7 @@ export async function updateGoal(
 				throw notFound();
 			}
 
-			const goal = parse(input, currencyCode(existing.currency));
+			const goal = parse(input, await currencyCode(tx, existing.currency));
 
 			if (goal.kind !== existing.kind && RELEASED.includes(existing.state)) {
 				throw fieldError("kind", "kind_locked");

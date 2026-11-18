@@ -105,7 +105,7 @@ export async function reportedAccounts(
 	deps: ServiceDeps,
 	kept: (row: Account) => boolean = () => true,
 ) {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	const rows = await deps.db.select().from(accounts);
 	const reported = rows.filter((row) => row.active && !row.excludedFromReports && kept(row));
 	const counted: Account[] = reported.filter((row) => row.currency === currency);

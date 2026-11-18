@@ -402,7 +402,7 @@ export async function transactionTotals(
 	deps: ServiceDeps,
 	query: TransactionTotalsRequest & Pick<NamedFilterRequest, "names">,
 ): Promise<TransactionTotals> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	const sums = await sumTransactions(deps, await filterOf(deps, query));
 	const counted = sums.find((row) => row.currency === currency);
 

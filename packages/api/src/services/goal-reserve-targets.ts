@@ -84,7 +84,7 @@ async function refreshDueReserveTargets(deps: ServiceDeps, month: string): Promi
 				.where(
 					and(
 						eq(goals.targetMode, "months_of_expenses"),
-						eq(goals.currency, getReportingCurrency()),
+						eq(goals.currency, await getReportingCurrency(tx)),
 						notInArray(goals.state, [...RELEASED_GOAL_STATES]),
 					),
 				);

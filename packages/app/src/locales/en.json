@@ -3464,12 +3464,21 @@
 	"preferences": {
 		"title": "Preferences",
 		"general": {
+			"country": "Country",
+			"timeZone": "Time zone",
+			"dateFormat": "Date format",
+			"baseCurrency": "Base currency",
 			"title": "General",
 			"subtitle": "Configure your preferences",
 			"defaultAccountOrder": "Default account order",
 			"locale": "Language",
 			"householdLocale": "Household data language",
 			"householdLocaleHint": "Language of the default categories and transfer names Archant writes. What already exists is not renamed."
+		},
+		"budget": {
+			"title": "Budget",
+			"monthStartDay": "Budget month starts on",
+			"monthStartDayHint": "This day will apply when custom budget periods are available."
 		},
 		"transactions": {
 			"title": "Transactions",
@@ -3483,6 +3492,7 @@
 			"balance_asc": "Balance (low to high)",
 			"balance_desc": "Balance (high to low)"
 		},
+		"householdSaved": "Household preferences saved.",
 		"saved": "Your profile has been updated.",
 		"locales": {
 			"browser": "Browser language",
@@ -3726,6 +3736,7 @@
 		"resetWithSampleDataDone": "Your account has been reset and the sample data is loaded."
 	},
 	"setup": {
+		"currency": "Currency",
 		"title": "Create the admin account",
 		"description": "This account administers Archant. There is no public sign-up. You will invite the household members from Settings afterwards.",
 		"token": "Setup token",
