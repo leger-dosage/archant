@@ -2423,6 +2423,7 @@
 			"count_one": "{{count}} active",
 			"count_other": "{{count}} active",
 			"ofTargets": "of {{target}} across all goals",
+			"targetOutOfRange": "Combined target too large to display",
 			"behind_one": "{{count}} behind",
 			"behind_other": "{{count}} behind",
 			"paceUnknown": "{{count}} with unknown pace",
@@ -2532,8 +2533,8 @@
 			"perMonth": "{{amount}} per month",
 			"noDate": "None",
 			"reachedOn": "Reached on {{date}} · {{amount}}",
-			"monthsOfExpenses": "{{count}} months of expenses, at {{median}} per month: the median of your monthly expenses, as the budget suggests it.",
-			"monthsStale": "{{count}} months of expenses. With no monthly expenses counted in its currency, the last calculated amount stays in effect."
+			"monthsOfExpenses": "{{count}} months of expenses, at {{median}} per month: the median of your monthly expenses when the target was calculated.",
+			"monthsStale": "{{count}} months of expenses. The last calculated amount stays in effect."
 		},
 		"accounts": {
 			"title": "Linked accounts",
@@ -2579,7 +2580,7 @@
 				"months_of_expenses": "A number of months of expenses"
 			},
 			"targetMonths": "Months of expenses",
-			"targetMonthsHint": "Multiplies the median of your monthly expenses, recalculated each time it is shown.",
+			"targetMonthsHint": "Recomputed on the 1st of each month from your median monthly spending.",
 			"date": "Due date (optional)",
 			"color": "Color",
 			"icon": "Icon",
@@ -4090,7 +4091,7 @@
 			"not_fundable": "This account cannot hold a goal: choose an active checking, savings or investment account.",
 			"currency_mismatch": "This account is not in the goal's currency.",
 			"whole_balance_taken": "Another goal already takes this account's whole balance. Enter an amount.",
-			"invalid_months": "Enter a whole number of months, from 1 to 120.",
+			"invalid_months": "Enter a positive whole number of months that gives a valid amount.",
 			"reserve_only": "Only a reserve can target a number of months of expenses.",
 			"no_expenses": "No month has expenses yet: choose a fixed amount.",
 			"not_reporting_currency": "Expenses are counted in a different currency than these accounts: choose a fixed amount.",

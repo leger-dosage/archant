@@ -123,3 +123,26 @@ test("Plan links to the current budget and to goals on desktop and phone", async
 	await expect(page.getByRole("region", { name: "Bilan", exact: true })).toBeVisible();
 	await expect(page.getByRole("region", { name: "Objectifs", exact: true })).toHaveCount(0);
 });
+
+test("Plan explains when the combined goal target exceeds the money range", async ({
+	page,
+	api,
+	request,
+}) => {
+	const account = await api.openAccount({ kind: "savings", openingBalance: "100" });
+	const goal = await api.createGoal({ targetAmount: "500", accounts: [{ accountId: account.id }] });
+	try {
+		await page.route("**/api/goals/summary", async (route) => {
+			const response = await route.fetch();
+			const { data } = z.object({ data: z.looseObject({}) }).parse(await response.json());
+			await route.fulfill({ response, json: { data: { ...data, target: null } } });
+		});
+
+		await page.goto("/plan");
+		const goals = page.getByRole("region", { name: "Vos objectifs" });
+		await expect(goals).toContainText("Montant visé total trop élevé pour être affiché");
+		await expect(goals.getByRole("link", { name: "Tous les objectifs" })).toBeVisible();
+	} finally {
+		await request.delete(`/api/goals/${goal.id}`);
+	}
+});
