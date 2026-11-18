@@ -16,6 +16,7 @@ The three packages exist since Story 1.1. A dependency is installed by the first
 | `@shadcn/lint` | 0.2.x   | Design-system plugin loaded by Oxlint                                                 |
 | Oxfmt          | 0.70.x  | Formatting and import sorting, tabs only                                              |
 | Knip           | 6.39.x  | Fails `pnpm lint:code` on an unused file, export or dependency                        |
+| OpenSpec       | 1.11.x  | Validates the reference specifications, proposed changes and completed checklists     |
 
 ### Why Oxlint rather than ESLint
 

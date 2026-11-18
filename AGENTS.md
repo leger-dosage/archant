@@ -22,6 +22,7 @@ pnpm install --frozen-lockfile
 pnpm format
 pnpm lint:code
 pnpm lint:format
+pnpm lint:spec
 pnpm typecheck
 pnpm test
 pnpm test:e2e
@@ -31,11 +32,11 @@ Do not modify tracked files after this sequence. Never add `--if-present` to the
 
 ## How to write in this file
 
-This file describes the **current** state of the conventions, never a historical narrative. A durable convention change edits the convention in place. Architectural narrative belongs in an ADR under `docs/adr/`. The architecture spine, `docs/architecture.md`, holds the « AD-n » decisions that comments and `.oxlintrc.json` cite; a decision is edited there, and `packages/api/src/architecture-references.spec.ts` fails when a cited « AD-n » has no heading in it. Per-story narrative belongs in commit messages and `_bmad-output/implementation-artifacts/`.
+This file describes the **current** state of the conventions, never a historical narrative. A durable convention change edits the convention in place. Architectural narrative belongs in an ADR under `docs/adr/`. The architecture spine, `docs/architecture.md`, holds the « AD-n » decisions that comments and `.oxlintrc.json` cite; a decision is edited there, and `packages/api/src/architecture-references.spec.ts` fails when a cited « AD-n » has no heading in it. Change-specific decisions belong in the OpenSpec change or its commit messages.
 
 ## Project
 
-Archant re-implements, one at a time, the features of [Sure](https://github.com/we-promise/sure) that matter for a single household, on a stack that fits a generous free tier. Features are cherry-picked deliberately: each one is scoped through BMAD before any code is written.
+Archant re-implements, one at a time, the features of [Sure](https://github.com/we-promise/sure) that matter for a single household, on a stack that fits a generous free tier. Features are cherry-picked deliberately: each one has an OpenSpec proposal before implementation.
 
 Non-goals: multi-tenancy beyond one household, a managed SaaS offering, server-side rendering, search engine optimisation.
 
@@ -120,6 +121,10 @@ Releases come from tags. A `vX.Y.Z` tag runs `.github/workflows/release.yml`: th
 
 The server syncs every active bank connection each day at « Heure de synchronisation », 02:22 in `APP_TIMEZONE` by default, from its own timer, `startSyncSchedule` in `packages/api/src/services/sync-schedule.ts`, started by `index.ts`; « Réglages › Banques » turns it off or moves it, through the `settings` rows `auto_sync_enabled` and `auto_sync_time`, and no environment variable sets either. A wake more than five minutes past the time skips that day's run. The first signed-in request of the day also syncs each active bank connection that no sync has started since midnight, beside the request and after it answers: a host that sleeps misses nothing. « Synchroniser » syncs at once and waits only for a running sync, `409 SYNC_IN_PROGRESS`, never for time since the last one. A protected `POST /api/sync` route stays for any cron, a system cron or a scheduled GitHub Action, and the route does not care which. A bank whose required PSU headers are `Psu-Ip-Address` alone gets the browser's address, stored on `bank_connections` at a new connection's start and at the callback, on balance and transaction calls; it is never logged nor returned, and the timer clears it once the consent has ended.
 
-## Planning with BMAD
+## Planning with OpenSpec
 
-Planning artifacts live in `_bmad-output/planning-artifacts/`, implementation artifacts in `_bmad-output/implementation-artifacts/`, and long-lived project knowledge in `docs/`, the architecture spine included, at `docs/architecture.md`: a decision changes there, and a `bmad-architecture` run, which writes under `_bmad-output/`, lands its result there too. `CONTRIBUTING.md` is the contributor's version of this file, for people: a convention that changes here changes there too when it concerns them. Agents speak French in chat; every document they produce is written in English.
+Read the relevant contract in [openspec/specs/](openspec/specs/) before changing behaviour. Look for an existing proposal with `pnpm exec openspec list`. Start or update the change in `openspec/changes/<name>/`, and describe changed behaviour in its specification delta. Record architecture decisions in [docs/architecture.md](docs/architecture.md) and update [docs/sure-parity.md](docs/sure-parity.md) when parity changes.
+
+Run OpenSpec commands from skills through `pnpm exec openspec` to use the version in the repository lockfile.
+
+Implement against the scenarios and check off tasks as they pass. Sync the delta and archive the completed change in the implementation pull request, so the updated reference specification ships with the code. [openspec/README.md](openspec/README.md) lists the workflow commands and the history. Update [CONTRIBUTING.md](CONTRIBUTING.md) when a shared convention changes. Agents speak French in chat and write repository documents in English.

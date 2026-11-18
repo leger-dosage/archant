@@ -10,7 +10,7 @@
 /*
  * shadcn/ui neutral base with Archant's brand layer on top. Every value below
  * comes from the front matter of
- * _bmad-output/planning-artifacts/ux-designs/ux-archant-2026-09-21/DESIGN.md;
+ * docs/archive/bmad/planning-artifacts/ux-designs/ux-archant-2026-09-21/DESIGN.md;
  * a token that file does not list keeps shadcn's neutral value. DESIGN's
  * surfaces sit under shadcn's names: its `background`, under the page, the
  * rail and the accounts column, is `--background` and `--sidebar`; its

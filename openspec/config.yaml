@@ -1,0 +1,23 @@
+schema: spec-driven
+
+context: |
+  Archant is self-hosted personal finance for one household.
+  Write artifacts in English. Use the conventions in AGENTS.md and the decisions in docs/architecture.md.
+  Check docs/sure-parity.md when changing a feature taken from Sure. Record intentional differences.
+  Amounts use integer minor units and an explicit currency. Keep ledger and provider fixtures fictional.
+
+rules:
+  specs:
+    - Describe observable behaviour with SHALL requirements and concrete scenarios.
+    - Preserve unaffected scenarios when modifying an existing requirement.
+  tasks:
+    - Keep all tasks unchecked until implemented and verified.
+
+operations:
+  apply:
+    guidance:
+      - For migrated proposals, review the source criteria, prerequisites and current reference specifications before implementation.
+  archive:
+    guidance:
+      - Sync the specification delta and archive the change in the same pull request as its implementation.
+      - When archiving a migrated proposal, update its links in openspec/README.md.

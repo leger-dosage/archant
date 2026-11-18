@@ -9,9 +9,14 @@ import { describe, expect, it } from "vitest";
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const spine = join(root, "docs/architecture.md");
 const skipped = new Set(["node_modules", "dist", "coverage", "test-results", "playwright-report"]);
+// Archived decisions can cite examples or headings that no longer exist.
+const archives = new Set([join(root, "docs/archive/bmad"), join(root, "openspec/changes/archive")]);
 const reference = /\bAD-(\d+)\b/g;
 
 function walk(path: string): string[] {
+	if (archives.has(path)) {
+		return [];
+	}
 	if (!statSync(path).isDirectory()) {
 		return [path];
 	}
@@ -27,6 +32,7 @@ function citations(): { file: string; id: string }[] {
 		join(root, ".oxlintrc.json"),
 		join(root, "AGENTS.md"),
 		...walk(join(root, "docs")),
+		...walk(join(root, "openspec")),
 	];
 	return files.flatMap((file) => {
 		const text = readFileSync(file, "utf8");

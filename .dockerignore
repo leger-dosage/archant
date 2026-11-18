@@ -24,6 +24,5 @@ backups/
 .github
 .agents
 .claude
-_bmad
-_bmad-output
+openspec
 docs
