@@ -95,6 +95,7 @@ export type TradePatch = {
 	price?: TradePrice | undefined;
 	fee?: MinorUnits | undefined;
 	amount?: MinorUnits | undefined;
+	notes?: string | null | undefined;
 };
 
 /**
@@ -541,12 +542,19 @@ function nextIncomeAmount(current: CurrentTrade, patch: TradePatch): MinorUnits 
 export async function updateTrade(
 	deps: ServiceDeps,
 	id: string,
-	patch: TradePatch,
+	{ notes, ...patch }: TradePatch,
 	_options: { origin: Origin },
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
 			const current = await tradeRow(tx, id);
+			// Drawer notes carry no figures, so they do not recalculate the ledger.
+			if (notes !== undefined && Object.keys(patch).length === 0) {
+				await tx.update(entries).set({ notes, updatedAt: Date.now() }).where(eq(entries.id, id));
+
+				return;
+			}
+
 			const account = await accountWithOpeningDate(tx, current.accountId);
 			const date = patch.date ?? current.date;
 			refuseFutureDate(date, deps.timeZone);
@@ -576,7 +584,12 @@ export async function updateTrade(
 
 			await tx
 				.update(entries)
-				.set({ date, amount: figures.amount, updatedAt: Date.now() })
+				.set({
+					date,
+					amount: figures.amount,
+					...(notes === undefined ? {} : { notes }),
+					updatedAt: Date.now(),
+				})
 				.where(eq(entries.id, id));
 			await tx
 				.update(trades)
@@ -749,6 +762,7 @@ export type TradeRecord = {
 	/** The cash amount (AD-5): negative for a buy, positive for an income. */
 	amount: MinorUnits;
 	currency: string;
+	notes: string | null;
 	/** `null` for interest on the account's cash. */
 	security: {
 		id: string;
@@ -767,6 +781,7 @@ const recordColumns = {
 	date: entries.date,
 	amount: entries.amount,
 	currency: entries.currency,
+	notes: entries.notes,
 	quantity: trades.quantity,
 	incomeKind: trades.incomeKind,
 	price: trades.price,

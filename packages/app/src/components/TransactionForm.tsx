@@ -19,6 +19,7 @@ import { categorySetOnOutflow } from "@archant/data/transfer-kinds";
 
 import { ActivityLabelField } from "@/components/ActivityLabelField";
 import { AmountField } from "@/components/AmountField";
+import { BlurNoteField } from "@/components/BlurNoteField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ConvertBlock } from "@/components/ConvertTradeDialog";
 import { DateField } from "@/components/DateField";
@@ -157,6 +158,7 @@ export function TransactionForm({
 	const choice = isAccountChoice(account) ? account : null;
 	const [chosenId, setChosenId] = useState(choice?.initialAccountId ?? null);
 	const [accountMissing, setAccountMissing] = useState(false);
+	const [noteDirty, setNoteDirty] = useState(false);
 	const { chosen, currency } = accountOf(account, chosenId);
 	const accountId = chosen?.id ?? "";
 	const createTransaction = useCreateTransaction(accountId);
@@ -213,7 +215,10 @@ export function TransactionForm({
 		// `raw` hands the typed text to the API as is: the same schema parses it
 		// there, into minor units of the account's currency.
 		resolver: zodResolver(schema, undefined, { raw: true }),
-		defaultValues: valuesOf(transaction),
+		defaultValues: {
+			...valuesOf(transaction),
+			...(canWrite && transaction !== null ? { notes: "" } : {}),
+		},
 	});
 	const { errors, isSubmitting, isDirty } = form.formState;
 	const date = useController({ control: form.control, name: "date" });
@@ -227,11 +232,12 @@ export function TransactionForm({
 	const [nature, setNature] = useState<Nature>(initialNature ?? "expense");
 	const tabs = transaction === null && onTypeChange !== undefined;
 
+	const dirty = isDirty || noteDirty;
 	const accountChanged = choice !== null && chosenId !== choice.initialAccountId;
 
 	useEffect(() => {
-		onDirtyChange(isDirty || accountChanged);
-	}, [isDirty, accountChanged, onDirtyChange]);
+		onDirtyChange(dirty || accountChanged);
+	}, [dirty, accountChanged, onDirtyChange]);
 
 	const showError = (error: unknown) => {
 		const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
@@ -270,7 +276,14 @@ export function TransactionForm({
 				// Sent only when changed: a category, a merchant or a tag deleted
 				// elsewhere since the sheet opened would otherwise refuse the save of
 				// any other field. Tags are a set, so their order is no change.
-				const { categoryId, merchantId, oneTime: oneTimeValue, tagIds: tags, ...rest } = values;
+				const {
+					categoryId,
+					merchantId,
+					oneTime: oneTimeValue,
+					tagIds: tags,
+					notes: _notes,
+					...rest
+				} = values;
 				const { dirtyFields } = form.formState;
 				const input = {
 					...rest,
@@ -338,7 +351,7 @@ export function TransactionForm({
 				ref={formRef}
 				id="transaction-form"
 				noValidate
-				className="flex flex-1 flex-col gap-4 overflow-y-auto px-4"
+				className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4"
 				onSubmit={(event) => {
 					// A dialog opened from a block below is portaled out of this form,
 					// but React bubbles its submit here along the component tree: the
@@ -409,7 +422,7 @@ export function TransactionForm({
 						transaction={transaction}
 						currency={currency}
 						splittable={splittable}
-						dirty={isDirty}
+						dirty={dirty}
 						onDone={onCloseFocusing}
 					/>
 				)}
@@ -422,7 +435,7 @@ export function TransactionForm({
 						<ConvertBlock
 							transaction={transaction}
 							currency={currency}
-							dirty={isDirty}
+							dirty={dirty}
 							onConverted={onClose}
 						/>
 					)}
@@ -456,7 +469,7 @@ export function TransactionForm({
 				)}
 				{/* A transfer side follows a series only through « Marquer comme récurrent », as Sure's. */}
 				{transaction !== null && !splitParent && transfer === null && (
-					<RecurringBlock transaction={transaction} dirty={isDirty} />
+					<RecurringBlock transaction={transaction} dirty={dirty} />
 				)}
 
 				<fieldset disabled={!canWrite} className="flex min-w-0 flex-col gap-4">
@@ -536,18 +549,30 @@ export function TransactionForm({
 						<FieldMessage id="transaction-amount-error" error={errors.amount} />
 					</div>
 
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
-						<textarea
+					{transaction === null || !canWrite ? (
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
+							<textarea
+								id="transaction-notes"
+								rows={4}
+								className="min-h-20 w-full rounded-sm border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
+								aria-invalid={errors.notes !== undefined}
+								{...describedBy("notes")}
+								{...form.register("notes")}
+							/>
+							<FieldMessage id="transaction-notes-error" error={errors.notes} />
+						</div>
+					) : (
+						<BlurNoteField
 							id="transaction-notes"
-							rows={4}
-							className="min-h-20 w-full rounded-sm border border-input bg-transparent px-2.5 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive dark:bg-input/30"
-							aria-invalid={errors.notes !== undefined}
-							{...describedBy("notes")}
-							{...form.register("notes")}
+							label={t("transactions.form.notes")}
+							initialNote={transaction.notes}
+							onSave={(notes) =>
+								updateTransaction.mutateAsync({ id: transaction.id, input: { notes } })
+							}
+							onDirtyChange={setNoteDirty}
 						/>
-						<FieldMessage id="transaction-notes-error" error={errors.notes} />
-					</div>
+					)}
 
 					{/* A transfer side the dashboard does not count has no category to pick. */}
 					{transaction !== null && showsCategory(transaction.amount, transfer) && (
@@ -666,7 +691,7 @@ export function TransactionForm({
 				{transaction !== null && <TransactionAttachments transaction={transaction} />}
 			</form>
 
-			<SheetFooter className="flex-row items-center justify-between border-t">
+			<SheetFooter className="shrink-0 flex-row items-center justify-between border-t">
 				{transaction === null || splitChild || !canWrite ? (
 					<span />
 				) : (

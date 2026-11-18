@@ -49,12 +49,20 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 	const { currency, instalment } = overview;
 	const unknown = t("loanOverview.unknown");
 	const money = (amount: MinorUnits | null): ReactNode =>
-		amount === null ? unknown : <Money amount={amount} currency={currency} />;
+		amount === null ? (
+			unknown
+		) : (
+			<Money
+				amount={amount}
+				currency={currency}
+				className="text-base whitespace-normal wrap-anywhere md:text-xl"
+			/>
+		);
 	const term = overview.termMonths === null ? null : truncatedTermOf(overview.termMonths);
 	const cells: { label: string; value: ReactNode }[] = [
 		{
 			label: t("loanOverview.originalAmount"),
-			value: <Money amount={overview.originalAmount} currency={currency} />,
+			value: money(overview.originalAmount),
 		},
 		{ label: t("loanOverview.remainingBalance"), value: money(overview.remainingBalance) },
 		{
@@ -140,10 +148,9 @@ export function LoanOverview({ overview, onEdit }: LoanOverviewProps) {
 
 	return (
 		<div className="flex flex-col gap-4">
-			{/* Sure's `grid-cols-3`; two columns on a phone, where three 20 px amounts overflow (WCAG 1.4.10). */}
-			<div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+			<div className="grid grid-cols-2 gap-2 min-[375px]:grid-cols-3">
 				{cells.map((cell) => (
-					<SummaryCard key={cell.label} title={cell.label}>
+					<SummaryCard key={cell.label} title={cell.label} className="p-2 md:p-4">
 						{cell.value}
 					</SummaryCard>
 				))}
