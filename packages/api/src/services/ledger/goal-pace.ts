@@ -34,6 +34,29 @@ function netInflows(db: ServiceDeps["db"], accountIds: string[], excluded: boole
 		.groupBy(entries.accountId);
 }
 
+/** Sure's two adjacent contribution windows, with its inclusive date boundaries. */
+export async function goalContributionWindows(
+	db: ServiceDeps["db"],
+	accountIds: string[],
+	date: IsoDate,
+) {
+	const windowDays = 30;
+	const [current, prior] = await Promise.all([
+		netInflows(db, accountIds, false, between(entries.date, addDays(date, -windowDays), date)),
+		netInflows(
+			db,
+			accountIds,
+			false,
+			between(entries.date, addDays(date, -2 * windowDays), addDays(date, -windowDays - 1)),
+		),
+	]);
+
+	return {
+		contributed: toMinorUnits(current.reduce((total, row) => total + row.amount, 0)),
+		priorContribution: toMinorUnits(prior.reduce((total, row) => total + row.amount, 0)),
+	};
+}
+
 /** One set of account movements serves every goal, including goals sharing an earmarked account. */
 export async function accountPaces(
 	deps: ServiceDeps,

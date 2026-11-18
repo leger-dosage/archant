@@ -56,7 +56,7 @@ export const budgetInput = z.strictObject({
 		.max(11)
 		.default(0)
 		.describe(
-			"How many months before month to add, up to 11; those before the first month a budget can cover are left out.",
+			"How many months before the target to consider, up to 11; only saved budgets within bounds are returned.",
 		),
 });
 
@@ -70,8 +70,7 @@ const budgetAmount = (what: string) =>
 /**
  * `update_budget`: Sure's parameters, what the budget page sets at once. The
  * month, the amounts and the category references reach `run` loosely typed,
- * which refuses them with Sure's keys in Sure's order before `updateBudget`
- * parses the amounts as the page's fields are parsed.
+ * which refuses them with Sure's keys in Sure's order and parses amounts to minor units.
  */
 export const updateBudgetInput = z.strictObject({
 	month: z
@@ -98,6 +97,6 @@ export const updateBudgetInput = z.strictObject({
 		)
 		.optional()
 		.describe(
-			"Category amounts, each category once; the month must be set up, by this call or before.",
+			"Category amounts. Repeated entries apply in input order within each group, with subcategories first and parents last.",
 		),
 });

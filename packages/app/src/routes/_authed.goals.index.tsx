@@ -6,12 +6,14 @@ import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/EmptyState";
-import { GoalCard } from "@/components/GoalCard";
+import { GoalCard, goalBadge } from "@/components/GoalCard";
 import { GoalDialog } from "@/components/GoalDialog";
+import { GoalIndicators } from "@/components/GoalIndicators";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useFundableAccounts, useGoals } from "@/hooks/useGoals";
+import { useFundableAccounts, useGoalsOverview } from "@/hooks/useGoals";
 import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -21,6 +23,81 @@ export const Route = createFileRoute("/_authed/goals/")({
 });
 
 const GRID = "grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3";
+
+const FILTERS = [
+	{ status: "all", label: "goals.filters.all" },
+	{ status: "goalBehind", label: "goals.status.behind" },
+	{ status: "goalOnTrack", label: "goals.status.on_track" },
+	{ status: "goalNoTargetDate", label: "goals.status.no_target_date" },
+	{ status: "goalPaused", label: "goals.states.paused" },
+	{ status: "goalCompleted", label: "goals.states.completed" },
+] as const;
+
+function GoalGrid({ goals }: { goals: GoalData[] }) {
+	const { t } = useTranslation();
+	const [filter, setFilter] = useState<(typeof FILTERS)[number]["status"]>("all");
+	const [search, setSearch] = useState("");
+	const showSearch = goals.length > 6;
+	const query = showSearch ? search.trim() : "";
+	const nameQuery = query.toLocaleLowerCase();
+	const shown = goals.filter(
+		(goal) =>
+			(filter === "all" || goalBadge(goal) === filter) &&
+			goal.name.toLocaleLowerCase().includes(nameQuery),
+	);
+	const empty = query
+		? filter === "all"
+			? "goals.filters.emptySearch"
+			: "goals.filters.emptyBoth"
+		: "goals.filters.emptyFilter";
+
+	return (
+		<div className="flex flex-col gap-3">
+			<div className="flex flex-wrap items-center gap-2">
+				{showSearch && (
+					<Input
+						type="search"
+						className="w-full sm:max-w-64"
+						aria-label={t("goals.filters.search")}
+						placeholder={t("goals.filters.placeholder")}
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+					/>
+				)}
+				<div role="group" aria-label={t("goals.filters.label")} className="flex flex-wrap gap-1">
+					{FILTERS.map(({ status, label }) => (
+						<Button
+							key={status}
+							type="button"
+							size="sm"
+							variant={filter === status ? "secondary" : "outline"}
+							aria-pressed={filter === status}
+							onClick={() => setFilter(status)}
+						>
+							{t(label)}
+						</Button>
+					))}
+				</div>
+			</div>
+			{shown.length > 0 ? (
+				<ul aria-label={t("goals.list")} className={GRID}>
+					{shown.map((goal) => (
+						<li key={goal.id}>
+							<GoalCard goal={goal} />
+						</li>
+					))}
+				</ul>
+			) : (
+				<p
+					role="status"
+					className="rounded-xl border bg-card p-6 text-center text-muted-foreground"
+				>
+					{t(empty, { query })}
+				</p>
+			)}
+		</div>
+	);
+}
 
 /**
  * Sure's archived section: collapsed below the grid, opened on demand, so a
@@ -75,11 +152,11 @@ function Archived({ goals }: { goals: GoalData[] }) {
 function GoalsPage() {
 	const { t } = useTranslation();
 	const canWrite = useCanWrite();
-	const goals = useGoals();
+	const goals = useGoalsOverview();
 	const fundable = useFundableAccounts();
 	// A fresh dialog per opening, so it starts from blank fields.
 	const [dialog, setDialog] = useState({ open: false, session: 0 });
-	const list = goals.data ?? [];
+	const list = goals.data?.goals ?? [];
 	const shown = list.filter((goal) => goal.state !== "archived");
 	const archived = list.filter((goal) => goal.state === "archived");
 	const openDialog = () => setDialog(({ session }) => ({ open: true, session: session + 1 }));
@@ -124,15 +201,8 @@ function GoalsPage() {
 					/>
 				) : (
 					<>
-						{shown.length > 0 && (
-							<ul aria-label={t("goals.list")} className={GRID}>
-								{shown.map((goal) => (
-									<li key={goal.id}>
-										<GoalCard goal={goal} />
-									</li>
-								))}
-							</ul>
-						)}
+						<GoalIndicators data={goals.data.indicators} />
+						{shown.length > 0 && <GoalGrid goals={shown} />}
 						{archived.length > 0 && <Archived goals={archived} />}
 					</>
 				))}
