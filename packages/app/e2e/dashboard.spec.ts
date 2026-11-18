@@ -1273,21 +1273,29 @@ test("a click on a Sankey node zooms onto its sub-category, « Retour à la tré
 	// Chromium hit-tests SVG text on its glyphs alone: every point of a label's
 	// box, the gap between its name and its amount included, must reach the
 	// label rather than the link drawn under it.
-	const misses = await label(child.name).evaluate((text) => {
+	const childLabelElement = label(child.name);
+	await childLabelElement.scrollIntoViewIfNeeded();
+	const { misses, center } = await childLabelElement.evaluate((text) => {
 		const box = text.getBoundingClientRect();
 		const group = text.closest("g[data-node]");
 
-		return [0.1, 0.5, 0.9].flatMap((fx) =>
+		const missedSamples = [0.1, 0.5, 0.9].flatMap((fx) =>
 			[0.2, 0.5, 0.8].flatMap((fy) => {
 				const hit = document.elementFromPoint(box.x + box.width * fx, box.y + box.height * fy);
 
 				return hit?.closest("g[data-node]") === group ? [] : [`${fx},${fy}`];
 			}),
 		);
+
+		return {
+			misses: missedSamples,
+			center: { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+		};
 	});
 	expect(misses).toEqual([]);
 
-	await label(child.name).click();
+	// The transparent hit area is a sibling of the text and handles the same click.
+	await page.mouse.click(center.x, center.y);
 
 	await expect(page).toHaveURL(/\/transactions\?/u);
 	await expect(page).toHaveURL(new RegExp(child.id, "u"));

@@ -5,4 +5,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers a fixed earmark, a whole-balance link, a completed goal and the floor at zero; Playwright reads the three figures.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
