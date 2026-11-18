@@ -15,6 +15,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { goalBadge } from "@/components/GoalCard";
 import { GoalDialog } from "@/components/GoalDialog";
 import { GoalMenu } from "@/components/GoalMenu";
+import { GoalPledgeDialog } from "@/components/GoalPledgeDialog";
+import { GoalPledges } from "@/components/GoalPledges";
 import { GoalSpending } from "@/components/GoalSpending";
 import { GoalStateBanner } from "@/components/GoalStateBanner";
 import { Money } from "@/components/Money";
@@ -118,6 +120,15 @@ function Progress({ goal }: { goal: GoalData }) {
 							{t("goals.includingUsed", {
 								amount: formatMoney({ amount: goal.consumedAmount, currency: goal.currency }),
 							})}
+						</p>
+					)}
+					{goal.catchUpAmount !== null && (
+						<p className="text-sm text-muted-foreground">
+							{goal.catchUpAmount === 0
+								? t("goals.pledge.covered")
+								: t("goals.pledge.catchUp", {
+										amount: formatMoney({ amount: goal.catchUpAmount, currency: goal.currency }),
+									})}
 						</p>
 					)}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
@@ -304,6 +315,11 @@ function GoalPage() {
 	return (
 		<Page
 			title={title}
+			description={
+				data?.latestMatchedDepositDate === undefined || data.latestMatchedDepositDate === null
+					? undefined
+					: t("goals.pledge.matchedDate", { date: formatShortDate(data.latestMatchedDepositDate) })
+			}
 			{...(data === undefined
 				? {}
 				: {
@@ -317,6 +333,7 @@ function GoalPage() {
 			actions={
 				admin && data !== undefined ? (
 					<>
+						<GoalPledgeDialog key={data.id} goal={data} />
 						<Button
 							variant="outline"
 							onClick={() => setEdit(({ session }) => ({ open: true, session: session + 1 }))}
@@ -367,6 +384,7 @@ function GoalPage() {
 						pending={goalEvent.isPending}
 						onEvent={admin ? request : null}
 					/>
+					<GoalPledges goal={data} admin={admin} />
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
 						<Projection goal={data} />

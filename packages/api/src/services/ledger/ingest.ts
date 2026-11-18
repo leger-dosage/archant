@@ -16,6 +16,7 @@ import type { Origin, Transaction } from "./shared.ts";
 import { and, asc, eq, inArray, lte, ne, notExists } from "drizzle-orm";
 import { isDeepStrictEqual } from "node:util";
 
+import { balanceTypeOf } from "@archant/data/account-types";
 import type { AccountType } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -41,6 +42,7 @@ import { AppError } from "../../lib/errors.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
+import { queueGoalInflows, reconcileGoalDeposits } from "./goal-deposits.ts";
 import {
 	categoryExists,
 	categoryOriginOf,
@@ -127,6 +129,8 @@ export type IngestOptions = {
 	origin: Origin;
 	/** Computes the groups and writes nothing: the import preview (AD-4). */
 	dryRun?: boolean | undefined;
+	/** The enclosing import reconciles once its own transaction commits. */
+	deferGoalReconciliation?: boolean | undefined;
 	/**
 	 * The counts of the preview the owner agreed to, from an assistant's
 	 * confirm: compared with the groups under the write lock, beside the digest.
@@ -934,7 +938,7 @@ export async function ingest(
 	source: IngestSource,
 	options: IngestOptions,
 ): Promise<IngestResult> {
-	return deps.db.transaction(
+	const ingested = await deps.db.transaction(
 		async (tx) => {
 			const account = await accountWithOpeningDate(tx, accountId);
 			const target =
@@ -1293,7 +1297,7 @@ export async function ingest(
 
 			// 5. Transfer matching, once every new row exists, over every unmatched
 			// line of the household as Sure's family sync (AD-11).
-			await matchTransfers(tx, now);
+			const transferInflows = new Set(await matchTransfers(tx, now));
 
 			// 6. The statement balance (AD-8). A sync's earlier bank figure stays
 			// as a reconciliation, so one missing line cannot shift the whole past.
@@ -1329,10 +1333,33 @@ export async function ingest(
 				await recomputeBalances(tx, account, earliest, deps.timeZone);
 			}
 
+			const acceptsCashInflow =
+				connectionId !== null ||
+				("manual" in source && balanceTypeOf(account.type) === "investment");
+			const inflows = rows
+				.filter(
+					({ id, line }) =>
+						!line.pending && line.amount > 0 && (acceptsCashInflow || transferInflows.has(id)),
+				)
+				.map(({ id }) => id);
+			const syncedInflows =
+				connectionId === null
+					? []
+					: [...grouped.absorbed, ...grouped.matched, ...grouped.present]
+							.filter(({ line }) => !line.pending && line.amount > 0)
+							.map(({ entryId }) => entryId);
+
+			await queueGoalInflows(tx, deps.timeZone, [...inflows, ...syncedInflows]);
+
 			result.created.push(...rows.map((row) => row.id));
 
 			return result;
 		},
 		{ behavior: "immediate" },
 	);
+
+	if (options.dryRun !== true && options.deferGoalReconciliation !== true) {
+		await reconcileGoalDeposits(deps);
+	}
+	return ingested;
 }

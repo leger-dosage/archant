@@ -39,6 +39,7 @@ import { NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
 import { refreshCloseState } from "../recurring/payments.ts";
 import { moveAttachments } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
+import { moveGoalDeposit } from "./goal-deposits.ts";
 import { stampedLocks, transactionRow } from "./patch.ts";
 import {
 	deleteTransactionRows,
@@ -183,6 +184,7 @@ async function absorbEntry(
 
 	await moveAttachments(tx, absorbedId, survivorId);
 	await moveRecurringPayments(tx, survivorId, absorbedId);
+	await moveGoalDeposit(tx, absorbedId, survivorId);
 
 	const survivorInTransfer = await tx
 		.select({ id: transfers.id })

@@ -3278,7 +3278,7 @@ const insertGoal = (
 
 describe("goals", () => {
 	it("keeps existing completion, funding and outflow rows when adding spending columns", async () => {
-		const before = await migratedBefore("0108_goal_consumption");
+		const before = await migratedBefore("0109_goal_consumption");
 		await insertAccount(before, "a1", "depository", "savings");
 		await insertGoal(before, "g1", { state: "completed" });
 		await before.run(

@@ -3,6 +3,7 @@ import type { GoalLink, GoalProgress, SavedPoint } from "../domain/goals.ts";
 import type { FieldError } from "../lib/errors.ts";
 import type { GoalInput, GoalRequest, GoalSpend, GoalTarget } from "../schemas/goals.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { GoalPledge } from "./goal-pledges.ts";
 
 import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
@@ -29,6 +30,7 @@ import {
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
+import { readGoalPledges } from "./goal-pledges.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { claimGoalOutflow, listGoalOutflows } from "./ledger/goal-outflows.ts";
 import { accountPaces, goalContributionWindows } from "./ledger/goal-pace.ts";
@@ -45,6 +47,7 @@ type GoalAccountShare = {
 	balance: MinorUnits;
 	/** Inactive accounts still back their existing goals. */
 	active: boolean;
+	bankLinked: boolean;
 	/** The fixed amount asked for, `null` for the whole balance. */
 	allocatedAmount: MinorUnits | null;
 	/** What the account backs for this goal, once the other goals on it have theirs. */
@@ -77,6 +80,9 @@ export type GoalSummary = GoalProgress & {
 	completedAt: number | null;
 	/** By account name. */
 	accounts: GoalAccountShare[];
+	pledges: GoalPledge[];
+	latestMatchedDepositDate: IsoDate | null;
+	catchUpAmount: MinorUnits | null;
 };
 
 type Db = ServiceDeps["db"];
@@ -103,6 +109,7 @@ async function loadGoals(deps: ServiceDeps) {
 				type: accounts.type,
 				currency: accounts.currency,
 				active: accounts.active,
+				bankAccountId: accounts.bankAccountId,
 			})
 			.from(goalAccounts)
 			.innerJoin(accounts, eq(accounts.id, goalAccounts.accountId)),
@@ -163,7 +170,10 @@ export async function listGoals(
 	deps: ServiceDeps,
 	date = today(deps.timeZone),
 ): Promise<GoalSummary[]> {
-	const { goalRows, linkRows, competing } = await loadGoals(deps);
+	const [{ goalRows, linkRows, competing }, pledgeData] = await Promise.all([
+		loadGoals(deps),
+		readGoalPledges(deps, Date.now()),
+	]);
 	const expenses = {
 		currency: await getReportingCurrency(deps.db),
 		median: goalRows.some((goal) => goal.targetMode === "months_of_expenses")
@@ -193,6 +203,7 @@ export async function listGoals(
 					currency: row.currency,
 					balance,
 					active: row.active,
+					bankLinked: row.bankAccountId !== null,
 					allocatedAmount: linkOf(row).allocatedAmount,
 					share: backingShares(balance, competing(row)).get(goal.id) ?? toMinorUnits(0),
 				};
@@ -214,8 +225,25 @@ export async function listGoals(
 				completed: goal.state === "completed",
 			});
 
+			const pledgeState = pledgeData.get(goal.id);
+			const pledges = pledgeState?.pledges ?? [];
+			const pending = pledges.reduce(
+				(sum, pledge) => sum + (pledge.status === "open" ? pledge.amount : 0),
+				0,
+			);
+			const catchUpAmount =
+				goal.state === "active" &&
+				progress.status === "behind" &&
+				progress.monthlyNeeded !== null &&
+				progress.pace !== null
+					? toMinorUnits(Math.max(0, progress.monthlyNeeded - progress.pace - pending))
+					: null;
+
 			return {
 				id: goal.id,
+				pledges,
+				latestMatchedDepositDate: pledgeState?.latestMatchedDepositDate ?? null,
+				catchUpAmount,
 				name: goal.name,
 				targetAmount,
 				targetMode: goal.targetMode,

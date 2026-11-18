@@ -1506,12 +1506,15 @@ describe("a viewer", () => {
 			send("DELETE", `/api/goals/${id}`, undefined, viewer()),
 			send("GET", `/api/goals/${id}/outflows`, undefined, viewer()),
 			send("POST", `/api/goals/${id}/consume`, { amount: "100" }, viewer()),
+			send("POST", `/api/goals/${id}/pledges`, { accountId, amount: "50" }, viewer()),
+			send("POST", `/api/goals/${id}/pledges/pledge/extend`, undefined, viewer()),
+			send("DELETE", `/api/goals/${id}/pledges/pledge`, undefined, viewer()),
 			...events.map(async (event) =>
 				send("POST", `/api/goals/${id}/${event}`, undefined, viewer()),
 			),
 		]);
 
-		expect(answers.map((answer) => answer.status)).toEqual(Array(11).fill(403));
+		expect(answers.map((answer) => answer.status)).toEqual(Array(14).fill(403));
 		expect(new Set(answers.map((answer) => errorBody.parse(answer.body).error.code))).toEqual(
 			new Set(["FORBIDDEN"]),
 		);
