@@ -1041,6 +1041,9 @@
 			"gap": "Gap"
 		},
 		"form": {
+			"overview": "Overview",
+			"details": "Details",
+			"settings": "Settings",
 			"addTitle": "Add balance",
 			"editTitle": "Edit balance",
 			"description": "The balance your bank shows at the end of this day, or the amount owed for a card. It replaces the calculated balance from this date on.",
@@ -1113,6 +1116,11 @@
 			"amount": "Amount"
 		},
 		"form": {
+			"details": "Details",
+			"additionalDetails": "Additional details",
+			"note": "Note",
+			"notePlaceholder": "Add any additional comments here...",
+			"settings": "Settings",
 			"addTitle": "Add trade",
 			"editTitle": "Edit trade",
 			"description": "A buy, a sell, a dividend or interest. Quantity × price plus fees leaves the account for a buy; quantity × price minus fees enters it for a sell; the amount of a dividend or interest enters it.",
@@ -2274,7 +2282,7 @@
 		"move": {
 			"open": "Move money from {{name}}",
 			"title": "Move money from {{name}}",
-			"description": "{{name}} can give up to {{amount}} this month.",
+			"description": "{{name}} budget this month: {{amount}}",
 			"amount": "Amount",
 			"target": "To",
 			"placeholder": "Choose a category",
@@ -2968,7 +2976,7 @@
 	},
 	"rules": {
 		"title": "Rules",
-		"description": "After every sync or import, each enabled rule completes all the transactions it targets, older ones included: category, merchant, tag, name, activity label, exclusion or expected transfer. A new rule stays disabled until you confirm it should apply to existing transactions. Rules apply in the order they were created, whatever the list is sorted by, and each one sees what the previous ones changed. When two rules change the same field, the last one wins; a tag is added to the others. A field you edited by hand is never replaced.",
+		"description": "After every sync or import, each enabled rule completes all the transactions it targets, older ones included: category, merchant, tag, name, activity label, exclusion or expected transfer. A new rule stays disabled until you confirm it should apply to existing transactions. Rules apply in their saved order, whatever the list is sorted by, and each one sees what the previous ones changed. The first matching rule that sets a field takes priority. Tags are additive. A field you edited by hand is never replaced.",
 		"list": "Rules",
 		"prompt": {
 			"message": "Category changed to {{name}}",
@@ -3074,12 +3082,22 @@
 			"exclude_transaction": "Exclude",
 			"set_as_transfer_or_payment": "Transfer with an account"
 		},
+		"order": {
+			"title": "Execution order",
+			"description": "Rules run from top to bottom.",
+			"up": "Move {{name}} up",
+			"down": "Move {{name}} down",
+			"save": "Save order",
+			"saved": "Rule order saved."
+		},
 		"form": {
 			"addTitle": "Add rule",
 			"editTitle": "Edit rule",
 			"description": "After every sync or import, the rule applies to the transactions that meet all its conditions. With no condition, it applies to all of them. After saving, you can apply it to existing transactions.",
 			"name": "Name",
 			"namePlaceholder": "Optional",
+			"stopProcessing": "Stop processing",
+			"stopProcessingHint": "Skip later rules for transactions matched by this rule.",
 			"effectiveDate": "Starting from",
 			"effectiveDateHint": "Optional. The rule only touches transactions dated on or after this day.",
 			"conditions": "If",
@@ -3122,9 +3140,10 @@
 			"description_one": "You are about to apply this rule to {{count}} transaction that matches its criteria. A field you edited by hand is never replaced.",
 			"description_other": "You are about to apply this rule to {{count}} transactions that match its criteria. A field you edited by hand is never replaced.",
 			"confirm": "Confirm changes",
+			"withPredecessors": "This rule and the enabled rules above it affect {{rows}}. Manually edited fields stay locked.",
 			"allTitle": "Apply all rules",
 			"allDescription_one": "You are about to apply {{count}} rule affecting {{rows}}. A field you edited by hand is never replaced.",
-			"allDescription_other": "You are about to apply {{count}} rules affecting {{rows}}, in the order they were created. A field you edited by hand is never replaced.",
+			"allDescription_other": "You are about to apply {{count}} rules affecting {{rows}}, in their saved order. A field you edited by hand is never replaced.",
 			"uniqueRows_one": "{{count}} unique transaction",
 			"uniqueRows_other": "{{count}} unique transactions",
 			"allConfirm": "Confirm and apply all",
@@ -3861,6 +3880,7 @@
 		"SURE_IMPORT_INVALID": "The file changed or contains errors: nothing was imported. Upload it again.",
 		"CSV_IMPORT_INVALID": "The file changed or contains errors: nothing was imported. Upload it again.",
 		"IMPORT_PREVIEW_STALE": "The account changed since the preview. Check before importing.",
+		"RULE_ORDER_STALE": "The list of rules changed. Reopen the order and try again.",
 		"RULE_PREVIEW_STALE": "The transactions changed since the preview ({{changed}} to change now). Run the preview again before applying.",
 		"BULK_COUNT_STALE": "The selected transactions changed ({{count}} now). Check the selection before editing.",
 		"TRANSFER_FORM_STALE": "This transfer was already created with different details. Check your transactions before creating another.",
@@ -3872,6 +3892,11 @@
 		"TRANSACTION_CHANGED": "This transaction changed since it was shown to you. It was not deleted.",
 		"BUDGET_NOT_SET_UP": "Set this month's planned expenses first.",
 		"BUDGET_ALREADY_SET_UP": "This month already has a budget. It was not changed.",
+		"BUDGET_MOVE_NON_POSITIVE_AMOUNT": "The amount must be greater than zero.",
+		"BUDGET_MOVE_UNCATEGORISED": "Money cannot move to or from Uncategorized.",
+		"BUDGET_MOVE_SAME_CATEGORY": "Choose a different category than the source.",
+		"BUDGET_MOVE_PARENT_CHILD": "Money cannot move between a parent category and its child.",
+		"BUDGET_MOVE_INSUFFICIENT_FUNDS": "This category cannot give that much.",
 		"UNAUTHORIZED": "Your session has expired. Sign in to continue.",
 		"FORBIDDEN": "This action is not allowed.",
 		"ORIGIN_MISMATCH": "Archant is configured for a different address. Set ARCHANT_URL to the address shown in the address bar, then restart Archant.",
@@ -3942,7 +3967,6 @@
 			"invalid_two_factor_code": "Incorrect code. Check the time on your phone, or use a backup code you have not used yet.",
 			"two_factor_code_already_used": "This code has already been used. Please enter the next code from your authenticator app.",
 			"not_positive": "The amount must be greater than zero.",
-			"insufficient_funds": "This category cannot give that much.",
 			"same_category": "Choose a different category than the source.",
 			"same_merchant": "Choose a different merchant than the target.",
 			"parent_child": "Not possible between a category and its subcategory.",

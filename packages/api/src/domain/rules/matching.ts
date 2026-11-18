@@ -144,6 +144,7 @@ export type RuleAction =
 /** An enabled rule as the evaluator reads it, its references already resolved. */
 export type Rule = {
 	id: string;
+	stopProcessing?: boolean;
 	effectiveDate: IsoDate | null;
 	conditions: Condition[];
 	actions: RuleAction[];
@@ -450,48 +451,94 @@ export type RuleTally = {
 	changed: number;
 };
 
+type Claim = keyof Omit<RowPlan, "addTagIds">;
+
+function claimedField(action: RuleAction): Claim | null {
+	switch (action.type) {
+		case "set_transaction_category":
+			return action.categoryId === null ? null : "categoryId";
+		case "set_transaction_merchant":
+			return action.merchantId === null ? null : "merchantId";
+		case "set_transaction_tags":
+			return null;
+		case "set_transaction_name":
+		case "replace_in_transaction_name":
+			return "label";
+		case "set_investment_activity_label":
+			return action.label === null ? null : "investmentActivityLabel";
+		case "exclude_transaction":
+			return "excluded";
+		default:
+			return action.accountId === null ? null : "expectedTransferAccountId";
+	}
+}
+
+type Precedence = Map<string, { claimed: Set<Claim>; stopped: boolean }>;
+
 /**
- * What rules change on each candidate, by entry id, and what each rule did.
- * `rules` apply in the order given, creation order, over one planned state
- * per row: a later rule's conditions see what earlier ones planned, and its
- * actions overwrite them. An action on a locked field, or naming a deleted
- * row, plans nothing, so later rules see the value unchanged. A tag past
- * `maxTagsPerRow` is skipped. A candidate no rule changes is absent from
- * `plan`; `perRule` holds one tally per rule, in the same order; `matched`
- * counts the candidates any rule matched, each once, changed or not.
+ * Fixes the match before any action and reserves fields even when locked or
+ * unchanged. The caller keeps these reservations if its savepoint rolls back.
  */
+export function planRuleRow(
+	rule: Rule,
+	candidate: RuleCandidate,
+	precedence: Precedence,
+	maxTagsPerRow: number,
+): { row: RuleCandidate; plan: RowPlan } | null {
+	const previous = precedence.get(candidate.id);
+
+	if (previous?.stopped === true || !matches(rule, candidate)) {
+		return null;
+	}
+
+	const claimed = new Set(previous?.claimed);
+	precedence.set(candidate.id, { claimed, stopped: rule.stopProcessing === true });
+
+	let row = candidate;
+
+	for (const action of rule.actions) {
+		const field = claimedField(action);
+
+		if (field !== null) {
+			claimed.add(field);
+
+			if (previous?.claimed.has(field) === true) {
+				continue;
+			}
+		}
+
+		row = { ...row, ...applyAction(action, row, maxTagsPerRow) };
+	}
+
+	return { row, plan: planOf(candidate, row) };
+}
+
+/** Plans a run without writes, counting each transaction only once. */
 export function planActions(
 	rules: readonly Rule[],
 	candidates: readonly RuleCandidate[],
 	maxTagsPerRow: number,
 ): { plan: Map<string, RowPlan>; perRule: RuleTally[]; matched: number } {
 	const plan = new Map<string, RowPlan>();
-	let matched = 0;
+	const precedence: Precedence = new Map();
 	const tallied = rules.map((rule) => ({
 		rule,
 		tally: { ruleId: rule.id, matched: 0, changed: 0 },
 	}));
 
 	for (const candidate of candidates) {
-		// The row as later rules see it: what earlier ones planned over the row as it is.
 		let row = candidate;
-		let reached = false;
 
 		for (const { rule, tally } of tallied) {
-			if (matches(rule, row)) {
-				const before = row;
-				reached = true;
+			const step = planRuleRow(rule, row, precedence, maxTagsPerRow);
 
-				for (const action of rule.actions) {
-					row = { ...row, ...applyAction(action, row, maxTagsPerRow) };
-				}
-
+			if (step !== null) {
+				row = step.row;
 				tally.matched += 1;
-				tally.changed += Object.keys(planOf(before, row)).length > 0 ? 1 : 0;
+				tally.changed += Object.keys(step.plan).length > 0 ? 1 : 0;
 			}
 		}
 
-		matched += reached ? 1 : 0;
 		const planned = planOf(candidate, row);
 
 		if (Object.keys(planned).length > 0) {
@@ -499,5 +546,5 @@ export function planActions(
 		}
 	}
 
-	return { plan, perRule: tallied.map(({ tally }) => tally), matched };
+	return { plan, perRule: tallied.map(({ tally }) => tally), matched: precedence.size };
 }

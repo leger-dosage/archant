@@ -498,3 +498,51 @@ test("a crypto exchange turned into a wallet keeps « Positions » and « Ordres
 	await expect(tradeRow(page, date)).toContainText("0,01 × 50 000,00 €");
 	await expect(page.getByRole("button", { name: "Ajouter un ordre" })).toHaveCount(0);
 });
+
+test("a trade drawer saves only the note and keeps it after reload", async ({ page, api }) => {
+	const account = await api.openAccount({ kind: "pea", openingDate: daysAgo(30) });
+	const date = daysAgo(5);
+	const trade = await api.recordTrade(account.id, {
+		security: { source: "manual", name: "Fonds fictif" },
+		date,
+		quantity: "2",
+		price: "100",
+	});
+
+	await page.goto(`/accounts/${account.id}?tab=trades`);
+	const opener = tradeRow(page, date).getByRole("button", { name: formatTableDate(date) });
+	await page.getByRole("button", { name: "Ajouter un ordre" }).click();
+	const creation = page.getByRole("dialog", { name: "Ajouter un ordre" });
+	await expect(creation.getByLabel("Note", { exact: true })).toHaveCount(0);
+	await expect(creation).toHaveCSS("left", "720px");
+	await page.keyboard.press("Escape");
+	await expect(creation).toBeHidden();
+
+	await opener.click();
+	const drawer = page.getByRole("dialog", { name: "Modifier l'ordre" });
+	await expect(drawer).toHaveCSS("right", "12px");
+	await expect(drawer).toHaveCSS("width", "550px");
+	await expect(drawer.getByRole("heading", { name: "Détails supplémentaires" })).toBeVisible();
+	await drawer.getByLabel("Quantité").fill("3");
+	const note = drawer.getByLabel("Note", { exact: true });
+	await note.fill("x".repeat(2001));
+	await note.press("Tab");
+	await expect(note).toHaveAttribute("aria-invalid", "true");
+	await expect(note).toHaveValue("x".repeat(2001));
+
+	await note.fill("Ordre de démonstration");
+	const saved = page.waitForResponse(
+		(response) =>
+			response.request().method() === "PATCH" && response.url().endsWith(`/trades/${trade}`),
+	);
+	await note.press("Tab");
+	const response = await saved;
+	expect(response.request().postDataJSON()).toEqual({ notes: "Ordre de démonstration" });
+	expect(response.ok()).toBe(true);
+	await expect(note).toHaveAttribute("aria-invalid", "false");
+	await expect(drawer.getByLabel("Quantité")).toHaveValue("3");
+	await page.reload();
+	await opener.click();
+	await expect(note).toHaveValue("Ordre de démonstration");
+	await expect(drawer.getByLabel("Quantité")).toHaveValue("2");
+});

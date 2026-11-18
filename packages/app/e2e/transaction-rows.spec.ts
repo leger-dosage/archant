@@ -297,10 +297,7 @@ test("below 768 px a row takes two lines: the label and the amount, then the dat
 	await expect(rowButton(page, label).locator('[data-slot="row-account"]')).toBeHidden();
 });
 
-test("the sheet is a 550 px drawer 12 px off the viewport's edges, and the whole screen below 768 px", async ({
-	page,
-	api,
-}) => {
+test("the drawer is inset on a wide screen and centred on a phone", async ({ page, api }) => {
 	const prefix = uniqueName("Tiroir");
 	const account = await api.openAccount();
 	await api.addTransaction(account.id, { date: daysAgo(1), label: prefix, amount: "-4,00" });
@@ -324,9 +321,11 @@ test("the sheet is a 550 px drawer 12 px off the viewport's edges, and the whole
 	await page.keyboard.press("Enter");
 
 	await expect(sheet).toBeVisible();
-	await expect(sheet).toHaveCSS("border-radius", "0px");
-	await expect.poll(async () => (await sheet.boundingBox())?.x).toBe(0);
-	expect(await sheet.boundingBox()).toEqual({ x: 0, y: 0, width: 390, height: 844 });
+	await expect(sheet).toHaveCSS("border-radius", "12px");
+	await expect.poll(async () => (await sheet.boundingBox())?.x).toBe(16);
+	const box = await sheet.boundingBox();
+	expect(box?.width).toBe(390 - 32);
+	expect((box?.y ?? 0) * 2 + (box?.height ?? 0)).toBeCloseTo(844);
 });
 
 test("pending, possible duplicate and proposed transfer rows each carry their badge", async ({

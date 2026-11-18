@@ -21,9 +21,12 @@ import { formatMoney } from "@/lib/format-money";
 import { intlLocale } from "@/lib/locale";
 import { cn } from "@/lib/utils";
 
-/** A blank field is 0: a subcategory left blank shares its parent's amount. */
-const textOf = (amount: MinorUnits, currency: string) =>
-	amount === 0 ? "" : amountToText(amount, currency);
+function textOf(line: BudgetCategoryData, currency: CurrencyCode): string {
+	const amount = line.budgetedSpending;
+	const savedSubcategory = line.parentId !== null && line.hasStoredAmount;
+
+	return amount === 0 && !savedSubcategory ? "" : amountToText(amount, currency);
+}
 
 function currencySymbol(currency: string): string {
 	return (
@@ -176,7 +179,7 @@ export function BudgetCategoryField({
 	const fieldId = useId();
 	const [moving, setMoving] = useState(false);
 	const save = useSaveCategoryBudget(month);
-	const saved = textOf(line.budgetedSpending, currency);
+	const saved = textOf(line, currency);
 	const [text, setText] = useState(saved);
 	const [shown, setShown] = useState(saved);
 	const [error, setError] = useState<ShownError | undefined>(undefined);
@@ -207,7 +210,8 @@ export function BudgetCategoryField({
 
 		setError(undefined);
 
-		if (parsed.data === line.budgetedSpending) {
+		// An untouched child has no stored amount yet. Typing zero gives it one.
+		if (parsed.data === line.budgetedSpending && (line.parentId === null || line.hasStoredAmount)) {
 			setText(saved);
 
 			return;
@@ -221,7 +225,7 @@ export function BudgetCategoryField({
 				input: { budgetedSpending: sent },
 			});
 			const next = budget.categories.find((item) => item.categoryId === line.categoryId);
-			const nextText = next === undefined ? "" : textOf(next.budgetedSpending, currency);
+			const nextText = next === undefined ? "" : textOf(next, currency);
 
 			// Text typed while the save ran, after `Enter`, is the owner's, not the answer's.
 			setText((current) => (current === sent ? nextText : current));
