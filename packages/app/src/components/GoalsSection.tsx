@@ -51,10 +51,10 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 				</p>
 				<p className="text-xs text-muted-foreground">
 					{t("dashboard.goals.count", { count: summary.count })}
-					{" · "}
-					{summary.behind > 0
-						? t("dashboard.goals.behind", { count: summary.behind })
-						: t("dashboard.goals.onPace")}
+					{summary.behind > 0 && ` · ${t("dashboard.goals.behind", { count: summary.behind })}`}
+					{summary.paceUnknown > 0 &&
+						` · ${t("dashboard.goals.paceUnknown", { count: summary.paceUnknown })}`}
+					{summary.behind === 0 && summary.paceUnknown === 0 && ` · ${t("dashboard.goals.onPace")}`}
 				</p>
 				<Bar part={summary.saved} whole={summary.target} size="md" />
 				<LeftOutNotice accounts={summary.leftOut} />

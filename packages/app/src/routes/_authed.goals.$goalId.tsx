@@ -131,9 +131,11 @@ function Progress({ goal }: { goal: GoalData }) {
 							<Figure label={t("goals.figures.monthly")}>{money(goal.monthlyNeeded)}</Figure>
 						)}
 						<Figure label={t("goals.figures.pace")}>
-							{t("goals.figures.perMonth", {
-								amount: formatMoney({ amount: goal.pace, currency: goal.currency }),
-							})}
+							{goal.pace === null
+								? t("goals.figures.paceUnknown")
+								: t("goals.figures.perMonth", {
+										amount: formatMoney({ amount: goal.pace, currency: goal.currency }),
+									})}
 						</Figure>
 					</dl>
 				</div>
@@ -144,8 +146,7 @@ function Progress({ goal }: { goal: GoalData }) {
 
 /**
  * Each linked account's share; « X affectés sur Y » for a fixed amount, as
- * Sure's. A deactivated account is named, counting for nothing; a goal whose
- * last account was deleted says it has none.
+ * Sure's. A goal whose last account was deleted says it has none.
  */
 function Accounts({ goal }: { goal: GoalData }) {
 	const { t } = useTranslation();
@@ -168,17 +169,15 @@ function Accounts({ goal }: { goal: GoalData }) {
 								{account.name}
 							</Link>
 							<p className="text-sm text-muted-foreground tabular-nums">
-								{!account.active
-									? t("goals.accounts.inactive")
-									: account.allocatedAmount === null
-										? t("goals.accounts.whole")
-										: t("goals.accounts.earmarked", {
-												share: formatMoney({ amount: account.share, currency: goal.currency }),
-												balance: formatMoney({
-													amount: account.balance,
-													currency: account.currency,
-												}),
-											})}
+								{account.allocatedAmount === null
+									? t("goals.accounts.whole")
+									: t("goals.accounts.earmarked", {
+											share: formatMoney({ amount: account.share, currency: goal.currency }),
+											balance: formatMoney({
+												amount: account.balance,
+												currency: account.currency,
+											}),
+										})}
 							</p>
 						</div>
 						<Money amount={account.share} currency={goal.currency} />
