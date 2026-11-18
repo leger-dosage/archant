@@ -187,7 +187,8 @@ test("signed in with the password alone, the owner refuses an assistant, which g
 	await expect(page.getByText("Agent refusé demande l'accès à Archant.")).toBeVisible();
 	await page.getByRole("button", { name: "Refuser" }).click();
 
-	await expect.poll(() => seen.callback?.searchParams.get("error")).toBe("access_denied");
+	await page.waitForURL(`${REDIRECT_URI}**`);
+	expect(seen.callback?.searchParams.get("error")).toBe("access_denied");
 	expect(seen.callback?.searchParams.has("code")).toBe(false);
 
 	await page.unroute(`${REDIRECT_URI}**`);
@@ -248,7 +249,8 @@ async function connectThenDisconnect(
 	await write.uncheck();
 	await page.getByRole("button", { name: "Autoriser" }).click();
 
-	await expect.poll(() => seen.callback?.searchParams.get("state")).toBe("e2e");
+	await page.waitForURL(`${REDIRECT_URI}**`);
+	expect(seen.callback?.searchParams.get("state")).toBe("e2e");
 	const code = seen.callback?.searchParams.get("code") ?? "";
 
 	// The assistant exchanges its code from the command line: a form, no origin.

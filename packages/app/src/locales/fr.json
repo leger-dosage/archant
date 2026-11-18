@@ -26,7 +26,7 @@
 		"accounts": "Comptes",
 		"operations": "Opérations",
 		"budgets": "Budgets",
-		"goals": "Objectifs",
+		"plan": "Plan",
 		"bills": "Factures",
 		"reports": "Rapports",
 		"rules": "Règles",
@@ -160,18 +160,6 @@
 			"title": "Aucun compte pour l'instant",
 			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici.",
 			"guestDescription": "Les comptes du foyer apparaîtront ici."
-		},
-		"goals": {
-			"title": "Objectifs",
-			"count_one": "{{count}} actif",
-			"count_other": "{{count}} actifs",
-			"ofTargets": "sur {{target}} tous objectifs confondus",
-			"behind_one": "{{count}} en retard",
-			"behind_other": "{{count}} en retard",
-			"paceUnknown": "{{count}} au rythme inconnu",
-			"onPace": "Tout est dans les temps",
-			"list": "Objectifs en cours",
-			"all": "Tous les objectifs"
 		},
 		"sections": "Sections du tableau de bord",
 		"toggleSection": "Afficher/masquer la section",
@@ -2412,6 +2400,33 @@
 			"recent": "Opérations récentes",
 			"all": "Voir toutes les opérations",
 			"noTransactions": "Aucune opération ce mois-ci."
+		}
+	},
+	"plan": {
+		"description": "Décidez où va votre argent : ce que vous dépensez et ce que vous épargnez.",
+		"budget": {
+			"title": "Ce mois-ci",
+			"ofTotal": "sur {{total}}",
+			"daysLeft_one": "{{count}} jour restant",
+			"daysLeft_other": "{{count}} jours restants",
+			"percentUsed": "{{percent}} % utilisés",
+			"topCategories": "Principales catégories",
+			"empty": "Le budget de ce mois-ci n’est pas encore configuré.",
+			"setUp": "Configurer le budget de ce mois-ci",
+			"view": "Voir le budget complet"
+		},
+		"goals": {
+			"title": "Vos objectifs",
+			"count_one": "{{count}} actif",
+			"count_other": "{{count}} actifs",
+			"ofTargets": "sur {{target}} tous objectifs confondus",
+			"behind_one": "{{count}} en retard",
+			"behind_other": "{{count}} en retard",
+			"paceUnknown": "{{count}} au rythme inconnu",
+			"onPace": "Tout est dans les temps",
+			"list": "Objectifs actifs",
+			"all": "Tous les objectifs",
+			"empty": "Aucun objectif actif pour le moment."
 		}
 	},
 	"goals": {

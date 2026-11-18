@@ -107,7 +107,7 @@ test("/budgets opens this month, and the arrows and the picker stop at the bound
 	await expect(
 		page
 			.getByRole("navigation", { name: "Navigation principale" })
-			.getByRole("link", { name: "Budgets", exact: true }),
+			.getByRole("link", { name: "Plan", exact: true }),
 	).toHaveAttribute("aria-current", "page");
 
 	// Two years ahead is the last month.
@@ -238,10 +238,10 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	// Over budget: the amount spent in the destructive colour, and by how much.
 	const amountSpent = donut(page).getByText(euros(160_000), { exact: true });
 	await expect(amountSpent).toHaveCSS("color", rgb("#c91313"));
-	await expect(breadcrumbs(page)).toHaveText("Budgets/Budget de novembre 2023");
-	await expect(breadcrumbs(page).getByRole("link", { name: "Budgets" })).toHaveAttribute(
+	await expect(breadcrumbs(page)).toHaveText("Plan/Budget de novembre 2023");
+	await expect(breadcrumbs(page).getByRole("link", { name: "Plan" })).toHaveAttribute(
 		"href",
-		"/budgets",
+		"/plan",
 	);
 	// Over budget, nothing is left: the two lines that spent, no grey slice.
 	await expect(slices(page)).toHaveCount(2);

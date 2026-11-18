@@ -23,7 +23,7 @@ const searchSchema = z.looseObject({
 });
 
 /** Better Auth's answer to a consent: the assistant's address, with a code or a refusal. */
-const continuation = z.object({ url: z.string().min(1) });
+const continuation = z.object({ redirect: z.literal(true), url: z.string().min(1) });
 
 const READ = "archant:read";
 const WRITE = "archant:write";
@@ -104,13 +104,12 @@ function ConsentPage() {
 		const { data, error } = await consent(accept ? { accept, scope: granted } : { accept });
 		const next = continuation.safeParse(data);
 
+		// Better Auth follows successful consent redirects. A second navigation
+		// would interrupt the assistant's callback.
 		if (error !== null || !next.success) {
 			setPending(false);
 			showErrorToast(failureCode(error?.status));
-			return;
 		}
-
-		window.location.href = next.data.url;
 	};
 
 	if (refused) {

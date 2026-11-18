@@ -172,6 +172,11 @@ test("a member creates a ledger account and cannot open household administration
 	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
 	await expect(page.getByRole("main").getByRole("link", { name: new RegExp(name) })).toBeVisible();
 
+	await page.goto("/plan");
+	const goals = page.getByRole("region", { name: "Vos objectifs" });
+	await goals.getByRole("button", { name: "Nouvel objectif" }).click();
+	await expect(page.getByRole("dialog", { name: "Nouvel objectif" })).toBeVisible();
+
 	await page.goto("/settings/banks");
 	await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 	const settings = page.getByRole("navigation", { name: "Réglages" });

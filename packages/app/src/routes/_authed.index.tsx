@@ -24,7 +24,6 @@ import {
 	useDashboardSortable,
 } from "@/components/DashboardWidget";
 import { EmptyState } from "@/components/EmptyState";
-import { GoalsSection } from "@/components/GoalsSection";
 import { InvestmentSummarySection } from "@/components/InvestmentSummarySection";
 import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { MoneyFlowSection } from "@/components/MoneyFlowSection";
@@ -201,7 +200,6 @@ function DashboardPage() {
 		investment_summary: (
 			<InvestmentSummarySection period={chartPeriod.chart} ready={chartPeriod.ready} />
 		),
-		goals: <GoalsSection />,
 	});
 
 	const shownWidgets = accounts.data === undefined ? null : widgets(accounts.data);
