@@ -2433,6 +2433,29 @@
 		}
 	},
 	"goals": {
+		"includingUsed": "Dont {{amount}} déjà utilisés",
+		"spend": {
+			"open": "J'ai utilisé une partie de cet argent",
+			"title": "Enregistrer une dépense",
+			"amount": "Combien avez-vous utilisé ?",
+			"account": "Depuis quel compte ?",
+			"submit": "Enregistrer",
+			"success": "Dépense enregistrée.",
+			"outflows": "De l'argent est sorti de ces comptes",
+			"claim": "C'était ça",
+			"errors": {
+				"non_positive": "Indiquez un montant supérieur à zéro.",
+				"maintained": "Une réserve se ponctionne et se reconstitue. Ce qui lui manque apparaît déjà sur l'objectif.",
+				"not_active": "Cet objectif n'est plus actif : rien ne peut y être enregistré.",
+				"no_linked_account": "Cet objectif n'a plus de compte de financement.",
+				"account_required": "Cet objectif est financé par plusieurs comptes. Indiquez celui d'où vient l'argent.",
+				"account_not_linked": "Ce compte ne finance pas cet objectif.",
+				"exceeds_target": "C'est plus que ce que cet objectif visait à épargner.",
+				"exceeds_earmark": "C'est plus que ce que l'objectif a affecté sur ce compte.",
+				"transaction_already_claimed": "Cette sortie a déjà été attribuée.",
+				"transaction_not_found": "Cette sortie n'est plus disponible."
+			}
+		},
 		"pledge": {
 			"transfer": "Enregistrer un virement effectué",
 			"save": "Enregistrer l'argent mis de côté",
@@ -4077,6 +4100,8 @@
 			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
 			"no_expenses": "Aucun mois ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
+			"kind_locked_once_consumed": "Un objectif dont une partie a été utilisée ne peut plus devenir une réserve.",
+			"below_consumed": "Le montant visé doit couvrir les dépenses déjà enregistrées.",
 			"progress_basis_locked": "Rouvrez ou restaurez cet objectif pour modifier le calcul de sa progression.",
 			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type.",
 			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, 18 décimales au plus. Exemple : 12,5.",
@@ -4100,6 +4125,7 @@
 			"exchange_rate_unavailable": "Les virements entre deux devises ne sont pas encore pris en charge.",
 			"poor_contrast": "Mauvais contraste, choisissez une couleur plus foncée."
 		},
+		"GOAL_SPEND_REFUSED": "Cette dépense ne peut pas être enregistrée.",
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"RECURRING_ALREADY_EXISTS": "Une récurrence suit déjà ce compte, ce marchand ou libellé et ce montant.",
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "Un virement récurrent existe déjà pour cette paire de comptes.",

@@ -2433,6 +2433,29 @@
 		}
 	},
 	"goals": {
+		"includingUsed": "Including {{amount}} already used",
+		"spend": {
+			"open": "I used some of this money",
+			"title": "Record spending",
+			"amount": "How much did you use?",
+			"account": "Which account did it come from?",
+			"submit": "Save",
+			"success": "Spending recorded.",
+			"outflows": "Money left these accounts",
+			"claim": "This was it",
+			"errors": {
+				"non_positive": "Enter an amount greater than zero.",
+				"maintained": "A reserve is drawn down and refilled. Its shortfall is already shown on the goal.",
+				"not_active": "This goal is no longer active, so nothing can be recorded against it.",
+				"no_linked_account": "This goal has no funding account left.",
+				"account_required": "Several accounts fund this goal. Choose the one the money came from.",
+				"account_not_linked": "This account does not fund this goal.",
+				"exceeds_target": "That's more than this goal was meant to save.",
+				"exceeds_earmark": "That's more than the goal set aside in this account.",
+				"transaction_already_claimed": "That outflow has already been attributed.",
+				"transaction_not_found": "That outflow is no longer available to attribute."
+			}
+		},
 		"pledge": {
 			"transfer": "Record a transfer you've made",
 			"save": "Record money set aside",
@@ -4077,6 +4100,8 @@
 			"reserve_only": "Only a reserve can target a number of months of expenses.",
 			"no_expenses": "No month has expenses yet: choose a fixed amount.",
 			"not_reporting_currency": "Expenses are counted in a different currency than these accounts: choose a fixed amount.",
+			"kind_locked_once_consumed": "A goal with recorded spending cannot become a reserve.",
+			"below_consumed": "The target must cover the spending already recorded.",
 			"progress_basis_locked": "Reopen or restore this goal to change its progress basis.",
 			"kind_locked": "Reopen or restore this goal before changing its type.",
 			"invalid_quantity": "Invalid quantity: a number greater than zero, 18 decimals at most. Example: 12.5.",
@@ -4100,6 +4125,7 @@
 			"exchange_rate_unavailable": "Transfers between two currencies are not supported yet.",
 			"poor_contrast": "Poor contrast, choose a darker color."
 		},
+		"GOAL_SPEND_REFUSED": "This spending could not be recorded.",
 		"GOAL_STATE_INVALID": "This goal changed state in the meantime: this action no longer applies.",
 		"RECURRING_ALREADY_EXISTS": "A recurring transaction already tracks this account, merchant or name and amount.",
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "A recurring transfer already exists for this pair of accounts.",

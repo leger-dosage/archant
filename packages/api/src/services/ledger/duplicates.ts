@@ -159,6 +159,14 @@ async function absorbEntry(
 ): Promise<IsoDate> {
 	const absorbed = await transactionRow(tx, absorbedId);
 
+	// A merged debit must stay claimed even when its original row disappears.
+	if (absorbed.consumedGoalId !== null) {
+		await tx
+			.update(transactions)
+			.set({ consumedGoalId: absorbed.consumedGoalId })
+			.where(and(eq(transactions.entryId, survivorId), isNull(transactions.consumedGoalId)));
+	}
+
 	await tx.update(entryKeys).set({ entryId: survivorId }).where(eq(entryKeys.entryId, absorbedId));
 	// A pending entry suggested to repeat the absorbed line now repeats the
 	// survivor; set null on delete would drop the suggestion.

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "18642d47-07bc-4aab-b003-aec046230149",
+  "id": "0033e340-944e-467e-9a5f-6a284c147a73",
   "prevId": "ec8040b0-70f0-4b30-abc9-7822c6f31aa5",
   "tables": {
     "accounts": {
@@ -2368,14 +2368,6 @@
           "autoincrement": false,
           "default": "'one_off'"
         },
-        "progress_basis": {
-          "name": "progress_basis",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'balance'"
-        },
         "target_mode": {
           "name": "target_mode",
           "type": "text",
@@ -2390,6 +2382,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "consumed_amount": {
+          "name": "consumed_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
         },
         "completed_amount": {
           "name": "completed_amount",
@@ -2436,10 +2436,6 @@
         "goals_kind_check": {
           "name": "goals_kind_check",
           "value": "\"goals\".\"kind\" in ('one_off', 'maintained')"
-        },
-        "goals_progress_basis_check": {
-          "name": "goals_progress_basis_check",
-          "value": "\"goals\".\"progress_basis\" in ('balance', 'contributions')"
         },
         "goals_target_mode_check": {
           "name": "goals_target_mode_check",
@@ -6234,6 +6230,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "consumed_goal_id": {
+          "name": "consumed_goal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "locked_fields": {
           "name": "locked_fields",

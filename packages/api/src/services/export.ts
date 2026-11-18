@@ -691,6 +691,9 @@ type SplitLineRow = ExportedTransactionRow["splitLines"][number];
 function archantTransaction(transaction: ExportedTransactionRow["transaction"]) {
 	return {
 		pending: transaction.pending,
+		...(transaction.consumedGoalId === null
+			? {}
+			: { consumed_goal_id: transaction.consumedGoalId }),
 		// Sure's stored form, ISO 8601 text; a lock older than the times stays null.
 		locked_fields: Object.fromEntries(
 			Object.entries(transaction.lockedFields).map(([field, at]) => [
@@ -1415,6 +1418,7 @@ async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
 					progress_basis: goal.progressBasis,
 					target_mode: goal.targetMode,
 					target_months: goal.targetMonths,
+					consumed_amount: decimal(toMinorUnits(goal.consumedAmount), goal.currency),
 					completed_amount:
 						goal.completedAmount === null
 							? null

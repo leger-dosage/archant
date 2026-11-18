@@ -91,6 +91,7 @@ const progress = (overrides: Partial<Parameters<typeof goalProgress>[0]> = {}) =
 		kind: "one_off",
 		target: toMinorUnits(100_000),
 		saved: toMinorUnits(20_000),
+		consumedAmount: toMinorUnits(0),
 		targetDate: null,
 		today: "2026-09-21",
 		accounts: [],
@@ -99,9 +100,24 @@ const progress = (overrides: Partial<Parameters<typeof goalProgress>[0]> = {}) =
 	});
 
 describe("goalProgress", () => {
+	it("counts consumed money toward the target without increasing the remaining backing", () => {
+		expect(
+			progress({ consumedAmount: toMinorUnits(15_000), targetDate: "2026-10-21" }),
+		).toMatchObject({
+			saved: 20_000,
+			consumedAmount: 15_000,
+			progressAmount: 35_000,
+			remaining: 65_000,
+			percent: 35,
+			monthlyNeeded: 65_000,
+		});
+	});
+
 	it("has no monthly amount and no pace verdict without a date", () => {
 		expect(progress()).toEqual({
 			saved: 20_000,
+			consumedAmount: 0,
+			progressAmount: 20_000,
 			remaining: 80_000,
 			percent: 20,
 			monthlyNeeded: null,
@@ -200,6 +216,8 @@ describe("goalProgress of a reserve", () => {
 			progress({ kind: "maintained", saved: toMinorUnits(100_000), target: toMinorUnits(80_000) }),
 		).toEqual({
 			saved: 100_000,
+			consumedAmount: 0,
+			progressAmount: 100_000,
 			remaining: 0,
 			percent: 100,
 			monthlyNeeded: null,

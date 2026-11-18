@@ -4,7 +4,7 @@ import type { InferResponseType } from "hono/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 
-import type { GoalInput } from "@archant/api/schemas/goals";
+import type { GoalInput, GoalSpend } from "@archant/api/schemas/goals";
 import type { GoalEvent } from "@archant/data/goals";
 import { canBackGoal } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
@@ -89,6 +89,23 @@ function useInvalidateGoals() {
 	const queryClient = useQueryClient();
 
 	return () => queryClient.invalidateQueries({ queryKey: queryKeys.accounts.goals });
+}
+
+export function useGoalOutflows(id: string) {
+	return useQuery({
+		queryKey: [...queryKeys.accounts.goal(id), "outflows"],
+		queryFn: async () => (await unwrap(api.goals[":id"].outflows.$get({ param: { id } }))).data,
+	});
+}
+
+export function useSpendGoal(id: string) {
+	const invalidate = useInvalidateGoals();
+
+	return useMutation({
+		mutationFn: async (input: GoalSpend) =>
+			(await unwrap(api.goals[":id"].consume.$post({ param: { id }, json: input }))).data,
+		onSettled: invalidate,
+	});
 }
 
 export function useCreateGoal() {

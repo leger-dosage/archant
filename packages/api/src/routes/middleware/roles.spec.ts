@@ -58,6 +58,7 @@ const ADMIN_READS = [
 	"/api/prices",
 	"/api/securities",
 	"/api/transactions/x/rule-prompt",
+	"/api/goals/x/outflows",
 ];
 
 /** The query an administrator's read of these paths needs to answer 200. */
@@ -170,6 +171,7 @@ describe("a viewer's writes", () => {
 				"PUT /api/goals/x",
 				"DELETE /api/goals/x",
 				"POST /api/goals/x/x",
+				"POST /api/goals/x/consume",
 				"PUT /api/prices/settings",
 				"POST /api/prices/update",
 				"POST /api/accounts/x/trades",
@@ -308,7 +310,8 @@ describe("a viewer's reads", () => {
 
 		expect(refused.status).toBe(403);
 		await expect(refused.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
-		expect(allowed.status).toBe(200);
+		// The placeholder goal does not exist. Only the administrator reaches its lookup.
+		expect(allowed.status).toBe(path === "/api/goals/x/outflows" ? 404 : 200);
 	});
 });
 

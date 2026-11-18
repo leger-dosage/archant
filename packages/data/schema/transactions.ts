@@ -107,6 +107,8 @@ export const transactions = sqliteTable(
 		postedMatchDismissed: integer("posted_match_dismissed", { mode: "boolean" })
 			.notNull()
 			.default(false),
+		// Kept after a goal is deleted or reopened so a booked debit cannot be used twice.
+		consumedGoalId: text("consumed_goal_id"),
 		// Keys added only by `origin: "user"` ledger calls, read by every later
 		// writer; the owner's unlock clears them all at once (AD-10).
 		lockedFields: text("locked_fields", { mode: "json" })

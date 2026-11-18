@@ -2315,6 +2315,7 @@ describe("exportArchive", () => {
 				progress_basis: "balance",
 				target_mode: "fixed",
 				target_months: null,
+				consumed_amount: "0.00",
 				completed_amount: null,
 				completed_at: null,
 				created_at: "2026-09-21T10:00:00.000Z",

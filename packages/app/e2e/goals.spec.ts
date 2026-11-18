@@ -791,3 +791,51 @@ test("records, extends and cancels a deposit pledge", async ({ page, api }) => {
 	await expect(page.getByText(/14 jours restants/u)).toHaveCount(0);
 	await expect(page.getByText(/Les promesses en attente comblent le retard/u)).toHaveCount(0);
 });
+
+test("records a goal spend and claims a booked outflow without losing progress", async ({
+	page,
+	api,
+}) => {
+	const savings = await api.openAccount({
+		name: uniqueName("Épargne voyage"),
+		kind: "savings",
+		openingBalance: "1 000",
+		openingDate: daysAgo(30),
+	});
+	const other = await api.openAccount({
+		name: uniqueName("Épargne secondaire"),
+		kind: "savings",
+		openingBalance: "50",
+		openingDate: daysAgo(30),
+	});
+	const name = uniqueName("Voyage fictif");
+	const goal = await api.createGoal({
+		name,
+		targetAmount: "1000",
+		accounts: [{ accountId: savings.id }, { accountId: other.id, allocatedAmount: "50" }],
+	});
+	await api.addTransaction(savings.id, { date: daysAgo(1), label: "Train fictif", amount: "-100" });
+
+	await page.goto(`/goals/${goal.id}`);
+	const progress = page.getByRole("region", { name: "Progression" });
+	const outflows = page.getByRole("region", { name: "De l'argent est sorti de ces comptes" });
+	await expect(progress.getByRole("img", { name: /^95\s%/u })).toBeVisible();
+	await expect(outflows.getByText("Train fictif")).toBeVisible();
+
+	await page.getByRole("button", { name: "J'ai utilisé une partie de cet argent" }).click();
+	const dialog = page.getByRole("dialog", { name: "Enregistrer une dépense" });
+	await dialog.getByLabel("Combien avez-vous utilisé ?").fill("50");
+	await dialog.getByRole("combobox", { name: "Depuis quel compte ?" }).click();
+	await page.getByRole("option", { name: other.name }).click();
+	await dialog.getByRole("button", { name: "Enregistrer", exact: true }).click();
+	await expect(dialog).toBeHidden();
+	await expect(progress).toContainText(`Dont ${euros(5_000)} déjà utilisés`);
+
+	await outflows.getByRole("button", { name: "C'était ça" }).click();
+	await expect(outflows).toBeHidden();
+	await expect(progress.getByRole("img", { name: /^100\s%/u })).toBeVisible();
+	await expect(progress).toContainText(`Dont ${euros(15_000)} déjà utilisés`);
+
+	await page.goto("/goals");
+	await expect(card(page, name)).toContainText(`Dont ${euros(15_000)} déjà utilisés`);
+});
