@@ -3391,8 +3391,8 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
-	it("preserves an expense-based reserve and its account link when widening the month bound", async () => {
-		const before = await migratedBefore("0106");
+	it("preserves reserves, linked accounts and pledges when widening the month bound", async () => {
+		const before = await migratedBefore("0109_goal_target_months_precision");
 		await insertAccount(before, "a1", "depository", "savings");
 		await insertGoal(before, "g1", { kind: "maintained" });
 		await before.run(
@@ -3401,16 +3401,23 @@ describe("goals", () => {
 		await before.run(
 			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
 		);
+		await insertGoal(before, "g2");
+		await before.run(
+			sql`insert into goal_pledges (id, goal_id, account_id, amount, currency, created_at, expires_at) values ('p1', 'g2', 'a1', 25000, 'EUR', 0, 1000)`,
+		);
 		before.$client.close();
 
 		const database = await migrated();
 
 		await expect(
-			database.all(sql`select id, target_mode, target_months from goals`),
+			database.all(sql`select id, target_mode, target_months from goals where id = 'g1'`),
 		).resolves.toEqual([{ id: "g1", target_mode: "months_of_expenses", target_months: 6 }]);
 		await expect(
 			database.all(sql`select goal_id, account_id, allocated_amount from goal_accounts`),
 		).resolves.toEqual([{ goal_id: "g1", account_id: "a1", allocated_amount: 30_000 }]);
+		await expect(
+			database.all(sql`select id, goal_id, account_id, amount from goal_pledges`),
+		).resolves.toEqual([{ id: "p1", goal_id: "g2", account_id: "a1", amount: 25_000 }]);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 

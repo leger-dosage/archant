@@ -761,8 +761,15 @@
     {
       "idx": 108,
       "version": "6",
-      "when": 1795028656804,
-      "tag": "0108_goal_target_months_precision",
+      "when": 1795028656837,
+      "tag": "0108_add_goal_pledges",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "6",
+      "when": 1795032852944,
+      "tag": "0109_goal_target_months_precision",
       "breakpoints": true
     }
   ]

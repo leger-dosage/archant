@@ -1,5 +1,6 @@
 import type { CategoryIcon } from "../category-presets.ts";
 import type { GoalKind, GoalState, GoalTargetMode } from "../goals.ts";
+import type { CurrencyCode } from "../money.ts";
 
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
@@ -7,6 +8,7 @@ import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-or
 import { GOAL_KINDS, GOAL_STATES, GOAL_TARGET_MODES, GOAL_TARGET_MONTHS_MAX } from "../goals.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
+import { entries } from "./entries.ts";
 
 /**
  * Sure's `Goal`: a target the household saves toward, filled by its linked
@@ -102,5 +104,56 @@ export const goalAccounts = sqliteTable(
 		index("goal_accounts_account").on(table.accountId),
 		// A null amount passes: a comparison with null is not false.
 		check("goal_accounts_allocated_amount_check", sql`${table.allocatedAmount} >= 0`),
+	],
+);
+
+const PLEDGE_STATES = ["open", "matched", "cancelled"] as const;
+
+export const goalPledges = sqliteTable(
+	"goal_pledges",
+	{
+		id: text("id").primaryKey(),
+		goalId: text("goal_id")
+			.notNull()
+			.references(() => goals.id, { onDelete: "cascade" }),
+		accountId: text("account_id")
+			.notNull()
+			.references(() => accounts.id, { onDelete: "cascade" }),
+		amount: integer("amount").notNull(),
+		currency: text("currency").$type<CurrencyCode>().notNull(),
+		status: text("status").$type<(typeof PLEDGE_STATES)[number]>().notNull().default("open"),
+		createdAt: integer("created_at").notNull(),
+		expiresAt: integer("expires_at").notNull(),
+		matchedDate: text("matched_date"),
+	},
+	(table) => [
+		index("goal_pledges_goal").on(table.goalId),
+		index("goal_pledges_account_status").on(table.accountId, table.status, table.expiresAt),
+		check("goal_pledges_amount_check", sql`${table.amount} > 0`),
+		check("goal_pledges_status_check", sql`${table.status} in ${inList(PLEDGE_STATES)}`),
+		check(
+			"goal_pledges_match_check",
+			sql`${table.matchedDate} is null or ${table.status} = 'matched'`,
+		),
+	],
+);
+
+/**
+ * Ledger sources waiting for reconciliation after commit. A claimed source
+ * keeps its stamp even if the goal is deleted. An entry's deletion removes
+ * its stamp with it, as that ledger identity can no longer be retried.
+ */
+export const goalDeposits = sqliteTable(
+	"goal_deposits",
+	{
+		entryId: text("entry_id")
+			.primaryKey()
+			.references(() => entries.id, { onDelete: "cascade" }),
+		snapshotDelta: integer("snapshot_delta"),
+		claimed: integer("claimed", { mode: "boolean" }).notNull().default(false),
+	},
+	(table) => [
+		index("goal_deposits_claimed").on(table.claimed),
+		check("goal_deposits_snapshot_delta_check", sql`${table.snapshotDelta} > 0`),
 	],
 );

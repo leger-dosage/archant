@@ -1,3 +1,5 @@
+import type { Logger } from "../lib/logger.ts";
+
 import type { Database } from "@archant/data/client";
 
 /**
@@ -13,4 +15,5 @@ export type ServiceDeps = {
 	db: Pick<Database, "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction">;
 	/** IANA zone that decides which calendar day "today" is. */
 	timeZone: string;
+	logger?: Logger | undefined;
 };
