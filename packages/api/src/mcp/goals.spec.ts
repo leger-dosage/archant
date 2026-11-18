@@ -12,8 +12,8 @@ import {
 	buildApp,
 	mortgage,
 	openOwn,
+	sendOwn,
 	ownDatabase,
-	postOwn,
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
@@ -24,6 +24,7 @@ import {
 	connect,
 	mcp,
 	registerClient,
+	resultOf,
 } from "../testing/assistant.ts";
 import { TEST_ORIGIN, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
@@ -59,6 +60,7 @@ async function assistants() {
 	await db.delete(assistantCalls);
 
 	return {
+		list: async () => resultOf(await mcp(app, author, "tools/list")),
 		read: (name: string, args: unknown = {}) => callTool(app, reader, name, args),
 		write: (name: string, args: unknown = {}) => callTool(app, author, name, args),
 		refused: (name: string, args: unknown = {}) =>
@@ -130,6 +132,9 @@ async function fromRoutes(path: string) {
 }
 
 const storedGoal = z.object({
+	kind: z.string(),
+	targetMode: z.string(),
+	notes: z.string().nullable(),
 	targetAmount: z.number(),
 	color: z.string(),
 	icon: z.string().nullable(),
@@ -185,7 +190,12 @@ describe("create_goal", () => {
 		});
 		const stored = storedGoal.parse(await fromRoutes(`/api/goals/${answer.goal_id}`));
 
-		expect(stored.targetAmount).toBe(500_000);
+		expect(stored).toMatchObject({
+			kind: "one_off",
+			targetMode: "fixed",
+			targetAmount: 500_000,
+			notes: "Grèce",
+		});
 		expect(stored.accounts).toEqual([
 			expect.objectContaining({ name: "Livret A", allocatedAmount: null }),
 		]);
@@ -226,40 +236,52 @@ describe("create_goal", () => {
 		]);
 	});
 
-	it("creates a reserve of six months of expenses, Archant's own kind, its target the one it stores", async () => {
+	it("advertises only Sure's six parameters", async () => {
 		await household();
-		const checking = await savings("100 000", { name: "Compte courant", subtype: "checking" });
-		await postOwn(checking.id, { date: "2026-06-10", label: "Courses", amount: "-2 000" });
-		await postOwn(checking.id, { date: "2026-07-10", label: "Courses", amount: "-1 000" });
-		await postOwn(checking.id, { date: "2026-08-10", label: "Courses", amount: "-3 000" });
-		await savings("3 000");
+		const tools = await assistants();
+		const schema = z.object({
+			tools: z.array(
+				z.object({
+					name: z.string(),
+					inputSchema: z.object({ properties: z.record(z.string(), z.unknown()) }),
+				}),
+			),
+		});
+		const tool = schema.parse(await tools.list()).tools.find(({ name }) => name === "create_goal");
+
+		expect(Object.keys(tool?.inputSchema.properties ?? {}).toSorted()).toEqual([
+			"earmarks",
+			"linked_account_names",
+			"name",
+			"notes",
+			"target_amount",
+			"target_date",
+		]);
+	});
+
+	it.each([
+		["kind", "maintained"],
+		["target_months", 6],
+	] as const)("refuses the former %s argument as unknown before writing", async (key, value) => {
+		await household();
+		await savings("1 000");
 		const tools = await assistants();
 
-		const answer = created.parse(
-			(
-				await tools.write("create_goal", {
-					name: "Urgences",
-					kind: "maintained",
-					target_months: 6,
-					linked_account_names: ["Livret A"],
-				})
-			).structuredContent,
-		);
-
-		expect(answer).toMatchObject({
-			target_amount_formatted: money("12 000,00 €"),
-			target_date: null,
+		const result = await tools.write("create_goal", {
+			name: "Urgences",
+			target_amount: 1000,
+			linked_account_names: ["Livret A"],
+			[key]: value,
 		});
-		const stored = storedGoal.parse(await fromRoutes(`/api/goals/${answer.goal_id}`));
 
-		expect(stored.targetAmount).toBe(1_200_000);
+		expect(refusalOf(result)).toMatchObject({ error: `${key} unrecognized_keys` });
+		await expect(goalRows()).resolves.toEqual([]);
 	});
 
 	it("refuses in Sure's order and words, writing nothing", async () => {
 		await household();
 		await savings("1 000");
 		const tools = await assistants();
-		const accounts = ["Livret A"];
 
 		const nameless = refusalOf(
 			await tools.write("create_goal", {
@@ -273,13 +295,6 @@ describe("create_goal", () => {
 				name: "Vacances",
 				target_amount: "abc",
 				linked_account_names: [],
-			}),
-		);
-		const reserveWithout = refusalOf(
-			await tools.write("create_goal", {
-				name: "Urgences",
-				kind: "maintained",
-				linked_account_names: accounts,
 			}),
 		);
 		const none = refusalOf(
@@ -304,7 +319,6 @@ describe("create_goal", () => {
 			error: "target_amount_invalid",
 			message: "Target amount must be greater than zero.",
 		});
-		expect(reserveWithout.error).toBe("target_amount_invalid");
 		expect(Object.keys(none)).toEqual(["success", "error", "message", "available_accounts"]);
 		expect(none).toEqual({
 			success: false,
@@ -314,7 +328,7 @@ describe("create_goal", () => {
 		});
 		await expect(goalRows()).resolves.toEqual([]);
 		expect(await calls()).toEqual(
-			Array.from({ length: 4 }, () => ({
+			Array.from({ length: 3 }, () => ({
 				tool: "create_goal",
 				outcome: "VALIDATION_ERROR",
 				changedRows: 0,
@@ -348,6 +362,50 @@ describe("create_goal", () => {
 			message: "Some account names didn't match the user's Depository accounts.",
 			unknown_names: ["livret a", "Prêt immobilier"],
 			available_accounts: [expect.objectContaining({ name: "Livret A" })],
+		});
+		await expect(goalRows()).resolves.toEqual([]);
+	});
+
+	it("lists only active depository accounts when an investment or deactivated account is named", async () => {
+		await household();
+		await savings("1 000");
+		await savings("500", { name: "Compte courant", subtype: "checking" });
+		const inactive = await savings("2 000", { name: "Livret fermé" });
+		await sendOwn("PATCH", `/api/accounts/${inactive.id}`, { active: false });
+		await openOwn({
+			name: "PEA",
+			type: "investment",
+			subtype: "pea",
+			openingBalance: "100",
+			openingDate: "2025-01-01",
+		});
+		const tools = await assistants();
+
+		const refusal = refusalOf(
+			await tools.write("create_goal", {
+				name: "Vacances",
+				target_amount: 100,
+				linked_account_names: ["PEA", "Livret fermé"],
+			}),
+		);
+
+		expect(refusal).toMatchObject({
+			error: "unknown_accounts",
+			unknown_names: ["PEA", "Livret fermé"],
+			available_accounts: [
+				{
+					name: "Compte courant",
+					currency: "EUR",
+					free_to_earmark: money("500,00 €"),
+					claimed_in_full: false,
+				},
+				{
+					name: "Livret A",
+					currency: "EUR",
+					free_to_earmark: money("1 000,00 €"),
+					claimed_in_full: false,
+				},
+			],
 		});
 		await expect(goalRows()).resolves.toEqual([]);
 	});
@@ -467,7 +525,7 @@ describe("create_goal", () => {
 				{
 					name: "Livret A",
 					currency: "EUR",
-					free_to_earmark: money("0,00 €"),
+					free_to_earmark: money("1 000,00 €"),
 					claimed_in_full: true,
 				},
 			],
@@ -484,46 +542,11 @@ describe("create_goal", () => {
 		expect(earmarked.isError).toBeUndefined();
 	});
 
-	it("refuses Archant's own checks as Sure's validation_failed, a reserve's date among them", async () => {
+	it("reports the goal service's validation refusals as Sure's validation_failed", async () => {
 		await household();
 		await savings("1 000");
-		await savings("1 000", { name: "Savings", currency: "USD" });
 		const tools = await assistants();
 
-		const dated = refusalOf(
-			await tools.write("create_goal", {
-				name: "Urgences",
-				kind: "maintained",
-				target_amount: 1000,
-				target_date: "2027-06-30",
-				linked_account_names: ["Livret A"],
-			}),
-		);
-		const foreign = refusalOf(
-			await tools.write("create_goal", {
-				name: "Urgences",
-				kind: "maintained",
-				target_months: 6,
-				linked_account_names: ["Savings"],
-			}),
-		);
-		const oneOff = refusalOf(
-			await tools.write("create_goal", {
-				name: "Vacances",
-				target_amount: 1000,
-				target_months: 3,
-				linked_account_names: ["Livret A"],
-			}),
-		);
-		const both = refusalOf(
-			await tools.write("create_goal", {
-				name: "Urgences",
-				kind: "maintained",
-				target_amount: 1000,
-				target_months: 6,
-				linked_account_names: ["Livret A"],
-			}),
-		);
 		const tooLong = refusalOf(
 			await tools.write("create_goal", {
 				name: "V".repeat(101),
@@ -532,22 +555,6 @@ describe("create_goal", () => {
 			}),
 		);
 
-		expect(dated).toEqual({
-			success: false,
-			error: "validation_failed",
-			message: "Target date can't be set on a reserve you maintain",
-		});
-		expect(foreign.message).toBe(
-			"Months of expenses only apply to accounts in the reporting currency",
-		);
-		expect(oneOff.message).toBe(
-			"Only a reserve you maintain can have a target set in months of expenses.",
-		);
-		expect(both).toEqual({
-			success: false,
-			error: "validation_failed",
-			message: "Give target_amount or target_months, not both",
-		});
 		expect(tooLong).toEqual({
 			success: false,
 			error: "validation_failed",
@@ -582,15 +589,19 @@ describe("create_goal", () => {
 		await savings("1 000");
 		const tools = await assistants();
 		const whole = { target_amount: 1000, linked_account_names: ["Livret A"] };
-		const goalOn = async (name: string) =>
-			created.parse((await tools.write("create_goal", { name, ...whole })).structuredContent)
-				.goal_id;
+		const goalOn = async (name: string, earmarks?: Record<string, number>) =>
+			created.parse(
+				(await tools.write("create_goal", { name, ...whole, earmarks })).structuredContent,
+			).goal_id;
 
 		await send(await goalOn("Fini"), "complete");
 		await send(await goalOn("Archivé"), "archive");
 		const paused = await goalOn("En pause");
 
 		await send(paused, "pause");
+		await send(await goalOn("Achat terminé", { "Livret A": 100 }), "complete");
+		await send(await goalOn("Achat archivé", { "Livret A": 200 }), "archive");
+		await send(await goalOn("Achat en pause", { "Livret A": 350 }), "pause");
 		const blocked = refusalOf(await tools.write("create_goal", { name: "Encore", ...whole }));
 
 		expect(blocked).toMatchObject({
@@ -599,7 +610,7 @@ describe("create_goal", () => {
 				{
 					name: "Livret A",
 					currency: "EUR",
-					free_to_earmark: money("0,00 €"),
+					free_to_earmark: money("650,00 €"),
 					claimed_in_full: true,
 				},
 			],
@@ -616,7 +627,7 @@ describe("create_goal", () => {
 				{
 					name: "Livret A",
 					currency: "EUR",
-					free_to_earmark: money("1 000,00 €"),
+					free_to_earmark: money("650,00 €"),
 					claimed_in_full: false,
 				},
 			],

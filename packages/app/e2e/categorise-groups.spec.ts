@@ -3,6 +3,7 @@ import type { APIRequestContext, Page } from "@playwright/test";
 import { z } from "zod";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
 
 // Story 32.12: Sure's quick-categorise wizard. The database is shared by the
 // run, so the groups of other files sort beside these: each test reads its
@@ -171,4 +172,65 @@ test("past the last group, the wizard goes back to « Opérations », as Sure's 
 
 	await expect(page).toHaveURL(/\/transactions$/u);
 	await expect(page.getByText("Toutes les opérations sont catégorisées")).toBeVisible();
+});
+
+test("household preferences save each edit and change the displayed transaction date", async ({
+	page,
+	api,
+	request,
+}) => {
+	const path = "/api/preferences/household";
+	const label = uniqueName("LIBRAIRIE");
+	const account = await api.openAccount({ openingDate: daysAgo(10) });
+	const date = daysAgo(3);
+	await api.addTransaction(account.id, { date, label, amount: "-12,00" });
+	const original = await request.get(path);
+	expect(original.ok()).toBe(true);
+
+	try {
+		await page.goto("/settings/preferences");
+		const select = async (field: string, option: string) => {
+			const choice = page.getByRole("combobox", { name: field, exact: true });
+			await choice.click();
+			await page.getByRole("option", { name: option, exact: true }).click();
+			await expect(choice).toHaveText(option);
+		};
+
+		await expect(page.getByRole("textbox", { name: "Devise de base" })).toHaveValue(/EUR/u);
+		await expect(page.getByRole("textbox", { name: "Devise de base" })).not.toBeEditable();
+		await select("Fuseau horaire", "UTC");
+		await select("Pays", "Suisse");
+		await select("Format de date", "YYYY.MM.DD");
+		await select("Le mois budgétaire commence le", "28");
+
+		await page.reload();
+		await expect(page.getByRole("combobox", { name: "Fuseau horaire" })).toHaveText("UTC");
+		await expect(page.getByRole("combobox", { name: "Pays", exact: true })).toHaveText("Suisse");
+		await expect(page.getByRole("combobox", { name: "Format de date" })).toHaveText("YYYY.MM.DD");
+		await expect(page.getByRole("combobox", { name: "Le mois budgétaire commence le" })).toHaveText(
+			"28",
+		);
+		await expect(page.getByRole("textbox", { name: "Devise de base" })).toHaveValue(/EUR/u);
+
+		await page.goto(`/transactions/categorize?position=${await positionOf(request, label)}`);
+		const row = page.getByRole("listitem").filter({ hasText: label });
+		await expect(row.getByText(date.replaceAll("-", "."))).toBeVisible();
+	} finally {
+		const { data } = z
+			.object({
+				data: z.object({
+					country: z.string(),
+					timeZone: z.string(),
+					dateFormat: z.string(),
+					monthStartDay: z.number(),
+				}),
+			})
+			.parse(await original.json());
+		const restored = await request.patch(path, { data });
+		expect(restored.ok(), await restored.text()).toBe(true);
+		const removed = await request.delete(`/api/accounts/${account.id}`, {
+			headers: { origin: WEB_URL },
+		});
+		expect(removed.ok(), await removed.text()).toBe(true);
+	}
 });

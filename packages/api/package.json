@@ -13,6 +13,7 @@
 		"./schemas/csv-imports": "./src/schemas/csv-imports.ts",
 		"./schemas/dashboard-layout": "./src/schemas/dashboard-layout.ts",
 		"./schemas/goals": "./src/schemas/goals.ts",
+		"./schemas/household-preferences": "./src/schemas/household-preferences.ts",
 		"./schemas/holdings": "./src/schemas/holdings.ts",
 		"./schemas/imports": "./src/schemas/imports.ts",
 		"./schemas/invitations": "./src/schemas/invitations.ts",

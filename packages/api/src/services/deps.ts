@@ -11,6 +11,6 @@ export type ServiceDeps = {
 	 * `transaction` call becomes a savepoint.
 	 */
 	db: Pick<Database, "select" | "selectDistinct" | "insert" | "update" | "delete" | "transaction">;
-	/** IANA zone that decides which calendar day "today" is (`APP_TIMEZONE`). */
+	/** IANA zone that decides which calendar day "today" is. */
 	timeZone: string;
 };

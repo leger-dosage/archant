@@ -298,7 +298,7 @@ async function subscriptionRollup(
 	rows: readonly BillRecord[],
 	day: IsoDate,
 ): Promise<SubscriptionRollup> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(db);
 	const active = rows.filter((row) => row.status === "active");
 	const counted = active.filter((row) => row.currency === currency);
 	const sums = active.length === 0 ? null : monthlyRollup(counted);

@@ -15,6 +15,7 @@ export const preferencesSchema = z.object({
 	// The chart period an administrator last picked, Sure's `default_period`.
 	defaultPeriod: z.enum(SURE_PERIODS).optional(),
 	showSplitGrouped: z.boolean().optional(),
+	manualReconciliation: z.boolean().optional(),
 	// Null goes back to the browser's language, Sure's blank `locale`.
 	locale: z.enum(LOCALES).nullable().optional(),
 	// The household's, Sure's `families.locale`: an administrator's write, which

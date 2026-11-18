@@ -2,7 +2,6 @@ import type { ServiceDeps } from "./deps.ts";
 
 import { and, eq, inArray } from "drizzle-orm";
 
-import { FUNDABLE_ACCOUNT_TYPES } from "@archant/data/goals";
 import { accounts } from "@archant/data/schema/accounts";
 import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
@@ -178,10 +177,8 @@ export async function accountsNamed(deps: ServiceDeps, name: string): Promise<st
 type FundableAccount = { id: string; name: string; currency: string };
 
 /**
- * Every account these exact names, case included, name among those that may
- * back a goal, active and fundable as `canBackGoal` says, as Sure's
- * `create_goal` looks among the visible `Depository` accounts: a name two
- * accounts share gives both, so the tool refuses it rather than pick one.
+ * Exact name matches among active depository accounts, as in Sure's
+ * `create_goal`. Return every match so the tool can refuse ambiguous names.
  */
 export async function fundableAccountsNamed(
 	deps: ServiceDeps,
@@ -198,7 +195,7 @@ export async function fundableAccountsNamed(
 			and(
 				inArray(accounts.name, [...new Set(names)]),
 				eq(accounts.active, true),
-				inArray(accounts.type, [...FUNDABLE_ACCOUNT_TYPES]),
+				eq(accounts.type, "depository"),
 			),
 		)
 		.orderBy(accounts.name, accounts.id);
