@@ -117,6 +117,13 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return url.pathname === "/" && url.search === "" && url.hash === "";
 				}),
+			SMTP_ADDRESS: z.union([z.hostname(), z.ipv4(), z.ipv6()]).optional(),
+			SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(465),
+			SMTP_USERNAME: z.string().optional(),
+			SMTP_PASSWORD: z.string().optional(),
+			SMTP_TLS_ENABLED: z.stringbool({ truthy: ["true"], falsy: ["false"] }).default(true),
+			SMTP_TLS_SKIP_VERIFY: z.stringbool({ truthy: ["true"], falsy: ["false"] }).default(false),
+			EMAIL_SENDER: z.email().default("sender@archant.local"),
 			// The reverse proxies whose `x-forwarded-for` is believed. Empty, the
 			// client address is the TCP peer and no header can forge it.
 			TRUSTED_PROXIES: z
@@ -222,19 +229,19 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.refine(isHttpsOrLoopback)
 				.default("https://query1.finance.yahoo.com"),
 		},
-		// One variable of the pair alone is a half-finished setup: the stored
-		// credentials would silently apply instead, so startup names the other.
+		// A single credential would leave a half-configured integration.
 		createFinalSchema: (shape) =>
 			z.object(shape).superRefine((env, context) => {
-				const pair = ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY"] as const;
-				const [first, second] = pair.map((name) => env[name] !== undefined);
-
-				if (first !== second) {
-					context.addIssue({
-						code: "custom",
-						path: [first === true ? pair[1] : pair[0]],
-						message: "missing_pair",
-					});
+				const bank = ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY"] as const;
+				const mail = ["SMTP_USERNAME", "SMTP_PASSWORD"] as const;
+				for (const [first, second] of env.SMTP_ADDRESS ? [bank, mail] : [bank]) {
+					if ((env[first] === undefined) !== (env[second] === undefined)) {
+						context.addIssue({
+							code: "custom",
+							path: [env[first] === undefined ? first : second],
+							message: "missing_pair",
+						});
+					}
 				}
 			}),
 		runtimeEnv,

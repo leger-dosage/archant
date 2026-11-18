@@ -15,6 +15,7 @@ const PUBLIC_PREFIXES = ["/api/auth/"];
 const PUBLIC_PATHS = new Set([
 	"/api/auth",
 	"/api/setup",
+	"/api/password-reset",
 	"/api/health",
 	"/api/sync",
 	"/api/mcp",

@@ -51,6 +51,7 @@
 		"fflate": "^0.8.3",
 		"hono": "catalog:",
 		"jose": "^6.2.12",
+		"nodemailer": "^10.6.0",
 		"ofx-js": "1.1.1",
 		"papaparse": "^5.7.0",
 		"pino": "^10.3.1",
@@ -59,6 +60,7 @@
 	},
 	"devDependencies": {
 		"@types/node": "catalog:",
+		"@types/nodemailer": "^8.0.2",
 		"@types/papaparse": "^5.5.2",
 		"@vitest/coverage-v8": "^5.0.2",
 		"msw": "^2.15.0",

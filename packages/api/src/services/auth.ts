@@ -1,4 +1,5 @@
 import type { Logger } from "../lib/logger.ts";
+import type { SendPasswordReset } from "./email-password-reset.ts";
 import type { ClientMetadataResourceFetch } from "@better-auth/oauth-provider";
 
 import { cimd } from "@better-auth/cimd";
@@ -30,6 +31,7 @@ import {
 } from "@archant/data/schema/oauth";
 
 import { firstNameSchema } from "../schemas/setup.ts";
+import { emailPasswordReset } from "./email-password-reset.ts";
 import { oneTimeTotp } from "./one-time-totp.ts";
 
 export type AuthOptions = {
@@ -41,6 +43,7 @@ export type AuthOptions = {
 	/** `TRUSTED_PROXIES`: the proxies Better Auth walks past in `x-forwarded-for`. */
 	trustedProxies: string[];
 	logger: Logger;
+	sendPasswordReset?: SendPasswordReset;
 	/**
 	 * How a Client ID Metadata Document is fetched: `@better-auth/cimd/node`'s,
 	 * which resolves the name once, refuses every non-public address and
@@ -149,6 +152,8 @@ function assistantPlugins(baseURL: string, fetchMetadata: ClientMetadataResource
  */
 const OAUTH_CLIENT_PATHS = ["/oauth2/create-client", "/oauth2/update-client"];
 
+const PASSWORD_RESET_PATHS = ["/request-password-reset", "/reset-password"];
+
 /**
  * The admin plugin supplies the `role` field and the server-side `createUser`
  * setup uses; its HTTP endpoints would let the signed-in admin create a
@@ -206,6 +211,7 @@ export function createAuth({
 	baseURL,
 	trustedProxies,
 	logger,
+	sendPasswordReset,
 	fetchClientMetadataResource: fetchMetadata = fetchClientMetadataResource,
 }: AuthOptions) {
 	const auth = betterAuth({
@@ -215,6 +221,7 @@ export function createAuth({
 			provider: "sqlite",
 			usePlural: true,
 			schema: AUTH_SCHEMA,
+			transaction: sendPasswordReset !== undefined,
 		}),
 		account: { modelName: "auth_accounts" },
 		// No public sign-up: setup creates the administrator.
@@ -233,6 +240,7 @@ export function createAuth({
 			// After `twoFactor`, whose model it adds a field to: a TOTP code
 			// works once.
 			oneTimeTotp(),
+			...(sendPasswordReset ? [emailPasswordReset(baseURL, sendPasswordReset, logger)] : []),
 			...(assistantsAvailable(baseURL) ? assistantPlugins(baseURL, fetchMetadata) : []),
 		],
 		databaseHooks: {
@@ -260,7 +268,11 @@ export function createAuth({
 				},
 			},
 		},
-		disabledPaths: [...ADMIN_PATHS, ...OAUTH_CLIENT_PATHS],
+		disabledPaths: [
+			...ADMIN_PATHS,
+			...OAUTH_CLIENT_PATHS,
+			...(sendPasswordReset ? [] : PASSWORD_RESET_PATHS),
+		],
 		// `x-forwarded-for` is rebuilt from the TCP peer before Better Auth sees
 		// it (lib/client-address.ts); this list is where its walk stops.
 		advanced: { ipAddress: { trustedProxies } },
@@ -268,7 +280,15 @@ export function createAuth({
 		// so a server started any other way still slows down password guessing,
 		// and tests see the behaviour that ships. In the database, not in
 		// memory: a restart would otherwise hand every address a fresh allowance.
-		rateLimit: { enabled: true, storage: "database" },
+		rateLimit: {
+			enabled: true,
+			storage: "database",
+			customRules: {
+				"/request-password-reset": { window: 60, max: 3 },
+				"/reset-password": { window: 60, max: 5 },
+				"/check-password-reset": { window: 60, max: 10 },
+			},
+		},
 		telemetry: { enabled: false },
 		logger: {
 			// The message only: Better Auth's arguments can carry an email or a

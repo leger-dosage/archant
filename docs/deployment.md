@@ -399,7 +399,19 @@ Once a day is enough, whether from the daily time, the first visit or the cron: 
 
 Signed in, change the password in « Réglages » › « Sécurité ». That closes the sessions open on other devices.
 
-A lost password has no reset by email: Archant sends no mail and holds no reset token. The way back in is a shell on the machine running the API:
+### Recover a password by email
+
+Set `SMTP_ADDRESS` to your mail relay's hostname and `EMAIL_SENDER` to a sender address the relay accepts. The default sender is `sender@archant.local`. Supply both `SMTP_USERNAME` and `SMTP_PASSWORD` if the relay requires authentication. Keep the password in your environment or the ignored `.env` file.
+
+- `SMTP_PORT` defaults to 465. `SMTP_TLS_ENABLED=true` opens a connection with implicit Transport Layer Security (TLS).
+- For a relay using STARTTLS, set `SMTP_TLS_ENABLED=false` and the relay's port, usually 587. Archant requires the TLS upgrade except for an unauthenticated relay on loopback.
+- `SMTP_TLS_SKIP_VERIFY` defaults to `false`. Setting it to `true` disables verification of the relay's TLS certificate.
+
+Set the browser's public origin with `ARCHANT_URL` in Compose or `BETTER_AUTH_URL` on a plain Node host, then restart. The sign-in page shows « Mot de passe oublié ? » when the relay is configured. The link expires after fifteen minutes. Setting a new password closes browser sessions and invalidates earlier links. The member still needs their second factor.
+
+### Recover access from the server
+
+Without `SMTP_ADDRESS`, email recovery is disabled. Use a shell on the machine running the API:
 
 ```bash
 pnpm api reset-password admin@example.com

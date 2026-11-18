@@ -6,6 +6,11 @@ import { authClient } from "@/lib/auth-client";
  * Auth's own `{ data, error }`; the page decides what an error means.
  */
 const AUTH_ACTIONS = {
+	requestPasswordReset: async (email: string) => authClient.requestPasswordReset({ email }),
+	checkPasswordReset: async (token: string, signal: AbortSignal) =>
+		authClient.$fetch("/check-password-reset", { method: "POST", body: { token }, signal }),
+	resetPassword: async (token: string, newPassword: string) =>
+		authClient.resetPassword({ token, newPassword }),
 	signIn: async (credentials: { email: string; password: string }) =>
 		authClient.signIn.email(credentials),
 	verifyTotp: async (code: string) => authClient.twoFactor.verifyTotp({ code }),

@@ -6,6 +6,7 @@ import type { TransactionFilters } from "@/lib/transaction-filters";
 export const queryKeys = {
 	/** Better Auth's session, `null` when signed out (lib/auth-client.ts). */
 	session: ["session"] as const,
+	passwordResetAvailability: ["password-reset-availability"] as const,
 	accounts: {
 		all: ["accounts"] as const,
 		detail: (id: string) => ["accounts", "detail", id] as const,
