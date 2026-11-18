@@ -47,6 +47,7 @@ export const ruleBodySchema = z.object({
 	// Sure's `rule_params` permits `active`; the form never sends it, so a new
 	// rule waits for its confirmation and an edit keeps the switch.
 	enabled: z.boolean().optional(),
+	stopProcessing: z.boolean().optional(),
 	effectiveDate: z.string().nullable().optional(),
 	conditions: z.array(conditionBody.extend({ conditions: z.array(conditionBody).optional() })),
 	actions: z.array(
@@ -57,6 +58,8 @@ export const ruleBodySchema = z.object({
 		}),
 	),
 });
+
+export const ruleOrderSchema = z.object({ ids: z.array(z.string().min(1)) });
 
 export const ruleEnabledSchema = z.object({ enabled: z.boolean() });
 
@@ -70,6 +73,7 @@ const leafFields = {
 };
 
 const fields = {
+	stopProcessing: ruleBodySchema.shape.stopProcessing,
 	// A blank name is no name: the list shows the summary instead.
 	name: z
 		.string()

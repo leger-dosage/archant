@@ -365,6 +365,9 @@ async function importBudgets(
 	});
 }
 
+const positionOf = (value: unknown) =>
+	typeof value === "number" && Number.isSafeInteger(value) ? value : Infinity;
+
 /**
  * Rules through `createRule`, inside the import's transaction. A rule Archant
  * refuses is skipped, and the categories, merchants and tags only it named
@@ -378,7 +381,10 @@ async function importRules(
 ): Promise<void> {
 	const scoped = { ...deps, db: tx };
 
-	await oneByOne(plan.rules, async (data) => {
+	// Older archives emit rules in creation order and omit their position.
+	const ordered = plan.rules.toSorted((a, b) => positionOf(a.position) - positionOf(b.position));
+
+	await oneByOne(ordered, async (data) => {
 		const context: RuleContext = { ...shared, missing: new Map() };
 		const input = ruleInputOf(context, data);
 
