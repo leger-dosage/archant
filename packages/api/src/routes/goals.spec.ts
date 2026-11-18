@@ -2,10 +2,13 @@ import type { Auth } from "../services/auth.ts";
 import type { TestApp } from "../testing/auth.ts";
 
 import { sql } from "drizzle-orm";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
+import { createDb } from "@archant/data/client";
+
 import { createLogger } from "../lib/logger.ts";
+import { refreshReserveTargets } from "../services/goal-reserve-targets.ts";
 import {
 	buildApp,
 	errorBody,
@@ -1061,8 +1064,17 @@ async function storedTargets() {
 	);
 }
 
+async function refreshedMonth() {
+	const { db } = await own();
+	return (
+		await db.all<{ value: string }>(
+			sql`select value from settings where key = 'goal_targets_refreshed_month'`,
+		)
+	)[0]?.value;
+}
+
 describe("a reserve", () => {
-	it("aims for its months times the median monthly expenses, read again as they move", async () => {
+	it("reads the stored target and keeps it when renamed during the same month", async () => {
 		await spent(THREE_MONTHS);
 		const account = await savings("3 000");
 
@@ -1087,14 +1099,192 @@ describe("a reserve", () => {
 			{ amount: 1_200_000, mode: "months_of_expenses", months: 6, date: null },
 		]);
 
-		// A month of 5 000 before them: the median of four is 2 500.
+		// The first visit settles September, then the median moves from 2 000 to 2 500.
+		await list();
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-09"));
 		await spent([["2026-05-10", "-5 000"]]);
 
+		const rows = await goalRows();
 		await expect(list()).resolves.toMatchObject([
-			{ targetAmount: 1_500_000, monthlyExpenses: 250_000 },
+			{ targetAmount: 1_200_000, monthlyExpenses: 200_000 },
 		]);
-		// Read, never written.
+		await expect(goalRows()).resolves.toEqual(rows);
+
+		const renamed = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Épargne de précaution", [{ accountId: account.id }], reserve("6")),
+		);
+
+		expect(renamed.status).toBe(200);
 		await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_200_000 }]);
+	});
+
+	it("catches up after downtime once in the household's calendar month", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const created = await create("Urgences", [{ accountId: account.id }], reserve("6"));
+		await list();
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-09"));
+		await spent([["2026-05-10", "-5 000"]]);
+
+		vi.setSystemTime(new Date("2026-10-20T22:30:00Z"));
+		const first = await send("GET", "/api/goals/summary");
+
+		expect(first).toMatchObject({
+			status: 200,
+			body: { data: { target: 1_200_000, goals: [{ id: created.id, targetAmount: 1_200_000 }] } },
+		});
+		await expect(refreshedMonth()).resolves.toBe("2026-09");
+		await vi.waitFor(async () => {
+			expect(await refreshedMonth()).toBe("2026-10");
+			expect(await storedTargets()).toMatchObject([{ amount: 1_500_000 }]);
+		});
+
+		await spent([["2026-04-10", "-8 000"]]);
+		vi.setSystemTime(new Date("2026-10-22T22:30:00Z"));
+		const rows = await goalRows();
+		await expect(list()).resolves.toMatchObject([{ targetAmount: 1_500_000 }]);
+		await expect(goalRows()).resolves.toEqual(rows);
+	});
+
+	it("commits one refresh for concurrent attempts at local midnight", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const links = [{ accountId: account.id, allocatedAmount: "1" }];
+		const active = await create("Urgences", links, reserve("6"));
+		const paused = await create("À reprendre", links, reserve("3"));
+		const archived = await create("Archive", links, reserve("6"));
+		const fixed = await create("Montant fixe", links, { kind: "maintained" });
+		await fire(paused.id, "pause");
+		await fire(archived.id, "archive");
+		await list();
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-09"));
+		await spent([["2026-05-10", "-5 000"]]);
+
+		// In Paris it is October, while the UTC date is still September 30.
+		vi.setSystemTime(new Date("2026-09-30T22:30:00Z"));
+		const { db } = await own();
+		const deps = { db, timeZone: "Europe/Paris" };
+		const update = vi.spyOn(db, "transaction");
+
+		await Promise.all([refreshReserveTargets(deps), refreshReserveTargets(deps)]);
+
+		expect(update).toHaveBeenCalledTimes(1);
+		expect(await refreshedMonth()).toBe("2026-10");
+		expect(Object.fromEntries((await list()).map((item) => [item.id, item.targetAmount]))).toEqual({
+			[active.id]: 1_500_000,
+			[paused.id]: 750_000,
+			[archived.id]: 1_200_000,
+			[fixed.id]: 100_000,
+		});
+	});
+
+	it("queues the next month if a refresh is still running at local midnight", async () => {
+		const { db } = await own();
+		const deps = { db, timeZone: "Europe/Paris" };
+		vi.setSystemTime(new Date("2026-09-30T21:59:59Z"));
+		const september = refreshReserveTargets(deps);
+		vi.setSystemTime(new Date("2026-09-30T22:00:00Z"));
+		const october = refreshReserveTargets(deps);
+
+		await Promise.all([september, october]);
+
+		await expect(refreshedMonth()).resolves.toBe("2026-10");
+	});
+
+	it("checks the month again after an independent connection commits", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		await create("Urgences", [{ accountId: account.id }], reserve("6"));
+		await spent([["2026-05-10", "-5 000"]]);
+		const { db, file } = await own();
+		const deps = { db, timeZone: "Europe/Paris" };
+		const other = await createDb(`file:${file}`);
+		const transaction = db.transaction.bind(db);
+		const startedAt = Date.now();
+
+		vi.spyOn(db, "transaction").mockImplementationOnce(async (run, config) => {
+			await refreshReserveTargets({ ...deps, db: other });
+			vi.setSystemTime(startedAt + 1000);
+			return transaction(run, config);
+		});
+
+		try {
+			await refreshReserveTargets(deps);
+			await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_500_000 }]);
+			await expect(
+				db.get(sql`select updated_at from settings where key = 'goal_targets_refreshed_month'`),
+			).resolves.toEqual({ updated_at: startedAt });
+		} finally {
+			other.$client.close();
+		}
+	});
+
+	it("rolls back the targets if recording the month fails, then retries", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		await create("Urgences", [{ accountId: account.id }], reserve("6"));
+		await spent([["2026-05-10", "-5 000"]]);
+		const { db } = await own();
+		const deps = { db, timeZone: "Europe/Paris" };
+		await db.run(sql`create trigger refuse_refresh before insert on settings
+			when new.key = 'goal_targets_refreshed_month'
+			begin select raise(abort, 'refresh refused'); end`);
+
+		await expect(refreshReserveTargets(deps)).rejects.toThrow();
+		await expect(refreshedMonth()).resolves.toBeUndefined();
+		await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_200_000 }]);
+
+		await db.run(sql`drop trigger refuse_refresh`);
+		await refreshReserveTargets(deps);
+		await expect(refreshedMonth()).resolves.toBe("2026-09");
+		await expect(storedTargets()).resolves.toMatchObject([{ amount: 1_500_000 }]);
+	});
+
+	it("keeps the target when an increased median would overflow", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const months = Math.floor(Number.MAX_SAFE_INTEGER / 200_000);
+		const created = await create(
+			"Entier sûr",
+			[{ accountId: account.id }],
+			reserve(String(months)),
+		);
+		await list();
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-09"));
+		await spent([["2026-05-10", "-5 000"]]);
+		const before = await goalRows();
+
+		vi.setSystemTime(new Date("2026-10-21T10:00:00Z"));
+		await list();
+
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-10"));
+		await expect(goalRows()).resolves.toEqual(before);
+		await expect(list()).resolves.toMatchObject([
+			{ id: created.id, targetAmount: months * 200_000 },
+		]);
+	});
+
+	it("accepts 121 months and refuses an unsafe product", async () => {
+		await spent(THREE_MONTHS);
+		const account = await savings("3 000");
+		const links = [{ accountId: account.id, allocatedAmount: "1" }];
+		const limit = Math.floor(Number.MAX_SAFE_INTEGER / 200_000);
+
+		await expect(create("Sans plafond fixe", links, reserve("121"))).resolves.toMatchObject({
+			targetAmount: 24_200_000,
+		});
+		await expect(create("Entier sûr", links, reserve(String(limit)))).resolves.toMatchObject({
+			targetAmount: limit * 200_000,
+		});
+		await expect(
+			rejection(body("Dépassement", links, reserve(String(limit + 1)))),
+		).resolves.toMatchObject({ fields: [{ path: "targetMonths", code: "invalid_months" }] });
+		await expect(send("GET", "/api/goals/summary")).resolves.toMatchObject({
+			status: 200,
+			body: { data: { count: 2, target: null } },
+		});
 	});
 
 	it("reads this month's expenses, as Sure's median, and refuses months of expenses without any", async () => {
@@ -1135,13 +1325,20 @@ describe("a reserve", () => {
 		const account = await savings("3 000");
 		await create("Urgences", [{ accountId: account.id }], reserve("6"));
 
+		await list();
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-09"));
+
 		await Promise.all(
 			ids.map(async (id) => sendOwn("PATCH", `/api/transactions/${id}`, { excluded: true })),
 		);
 
+		const before = await goalRows();
+		vi.setSystemTime(new Date("2026-10-21T10:00:00Z"));
 		await expect(list()).resolves.toMatchObject([
-			{ targetAmount: 1_200_000, monthlyExpenses: null, targetMonths: 6, status: "depleted" },
+			{ targetAmount: 1_200_000, monthlyExpenses: 200_000, targetMonths: 6, status: "depleted" },
 		]);
+		await vi.waitFor(async () => expect(await refreshedMonth()).toBe("2026-10"));
+		await expect(goalRows()).resolves.toEqual(before);
 	});
 
 	it("keeps its stored target when renamed after the median is gone, and refuses new months", async () => {
@@ -1242,7 +1439,11 @@ describe("a reserve", () => {
 		],
 		["no months", reserve(""), [{ path: "targetMonths", code: "invalid_months" }]],
 		["zero months", reserve("0"), [{ path: "targetMonths", code: "invalid_months" }]],
-		["121 months", reserve("121"), [{ path: "targetMonths", code: "invalid_months" }]],
+		[
+			"an unsafe number of months",
+			reserve("9007199254740992"),
+			[{ path: "targetMonths", code: "invalid_months" }],
+		],
 		["half a month", reserve("1,5"), [{ path: "targetMonths", code: "invalid_months" }]],
 		["an unknown kind", { kind: "reserve" }, [{ path: "kind", code: "invalid_value" }]],
 		["an unknown mode", { targetMode: "weekly" }, [{ path: "targetMode", code: "invalid_value" }]],
@@ -1352,20 +1553,21 @@ describe("a reserve", () => {
 		).resolves.toMatchObject({ fields: [{ path: "kind", code: "kind_locked" }] });
 	});
 
-	it("stores a new product when a reserve in months is saved again", async () => {
+	it("sets a new target when switching to months of expenses or changing the month count", async () => {
 		await spent(THREE_MONTHS);
 		const account = await savings("3 000");
-		const created = await create("Urgences", [{ accountId: account.id }], reserve("6"));
+		const links = [{ accountId: account.id }];
+		const created = await create("Urgences", links, { kind: "maintained" });
 
-		const { status } = await send(
-			"PUT",
-			`/api/goals/${created.id}`,
-			body("Urgences", [{ accountId: account.id }], reserve("3")),
-		);
-
-		expect(status).toBe(200);
+		await expect(
+			send("PUT", `/api/goals/${created.id}`, body("Urgences", links, reserve("6"))),
+		).resolves.toMatchObject({ status: 200, body: { data: { targetAmount: 1_200_000 } } });
+		await spent([["2026-05-10", "-5 000"]]);
+		await expect(
+			send("PUT", `/api/goals/${created.id}`, body("Urgences", links, reserve("3"))),
+		).resolves.toMatchObject({ status: 200, body: { data: { targetAmount: 750_000 } } });
 		await expect(storedTargets()).resolves.toEqual([
-			{ amount: 600_000, mode: "months_of_expenses", months: 3, date: null },
+			{ amount: 750_000, mode: "months_of_expenses", months: 3, date: null },
 		]);
 	});
 });

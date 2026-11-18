@@ -64,8 +64,7 @@ function Figure({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * How a reserve in months of expenses reaches its target: the months and the
- * median they multiply, or, without a median, that the target last computed
- * stands, as Sure keeps its stale floor.
+ * median used to calculate the stored target.
  */
 function reserveTargetNote(goal: GoalData, t: TFunction): string | null {
 	if (goal.targetMonths === null) {

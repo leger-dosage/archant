@@ -1,7 +1,7 @@
 import type { DailyBalance } from "./balances/forward.ts";
 import type { IsoDate } from "./dates.ts";
 
-import type { GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
+import type { GoalKind, GoalState } from "@archant/data/goals";
 import { RELEASED_GOAL_STATES } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -193,39 +193,16 @@ function statusOf(
 /**
  * A reserve's target in months of expenses, as Sure's
  * `months_of_expenses_amount`: the median monthly expenses times the months,
- * or `null` without a median above zero, since a target of zero would read
- * as a reserve already funded.
+ * or `null` if it cannot be represented as a positive integer in minor units.
  */
 export function monthsOfExpenses(months: number, median: MinorUnits | null): MinorUnits | null {
-	return median === null || median <= 0 ? null : toMinorUnits(months * median);
-}
+	if (median === null || median <= 0 || !Number.isSafeInteger(months) || months <= 0) {
+		return null;
+	}
 
-/**
- * A goal's target when read, and the median it multiplies. A fixed target is
- * the amount stored. A reserve in months of expenses follows the median
- * monthly expenses, which only exist in the reporting currency (AD-6): in
- * another currency, or without a median, the target stored when it was last
- * saved stands, as Sure's « a stale floor beats a wrong one ».
- */
-export function targetAsRead(
-	goal: {
-		targetMode: GoalTargetMode;
-		targetMonths: number | null;
-		targetAmount: MinorUnits;
-		currency: string;
-	},
-	expenses: { currency: string; median: MinorUnits | null },
-): { targetAmount: MinorUnits; monthlyExpenses: MinorUnits | null } {
-	const computed =
-		goal.targetMode === "months_of_expenses" &&
-		goal.targetMonths !== null &&
-		goal.currency === expenses.currency
-			? monthsOfExpenses(goal.targetMonths, expenses.median)
-			: null;
+	const amount = months * median;
 
-	return computed === null
-		? { targetAmount: goal.targetAmount, monthlyExpenses: null }
-		: { targetAmount: computed, monthlyExpenses: expenses.median };
+	return Number.isSafeInteger(amount) ? toMinorUnits(amount) : null;
 }
 
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
@@ -311,12 +288,14 @@ export function goalsSummary<Goal extends Summarised>(goals: readonly Goal[], cu
 	const holding = goals.filter((goal) => !RELEASED.includes(goal.state));
 	const counted = holding.filter((goal) => goal.currency === currency);
 	const active = holding.filter((goal) => goal.state === "active");
+	const target = counted.reduce((sum, goal) => sum + goal.targetAmount, 0);
 
 	return {
 		currency,
 		count: holding.length,
 		saved: toMinorUnits(counted.reduce((sum, goal) => sum + goal.saved, 0)),
-		target: toMinorUnits(counted.reduce((sum, goal) => sum + goal.targetAmount, 0)),
+		// Individually representable targets can exceed minor-unit precision together.
+		target: Number.isSafeInteger(target) ? toMinorUnits(target) : null,
 		behind: active.filter((goal) => goal.status === "behind").length,
 		paceUnknown: active.filter((goal) => goal.status === "pace_unknown").length,
 		leftOut: holding

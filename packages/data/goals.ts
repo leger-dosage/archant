@@ -40,8 +40,7 @@ export const GOAL_PROGRESS_BASES = ["balance", "contributions"] as const;
 
 export type GoalProgressBasis = (typeof GOAL_PROGRESS_BASES)[number];
 
-/** Ten years of expenses: more is a typo, not a reserve. */
-export const GOAL_TARGET_MONTHS_MAX = 120;
+export const GOAL_TARGET_MONTHS_MAX = Number.MAX_SAFE_INTEGER;
 
 /**
  * Sure's `RELEASED_STATES`: a goal in one of these has let go of its money,

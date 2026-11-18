@@ -51,6 +51,7 @@ import { requireSession } from "./routes/middleware/auth.ts";
 import { dailyPrices } from "./routes/middleware/daily-prices.ts";
 import { dailyRecurring } from "./routes/middleware/daily-recurring.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
+import { monthlyReserveTargets } from "./routes/middleware/monthly-reserve-targets.ts";
 import { requireRole, viewerReadOnly } from "./routes/middleware/roles.ts";
 import { sameOrigin } from "./routes/middleware/same-origin.ts";
 import { preferencesRoutes } from "./routes/preferences.ts";
@@ -504,6 +505,7 @@ export function createApp(defaults: AppDeps) {
 		.use("/api/*", dailySync(deps))
 		.use("/api/*", dailyPrices(deps))
 		.use("/api/*", dailyRecurring(deps))
+		.use("/api/*", monthlyReserveTargets(deps))
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);
 

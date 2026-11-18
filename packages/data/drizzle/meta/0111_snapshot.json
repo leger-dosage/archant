@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "40351511-944f-4632-a408-c454fe98d3cf",
+  "id": "6897fc35-649a-42a5-a178-79c21dc170e0",
   "prevId": "0033e340-944e-467e-9a5f-6a284c147a73",
   "tables": {
     "accounts": {
@@ -2368,14 +2368,6 @@
           "autoincrement": false,
           "default": "'one_off'"
         },
-        "progress_basis": {
-          "name": "progress_basis",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'balance'"
-        },
         "target_mode": {
           "name": "target_mode",
           "type": "text",
@@ -2445,10 +2437,6 @@
           "name": "goals_kind_check",
           "value": "\"goals\".\"kind\" in ('one_off', 'maintained')"
         },
-        "goals_progress_basis_check": {
-          "name": "goals_progress_basis_check",
-          "value": "\"goals\".\"progress_basis\" in ('balance', 'contributions')"
-        },
         "goals_target_mode_check": {
           "name": "goals_target_mode_check",
           "value": "\"goals\".\"target_mode\" in ('fixed', 'months_of_expenses')"
@@ -2459,7 +2447,7 @@
         },
         "goals_target_months_range_check": {
           "name": "goals_target_months_range_check",
-          "value": "\"goals\".\"target_months\" between 1 and 120"
+          "value": "typeof(\"goals\".\"target_months\") = 'integer' and \"goals\".\"target_months\" between 1 and 9007199254740991 or \"goals\".\"target_months\" is null"
         },
         "goals_target_mode_kind_check": {
           "name": "goals_target_mode_kind_check",
