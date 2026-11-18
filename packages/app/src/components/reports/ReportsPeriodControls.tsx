@@ -60,8 +60,9 @@ function TypeTabs({ active }: { active: ReportPeriodType }) {
 			{REPORT_PERIOD_TYPES.map((type) => (
 				<Link
 					key={type}
+					from="/reports"
 					to="/reports"
-					search={{ periodType: type }}
+					search={({ tag }) => ({ periodType: type, tag })}
 					aria-current={type === active ? "page" : undefined}
 					className={cn(
 						"rounded-md px-3 py-1.5 text-sm font-medium whitespace-nowrap text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
@@ -104,8 +105,9 @@ function PickerChoice({
 	return (
 		<Button variant={current ? "secondary" : "ghost"} size="sm" className="w-full" asChild>
 			<Link
+				from="/reports"
 				to="/reports"
-				search={{ periodType: type, startDate: from, endDate: to }}
+				search={({ tag }) => ({ periodType: type, startDate: from, endDate: to, tag })}
 				aria-current={current ? "true" : undefined}
 				onClick={onPick}
 			>
@@ -277,8 +279,14 @@ function PeriodArrow({
 				<Button variant="ghost" size="icon" asChild>
 					<Link
 						ref={link}
+						from="/reports"
 						to="/reports"
-						search={{ periodType: period.type, startDate: range.from, endDate: range.to }}
+						search={({ tag }) => ({
+							periodType: period.type,
+							startDate: range.from,
+							endDate: range.to,
+							tag,
+						})}
 						aria-label={label}
 						aria-keyshortcuts={key}
 					>
@@ -396,7 +404,11 @@ export function ReportsPeriodControls({
 					)}
 					<Button variant="outline" className="ml-auto" asChild>
 						{/* Sure's « Today » drops the dates: the type's defaults are today's. */}
-						<Link to="/reports" search={{ periodType: period.type }}>
+						<Link
+							from="/reports"
+							to="/reports"
+							search={({ tag }) => ({ periodType: period.type, tag })}
+						>
 							{t("reports.today")}
 						</Link>
 					</Button>

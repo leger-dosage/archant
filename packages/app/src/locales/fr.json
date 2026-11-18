@@ -1340,7 +1340,6 @@
 		"open": "Importer",
 		"title": "Importer un fichier",
 		"description": "Un relevé OFX, CSV ou QIF exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
-		"mobile": "Disponible sur ordinateur",
 		"steps": {
 			"label": "Étapes de l'import",
 			"file": "Fichier",
@@ -2237,6 +2236,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Trésorerie disponible",
+			"description": "À côté du plan ci-dessus, pas dedans.",
+			"goals": "Voir les objectifs",
+			"available": "Disponible en cash",
+			"earmarked": "Déjà fléché vers des objectifs",
+			"free": "Réellement libre"
+		},
 		"title": "Budget {{ofMonth}}",
 		"previous": "Mois précédent",
 		"next": "Mois suivant",
@@ -2932,7 +2939,6 @@
 			"description": "Après chaque synchronisation ou importation, une règle complète les opérations qu'elle vise : catégorie, marchand, étiquette ou libellé."
 		},
 		"add": "Ajouter une règle",
-		"mobile": "Disponible sur ordinateur",
 		"actions": "Actions pour {{name}}",
 		"toggle": "Activer {{name}}",
 		"edit": "Modifier",
@@ -3116,6 +3122,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Plus grosses dépenses",
+			"limit": "Nombre de dépenses affichées",
+			"transaction": "Opération",
+			"oneTime": "Ponctuelle"
+		},
 		"title": "Rapports",
 		"subtitle": "Aperçus complets de votre santé financière",
 		"printReport": "Imprimer le rapport",
@@ -3699,8 +3711,6 @@
 		"backupCodesTitle": "Codes de secours",
 		"backupCodesDescription": "Chaque code permet une seule connexion sans votre téléphone. Conservez-les en lieu sûr : ils ne seront plus affichés.",
 		"backupCodesDone": "J'ai conservé ces codes",
-		"regenerate": "Régénérer les codes de secours",
-		"regenerateHint": "Les anciens codes de secours cessent de fonctionner.",
 		"disable": "Désactiver la double authentification",
 		"disabled": "Double authentification désactivée."
 	},

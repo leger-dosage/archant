@@ -12,6 +12,8 @@ import { freshTotp, totp } from "./totp.ts";
 // two-factor on, the last turns it off. Each test has its own client
 // address, so each gets its own three sign-ins per ten seconds.
 test.describe.configure({ mode: "serial" });
+// Traces include the secrets shown during enrolment and typed during sign-in.
+test.use({ trace: "off" });
 
 /** Read from the page by the first test, as a user would copy it into an app. */
 let secret = "";
@@ -56,7 +58,7 @@ test("turning it on asks for the password, then a code, and shows the backup cod
 	secret = (
 		await twoFactor.getByLabel("Clé à saisir si vous ne pouvez pas scanner").innerText()
 	).trim();
-	expect(secret).toMatch(/^[A-Z2-7]+$/u);
+	expect(/^[A-Z2-7]+$/u.test(secret)).toBe(true);
 
 	await twoFactor.getByLabel("Code de vérification").fill(wrong(totp(secret)));
 	await twoFactor.getByRole("button", { name: "Confirmer l'activation" }).click();
@@ -67,9 +69,9 @@ test("turning it on asks for the password, then a code, and shows the backup cod
 
 	await expect(page.getByText("Double authentification activée.")).toBeVisible();
 	const codes = twoFactor.getByRole("list", { name: "Codes de secours" }).getByRole("listitem");
-	await expect(codes).toHaveCount(10);
+	await expect.poll(() => codes.count()).toBe(8);
 	backupCodes = await codes.allInnerTexts();
-	expect(backupCodes.every((code) => /^[\dA-Za-z]{5}-[\dA-Za-z]{5}$/u.test(code))).toBe(true);
+	expect(backupCodes.every((code) => /^[0-9a-f]{16}$/u.test(code))).toBe(true);
 
 	await twoFactor.getByRole("button", { name: "J'ai conservé ces codes" }).click();
 	await expect(twoFactor.getByText(/^Activée\./u)).toBeVisible();
@@ -77,7 +79,7 @@ test("turning it on asks for the password, then a code, and shows the backup cod
 	// Once: a reload shows the state, never the codes.
 	await page.reload();
 	await expect(section(page).getByText(/^Activée\./u)).toBeVisible();
-	await expect(page.getByText(backupCodes[0] ?? "")).toHaveCount(0);
+	await expect(section(page).getByRole("list", { name: "Codes de secours" })).toHaveCount(0);
 });
 
 test("sign-in asks for a code: a TOTP code, then a backup code, which is refused the second time", async ({
@@ -177,7 +179,7 @@ test("the code step says « trop de tentatives » on a 429, and a spent challeng
 	await expect(page.getByLabel("Code de vérification")).toHaveCount(0);
 });
 
-test("regenerating and turning off ask for the password; then sign-in has one step", async ({
+test("only turning off is offered, with the password; then sign-in has one step", async ({
 	page,
 	context,
 }) => {
@@ -186,17 +188,9 @@ test("regenerating and turning off ask for the password; then sign-in has one st
 	const twoFactor = section(page);
 	await expect(twoFactor.getByText(/^Activée\./u)).toBeVisible();
 
-	await twoFactor.getByLabel("Mot de passe").fill("pas le bon mot de passe");
-	await twoFactor.getByRole("button", { name: "Régénérer les codes de secours" }).click();
-	await expect(twoFactor.getByText("Mot de passe actuel incorrect.")).toBeVisible();
-
-	await twoFactor.getByLabel("Mot de passe").fill(NEW_PASSWORD);
-	await twoFactor.getByRole("button", { name: "Régénérer les codes de secours" }).click();
-	const codes = twoFactor.getByRole("list", { name: "Codes de secours" }).getByRole("listitem");
-	await expect(codes).toHaveCount(10);
-	const fresh = await codes.allInnerTexts();
-	expect(fresh.filter((code) => backupCodes.includes(code))).toEqual([]);
-	await twoFactor.getByRole("button", { name: "J'ai conservé ces codes" }).click();
+	await expect(
+		twoFactor.getByRole("button", { name: "Régénérer les codes de secours" }),
+	).toHaveCount(0);
 
 	await twoFactor.getByLabel("Mot de passe").fill("pas le bon mot de passe");
 	await twoFactor.getByRole("button", { name: "Désactiver la double authentification" }).click();

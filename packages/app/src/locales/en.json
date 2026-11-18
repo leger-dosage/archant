@@ -1340,7 +1340,6 @@
 		"open": "Import",
 		"title": "Import a file",
 		"description": "An OFX, CSV or QIF statement exported by your bank. Nothing is saved until you confirm.",
-		"mobile": "Available on desktop",
 		"steps": {
 			"label": "Import steps",
 			"file": "File",
@@ -2237,6 +2236,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Available cash",
+			"description": "Alongside the plan above, outside its totals.",
+			"goals": "View goals",
+			"available": "Cash on hand",
+			"earmarked": "Already earmarked for goals",
+			"free": "Really free"
+		},
 		"title": "{{ofMonth}} budget",
 		"previous": "Previous month",
 		"next": "Next month",
@@ -2932,7 +2939,6 @@
 			"description": "After every sync or import, a rule completes the transactions it targets: category, merchant, tag or name."
 		},
 		"add": "Add rule",
-		"mobile": "Available on desktop",
 		"actions": "Actions for {{name}}",
 		"toggle": "Enable {{name}}",
 		"edit": "Edit",
@@ -3116,6 +3122,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Biggest expenses",
+			"limit": "Number of expenses shown",
+			"transaction": "Transaction",
+			"oneTime": "One-time"
+		},
 		"title": "Reports",
 		"subtitle": "Comprehensive insights into your financial health",
 		"printReport": "Print Report",
@@ -3699,8 +3711,6 @@
 		"backupCodesTitle": "Backup codes",
 		"backupCodesDescription": "Each code allows one sign-in without your phone. Keep them somewhere safe: they will not be shown again.",
 		"backupCodesDone": "I have saved these codes",
-		"regenerate": "Regenerate backup codes",
-		"regenerateHint": "The old backup codes stop working.",
 		"disable": "Disable two-factor authentication",
 		"disabled": "Two-factor authentication disabled."
 	},

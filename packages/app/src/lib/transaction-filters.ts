@@ -7,6 +7,7 @@ import {
 	UNCATEGORISED,
 	directionSchema,
 	parseAmountBound,
+	tagFilterSchema,
 } from "@archant/api/schemas/transactions";
 
 import { isoToInput } from "@/lib/dates";
@@ -46,11 +47,7 @@ export const operationsSearchSchema = z
 			.optional()
 			.catch(undefined),
 		// Tag ids, ORed.
-		tag: z
-			.union([z.string().transform((id) => [id]), z.array(z.string())])
-			.pipe(z.array(z.string()).min(1))
-			.optional()
-			.catch(undefined),
+		tag: tagFilterSchema.catch(undefined),
 		// Income, expense or transfer, ORed; repeats are dropped.
 		direction: z
 			.union([z.string().transform((value) => [value]), z.array(z.string())])

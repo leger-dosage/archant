@@ -1,6 +1,6 @@
 import type { InferResponseType } from "hono/client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 import type { ReportPeriodType } from "@archant/data/report-periods";
 
@@ -14,6 +14,7 @@ export type ReportsSearch = {
 	periodType: ReportPeriodType;
 	startDate?: string | undefined;
 	endDate?: string | undefined;
+	tag?: string[] | undefined;
 };
 
 /** Without the absent dates, so the query string and the key carry only what is set. */
@@ -22,6 +23,7 @@ function reportsQuery(search: ReportsSearch) {
 		periodType: search.periodType,
 		...(search.startDate === undefined ? {} : { startDate: search.startDate }),
 		...(search.endDate === undefined ? {} : { endDate: search.endDate }),
+		...(search.tag === undefined ? {} : { tag: search.tag }),
 	};
 }
 
@@ -33,7 +35,8 @@ export function useReportsPage(search: ReportsSearch) {
 		queryKey: queryKeys.accounts.reportsPage(query),
 		queryFn: async () => (await unwrap(api.reports.page.$get({ query }))).data,
 		// The previous period stays while the next one loads, so the arrows do not flash a skeleton.
-		placeholderData: keepPreviousData,
+		placeholderData: (previous) =>
+			JSON.stringify(previous?.tag) === JSON.stringify(search.tag) ? previous : undefined,
 		// Under `accounts.all`, which a recategorisation or a budget save never
 		// invalidates: every visit reads the page again.
 		staleTime: 0,
