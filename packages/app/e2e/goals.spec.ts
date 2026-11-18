@@ -211,15 +211,15 @@ test("a goal created from the dialog shows its card, its page and each account's
 	await expect(
 		goalCard.getByRole("img", { name: /^60\s%\sde l'objectif atteint$/u }),
 	).toBeVisible();
-	await expect(rail(page).getByRole("link", { name: "Objectifs", exact: true })).toHaveAttribute(
+	await expect(rail(page).getByRole("link", { name: "Plan", exact: true })).toHaveAttribute(
 		"aria-current",
 		"page",
 	);
 
 	await goalCard.click();
 	await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
-	await expect(breadcrumbs(page)).toHaveText(`Objectifs/${name}`);
-	await expect(rail(page).getByRole("link", { name: "Objectifs", exact: true })).toHaveAttribute(
+	await expect(breadcrumbs(page)).toHaveText(`Plan/${name}`);
+	await expect(rail(page).getByRole("link", { name: "Plan", exact: true })).toHaveAttribute(
 		"aria-current",
 		"page",
 	);
@@ -508,101 +508,6 @@ test("restoring a goal whose account another goal now takes whole is refused, na
 		),
 	).toBeVisible();
 	await expect(archived).toBeVisible();
-});
-
-test("the dashboard's « Objectifs » card sums the goals holding their money, and lists five", async ({
-	page,
-	api,
-}) => {
-	const savings = await api.openAccount({ name: uniqueName("Livret A"), kind: "savings" });
-	await api.createGoal({ targetAmount: "1 000", accounts: [{ accountId: savings.id }] });
-
-	await page.goto("/");
-	const goals = page.getByRole("region", { name: "Objectifs", exact: true });
-	await expect(goals).toBeVisible();
-
-	// Fixed figures, whatever the run's database holds.
-	let behind = 1;
-	let paceUnknown = 0;
-	await page.route("**/api/goals/summary", (route) =>
-		route.fulfill({
-			json: {
-				data: {
-					currency: "EUR",
-					count: 3,
-					saved: 50_000,
-					target: 150_000,
-					behind,
-					paceUnknown,
-					leftOut: [{ id: "g3", name: "Voyage" }],
-					goals: [
-						{ id: "g1", name: "Vacances", state: "active", status: "behind", saved: 20_000 },
-						{ id: "g2", name: "Vélo", state: "paused", status: "behind", saved: 30_000 },
-					].map((goal, index) => ({
-						...goal,
-						currency: "EUR",
-						targetAmount: [100_000, 50_000][index],
-						color: "#27a644",
-						icon: "piggy-bank",
-					})),
-				},
-			},
-		}),
-	);
-	await page.reload();
-
-	await expect(goals).toContainText(
-		`${euros(50_000)}sur ${euros(150_000)} tous objectifs confondus`,
-	);
-	await expect(goals).toContainText("3 actifs · 1 en retard");
-	await expect(goals).toContainText("Hors des totaux, faute de conversion : Voyage.");
-	const rows = goals.getByRole("list", { name: "Objectifs en cours" }).getByRole("listitem");
-	await expect(rows).toHaveCount(2);
-	await expect(rows.nth(0)).toContainText(`VacancesEn retard${euros(20_000)} / ${euros(100_000)}`);
-	await expect(rows.nth(1)).toContainText(`VéloEn pause${euros(30_000)} / ${euros(50_000)}`);
-	await expect(rows.nth(0).getByRole("link", { name: "Vacances" })).toHaveAttribute(
-		"href",
-		"/goals/g1",
-	);
-
-	behind = 0;
-	paceUnknown = 1;
-	await page.reload();
-	await expect(goals).toContainText("3 actifs · 1 au rythme inconnu");
-
-	paceUnknown = 0;
-	await page.reload();
-	await expect(goals).toContainText("3 actifs · Tout est dans les temps");
-
-	// No goal holding its money: no card.
-	let empty = false;
-	await page.route("**/api/goals/summary", (route) =>
-		empty
-			? route.fulfill({
-					json: {
-						data: {
-							currency: "EUR",
-							count: 0,
-							saved: 0,
-							target: 0,
-							behind: 0,
-							paceUnknown: 0,
-							leftOut: [],
-							goals: [],
-						},
-					},
-				})
-			: route.fallback(),
-	);
-	empty = true;
-	await page.reload();
-	await expect(page.getByRole("region", { name: "Bilan" })).toBeVisible();
-	await expect(goals).toHaveCount(0);
-	empty = false;
-	await page.reload();
-
-	await goals.getByRole("link", { name: "Tous les objectifs" }).click();
-	await expect(page).toHaveURL("/goals");
 });
 
 const suggestedBody = z.object({

@@ -616,7 +616,13 @@ reader.describe("a viewer", () => {
 		async ({ viewer: page }) => {
 			const { savings, goal } = household;
 
-			await page.goto("/goals");
+			await page.goto("/plan");
+			await expect(page.getByRole("region", { name: "Ce mois-ci" })).toBeVisible();
+			await expectNone(page, [
+				{ role: "link", name: "Configurer le budget de ce mois-ci" },
+				{ role: "button", name: "Nouvel objectif" },
+			]);
+			await page.getByRole("link", { name: "Tous les objectifs" }).click();
 			const goalCard = page
 				.getByRole("list", { name: "Objectifs" })
 				.getByRole("link", { name: new RegExp(goal.name, "u") });
