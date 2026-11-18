@@ -8,7 +8,7 @@ Archant SHALL explain a goal's state and projection and show the relevant action
 
 - **GIVEN** an active goal's page
 - **WHEN** it renders
-- **THEN** the header reads « Objectif : %{amount} d'ici le %{date} » with « N jours restants », « Objectif : %{amount} · attendu le %{date} » once the date has passed, or « Cible : %{amount} »; then one status line, Sure's `Goal#status_callout_context`: « atteindra l'objectif vers %{date} », « épargnez %{amount}/mois de plus pour rattraper le retard », « définissez une date cible pour projeter une date de fin », or the depleted reserve's line.
+- **THEN** the header reads « Objectif : %{amount} d'ici le %{date} » with « N jours restants », « Objectif : %{amount} · attendu le %{date} » once the date has passed, or « Cible : %{amount} »; then one status line, Sure's `Goal#status_callout_context`: « atteindra l'objectif vers %{date} », « épargnez %{amount}/mois de plus pour rattraper le retard », « définissez une date cible pour projeter une date de fin », the unknown-pace guidance, or the depleted reserve's line.
 
 #### Scenario: See the action for the current state
 
@@ -20,4 +20,4 @@ Archant SHALL explain a goal's state and projection and show the relevant action
 
 - **GIVEN** the « Projection » chart
 - **WHEN** its subtitle renders
-- **THEN** it reads Sure's `Goal#projection_summary`, « Au rythme actuel, vous atteindrez cet objectif vers le %{date}. », « Insuffisant au rythme actuel. » or the sentence for no date, no deposit, a reserve or a reached goal, in place of « Pour l'atteindre le {{date}}, il faut épargner … ».
+- **THEN** it reads Sure's `Goal#projection_summary`, « Au rythme actuel, vous atteindrez cet objectif vers le %{date}. », « Insuffisant au rythme actuel. » or the sentence for no date, zero measured pace, unknown pace, a reserve or a reached goal. Unknown pace explains what account history is needed instead of showing a shortfall.

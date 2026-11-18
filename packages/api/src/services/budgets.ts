@@ -16,6 +16,7 @@ import type {
 	BudgetRolloverInput,
 } from "../schemas/budgets.ts";
 import type { ServiceDeps } from "./deps.ts";
+import type { BillReservations } from "./recurring/budget-reservations.ts";
 import type { CashFlow } from "./reports.ts";
 
 import {
@@ -61,6 +62,7 @@ import {
 } from "../schemas/budgets.ts";
 import { UNCATEGORISED } from "../schemas/transactions.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
+import { budgetBillReservations } from "./recurring/budget-reservations.ts";
 import {
 	getCashFlowHistory,
 	getCashFlowMonths,
@@ -99,6 +101,8 @@ export type BudgetMonth = {
 	categories: BudgetCategoryLine[];
 	/** « Sans catégorie »: what the total leaves unallocated, never stored. */
 	uncategorised: UncategorisedLine;
+	/** Outstanding bills by their own category, in the reporting currency. */
+	billReservations: BillReservations;
 	/** The top-level categories' amounts, summed: « Valider » waits while it passes the total. */
 	allocated: MinorUnits;
 	/** The medians « Suggérer » fills; `null` without an earlier month to take one from. */
@@ -405,13 +409,16 @@ async function readBudget(
 	const [
 		row,
 		chainMonths,
-		{ cashFlow, gross, rows, categories: allCategories },
+		{ cashFlow, gross, rows, categories: allCategories, billReservations },
 		monthRows,
 		source,
 	] = await Promise.all([
 		deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
 		setUpMonths(deps.db, { to: month }),
-		getCashFlowWithRows(deps, month),
+		getCashFlowWithRows(deps, month).then(async (view) => ({
+			...view,
+			billReservations: await budgetBillReservations(deps.db, view.cashFlow),
+		})),
 		// The whole history once: the chain takes the months before this one,
 		// the statistics every month, whatever the month shown, as Sure's.
 		getCashFlowMonths(deps),
@@ -460,6 +467,7 @@ async function readBudget(
 		actual: actualsOf({ net: cashFlow, gross }),
 		segments: spendingSegments(cashFlow.lines.expense),
 		...envelopes,
+		billReservations,
 		// Sure's `estimated_spending` and `estimated_income`.
 		suggested: {
 			spending: statistics.family.expense.median,

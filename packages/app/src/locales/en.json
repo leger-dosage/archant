@@ -2377,6 +2377,9 @@
 			"budgetedLabel": "Budgeted: ",
 			"leftLabel": "Left: ",
 			"overByLabel": "Over by: ",
+			"billsReserved": "{{amount}} reserved for bills",
+			"billsUnconvertible_one": "1 bill is not reserved because no exchange rate is available",
+			"billsUnconvertible_other": "{{count}} bills are not reserved because no exchange rate is available",
 			"shared": "Shared",
 			"empty": "No category has a budget or spending this month."
 		},
@@ -2445,7 +2448,6 @@
 			"extend": "Extend by 7 days",
 			"badge": "Pending pledge",
 			"matchedDate": "Last matched deposit on {{date}}",
-			"catchUp": "{{amount}} more per month to get back on track.",
 			"covered": "Pending pledges cover the shortfall."
 		},
 		"title": "Goals",
@@ -2637,12 +2639,59 @@
 				"action": "Archive goal"
 			}
 		},
+		"header": {
+			"target": "Target {{amount}}",
+			"dated": "Target {{amount}} by {{date}}",
+			"pastDue": "Target {{amount}} · was due {{date}}",
+			"daysLeft_one": "{{count}} day left",
+			"daysLeft_other": "{{count}} days left",
+			"behind": "Save {{amount}}/mo more to catch up",
+			"onTrack": "You’ll reach your goal around {{date}}.",
+			"noDate": "Set a target date to estimate when you’ll reach your goal.",
+			"unknown": "Pace unknown. Check the history of the linked accounts.",
+			"depleted": "Add {{amount}} to bring the reserve back to its target balance."
+		},
+		"panel": {
+			"behind": {
+				"body": "Your net savings are {{pace}} per month. You need {{needed}} per month to meet the planned pace."
+			},
+			"reached": {
+				"title": "Target reached",
+				"body": "You’ve hit your target at {{saved}} of {{target}}. The money stays earmarked until you close the goal."
+			},
+			"funded": {
+				"title": "Reserve intact",
+				"body": "You’ve set aside {{saved}} against a target of {{target}}. The money stays earmarked for the reserve."
+			},
+			"depleted": {
+				"title": "Reserve below its target balance",
+				"body": "You’ve set aside {{saved}} against a target of {{target}}."
+			},
+			"noDate": {
+				"title": "Add a target date",
+				"body": "A deadline shows how much you need to save each month."
+			},
+			"action": {
+				"adjust": "Adjust target instead",
+				"setDate": "Set target date",
+				"complete": "Close this goal"
+			}
+		},
+		"projection": {
+			"onTrack": "At your current pace, you’ll reach this goal around {{date}}.",
+			"behind": "Falling short at the current pace.",
+			"zero": "The net savings pace is zero. Add money to the linked accounts to make progress.",
+			"unknown": "Pace can be measured from eligible transactions in the last 90 days, or from a year of balance history with an update in the last year.",
+			"noDate": "No target date set. Add a deadline to estimate when you’ll reach the goal.",
+			"reserve": "A reserve keeps a target balance over time.",
+			"reached": "You’ve reached the target.",
+			"paused": "Resume the goal to see a projection."
+		},
 		"chart": {
 			"title": "Projection",
 			"summary": "Saved: {{saved}}, {{change}} since {{from}}. Target amount: {{target}}.",
 			"projection": "At this pace, you will have {{amount}} on {{date}}.",
 			"saved": "Saved",
-			"paceUnknown": "There is not enough account history to draw a projection.",
 			"projected": "Projection",
 			"target": "Target amount"
 		}
