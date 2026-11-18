@@ -44,9 +44,10 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 36.6  | [Household preferences](changes/household-preferences/proposal.md)                                                                              |                                                              |
 | 36.7  | [Sign in with a passkey](changes/sign-in-with-a-passkey/proposal.md)                                                                            |                                                              |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2][story-36-2]                                           |
-| 37.3  | [Cover both languages end to end](changes/cover-both-languages-end-to-end/proposal.md)                                                          |                                                              |
 
-## Implemented stories
+## Completed changes
+
+- 37.3 [Cover both languages end to end](changes/archive/2026-11-18-cover-both-languages-end-to-end/proposal.md).
 
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 

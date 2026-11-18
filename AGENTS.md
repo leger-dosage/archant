@@ -69,6 +69,14 @@ Validated with `@t3-oss/env-core` and Zod, never read through a bare `process.en
 
 `.env.example` is the contract: every variable is listed there, with a comment saying what degrades when it is absent.
 
+## Interface languages
+
+Keep visible text in [the locale files](packages/app/src/locales/), with `fr.json` as the reference for keys and interpolation placeholders. To add a language:
+
+1. Add its complete locale file, register it in [i18n.ts](packages/app/src/lib/i18n.ts) and add its name under `preferences.locales` in every locale file. Extend [locales.spec.ts](packages/app/src/locales/locales.spec.ts) to check its keys, placeholders and non-empty strings.
+2. Add the language to `LOCALES` and its regional formatting tag to `INTL_LOCALES` in [locales.ts](packages/data/locales.ts). Run `pnpm data generate` to generate the migration for `users_locale_check`. The same list also enables the household data language, so translate generated data such as default categories, sample records and import labels.
+3. Extend [language.spec.ts](packages/app/e2e/language.spec.ts) with a browser context for the new language. Assert the rendered labels as literal text for sign-in, account creation, import confirmation and the dashboard. Keep the shared administrator preference on browser language and run `pnpm test:e2e`.
+
 ## Database
 
 SQLite everywhere, through Drizzle. Local development and self-hosting use a file; a hosted deployment uses Turso. The dialect never changes, so a single schema and a single set of migrations cover both.

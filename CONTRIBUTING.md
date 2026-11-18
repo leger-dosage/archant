@@ -28,7 +28,9 @@ Use a mutating method for writes. `guestReadOnly` blocks guest writes before rou
 
 ## Translations
 
-The interface is in French, through [i18next](https://www.i18next.com/). Every visible string lives in [`packages/app/src/locales/fr.json`](packages/app/src/locales/fr.json); fixes to its wording are welcome. A new language is a bigger change, with a locale file to keep complete and a way to pick it: open an issue to discuss it first. Code, comments, documents and API error messages stay in English.
+The interface uses [i18next](https://www.i18next.com/) for French and English. Use [`fr.json`](packages/app/src/locales/fr.json) as the reference for keys and placeholders, and update [`en.json`](packages/app/src/locales/en.json) alongside it.
+
+To add a language, open an issue first. Follow the [interface language checklist](AGENTS.md#interface-languages) to register the complete locale file, make the language selectable, translate generated household data and add Playwright coverage. Code, comments, documents and API error messages stay in English.
 
 ## Check it
 
