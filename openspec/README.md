@@ -20,7 +20,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
 | 35.12 | [Refresh a months-of-expenses reserve monthly](changes/refresh-a-months-of-expenses-reserve-monthly/proposal.md)                                |                                                                      |
@@ -42,6 +41,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 - Story 35.13. [Sure's `create_goal` contract](changes/archive/2026-11-18-sures-create-goal-contract/proposal.md).
 - Story 36.5: [Two-factor backup codes as Sure's](changes/archive/2026-11-18-two-factor-backup-codes-as-sures/proposal.md).
+
+- Story 35.5: [Bills reserved inside each envelope](changes/archive/2026-11-18-bills-reserved-inside-each-envelope/proposal.md).
 
 - Story 35.11: [Filter, search and summarise goals](changes/archive/2026-11-18-filter-search-and-summarise-goals/proposal.md).
 

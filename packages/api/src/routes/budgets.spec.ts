@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+	recurringAllocations,
+	recurringOccurrences,
+} from "@archant/data/schema/recurring-occurrences";
+import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
+
+import {
 	errorBody,
 	openOwn,
 	own,
@@ -64,6 +70,10 @@ const budgetBody = z.object({
 				rolloverEnabled: z.boolean(),
 				rolledOver: z.number(),
 			}),
+		),
+		billReservations: z.record(
+			z.string(),
+			z.object({ amount: z.number(), unconvertibleCount: z.number() }),
 		),
 		uncategorised: envelope,
 		allocated: z.number(),
@@ -275,6 +285,122 @@ describe("household budget periods", () => {
 });
 
 describe("GET /api/budgets/:month", () => {
+	it("reserves only the unpaid part of open expenses in their own category and month", async () => {
+		const { db } = await ownDatabase();
+		const parent = await ownCategory("Logement");
+		const category = await ownCategory("Énergie", { parentId: parent });
+		const foreignOnly = await ownCategory("Assurance");
+		const destination = await openOwn({ name: "Épargne", openingBalance: "0" });
+		const source = await openOwn({ name: "Compte courant", openingBalance: "0" });
+		await save("2026-09", "500,00", "0");
+		await sendOwn("PUT", `/api/budgets/2026-09/categories/${category}`, {
+			budgetedSpending: "300,00",
+		});
+
+		const before = await ownRequest("GET", "/api/budgets/2026-09");
+		const timestamps = { createdAt: 0, updatedAt: 0 };
+		const series = (id: string) =>
+			({
+				id,
+				labelKey: id,
+				label: "Facture fictive",
+				status: "active",
+				amount: -10_000,
+				currency: "EUR",
+				categoryId: category,
+				expectedDayOfMonth: 1,
+				lastOccurrenceDate: "2026-09-01",
+				nextExpectedDate: "2026-09-01",
+				occurrenceCount: 0,
+				...timestamps,
+			}) as const;
+		await db.insert(recurringTransactions).values([
+			series("expense"),
+			{ ...series("paused"), status: "inactive" },
+			{
+				...series("transfer"),
+				accountId: source.id,
+				destinationAccountId: destination.id,
+				billType: "transfer",
+				labelKey: null,
+			},
+			{ ...series("income"), amount: 10_000, billType: "income" },
+			{ ...series("uncategorised"), categoryId: null },
+			{ ...series("foreign"), currency: "USD" },
+			{ ...series("foreign-only"), currency: "USD", categoryId: foreignOnly },
+			series("planned-only"),
+		]);
+		const occurrence = (id: string, recurringTransactionId: string, dueOn = "2026-09-15") => ({
+			id,
+			recurringTransactionId,
+			dueOn,
+			originalDueOn: dueOn,
+			currency: "EUR",
+			...timestamps,
+		});
+		await db.insert(recurringOccurrences).values([
+			{ ...occurrence("partial", "expense", "2026-09-01"), expectedAmount: 12_000 },
+			{ ...occurrence("second", "expense", "2026-09-30"), expectedAmount: 11_000 },
+			occurrence("before", "expense", "2026-08-31"),
+			occurrence("after", "expense", "2026-10-01"),
+			{ ...occurrence("paid", "expense"), status: "paid", closedAt: 1 },
+			{ ...occurrence("skipped", "expense", "2026-09-16"), status: "skipped", closedAt: 1 },
+			{ ...occurrence("zero", "expense", "2026-09-17"), expectedAmount: 0 },
+			occurrence("paused", "paused"),
+			occurrence("transfer", "transfer"),
+			occurrence("income", "income"),
+			occurrence("uncategorised", "uncategorised"),
+			{ ...occurrence("foreign", "foreign"), currency: "USD" },
+			{ ...occurrence("foreign-only", "foreign-only"), currency: "USD" },
+			{
+				...occurrence("foreign-zero", "foreign", "2026-09-16"),
+				currency: "USD",
+				expectedAmount: 0,
+			},
+		]);
+		const payment = (id: string, allocatedAmount: number) =>
+			({
+				id,
+				allocatedAmount,
+				recurringOccurrenceId: "partial",
+				state: "confirmed",
+				source: "user_created",
+				...timestamps,
+			}) as const;
+		await db
+			.insert(recurringAllocations)
+			.values([
+				payment("payment-1", 3_000),
+				payment("payment-2", 2_000),
+				{ ...payment("suggestion", 4_000), state: "suggested", source: "auto_matched" },
+			]);
+
+		const { billReservations, ...budget } = await budgetOf("2026-09");
+		const { billReservations: beforeReservations, ...originalBudget } = budgetBody.parse(
+			before.body,
+		).data;
+		expect(beforeReservations).toEqual({});
+		expect(budget).toEqual(originalBudget);
+		expect(billReservations).toEqual({
+			[category]: { amount: 18_000, unconvertibleCount: 1 },
+			[foreignOnly]: { amount: 0, unconvertibleCount: 1 },
+		});
+
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+
+		await expect(budgetOf("2026-09")).resolves.toMatchObject({
+			from: "2026-09-01",
+			to: "2026-09-30",
+			billReservations,
+		});
+		const shifted = await budgetOf("2026-08");
+		expect(shifted).toMatchObject({ from: "2026-08-25", to: "2026-09-24" });
+		expect(shifted.billReservations).toEqual({
+			[category]: { amount: 17_000, unconvertibleCount: 1 },
+			[foreignOnly]: { amount: 0, unconvertibleCount: 1 },
+		});
+	});
+
 	it("answers a month not set up with its actuals and suggestions, and writes nothing", async () => {
 		const { courses, clothes, salary } = await household();
 
@@ -285,6 +411,7 @@ describe("GET /api/budgets/:month", () => {
 			currency: "EUR",
 			setUp: false,
 			copySource: null,
+			billReservations: {},
 			budgetedSpending: null,
 			expectedIncome: null,
 			// « Vêtements » nets +30,00: it spends nothing and draws no segment.
