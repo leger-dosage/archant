@@ -11,6 +11,7 @@ import {
 	budgetParamSchema,
 	budgetRolloverBodySchema,
 } from "../schemas/budgets.ts";
+import { getBudgetCash } from "../services/budget-cash.ts";
 import {
 	copyBudget,
 	getBudget,
@@ -22,6 +23,7 @@ import {
 
 export function budgetsRoutes(deps: ServiceDeps) {
 	return new Hono()
+		.get("/available-cash", async (c) => c.json({ data: await getBudgetCash(deps) }, 200))
 		.get("/:month", validated("param", budgetParamSchema), async (c) =>
 			c.json({ data: await getBudget(deps, c.req.valid("param").month) }, 200),
 		)

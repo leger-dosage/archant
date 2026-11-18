@@ -22,6 +22,7 @@ const REPORTS_SECTION_TITLES = {
 	net_worth: "reports.netWorth.title",
 	investment_performance: "reports.investments.title",
 	investment_flows: "reports.investmentFlows.title",
+	biggest_expenses: "reports.biggestExpenses.title",
 } as const satisfies Record<ReportsSectionKey, string>;
 
 /**
@@ -36,6 +37,7 @@ export function ReportsSection({
 	editable,
 	sortable,
 	onToggle,
+	action,
 	children,
 }: {
 	sectionKey: ReportsSectionKey;
@@ -43,6 +45,7 @@ export function ReportsSection({
 	editable: boolean;
 	sortable: DashboardSortable<ReportsSectionKey>;
 	onToggle: () => void;
+	action?: ReactNode;
 	children: ReactNode;
 }) {
 	const { t } = useTranslation();
@@ -148,7 +151,7 @@ export function ReportsSection({
 			<DashboardWidgetContext.Provider
 				value={{ toggle, controls, collapsed, contentId, heightPx: 288, colSpan: "single" }}
 			>
-				<Section title={title}>
+				<Section title={title} action={action}>
 					<div className="p-4">{children}</div>
 				</Section>
 			</DashboardWidgetContext.Provider>
