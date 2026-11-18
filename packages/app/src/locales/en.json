@@ -168,6 +168,7 @@
 			"ofTargets": "of {{target}} across all goals",
 			"behind_one": "{{count}} behind",
 			"behind_other": "{{count}} behind",
+			"paceUnknown": "{{count}} with unknown pace",
 			"onPace": "Everything is on track",
 			"list": "Goals in progress",
 			"all": "All goals"
@@ -2397,6 +2398,7 @@
 			"behind": "Behind",
 			"on_track": "On track",
 			"no_target_date": "No due date",
+			"pace_unknown": "Pace unknown",
 			"reached": "Reached",
 			"funded": "Funded",
 			"depleted": "Depleted"
@@ -2414,7 +2416,8 @@
 			"refill": "To refill",
 			"monthly": "Per month",
 			"date": "Due date",
-			"pace": "90-day pace",
+			"pace": "Savings pace",
+			"paceUnknown": "Unknown",
 			"perMonth": "{{amount}} per month",
 			"noDate": "None",
 			"reachedOn": "Reached on {{date}} · {{amount}}",
@@ -2425,7 +2428,6 @@
 			"title": "Linked accounts",
 			"earmarked": "{{share}} earmarked of {{balance}}",
 			"whole": "Whole balance",
-			"inactive": "Account disabled, not counted",
 			"none": "No linked account: the goal no longer fills up."
 		},
 		"notes": "Notes",
@@ -2551,8 +2553,9 @@
 		"chart": {
 			"title": "Projection",
 			"summary": "Saved: {{saved}}, {{change}} since {{from}}. Target amount: {{target}}.",
-			"projection": "To reach it on {{date}}, you need to save {{monthly}} per month.",
+			"projection": "At this pace, you will have {{amount}} on {{date}}.",
 			"saved": "Saved",
+			"paceUnknown": "There is not enough account history to draw a projection.",
 			"projected": "Projection",
 			"target": "Target amount"
 		}

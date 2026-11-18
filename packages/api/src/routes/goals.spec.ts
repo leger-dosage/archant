@@ -64,7 +64,7 @@ const goal = z.object({
 	remaining: z.number(),
 	percent: z.number(),
 	monthlyNeeded: z.number().nullable(),
-	pace: z.number(),
+	pace: z.number().nullable(),
 	status: z.string(),
 	accounts: z.array(share),
 });
@@ -361,7 +361,7 @@ describe("goals", () => {
 		});
 		await expect(
 			create("Vacances", [{ accountId: second.id }], { targetDate: "2026-09-01" }),
-		).resolves.toMatchObject({ remaining: 40_000, monthlyNeeded: 40_000, status: "behind" });
+		).resolves.toMatchObject({ remaining: 40_000, monthlyNeeded: 40_000, status: "pace_unknown" });
 	});
 
 	it("is reached, at 100 %, once saved meets the target", async () => {
@@ -372,7 +372,7 @@ describe("goals", () => {
 		).resolves.toMatchObject({ saved: 120_000, remaining: 0, percent: 100, status: "reached" });
 	});
 
-	it("reads the pace from the linked balances' last 90 days, and sorts behind goals first", async () => {
+	it("reads the pace from the booked transactions in the last 90 days, and sorts behind goals first", async () => {
 		// Each account gained 3 000 within the last 90 days: 1 000 a month.
 		const a = await savedInto("Livret A");
 		const b = await savedInto("LDDS");
@@ -403,7 +403,7 @@ describe("goals", () => {
 		]);
 	});
 
-	it("starts the pace at the opening date of an account opened since", async () => {
+	it("counts inflows but leaves out a recent opening balance", async () => {
 		const account = await savings("900", { openingDate: "2026-09-01" });
 		await postOwn(account.id, { date: "2026-09-10", label: "Virement", amount: "300" });
 
@@ -411,6 +411,107 @@ describe("goals", () => {
 			saved: 120_000,
 			pace: 10_000,
 		});
+	});
+
+	it("nets internal transfers and skips pending, excluded and future entries", async () => {
+		const first = await savings("500");
+		const second = await savings("500", { name: "LDDS", openingDate: "2026-08-01" });
+		await postOwn(first.id, { date: "2026-08-10", label: "Transfer out", amount: "-300" });
+		await postOwn(second.id, { date: "2026-08-10", label: "Transfer in", amount: "300" });
+		const excluded = await postOwn(first.id, {
+			date: "2026-09-01",
+			label: "Excluded",
+			amount: "90",
+		});
+		await sendOwn("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+		const pending = await postOwn(second.id, {
+			date: "2026-09-10",
+			label: "Pending",
+			amount: "120",
+		});
+		await (
+			await own()
+		).db.run(sql`update transactions set pending = 1 where entry_id = ${pending}`);
+		await postOwn(second.id, { date: "2026-10-01", label: "Future", amount: "150" });
+		await sendOwn("POST", `/api/accounts/${first.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "600",
+		});
+
+		await expect(
+			create(
+				"Voyage",
+				[
+					{ accountId: first.id, allocatedAmount: "100" },
+					{ accountId: second.id, allocatedAmount: "100" },
+				],
+				{ targetDate: "2026-10-21" },
+			),
+		).resolves.toMatchObject({ pace: 0, status: "behind" });
+	});
+
+	it("uses the year-old balance and removes excluded flows from valuation-based pace", async () => {
+		const account = await savings("400");
+		const excluded = await postOwn(account.id, {
+			date: "2026-03-01",
+			label: "Excluded",
+			amount: "120",
+		});
+		await sendOwn("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+		await sendOwn("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "1 720",
+		});
+
+		await expect(
+			create("Voyage", [{ accountId: account.id }], {
+				targetAmount: "1 820",
+				targetDate: "2026-10-21",
+			}),
+		).resolves.toMatchObject({ saved: 172_000, pace: 10_000, status: "on_track" });
+	});
+
+	it("uses the full annual change when a valuation has no excluded flows", async () => {
+		const account = await savings("400");
+		await sendOwn("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "1 600",
+		});
+
+		await expect(
+			create("Voyage", [{ accountId: account.id }], {
+				targetAmount: "1 700",
+				targetDate: "2026-10-21",
+			}),
+		).resolves.toMatchObject({ saved: 160_000, pace: 10_000, status: "on_track" });
+	});
+
+	it("requires a year of history for a valuation and reports unknown pace for mixed evidence", async () => {
+		const fresh = await savings("500", { openingDate: "2026-03-01" });
+		const measured = await savedInto("LDDS");
+		await sendOwn("POST", `/api/accounts/${fresh.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "800",
+		});
+
+		await expect(
+			create("Voyage", [{ accountId: fresh.id }, measured], {
+				targetAmount: "4 500",
+				targetDate: "2026-10-21",
+			}),
+		).resolves.toMatchObject({ saved: 380_000, pace: null, status: "pace_unknown" });
+	});
+
+	it("counts older booked and included transactions as a measured zero without a recent valuation", async () => {
+		const account = await savings("400");
+		await postOwn(account.id, { date: "2026-02-01", label: "Old deposit", amount: "600" });
+
+		await expect(
+			create("Voyage", [{ accountId: account.id }], {
+				targetAmount: "1 800",
+				targetDate: "2026-10-21",
+			}),
+		).resolves.toMatchObject({ saved: 100_000, pace: 0, status: "behind" });
 	});
 
 	it("replaces a goal's fields and links, keeping its currency", async () => {
@@ -479,9 +580,11 @@ describe("goals", () => {
 		});
 	});
 
-	it("counts nothing from a linked account deactivated since, and keeps showing it", async () => {
+	it("keeps counting a linked account deactivated since", async () => {
 		const closed = await savings("400");
 		const open = await savings("600", { name: "LDDS" });
+		await postOwn(closed.id, { date: "2026-09-01", label: "Deposit", amount: "300" });
+		await postOwn(open.id, { date: "2026-09-01", label: "Deposit", amount: "60" });
 		const created = await create("Vacances", [
 			{ accountId: closed.id },
 			{ accountId: open.id, allocatedAmount: "100" },
@@ -490,12 +593,23 @@ describe("goals", () => {
 
 		const [read] = await list();
 
-		expect(read).toMatchObject({ id: created.id, saved: 10_000, pace: 0 });
+		expect(read).toMatchObject({ id: created.id, saved: 80_000, pace: 12_000 });
 		// By name: « LDDS » before « Livret A ».
 		expect(read?.accounts).toEqual([
 			expect.objectContaining({ accountId: open.id, active: true, share: 10_000 }),
-			expect.objectContaining({ accountId: closed.id, active: false, balance: 40_000, share: 0 }),
+			expect.objectContaining({
+				accountId: closed.id,
+				active: false,
+				balance: 70_000,
+				share: 70_000,
+			}),
 		]);
+		const kept = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Voyage", [{ accountId: closed.id }, { accountId: open.id, allocatedAmount: "100" }]),
+		);
+		expect(kept).toMatchObject({ status: 200, body: { data: { name: "Voyage", saved: 80_000 } } });
 	});
 
 	it("lets a released goal's accounts go, while a paused one keeps them", async () => {
@@ -1174,10 +1288,10 @@ async function historyOf(id: string) {
 }
 
 describe("a goal's history", () => {
-	it("draws its share of each day's balance over 90 days, under today's links", async () => {
-		// 0 on 2026-06-23, 1 000 today, another goal taking 300 first.
-		const account = await savings("0", { openingDate: "2026-06-23" });
-		await postOwn(account.id, { date: "2026-09-21", label: "Virement", amount: "1 000" });
+	it("scales the whole historical balance by today's backing ratio", async () => {
+		// 500 on 2026-06-23, 1 000 today, another goal taking 300 first.
+		const account = await savings("500", { openingDate: "2026-06-23" });
+		await postOwn(account.id, { date: "2026-09-21", label: "Virement", amount: "500" });
 		const created = await create("Vélo", [{ accountId: account.id }]);
 		await create("Piscine", [{ accountId: account.id, allocatedAmount: "300" }]);
 
@@ -1185,11 +1299,11 @@ describe("a goal's history", () => {
 
 		expect(read).toMatchObject({ currency: "EUR", from: "2026-06-23", to: "2026-09-21" });
 		expect(read.points).toHaveLength(91);
-		expect(read.points.at(0)).toEqual({ date: "2026-06-23", saved: 0 });
+		expect(read.points.at(0)).toEqual({ date: "2026-06-23", saved: 35_000 });
 		expect(read.points.at(-1)).toEqual({ date: "2026-09-21", saved: 70_000 });
 	});
 
-	it("starts at the earliest opening of its active accounts, leaving a deactivated one out", async () => {
+	it("includes the history of a deactivated linked account", async () => {
 		const recent = await savings("200", { openingDate: "2026-09-01" });
 		const later = await savings("100", { name: "LDDS", openingDate: "2026-09-10" });
 		const closed = await savings("900", { name: "Livret jeune", openingDate: "2026-01-01" });
@@ -1202,21 +1316,10 @@ describe("a goal's history", () => {
 
 		const read = await historyOf(created.id);
 
-		expect(read.from).toBe("2026-09-01");
-		expect(read.points.at(0)?.saved).toBe(20_000);
-		expect(read.points.find((point) => point.date === "2026-09-10")?.saved).toBe(30_000);
-		expect(read.points.at(-1)?.saved).toBe(30_000);
-	});
-
-	it("goes back 90 days for a goal without an active account", async () => {
-		const closed = await savings("900");
-		const created = await create("Vélo", [{ accountId: closed.id }]);
-		await sendOwn("PATCH", `/api/accounts/${closed.id}`, { active: false });
-
-		const read = await historyOf(created.id);
-
 		expect(read.from).toBe("2026-06-23");
-		expect(read.points.every((point) => point.saved === 0)).toBe(true);
+		expect(read.points.at(0)?.saved).toBe(90_000);
+		expect(read.points.find((point) => point.date === "2026-09-01")?.saved).toBe(110_000);
+		expect(read.points.at(-1)?.saved).toBe(120_000);
 	});
 
 	it("answers NOT_FOUND for an unknown goal", async () => {
@@ -1249,7 +1352,8 @@ describe("the goals' summary", () => {
 				count: 3,
 				saved: 50_000,
 				target: 150_000,
-				behind: 1,
+				behind: 0,
+				paceUnknown: 1,
 				leftOut: [{ id: voyage.id, name: "Voyage" }],
 			},
 		});

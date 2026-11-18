@@ -168,6 +168,7 @@
 			"ofTargets": "sur {{target}} tous objectifs confondus",
 			"behind_one": "{{count}} en retard",
 			"behind_other": "{{count}} en retard",
+			"paceUnknown": "{{count}} au rythme inconnu",
 			"onPace": "Tout est dans les temps",
 			"list": "Objectifs en cours",
 			"all": "Tous les objectifs"
@@ -2397,6 +2398,7 @@
 			"behind": "En retard",
 			"on_track": "En bonne voie",
 			"no_target_date": "Sans échéance",
+			"pace_unknown": "Rythme inconnu",
 			"reached": "Atteint",
 			"funded": "Constituée",
 			"depleted": "Entamée"
@@ -2414,7 +2416,8 @@
 			"refill": "À recompléter",
 			"monthly": "Par mois",
 			"date": "Échéance",
-			"pace": "Rythme sur 90 jours",
+			"pace": "Rythme d'épargne",
+			"paceUnknown": "Inconnu",
 			"perMonth": "{{amount}} par mois",
 			"noDate": "Aucune",
 			"reachedOn": "Atteint le {{date}} · {{amount}}",
@@ -2425,7 +2428,6 @@
 			"title": "Comptes liés",
 			"earmarked": "{{share}} affectés sur {{balance}}",
 			"whole": "Solde entier",
-			"inactive": "Compte désactivé, non compté",
 			"none": "Aucun compte lié : l'objectif ne se remplit plus."
 		},
 		"notes": "Notes",
@@ -2551,8 +2553,9 @@
 		"chart": {
 			"title": "Projection",
 			"summary": "Épargné : {{saved}}, {{change}} depuis le {{from}}. Montant visé : {{target}}.",
-			"projection": "Pour l'atteindre le {{date}}, il faut épargner {{monthly}} par mois.",
+			"projection": "À ce rythme, vous aurez épargné {{amount}} le {{date}}.",
 			"saved": "Épargné",
+			"paceUnknown": "L'historique des comptes liés ne suffit pas à calculer une projection.",
 			"projected": "Projection",
 			"target": "Montant visé"
 		}
