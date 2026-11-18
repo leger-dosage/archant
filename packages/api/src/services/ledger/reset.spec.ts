@@ -34,6 +34,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { LEASE_MS } from "../bank-connections.ts";
+import { createGoalPledge } from "../goal-pledges.ts";
 import { DEFAULT_SURE_IMPORT_LIMITS, importSureArchive } from "../sure-import.ts";
 import { addAttachment } from "./attachments.ts";
 import { resetFinancialData } from "./reset.ts";
@@ -57,6 +58,8 @@ const RESET = [
 	"entries",
 	"entry_keys",
 	"goal_accounts",
+	"goal_deposits",
+	"goal_pledges",
 	"holdings",
 	"import_mappings",
 	"imports",
@@ -450,13 +453,15 @@ async function household({ syncStartedAt = null }: { syncStartedAt?: number | nu
 		createdAt: now,
 		updatedAt: now,
 	});
-	await temp.db.insert(goalAccounts).values({ goalId, accountId: await accountNamed("Livret A") });
+	const savingsId = await accountNamed("Livret A");
+	await temp.db.insert(goalAccounts).values({ goalId, accountId: savingsId });
+	await createGoalPledge(deps(), goalId, { accountId: savingsId, amount: "50" });
 	await createTransferBetween(
 		deps(),
 		{
 			fromAccountId: await accountNamed("Compte joint"),
-			toAccountId: await accountNamed("Livret A"),
-			date: "2026-09-12",
+			toAccountId: savingsId,
+			date: "2026-09-17",
 			amount: toMinorUnits(5000),
 			sourceFee: toMinorUnits(100),
 			destinationFee: toMinorUnits(0),
