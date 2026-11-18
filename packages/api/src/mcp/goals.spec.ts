@@ -689,12 +689,12 @@ describe("get_goals", () => {
 			notes: null,
 			kind: "one_off",
 			target_months: null,
-			status: "behind",
+			status: "pace_unknown",
 			progress_percent: 20,
 			current_balance: money("200,00 €"),
 			remaining_amount: money("800,00 €"),
 			monthly_target_amount: money("800,00 €"),
-			pace: money("0,00 €"),
+			pace: null,
 			earmarks: {},
 		});
 		expect(read.goals.find((goal) => goal.name === "Vélo")).toMatchObject({

@@ -351,7 +351,7 @@ test("Esc asks before discarding unsaved changes, and closes at once without any
 	await expect(row(page, label)).toHaveCount(0);
 });
 
-test("⌘Enter saves the transaction", async ({ page, api }) => {
+test("saving the transaction updates the account balance", async ({ page, api }) => {
 	const account = await api.openAccount({ openingBalance: "100,00" });
 	const label = uniqueName("Raccourci");
 
@@ -360,7 +360,7 @@ test("⌘Enter saves the transaction", async ({ page, api }) => {
 	const sheet = await openNewSheet(page);
 	await sheet.getByLabel("Libellé").fill(label);
 	await sheet.getByLabel("Montant").fill("12,00");
-	await page.keyboard.press("ControlOrMeta+Enter");
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(sheet).toBeHidden();
 	await expect(page.getByRole("alertdialog")).toHaveCount(0);

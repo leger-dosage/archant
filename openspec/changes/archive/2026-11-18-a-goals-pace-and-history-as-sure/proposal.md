@@ -6,7 +6,7 @@
 
 ## What changes
 
-- Track goal progress using the linked accounts and compute pace and projection from eligible ledger activity.
+- Track goal progress using linked accounts. Compute pace from eligible transactions or year-over-year balance changes, and omit the projection when pace cannot be measured.
 
 ## Capabilities
 
