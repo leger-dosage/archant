@@ -16,13 +16,13 @@ Every row has one status, or one per sub-difference when it lists several, separ
 
 Reasons cite where the decision lives:
 
-- "Inventory" is `_bmad-output/planning-artifacts/feature-inventory.md`, the scope decisions of 2026-09-21.
-- "Epics" is `_bmad-output/planning-artifacts/epics.md`, whose Epic 8 lists the rule departures.
+- "Inventory" is [the original feature inventory](archive/bmad/planning-artifacts/feature-inventory.md), the scope decisions of 2026-09-21.
+- "Epics" is [the original epic plan](archive/bmad/planning-artifacts/epics.md), whose Epic 8 lists the rule departures.
 - "AD-n" is a decision of the architecture spine, [docs/architecture.md](architecture.md).
-- "Spec x.y" is the story spec `_bmad-output/implementation-artifacts/spec-x-y-*.md`; each one records its departures in its Design Notes, its "Never" list or its review triage.
+- "Spec x.y" is a story specification in the [implementation archive](archive/bmad/implementation-artifacts/); each one records its departures in its Design Notes, its "Never" list or its review triage.
 - "Overview" is [project-overview.md](project-overview.md).
 - A departure is Different only for one of four reasons: money as integer minor units, French text a French user expects, accessibility contrast, security; or for an owner's decision recorded with its date; or for a Sure defect, cited by its issue in `we-promise/sure`, which Archant does not copy.
-- "Story n.m" is a story of Epics 28 to 36 of Epics, each bringing Sure's behaviour back.
+- "Story n.m" is a story in the original epic plan. The [OpenSpec backlog](../openspec/README.md#pending-changes) maps the pending story numbers to their proposals.
 
 A "Never" item of a spec is a recorded decision to leave something out of that story. When the spec gives no reason, the row says so.
 

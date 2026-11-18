@@ -64,9 +64,10 @@ packages/
   api/    Hono server, REST and scheduled sync
   data/   Drizzle schema and database client shared by both
 docs/     Project documentation, architecture and decision records
+openspec/ Product specifications and proposed changes
 ```
 
-`_bmad-output/` holds the planning documents and one record per story: what was asked, what was decided and how it was reviewed.
+[OpenSpec](openspec/README.md) holds the current product specifications, proposed changes and the history of completed work.
 
 ## Prerequisites
 

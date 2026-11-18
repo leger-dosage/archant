@@ -21,8 +21,6 @@ concurrency:
 # The ruleset « main: pull request and CI » requires every job below by its
 # name: renaming or adding one means updating that ruleset (AGENTS.md).
 jobs:
-  # One job per gate command: a red pipeline names the failing gate without
-  # anyone opening the logs.
   gate:
     name: ${{ matrix.command }}
     runs-on: ubuntu-latest
@@ -41,6 +39,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm ${{ matrix.command }}
+      # Keep the required job name while checking the OpenSpec documents.
+      - if: matrix.command == 'lint:format'
+        run: pnpm lint:spec
+        env:
+          OPENSPEC_TELEMETRY: "0"
       # AGENTS.md: the gate must leave every tracked file as it found it.
       - run: git diff --exit-code
 

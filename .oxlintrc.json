@@ -445,8 +445,7 @@
 	"ignorePatterns": [
 		"dist",
 		"coverage",
-		"_bmad",
-		"_bmad-output",
+		"docs/archive/bmad",
 		".agents",
 		".claude",
 		"**/drizzle",

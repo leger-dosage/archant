@@ -12,7 +12,7 @@ For one household that is the wrong shape. Archant keeps the domain modelling, w
 
 ## Scope
 
-Features are cherry-picked from Sure one at a time, and each one is scoped through BMAD before implementation. The 26 epics of `_bmad-output/planning-artifacts/epics.md` have shipped:
+Each feature we take from Sure starts with an [OpenSpec proposal](../openspec/README.md). The [reference specifications](../openspec/specs/) describe what has shipped, including:
 
 - Accounts by hand, with daily balance history and balance snapshots, for depository, credit card, loan, investment, crypto, property, vehicle, other asset and other liability accounts
 - Loans with their terms, an amortisation schedule, an overview of what is repaid, and where the recorded balance is heading against the contract
@@ -34,7 +34,7 @@ Features are cherry-picked from Sure one at a time, and each one is scoped throu
 
 One running instance is one household. Amounts are in euros, but every amount carries its currency code.
 
-[sure-parity.md](sure-parity.md) compares each area with Sure: what is at parity, what differs on purpose and why, what comes later, and what has no recorded decision yet. What comes back later is listed in `_bmad-output/planning-artifacts/feature-inventory.md`.
+[sure-parity.md](sure-parity.md) compares each area with Sure: what is at parity, what differs on purpose and why, what comes later, and what has no recorded decision yet. The [OpenSpec backlog](../openspec/README.md#pending-changes) lists pending changes. Earlier scope decisions are in the [feature inventory](archive/bmad/planning-artifacts/feature-inventory.md).
 
 Explicit non-goals: multi-tenancy beyond one household, a hosted offering, server-side rendering, SEO.
 

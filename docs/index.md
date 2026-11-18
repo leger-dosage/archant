@@ -1,6 +1,6 @@
 # Documentation index
 
-Long-lived project knowledge. Planning and implementation artifacts live in `_bmad-output/`, not here.
+Project documentation, architecture and operating guides.
 
 | Document                                   | What it covers                                                                                       |
 | ------------------------------------------ | ---------------------------------------------------------------------------------------------------- |
@@ -12,6 +12,8 @@ Long-lived project knowledge. Planning and implementation artifacts live in `_bm
 | [troubleshooting.md](troubleshooting.md)   | One section per symptom a self-hoster meets, with the exact message and the fix                      |
 | [security-model.md](security-model.md)     | What is encrypted and with which secret, what leaves the server, what the logs hold, what is trusted |
 | [architecture.md](architecture.md)         | The architecture spine: the AD-n decisions that code comments and lint rules cite                    |
+| [OpenSpec](../openspec/README.md)          | Current product specifications and proposed changes                                                  |
+| [Planning archive](archive/bmad/README.md) | Earlier scope, design, story and review records                                                      |
 | [adr/](adr/)                               | Architecture decision records                                                                        |
 
 ## Decision records

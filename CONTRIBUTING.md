@@ -20,6 +20,8 @@ One pull request per change: a fix, a feature, a refactor, never two of them tog
 
 [AGENTS.md](AGENTS.md) holds the conventions in depth: file names, comments, money as integer minor units, the API's error format, security rules, tests. [docs/architecture.md](docs/architecture.md) holds the architecture decisions, the « AD-n » that code comments and lint messages cite. Read both before a change bigger than a fix.
 
+For a behaviour change, read the relevant [OpenSpec specification](openspec/specs/) and check [the pending changes](openspec/README.md#pending-changes). Keep the proposal, specification delta and tasks together in `openspec/changes/<name>/`. Verify the change, sync its delta into the reference specification and archive it in the implementation pull request. The [OpenSpec guide](openspec/README.md) lists the commands.
+
 A new dependency needs a reason in the pull request description: dependencies stay few and popular.
 
 A route that writes uses `POST`, `PUT`, `PATCH` or `DELETE`, never `GET`: the server refuses those methods to a read-only member before any route runs, so a new route needs no permission check of its own. A read only an administrator may see calls `requireRole("admin")`. In the interface, a control that writes is shown only when `useIsAdmin()` is true, so a viewer never meets a refusal; the server's refusal stays the authority.
@@ -37,6 +39,7 @@ pnpm install --frozen-lockfile
 pnpm format
 pnpm lint:code
 pnpm lint:format
+pnpm lint:spec
 pnpm typecheck
 pnpm test
 pnpm test:e2e
@@ -54,7 +57,7 @@ The pull request template asks why the change is needed, how you tested it, and 
 
 Two labels shape the release notes:
 
-- `planning`: planning and tracking pull requests, which change documents under `_bmad-output/` rather than the product. They are left out of the release notes.
+- `planning`: pull requests that only change planning documents, such as an OpenSpec proposal. They are left out of the release notes.
 - `breaking-change`: a pull request after which an upgrade needs an action from the self-hoster, such as a renamed variable. Its description says what to do, and the release notes list it under « Before upgrading ».
 
 The maintainer adds the other labels.
