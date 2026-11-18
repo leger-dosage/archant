@@ -23,7 +23,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget, useCopyBudget } from "@/hooks/useBudget";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { errorCodeOf } from "@/lib/api";
-import { monthLabel, ofMonth, toIsoMonth } from "@/lib/dates";
+import { budgetPeriodLabel, monthLabel, ofBudgetPeriod, ofMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 
 // Absent means « Toutes »; a value from an old or hand-edited link falls back to it.
@@ -124,7 +124,7 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 }
 
 /**
- * Sure's budget page for one calendar month: the header with its arrows,
+ * Sure's budget page for one period: the header with its arrows,
  * picker and « Aujourd'hui », then, once the month is set up, the donut and
  * the summary, then a card per category; before that, a way to set it up.
  * Reading a month writes nothing.
@@ -135,13 +135,14 @@ function BudgetMonthPage() {
 	const { filter } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const budget = useBudget(month);
-	const current = toIsoMonth();
-	const title = monthSchema.safeParse(month).success
-		? t("budgets.title", { ofMonth: ofMonth(month) })
+	const data = budget.data;
+	const valid = monthSchema.safeParse(month).success;
+	const title = valid
+		? t("budgets.title", { ofMonth: ofBudgetPeriod(month, data) })
 		: t("nav.budgets");
+	const label = data === undefined ? (valid ? monthLabel(month) : month) : budgetPeriodLabel(data);
 	const code = budget.isError ? errorCodeOf(budget.error) : null;
 	// A malformed month is out of range too: no budget can cover it.
-	const data = budget.data;
 	// A failed refetch keeps the month on screen rather than stacking an error under it.
 	const outOfRange = data === undefined && (code === "NOT_FOUND" || code === "VALIDATION_ERROR");
 	const failed = data === undefined && budget.isError && !outOfRange;
@@ -154,7 +155,7 @@ function BudgetMonthPage() {
 		<Page title={title}>
 			<BudgetMonthPicker
 				month={month}
-				current={current}
+				label={label}
 				previousMonth={data?.previousMonth ?? null}
 				nextMonth={data?.nextMonth ?? null}
 				bounds={data?.bounds ?? null}
@@ -185,7 +186,10 @@ function BudgetMonthPage() {
 							<BudgetSummary budget={data} />
 						</div>
 					) : (
-						<NotSetUp budget={data} />
+						<>
+							<NotSetUp budget={data} />
+							<BudgetSummary budget={data} />
+						</>
 					)}
 					<BudgetAvailableCash />
 					{data.setUp && (

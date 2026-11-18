@@ -220,6 +220,7 @@ async function household() {
 		fee: "0",
 	});
 
+	await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
 	await sendOwn("PUT", "/api/budgets/2026-09", {
 		budgetedSpending: "1 000",
 		expectedIncome: "2 500",
@@ -292,7 +293,7 @@ async function snapshotOf(db: Database) {
 		tags: await rows(sql`select name, color from tags order by name`),
 		merchants: await rows(sql`select name, color, website_url from merchants order by name`),
 		budgets: await rows(
-			sql`select month, currency, budgeted_spending as spending, expected_income as income from budgets order by month`,
+			sql`select month, start_date as "from", end_date as "to", currency, budgeted_spending as spending, expected_income as income from budgets order by month`,
 		),
 		budgetCategories: await rows(sql`
 			select b.month, c.name, x.budgeted_spending as amount from budget_categories x

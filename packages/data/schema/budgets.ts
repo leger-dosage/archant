@@ -4,7 +4,7 @@ import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-o
 import { categories } from "./categories.ts";
 
 /**
- * Sure's `Budget`, one row per calendar month, created on the first save:
+ * Sure's `Budget`, one row per month slug, created on the first save:
  * reading a month writes nothing. A month is set up when `budgeted_spending`
  * is not null, as Sure's `initialized?`. Amounts are minor units of
  * `currency`, the reporting currency when the row was saved.
@@ -15,6 +15,8 @@ export const budgets = sqliteTable(
 		id: text("id").primaryKey(),
 		/** `YYYY-MM`. */
 		month: text("month").notNull(),
+		startDate: text("start_date").notNull(),
+		endDate: text("end_date").notNull(),
 		currency: text("currency").notNull(),
 		budgetedSpending: integer("budgeted_spending"),
 		expectedIncome: integer("expected_income"),
@@ -23,6 +25,12 @@ export const budgets = sqliteTable(
 	},
 	(table) => [
 		uniqueIndex("budgets_month_unique").on(table.month),
+		uniqueIndex("budgets_start_date_unique").on(table.startDate),
+		uniqueIndex("budgets_end_date_unique").on(table.endDate),
+		check(
+			"budgets_dates_check",
+			sql`substr(${table.startDate}, 1, 7) = ${table.month} and ${table.endDate} >= ${table.startDate}`,
+		),
 		// A null amount passes: a comparison with null is not false.
 		check(
 			"budgets_amounts_check",

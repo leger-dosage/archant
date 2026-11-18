@@ -500,6 +500,8 @@ describe("the other tables", () => {
 		await temp.db.insert(budgets).values({
 			id: budgetId,
 			month: "2026-08",
+			startDate: "2026-08-01",
+			endDate: "2026-08-31",
 			currency: "EUR",
 			budgetedSpending: 100_000,
 			expectedIncome: null,

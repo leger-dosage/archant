@@ -107,6 +107,35 @@ export function BudgetSummary({ budget }: { budget: BudgetData }) {
 	};
 	const money = (amount: MinorUnits) => formatMoney({ amount, currency: budget.currency });
 
+	if (!budget.setUp) {
+		return (
+			<Section title={t("budgets.summary.title")}>
+				<div className="grid gap-4 p-4 text-sm sm:grid-cols-2">
+					<div className="flex flex-col gap-1">
+						<p>{t("budgets.summary.earned", { amount: money(income.actual) })}</p>
+						{budget.suggested.income !== null && (
+							<p className="text-muted-foreground">
+								{t("budgets.summary.suggestedIncome", {
+									amount: money(toMinorUnits(budget.suggested.income)),
+								})}
+							</p>
+						)}
+					</div>
+					<div className="flex flex-col gap-1">
+						<p>{t("budgets.summary.spent", { amount: money(spending.actual) })}</p>
+						{budget.suggested.spending !== null && (
+							<p className="text-muted-foreground">
+								{t("budgets.summary.suggestedSpending", {
+									amount: money(toMinorUnits(budget.suggested.spending)),
+								})}
+							</p>
+						)}
+					</div>
+				</div>
+			</Section>
+		);
+	}
+
 	return (
 		<Section title={t("budgets.summary.title")}>
 			<div className="flex flex-col divide-y divide-line">

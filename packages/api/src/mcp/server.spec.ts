@@ -3381,6 +3381,44 @@ describe("reading a budget", () => {
 		expect(current.months[0]).toMatchObject(await budgetFromRoute("2026-09"));
 	});
 
+	it("resolves omitted and explicit budget slugs to the same payday period", async () => {
+		const { app, reader, author } = await budgetHousehold();
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+
+		const before = budgetResult.parse(
+			(await callTool(app, reader, "get_budget")).structuredContent,
+		);
+		expect(before.months).toMatchObject([
+			{
+				month: "aug-2026",
+				period: { start_date: "2026-08-25", end_date: "2026-09-24" },
+				is_current: true,
+				initialized: false,
+			},
+		]);
+		const updated = await callTool(app, author, "update_budget", {
+			budgeted_spending: 100,
+			expected_income: 0,
+		});
+		expect(updated.structuredContent).toMatchObject({
+			success: true,
+			month: "aug-2026",
+		});
+
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 1 });
+		const saved = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "Aug-2026" })).structuredContent,
+		);
+		expect(saved.months).toMatchObject([
+			{
+				month: "aug-2026",
+				period: { start_date: "2026-08-25", end_date: "2026-09-24" },
+				is_current: false,
+				initialized: true,
+			},
+		]);
+	});
+
 	it("get_budget answers a month out of bounds with NOT_FOUND, and refuses more than eleven earlier months", async () => {
 		const { app, reader } = await budgetHousehold();
 

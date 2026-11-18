@@ -24,6 +24,11 @@ export function useUpdateHouseholdPreferences() {
 			// The zone changes which day the server uses for its figures and dates.
 			if (input.timeZone !== undefined) {
 				await queryClient.invalidateQueries();
+			} else if (input.monthStartDay !== undefined) {
+				await Promise.all([
+					queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budgets }),
+					queryClient.invalidateQueries({ queryKey: queryKeys.accounts.reportsPages }),
+				]);
 			}
 		},
 	});

@@ -750,6 +750,13 @@
       "when": 1795017434839,
       "tag": "0106_add_manual_reconciliation",
       "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "6",
+      "when": 1795024287104,
+      "tag": "0107_budget_period_dates",
+      "breakpoints": true
     }
   ]
 }

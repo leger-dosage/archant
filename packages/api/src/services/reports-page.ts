@@ -137,7 +137,7 @@ const positive = (amount: MinorUnits) => toMinorUnits(Math.abs(amount));
 
 /**
  * Sure's `calculate_budget_performance`: only a monthly report on the
- * current month, spending over `allocated_spending`, the top-level
+ * current month, using the current budget period and its spending over `allocated_spending`, the top-level
  * categories' amounts summed, 0 when they sum to 0, `null` when the month
  * cannot have a budget, as Sure's `rescue`.
  */
@@ -153,7 +153,7 @@ async function budgetPercent(
 	}
 
 	try {
-		const budget = await getBudget(deps, month);
+		const budget = await getBudget(deps, undefined);
 
 		return budget.allocated === 0 ? 0 : percentOneDecimal(budget.actual.spending, budget.allocated);
 	} catch (error) {

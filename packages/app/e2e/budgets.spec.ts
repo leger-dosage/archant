@@ -792,3 +792,81 @@ test("what a category leaves carries into the next month set up, while its switc
 		await expect(rolloverSwitch(page, gifts.name)).not.toBeChecked();
 	});
 });
+
+test("a budget starting on the 25th uses its dates for the picker and transactions", async ({
+	page,
+	request,
+	api,
+}) => {
+	const headers = { origin: WEB_URL };
+	const preference = "/api/preferences/household";
+	const current = daysAgo(0);
+	const currentMonth =
+		Number(current.slice(8)) < 25 ? shiftMonth(current.slice(0, 7), -1) : current.slice(0, 7);
+	// The shared database keeps this budget. Keep its dates beyond later tests' current period.
+	const year = Number(current.slice(0, 4)) + 1;
+	const month = `${year}-01`;
+	const range = `25 janv. - 24 février ${year}`;
+	const account = await api.openAccount({ openingDate: `${year - 1}-12-01`, openingBalance: "0" });
+	const category = await api.createCategory({ name: uniqueName("Courses après la paie") });
+	const label = "Opération du 24 février";
+
+	try {
+		const inside = await api.addTransaction(account.id, {
+			date: `${year}-02-24`,
+			label,
+			amount: "-37",
+		});
+		const outside = await api.addTransaction(account.id, {
+			date: `${year}-02-25`,
+			label: "Opération du 25 février",
+			amount: "-40",
+		});
+		await api.categorise([inside, outside], category.id);
+		expect((await request.patch(preference, { headers, data: { monthStartDay: 25 } })).ok()).toBe(
+			true,
+		);
+
+		await page.goto("/budgets");
+		await expect(page).toHaveURL(`/budgets/${currentMonth}`);
+		await page.goto(`/budgets/${month}`);
+		await expect(page.getByRole("heading", { level: 1, name: `Budget du ${range}` })).toBeVisible();
+		const picker = page.getByRole("button", {
+			name: `Choisir un mois, ${range}`,
+		});
+		await picker.click();
+		await page.getByRole("link", { name: "février", exact: true }).click();
+		await expect(page).toHaveURL(`/budgets/${year}-02`);
+		await page.getByRole("link", { name: "Mois précédent" }).click();
+		await expect(picker).toBeVisible();
+		await expect(summary(page)).toContainText(`${euros(3_700)} dépensés`);
+
+		expect(
+			(
+				await request.put(`/api/budgets/${month}`, {
+					headers,
+					data: { budgetedSpending: "100", expectedIncome: "0" },
+				})
+			).ok(),
+		).toBe(true);
+		await page.reload();
+		await card(page, category.name).click();
+		const sheet = page.getByRole("dialog", { name: category.name });
+		await expect(sheet.getByText(label)).toBeVisible();
+		await expect(sheet.getByText("Opération du 25 février")).toHaveCount(0);
+		await sheet.getByRole("link", { name: "Voir toutes les opérations" }).click();
+		await expect(page).toHaveURL(
+			(url) =>
+				url.pathname === "/transactions" &&
+				url.searchParams.get("from") === `${year}-01-25` &&
+				url.searchParams.get("to") === `${year}-02-24`,
+		);
+		await expect(page.getByText(label)).toBeVisible();
+	} finally {
+		expect((await request.patch(preference, { headers, data: { monthStartDay: 1 } })).ok()).toBe(
+			true,
+		);
+		expect((await request.delete(`/api/accounts/${account.id}`, { headers })).ok()).toBe(true);
+		expect((await request.delete(`/api/categories/${category.id}`, { headers })).ok()).toBe(true);
+	}
+});

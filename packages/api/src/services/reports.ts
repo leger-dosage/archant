@@ -1,7 +1,6 @@
 import type { DailyBalance } from "../domain/balances/forward.ts";
 import type { BalanceChange, DateRange } from "../domain/balances/history.ts";
 import type { ChartQuery, SureInterval } from "../domain/balances/sure-periods.ts";
-import type { MonthRows } from "../domain/budgets/categories.ts";
 import type { CashFlowSankey } from "../domain/cash-flow-sankey.ts";
 import type {
 	CashFlowBreakdown,
@@ -710,15 +709,14 @@ export async function getSpendingTrend(
 }
 
 /**
- * A calendar month's net view (AD-9), with the rows it counted and the
- * categories it read, so a budget computes each category's spending from the
- * same rows. The whole month counts, future-dated rows included.
+ * A budget period's net view (AD-9), with the rows and categories it counted.
+ * The whole period counts, future-dated rows included.
  */
 export async function getCashFlowWithRows(
 	deps: ServiceDeps,
 	month: IsoMonth,
+	{ from, to }: DateRange,
 ): Promise<CashFlowWithRows> {
-	const { from, to } = monthRange(month);
 	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
 	const [rows, allCategories] = await Promise.all([
 		cashFlowByCategory(deps, { from, to, accountIds: counted.map((row) => row.id) }),
@@ -748,53 +746,14 @@ export async function breakdownCategories(deps: ServiceDeps): Promise<CashFlowCa
 		.from(categories);
 }
 
-/** `rows` of the months before `before`, grouped by month, oldest first, a month without a row absent. */
-export function historyBefore(rows: readonly MonthlyCashFlowRow[], before: IsoMonth): MonthRows[] {
-	const byMonth = new Map<IsoMonth, CashFlowRow[]>();
-
-	for (const { month, ...row } of rows) {
-		if (month < before) {
-			const monthRows = byMonth.get(month);
-
-			if (monthRows === undefined) {
-				byMonth.set(month, [row]);
-			} else {
-				monthRows.push(row);
-			}
-		}
-	}
-
-	return [...byMonth]
-		.toSorted(([a], [b]) => a.localeCompare(b))
-		.map(([month, monthRows]) => ({ month, rows: monthRows }));
-}
-
-/**
- * The counted rows of every month before `before`, over `cashFlowAccounts`'
- * accounts, read in one query: what the budget's rollover chain takes.
- */
-export async function getCashFlowHistory(
+/** The whole history of counted cash flow, grouped by calendar or budget month. */
+export async function getCashFlowMonths(
 	deps: ServiceDeps,
-	before: IsoMonth,
-): Promise<MonthRows[]> {
-	const { counted } = await cashFlowAccounts(deps);
-	const rows = await cashFlowByMonth(deps, {
-		to: monthRange(shiftMonth(before, -1)).to,
-		accountIds: counted.map((row) => row.id),
-	});
-
-	return historyBefore(rows, before);
-}
-
-/**
- * Every counted row of the history over `cashFlowAccounts`' accounts, keyed by
- * month, no bound on either side: one read from which a budget takes both its
- * rollover history, through `historyBefore`, and its statistics.
- */
-export async function getCashFlowMonths(deps: ServiceDeps): Promise<MonthlyCashFlowRow[]> {
+	startDay = 1,
+): Promise<MonthlyCashFlowRow[]> {
 	const { counted } = await cashFlowAccounts(deps);
 
-	return cashFlowByMonth(deps, { accountIds: counted.map((row) => row.id) });
+	return cashFlowByMonth(deps, { accountIds: counted.map((row) => row.id) }, startDay);
 }
 
 /** Sure's `FamilyStats` and `CategoryStats`, by month, over one set of accounts. */

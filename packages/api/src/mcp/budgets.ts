@@ -121,7 +121,7 @@ function statusOf(envelope: Envelope): BudgetStatus {
 
 function monthOf(budget: BudgetMonth, day: IsoDate): z.input<typeof monthOutput> {
 	const money = (amount: MinorUnits) => formatMoney({ amount, currency: budget.currency });
-	const isCurrent = day.slice(0, 7) === budget.month;
+	const { isCurrent } = budget;
 	// Today included, as Sure's `suggested_daily_spending` divides by the days left.
 	const daysLeft = daysBetween(day, budget.to) + 1;
 	// A missing amount counts 0, as Sure's `format_money(value || 0)`.
@@ -184,7 +184,7 @@ export const getBudgetTool = defineTool({
 	name: "get_budget",
 	title: "Budget",
 	description:
-		"Sure's get_budget: a calendar month's budget as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. A month not set up shows 0 for what it plans; months before the first one a budget can cover are left out and counted in months_unavailable.",
+		"Sure's get_budget: a household budget period as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. A month not set up shows 0 for what it plans; months before the first one a budget can cover are left out and counted in months_unavailable.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: budgetInput,
@@ -199,8 +199,8 @@ export const getBudgetTool = defineTool({
 	}),
 	run: async (deps, input) => {
 		const day = today(deps.timeZone);
-		const month = input.month ?? day.slice(0, 7);
-		const target = await getBudget(deps, month);
+		const target = await getBudget(deps, input.month);
+		const { month } = target;
 		const asked = Array.from({ length: input.prior_months }, (_, index) =>
 			shiftMonth(month, index - input.prior_months),
 		);
@@ -238,9 +238,9 @@ const MONTH_NAMES = [
  * Sure's `MonthResolvable`: "YYYY-MM" or "MMM-YYYY", the current month when
  * blank; anything else refused with Sure's `invalid_params`.
  */
-function monthOfParam(raw: string | undefined, day: IsoDate): IsoMonth {
+function monthOfParam(raw: string | undefined): IsoMonth | undefined {
 	if (raw === undefined || raw.trim() === "") {
-		return day.slice(0, 7);
+		return undefined;
 	}
 
 	const month = sureMonthOf(raw);
@@ -349,9 +349,9 @@ export const updateBudgetTool = defineTool({
 			);
 		}
 
-		const month = monthOfParam(input.month, today(deps.timeZone));
+		const month = monthOfParam(input.month);
 
-		if (!(await isBudgetableMonth(deps, month))) {
+		if (month !== undefined && !(await isBudgetableMonth(deps, month))) {
 			refuse(
 				"invalid_month",
 				"No budget exists (or can be created) for that month — it is outside the valid budget range.",
@@ -409,7 +409,7 @@ export const updateBudgetTool = defineTool({
 			...changes.filter(({ category }) => category.parentId !== null),
 			...changes.filter(({ category }) => category.parentId === null),
 		];
-		const [year = "", number = ""] = month.split("-");
+		const [year = "", number = ""] = budget.month.split("-");
 
 		return {
 			result: {

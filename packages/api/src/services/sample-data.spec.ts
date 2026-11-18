@@ -148,6 +148,23 @@ describe("samplePlan", () => {
 		);
 	});
 
+	it("preloads a budget for the household's current period", () => {
+		const { plan } = samplePlan({
+			seed: SAMPLE_DATA_SEED,
+			today: "2026-11-06",
+			currency: "EUR",
+			monthStartDay: 25,
+		});
+
+		expect(plan.budgets).toMatchObject([
+			{
+				month: "2026-10",
+				startDate: "2026-10-25",
+				endDate: "2026-11-24",
+			},
+		]);
+	});
+
 	it("buys into the 401(k) every other Friday whatever the day, Sure's parity slip fixed", () => {
 		// 2027-03-01 spans 2026's 53rd week, which an even-week filter skips.
 		for (const today of [TODAY, "2026-10-25", "2026-11-01", "2027-03-01"]) {

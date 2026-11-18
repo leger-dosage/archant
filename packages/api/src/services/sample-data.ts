@@ -11,7 +11,7 @@ import { householdLocale } from "./household-locale.ts";
 import { resetFinancialData } from "./ledger/reset.ts";
 import { englishSample } from "./sample-data-english.ts";
 import { SAMPLE_DATA_SEED, samplePlan } from "./sample-data-plan.ts";
-import { getReportingCurrency } from "./settings.ts";
+import { getMonthStartDay, getReportingCurrency } from "./settings.ts";
 import { afterImport, writeArchive } from "./sure-import.ts";
 
 /**
@@ -69,9 +69,17 @@ async function insertGoals(
  * demo's bills appear as Sure's sync finds them.
  */
 export async function resetWithSampleData(deps: SureImportDeps): Promise<void> {
-	const currency = await getReportingCurrency(deps.db);
-	// Built before the write lock is taken: the plan depends on no row.
-	const generated = samplePlan({ seed: SAMPLE_DATA_SEED, today: today(deps.timeZone), currency });
+	const [currency, monthStartDay] = await Promise.all([
+		getReportingCurrency(deps.db),
+		getMonthStartDay(deps.db),
+	]);
+	// Generate the fictional rows before taking the write lock.
+	const generated = samplePlan({
+		seed: SAMPLE_DATA_SEED,
+		today: today(deps.timeZone),
+		currency,
+		monthStartDay,
+	});
 	// The household's language decides the names, never the rows.
 	const sample = (await householdLocale(deps.db)) === "en" ? englishSample(generated) : generated;
 

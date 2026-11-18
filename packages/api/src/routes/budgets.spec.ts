@@ -192,6 +192,88 @@ async function household() {
 	return { account, courses, clothes, salary };
 }
 
+describe("household budget periods", () => {
+	it("reads the current payday period and groups its suggestions without writing", async () => {
+		const account = await openOwn({ openingDate: "2023-03-03" });
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+		await line(account.id, "2026-08-24", "-40");
+		await line(account.id, "2026-08-25", "-10");
+		await line(account.id, "2026-09-24", "-20");
+		await line(account.id, "2026-09-25", "-90");
+
+		await expect(ownRequest("GET", "/api/budgets/current")).resolves.toEqual({
+			status: 200,
+			body: { data: { month: "2026-08" } },
+		});
+		await expect(budgetOf("2026-08")).resolves.toMatchObject({
+			from: "2026-08-25",
+			to: "2026-09-24",
+			actual: { spending: 3_000 },
+			suggested: { spending: 4_000 },
+			previousMonth: "2026-07",
+			nextMonth: "2026-09",
+			bounds: { from: "2023-02", to: "2028-08" },
+		});
+		await expect(budgetRows()).resolves.toEqual([]);
+		await expect(amountRows()).resolves.toEqual([]);
+
+		await save("2026-08", "100", "0");
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 1 });
+		await expect(budgetOf("2026-08")).resolves.toMatchObject({
+			suggested: { spending: 4_000 },
+		});
+	});
+
+	it("keeps a saved slug available when the new current period moves the upper bound", async () => {
+		expect((await save("2028-09", "100", "0")).status).toBe(200);
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+		expect((await save("2028-09", "200", "0")).status).toBe(200);
+
+		await expect(budgetOf("2028-09")).resolves.toMatchObject({
+			from: "2028-09-01",
+			to: "2028-09-30",
+			budgetedSpending: 20_000,
+			bounds: { to: "2028-08" },
+			previousMonth: "2028-08",
+			nextMonth: null,
+		});
+		expect((await save("2028-10", "100", "0")).status).toBe(404);
+	});
+
+	it("keeps saved dates and uses them for carry after the preference changes", async () => {
+		const account = await openOwn({ openingDate: "2026-06-01" });
+		const gift = await ownCategory("Cadeaux");
+		await save("2026-06", "100", "0");
+		await saved("2026-06", gift, "100");
+		await toggled("2026-06", gift, true);
+		await line(account.id, "2026-06-10", "-30", gift);
+		await line(account.id, "2026-07-10", "-20", gift);
+
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+		await save("2026-06", "200", "0");
+		await save("2026-07", "100", "0");
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 1 });
+
+		await expect(budgetOf("2026-06")).resolves.toMatchObject({
+			from: "2026-06-01",
+			to: "2026-06-30",
+			budgetedSpending: 20_000,
+			actual: { spending: 3_000 },
+		});
+		const july = await budgetOf("2026-07");
+		expect(july).toMatchObject({
+			from: "2026-07-25",
+			to: "2026-08-24",
+			actual: { spending: 0 },
+		});
+		expect(lineOf(july, gift)).toMatchObject({ rolledOver: 7_000 });
+		await expect(budgetOf("2026-08")).resolves.toMatchObject({
+			from: "2026-08-01",
+			to: "2026-08-31",
+		});
+	});
+});
+
 describe("GET /api/budgets/:month", () => {
 	it("answers a month not set up with its actuals and suggestions, and writes nothing", async () => {
 		const { courses, clothes, salary } = await household();

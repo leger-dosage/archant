@@ -68,6 +68,16 @@ export async function householdTimeZone(db: Reader, fallback: string): Promise<s
 	return storedTimeZone(await readSetting(db, KEYS.timeZone), fallback);
 }
 
+function storedMonthStartDay(value: string | undefined): number {
+	const day = Number(value);
+
+	return Number.isInteger(day) && day >= 1 && day <= 28 ? day : 1;
+}
+
+export async function getMonthStartDay(db: Reader): Promise<number> {
+	return storedMonthStartDay(await readSetting(db, KEYS.monthStartDay));
+}
+
 export async function getHouseholdPreferences({
 	db,
 	timeZone,
@@ -79,17 +89,13 @@ export async function getHouseholdPreferences({
 	const values = new Map(rows.map(({ key, value }) => [key, value]));
 	const country = values.get(KEYS.country) ?? "";
 	const dateFormat = DATE_FORMATS.find((format) => format === values.get(KEYS.dateFormat));
-	const monthStartDay = Number(values.get(KEYS.monthStartDay));
 
 	return {
 		country: isHouseholdCountry(country) ? country : DEFAULT_HOUSEHOLD_COUNTRY,
 		baseCurrency: reportingCurrency(values.get(KEYS.baseCurrency)),
 		dateFormat: dateFormat ?? defaultDateFormat(await householdLocale(db)),
 		timeZone: storedTimeZone(values.get(KEYS.timeZone), timeZone),
-		monthStartDay:
-			Number.isInteger(monthStartDay) && monthStartDay >= 1 && monthStartDay <= 28
-				? monthStartDay
-				: 1,
+		monthStartDay: storedMonthStartDay(values.get(KEYS.monthStartDay)),
 	};
 }
 

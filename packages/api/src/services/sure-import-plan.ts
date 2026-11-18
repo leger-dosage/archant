@@ -58,6 +58,7 @@ import { RECURRING_STATUSES } from "@archant/data/schema/recurring-transactions"
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 import { TRANSFER_KINDS, TRANSFER_STATUSES } from "@archant/data/transfer-kinds";
 
+import { budgetPeriod } from "../domain/budgets/months.ts";
 import { addDays, today } from "../domain/dates.ts";
 import { isTooFarAhead } from "../domain/statement.ts";
 import { tradeAmount, tradeValue } from "../domain/trades.ts";
@@ -262,6 +263,8 @@ type PlanRecurring = {
 type PlanBudget = {
 	sourceId: string;
 	month: string;
+	startDate: IsoDate;
+	endDate: IsoDate;
 	budgetedSpending: MinorUnits | null;
 	expectedIncome: MinorUnits | null;
 };
@@ -1397,6 +1400,7 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 		const { data } = record;
 		const sourceId = idOf(data.id);
 		const start = dateOf(data.start_date);
+		const end = dateOf(data.end_date);
 
 		if (sourceId === null || (data.currency ?? currency) !== currency) {
 			return [];
@@ -1404,6 +1408,21 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 
 		if (start === null) {
 			reader.findings.errors.push(invalid(record, "start_date", data.start_date));
+
+			return [];
+		}
+
+		const month = start.slice(0, 7);
+		const startDay = Number(start.slice(8));
+
+		if (startDay > 28) {
+			reader.findings.errors.push(invalid(record, "start_date", data.start_date));
+
+			return [];
+		}
+
+		if (end !== budgetPeriod(month, startDay).endDate) {
+			reader.findings.errors.push(invalid(record, "end_date", data.end_date));
 
 			return [];
 		}
@@ -1425,7 +1444,9 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 		return [
 			{
 				sourceId,
-				month: start.slice(0, 7),
+				month,
+				startDate: start,
+				endDate: end,
 				budgetedSpending: amount("budgeted_spending"),
 				expectedIncome: amount("expected_income"),
 			},

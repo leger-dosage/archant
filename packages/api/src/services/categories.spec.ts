@@ -9,6 +9,7 @@ import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
+import { budgetPeriod } from "../domain/budgets/months.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import {
 	bootstrapCategories,
@@ -61,9 +62,11 @@ async function budgeted(...categoryIds: string[]) {
 	await categoryIds.reduce(async (previous, categoryId, index) => {
 		await previous;
 		const budgetId = crypto.randomUUID();
+		const month = `2026-${String(index + 1).padStart(2, "0")}`;
 		await temp.db.insert(budgets).values({
 			id: budgetId,
-			month: `2026-${String(index + 1).padStart(2, "0")}`,
+			month,
+			...budgetPeriod(month, 1),
 			currency: "EUR",
 			budgetedSpending: 100_000,
 			expectedIncome: 0,
@@ -461,6 +464,7 @@ async function budgetMonth(month: string, lines: Record<string, number>) {
 	await temp.db.insert(budgets).values({
 		id: budgetId,
 		month,
+		...budgetPeriod(month, 1),
 		currency: "EUR",
 		budgetedSpending: 100_000,
 		expectedIncome: 0,

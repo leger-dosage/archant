@@ -2,21 +2,44 @@ import type { IsoDate, IsoMonth } from "../dates.ts";
 
 import { shiftMonth } from "@archant/data/months";
 
-/** The first and last months a budget may be read or saved for, both inclusive. */
+import { monthRange } from "../dates.ts";
+
+/** The first and last months offered for new budgets, both inclusive. */
 export type MonthBounds = { from: IsoMonth; to: IsoMonth };
 
 /** How far before and after the current month budgets reach, as Sure's two years. */
 const MONTHS_AROUND = 24;
 
-/**
- * Sure's `budget_date_valid?` on calendar months: from two years before the
- * current month, or the oldest entry's month when earlier, to two years after
- * it. `current` is the month in `APP_TIMEZONE`; `oldestEntry` is `null` when
- * nothing is recorded yet.
- */
-export function budgetBounds(current: IsoMonth, oldestEntry: IsoDate | null): MonthBounds {
+/** The slug is the calendar month in which the period starts. */
+export function budgetMonthOf(date: IsoDate, startDay: number): IsoMonth {
+	const month = date.slice(0, 7);
+
+	return Number(date.slice(8, 10)) < startDay ? shiftMonth(month, -1) : month;
+}
+
+const padDay = (day: number) => String(day).padStart(2, "0");
+
+export function budgetPeriod(month: IsoMonth, startDay: number) {
+	if (startDay === 1) {
+		const { from, to } = monthRange(month);
+
+		return { startDate: from, endDate: to };
+	}
+
+	return {
+		startDate: `${month}-${padDay(startDay)}`,
+		endDate: `${shiftMonth(month, 1)}-${padDay(startDay - 1)}`,
+	};
+}
+
+/** Two years either side of the current period, extended back to the oldest entry's period. */
+export function budgetBounds(
+	current: IsoMonth,
+	oldestEntry: IsoDate | null,
+	startDay: number,
+): MonthBounds {
 	const twoYearsBack = shiftMonth(current, -MONTHS_AROUND);
-	const oldest = oldestEntry?.slice(0, 7) ?? current;
+	const oldest = oldestEntry === null ? current : budgetMonthOf(oldestEntry, startDay);
 
 	return {
 		from: oldest < twoYearsBack ? oldest : twoYearsBack,

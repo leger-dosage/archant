@@ -59,6 +59,30 @@ const insertEntry = (
 	);
 
 describe("runMigrations", () => {
+	it("gives existing budgets their calendar dates and keeps their category allocations", async () => {
+		await migrateBefore(url, "0107");
+		db = await createDb(url);
+		await db.run(sql`insert into budgets (id, month, currency, budgeted_spending, created_at, updated_at)
+			values ('budget', '2024-02', 'EUR', 10000, 0, 0)`);
+		await db.run(sql`insert into categories (id, name, color, icon, created_at, updated_at)
+			values ('category', 'Groceries', '#000000', 'tag', 0, 0)`);
+		await db.run(sql`insert into budget_categories
+			(id, budget_id, category_id, budgeted_spending, created_at, updated_at)
+			values ('allocation', 'budget', 'category', 5000, 0, 0)`);
+		db.$client.close();
+		db = undefined;
+
+		const database = await migrated();
+		await expect(
+			database.all(sql`select start_date, end_date, budgeted_spending from budgets`),
+		).resolves.toEqual([
+			{ start_date: "2024-02-01", end_date: "2024-02-29", budgeted_spending: 10000 },
+		]);
+		await expect(
+			database.all(sql`select budget_id, category_id, budgeted_spending from budget_categories`),
+		).resolves.toEqual([{ budget_id: "budget", category_id: "category", budgeted_spending: 5000 }]);
+	});
+
 	it("creates the ledger tables", async () => {
 		const database = await migrated();
 
@@ -3223,7 +3247,8 @@ const insertBudget = (
 	income: number | null,
 ) =>
 	database.run(
-		sql`insert into budgets (id, month, currency, budgeted_spending, expected_income, created_at, updated_at) values (${id}, ${month}, 'EUR', ${spending}, ${income}, 0, 0)`,
+		sql`insert into budgets (id, month, start_date, end_date, currency, budgeted_spending, expected_income, created_at, updated_at)
+			values (${id}, ${month}, ${month + "-01"}, date(${month + "-01"}, '+1 month', '-1 day'), 'EUR', ${spending}, ${income}, 0, 0)`,
 	);
 
 describe("budgets", () => {
@@ -3235,6 +3260,9 @@ describe("budgets", () => {
 		await expect(insertBudget(database, "b3", "2026-11", 0, 250_000)).resolves.toBeDefined();
 		await expect(insertBudget(database, "b4", "2026-12", -1, 0)).rejects.toThrow();
 		await expect(insertBudget(database, "b5", "2027-01", 0, -1)).rejects.toThrow();
+		await expect(
+			database.run(sql`update budgets set end_date = '2026-11-30' where id = 'b1'`),
+		).rejects.toThrow();
 	});
 
 	it("holds one amount per category and budget, never negative, gone with either", async () => {

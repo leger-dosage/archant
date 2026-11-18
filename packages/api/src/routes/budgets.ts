@@ -14,6 +14,7 @@ import {
 import { getBudgetCash } from "../services/budget-cash.ts";
 import {
 	copyBudget,
+	currentBudgetMonth,
 	getBudget,
 	moveCategoryBudget,
 	saveBudget,
@@ -24,6 +25,7 @@ import {
 export function budgetsRoutes(deps: ServiceDeps) {
 	return new Hono()
 		.get("/available-cash", async (c) => c.json({ data: await getBudgetCash(deps) }, 200))
+		.get("/current", async (c) => c.json({ data: { month: await currentBudgetMonth(deps) } }, 200))
 		.get("/:month", validated("param", budgetParamSchema), async (c) =>
 			c.json({ data: await getBudget(deps, c.req.valid("param").month) }, 200),
 		)
