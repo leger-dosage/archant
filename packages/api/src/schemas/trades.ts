@@ -17,7 +17,7 @@ import {
 	tradeAmount,
 } from "../domain/trades.ts";
 import { entryDateSchema } from "./accounts.ts";
-import { pageQuerySchema } from "./transactions.ts";
+import { NOTES_MAX_LENGTH, pageQuerySchema } from "./transactions.ts";
 
 // The form's four types, its ISIN check and its sign check, from the domain
 // the API checks them with.
@@ -128,6 +128,7 @@ export const tradePatchBodySchema = z
 		price: z.string(),
 		fee: z.string(),
 		amount: z.string(),
+		notes: z.string().nullable(),
 	})
 	.partial();
 
@@ -371,6 +372,7 @@ export function updateTradeSchema(currency: CurrencyCode) {
 			price: z.string().optional(),
 			fee: z.string().optional(),
 			amount: z.string().optional(),
+			notes: z.string().trim().max(NOTES_MAX_LENGTH).nullable().optional(),
 		})
 		.superRefine((value, context) => {
 			numbersIn(currency)(value, context);
@@ -390,6 +392,7 @@ export function updateTradeSchema(currency: CurrencyCode) {
 				...(read.price === null ? {} : { price: read.price }),
 				...(read.fee === null ? {} : { fee: read.fee }),
 				...(amount === null ? {} : { amount }),
+				...(value.notes === undefined ? {} : { notes: value.notes === "" ? null : value.notes }),
 			};
 		});
 }
