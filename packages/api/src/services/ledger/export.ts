@@ -379,6 +379,8 @@ export const LEFT_OUT = {
 			"A valuation's notes, which Sure's `Family::DataExporter` leaves out of its Valuation lines and its importer never reads.",
 	},
 	entry_keys: "Deduplication keys, meaningful to this instance only.",
+	goal_deposits: "Reconciliation state tied to this ledger's entry identities.",
+	goal_pledges: "Pledges have no supported interchange record. A database backup keeps them.",
 	import_mappings: "A saved CSV column mapping, a setting.",
 	imports: "Raw import files and their previews.",
 	invitations: SECRETS,

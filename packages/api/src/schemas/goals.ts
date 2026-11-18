@@ -34,6 +34,8 @@ export const goalBodySchema = z.object({
 
 export type GoalInput = z.input<typeof goalBodySchema>;
 
+export const goalPledgeBodySchema = z.object({ accountId: z.string().min(1), amount: z.string() });
+
 /** `POST /api/goals/:id/:event`: one of Sure's events, else a `VALIDATION_ERROR`. */
 export const goalEventParamSchema = z.object({ id: z.string(), event: z.enum(GOAL_EVENTS) });
 
