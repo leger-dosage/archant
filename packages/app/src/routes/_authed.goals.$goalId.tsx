@@ -41,6 +41,7 @@ import { CHART_HEIGHTS } from "@/lib/chart-heights";
 import { toIsoDate } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { formatMoney } from "@/lib/format-money";
+import { goalPageText } from "@/lib/goal-page";
 import { formatWholePercent } from "@/lib/percent";
 
 // Recharts weighs more than the rest of the page: it downloads with the chart.
@@ -120,15 +121,6 @@ function Progress({ goal }: { goal: GoalData }) {
 							{t("goals.includingUsed", {
 								amount: formatMoney({ amount: goal.consumedAmount, currency: goal.currency }),
 							})}
-						</p>
-					)}
-					{goal.catchUpAmount !== null && (
-						<p className="text-sm text-muted-foreground">
-							{goal.catchUpAmount === 0
-								? t("goals.pledge.covered")
-								: t("goals.pledge.catchUp", {
-										amount: formatMoney({ amount: goal.catchUpAmount, currency: goal.currency }),
-									})}
 						</p>
 					)}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
@@ -222,17 +214,24 @@ function completeDescription(goal: GoalData, t: TFunction): string {
 }
 
 /** The chart, for a goal that still saves: active or paused, as Sure's projection panel. */
-function Projection({ goal }: { goal: GoalData }) {
+function Projection({
+	goal,
+	history,
+	summary,
+}: {
+	goal: GoalData;
+	history: ReturnType<typeof useGoalHistory>;
+	summary: string | null;
+}) {
 	const { t } = useTranslation();
-	const saving = goal.state === "active" || goal.state === "paused";
-	const history = useGoalHistory(goal.id, saving);
 
-	if (!saving) {
+	if (goal.state !== "active" && goal.state !== "paused") {
 		return null;
 	}
 
 	return (
 		<Section title={t("goals.chart.title")}>
+			{summary !== null && <p className="px-4 pt-3 text-sm text-muted-foreground">{summary}</p>}
 			<Suspense
 				fallback={
 					<div className="p-4">
@@ -263,8 +262,16 @@ function GoalPage() {
 	const [edit, setEdit] = useState({ open: false, session: 0 });
 	const [confirming, setConfirming] = useState<Confirmation | null>(null);
 	const data = goal.data;
+	const history = useGoalHistory(goalId, data?.state === "active" || data?.state === "paused");
+	const explanation =
+		data === undefined ? null : goalPageText(data, history.data?.to ?? toIsoDate(), t);
+	const panel = explanation?.panel ?? null;
+	const hasExplanation = explanation !== null && explanation.target !== null;
+	const matchedDate = data?.latestMatchedDepositDate ?? null;
 	const code = goal.isError ? errorCodeOf(goal.error) : null;
 	const title = data?.name ?? t("goals.title");
+
+	const openEditor = () => setEdit(({ session }) => ({ open: true, session: session + 1 }));
 
 	const run = async (event: GoalEvent, current: GoalData) => {
 		try {
@@ -315,11 +322,6 @@ function GoalPage() {
 	return (
 		<Page
 			title={title}
-			description={
-				data?.latestMatchedDepositDate === undefined || data.latestMatchedDepositDate === null
-					? undefined
-					: t("goals.pledge.matchedDate", { date: formatShortDate(data.latestMatchedDepositDate) })
-			}
 			{...(data === undefined
 				? {}
 				: {
@@ -330,14 +332,36 @@ function GoalPage() {
 							/>
 						),
 					})}
+			description={
+				!hasExplanation && matchedDate === null ? undefined : (
+					<>
+						{hasExplanation && (
+							<>
+								<span className="tabular-nums">{explanation.target}</span>
+								{explanation.daysLeft !== null && (
+									<>
+										{" · "}
+										<span className="whitespace-nowrap tabular-nums">{explanation.daysLeft}</span>
+									</>
+								)}
+								{explanation.status !== null && (
+									<span className="block tabular-nums">{explanation.status}</span>
+								)}
+							</>
+						)}
+						{matchedDate !== null && (
+							<span className="block tabular-nums">
+								{t("goals.pledge.matchedDate", { date: formatShortDate(matchedDate) })}
+							</span>
+						)}
+					</>
+				)
+			}
 			actions={
 				admin && data !== undefined ? (
 					<>
 						<GoalPledgeDialog key={data.id} goal={data} />
-						<Button
-							variant="outline"
-							onClick={() => setEdit(({ session }) => ({ open: true, session: session + 1 }))}
-						>
+						<Button variant="outline" onClick={openEditor}>
 							<PencilIcon aria-hidden="true" />
 							{t("goals.edit")}
 						</Button>
@@ -384,10 +408,27 @@ function GoalPage() {
 						pending={goalEvent.isPending}
 						onEvent={admin ? request : null}
 					/>
+					{panel !== null && (
+						<Section title={panel.title} className="tabular-nums">
+							<div className="flex flex-wrap items-center gap-3 p-4">
+								<p className="min-w-48 flex-1 text-sm text-muted-foreground">{panel.body}</p>
+								{admin && panel.action !== null && (
+									<Button
+										size="sm"
+										variant={panel.action === "complete" ? "default" : "outline"}
+										disabled={goalEvent.isPending}
+										onClick={panel.action === "complete" ? () => request("complete") : openEditor}
+									>
+										{t(`goals.panel.action.${panel.action}`)}
+									</Button>
+								)}
+							</div>
+						</Section>
+					)}
 					<GoalPledges goal={data} admin={admin} />
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
-						<Projection goal={data} />
+						<Projection goal={data} history={history} summary={explanation?.projection ?? null} />
 						<Accounts goal={data} />
 					</div>
 					{admin &&
