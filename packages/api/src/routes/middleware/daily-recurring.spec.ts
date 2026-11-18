@@ -1,4 +1,4 @@
-import { asc, sql } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { describe, expect, it, vi } from "vitest";
 
@@ -63,16 +63,13 @@ describe("the first read of the day", () => {
 			buildTestApp(db, createLogger("info", { write: (text: string) => lines.push(text) })),
 			template.cookie,
 		);
-		await db.run(sql`alter table settings rename to settings_gone`);
+		vi.spyOn(occurrences, "startDailyOccurrences").mockRejectedValueOnce(
+			new Error("daily job failed"),
+		);
+		const response = await app.request("/api/accounts");
 
-		try {
-			const response = await app.request("/api/accounts");
-
-			expect(response.status).toBe(200);
-			expect(lines.join("\n")).toContain("daily occurrences failed to start");
-		} finally {
-			await db.run(sql`alter table settings_gone rename to settings`);
-		}
+		expect(response.status).toBe(200);
+		expect(lines.join("\n")).toContain("daily occurrences failed to start");
 
 		vi.spyOn(occurrences, "startDailyOccurrences").mockResolvedValue({
 			run: () => Promise.reject(new Error("amount 8420 refused")),

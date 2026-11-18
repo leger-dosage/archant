@@ -206,6 +206,7 @@ export const queryKeys = {
 	preferences: {
 		all: ["preferences"] as const,
 	},
+	householdPreferences: ["household-preferences"] as const,
 	/**
 	 * The signed-in user's dashboard layout, one query: each save sets it
 	 * from its answer, and no other query depends on it.
