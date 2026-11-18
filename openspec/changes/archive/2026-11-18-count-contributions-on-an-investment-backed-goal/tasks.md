@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers gains, losses, the floor at zero, mixed accounts, the market-value default, a saved choice that survives changes to links, and changes to a completed goal's basis. Playwright changes an investment-backed goal's basis and compares its progress with the displayed market value.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
