@@ -107,7 +107,7 @@ test("/budgets opens this month, and the arrows and the picker stop at the bound
 	await expect(
 		page
 			.getByRole("navigation", { name: "Navigation principale" })
-			.getByRole("link", { name: "Budgets", exact: true }),
+			.getByRole("link", { name: "Plan", exact: true }),
 	).toHaveAttribute("aria-current", "page");
 
 	// Two years ahead is the last month.
@@ -238,10 +238,10 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	// Over budget: the amount spent in the destructive colour, and by how much.
 	const amountSpent = donut(page).getByText(euros(160_000), { exact: true });
 	await expect(amountSpent).toHaveCSS("color", rgb("#c91313"));
-	await expect(breadcrumbs(page)).toHaveText("Budgets/Budget de novembre 2023");
-	await expect(breadcrumbs(page).getByRole("link", { name: "Budgets" })).toHaveAttribute(
+	await expect(breadcrumbs(page)).toHaveText("Plan/Budget de novembre 2023");
+	await expect(breadcrumbs(page).getByRole("link", { name: "Plan" })).toHaveAttribute(
 		"href",
-		"/budgets",
+		"/plan",
 	);
 	// Over budget, nothing is left: the two lines that spent, no grey slice.
 	await expect(slices(page)).toHaveCount(2);
@@ -861,6 +861,13 @@ test("a budget starting on the 25th uses its dates for the picker and transactio
 
 		await page.goto("/budgets");
 		await expect(page).toHaveURL(`/budgets/${currentMonth}`);
+
+		// Plan uses the household's date, even when the browser's clock is different.
+		await page.clock.setFixedTime(new Date(`${year}-02-03T12:00:00Z`));
+		await page.goto("/plan");
+		await page.getByRole("link", { name: "Voir le budget complet" }).click();
+		await expect(page).toHaveURL(`/budgets/${currentMonth}`);
+
 		await page.goto(`/budgets/${month}`);
 		await expect(page.getByRole("heading", { level: 1, name: `Budget du ${range}` })).toBeVisible();
 		const picker = page.getByRole("button", {

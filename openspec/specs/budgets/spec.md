@@ -13,7 +13,7 @@ Archant SHALL calculate budget periods from the household's first day of the mon
 #### Scenario: Start on the twenty-fifth
 
 - **GIVEN** `month_start_day` set to 25 in the household preferences of Story 36.6
-- **WHEN** the owner opens « Budgets » on 3 February 2027
+- **WHEN** the owner opens `/budgets` or the budget card on « Plan » on 3 February 2027
 - **THEN** the current budget runs from 25 January to 24 February 2027, as Sure's `Family#custom_month_start_for` and `custom_month_end_for`; its actuals, its carry and its suggestions read that period; its name reads « 25 janv. - 24 février 2027 », Sure's `budgets.name.custom_range` with the short and long date formats.
 
 #### Scenario: Keep calendar months when the start day is one

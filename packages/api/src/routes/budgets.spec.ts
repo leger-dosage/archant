@@ -203,7 +203,7 @@ describe("household budget periods", () => {
 
 		await expect(ownRequest("GET", "/api/budgets/current")).resolves.toEqual({
 			status: 200,
-			body: { data: { month: "2026-08" } },
+			body: { data: { month: "2026-08", today: "2026-09-21" } },
 		});
 		await expect(budgetOf("2026-08")).resolves.toMatchObject({
 			from: "2026-08-25",

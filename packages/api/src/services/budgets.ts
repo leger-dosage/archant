@@ -390,8 +390,10 @@ async function setUpBudget(db: Db, month: IsoMonth) {
 }
 
 /** The current budget period in the household's time zone. */
-export async function currentBudgetMonth(deps: ServiceDeps): Promise<IsoMonth> {
-	return budgetMonthOf(today(deps.timeZone), await getMonthStartDay(deps.db));
+export async function currentBudgetPeriod(deps: ServiceDeps) {
+	const date = today(deps.timeZone);
+
+	return { month: budgetMonthOf(date, await getMonthStartDay(deps.db)), today: date };
 }
 
 async function budgetMonths(deps: ServiceDeps) {
