@@ -20,9 +20,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 34.10 | [Sure's layout under Archant's visual style](changes/sures-layout-under-archants-visual-style/proposal.md)                                      |                                                                      |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
-| 35.2  | [Budget every category as Sure](changes/budget-every-category-as-sure/proposal.md)                                                              |                                                                      |
 | 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
 | 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9]                                                               |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
@@ -51,5 +49,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
 
 - Story 35.8: [Count contributions on an investment-backed goal](changes/archive/2026-11-18-count-contributions-on-an-investment-backed-goal/proposal.md).
+
+- Story 34.10: [Sure's layout under Archant's visual style](changes/archive/2026-11-18-sures-layout-under-archants-visual-style/proposal.md).
 
 - [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).

@@ -673,14 +673,19 @@ describe("PUT /api/budgets/:month/categories/:categoryId", () => {
 		expect(lineOf(budget, parent)?.budgetedSpending).toBe(70_000);
 	});
 
-	it("never lets a parent's own save go below its ring-fenced children", async () => {
+	it("stores a parent below its ring-fenced children until the next child save", async () => {
 		const { parent, works } = await house();
 		await saved("2026-09", works, "300");
 
 		const budget = await saved("2026-09", parent, "100");
 
-		expect(lineOf(budget, parent)?.budgetedSpending).toBe(30_000);
-		expect(budget.allocated).toBe(30_000);
+		expect(lineOf(budget, parent)).toMatchObject({ budgetedSpending: 10_000, movable: 0 });
+		expect(budget.allocated).toBe(10_000);
+		expect(lineOf(await budgetOf("2026-09"), parent)?.budgetedSpending).toBe(10_000);
+
+		const rebuilt = await saved("2026-09", works, "250");
+
+		expect(lineOf(rebuilt, parent)?.budgetedSpending).toBe(25_000);
 	});
 
 	it("keeps each month's amounts to that month", async () => {
@@ -883,6 +888,21 @@ const amountsOf = (budget: z.infer<typeof budgetBody>["data"]) =>
 	);
 
 describe("POST /api/budgets/:month/copy", () => {
+	it("shows, saves and copies an envelope for a category used only for income", async () => {
+		const account = await openOwn({ openingDate: "2026-04-01" });
+		const salary = await ownCategory("Salaire");
+		await line(account.id, "2026-06-05", "2 000", salary);
+
+		expect(lineOf(await budgetOf("2026-06"), salary)?.budgetedSpending).toBe(0);
+		await save("2026-06", "1 000", "2 000");
+		expect(lineOf(await saved("2026-06", salary, "50"), salary)?.budgetedSpending).toBe(5_000);
+
+		const { status, body } = await copy("2026-08");
+
+		expect(status).toBe(200);
+		expect(lineOf(budgetBody.parse(body).data, salary)?.budgetedSpending).toBe(5_000);
+	});
+
 	it("copies the latest earlier month set up, gaps skipped, and answers the month", async () => {
 		await openOwn({ openingDate: "2026-04-01" });
 		const groceries = await ownCategory("Courses");
@@ -943,21 +963,29 @@ describe("POST /api/budgets/:month/copy", () => {
 		]);
 	});
 
-	it("lifts a parent to a child re-parented under it since", async () => {
+	it("copies stored amounts and rollover choices after a child is re-parented", async () => {
 		await openOwn({ openingDate: "2026-04-01" });
 		const parent = await ownCategory("Maison");
 		const child = await ownCategory("Travaux");
 		await save("2026-06", "1 000", "0");
 		await saved("2026-06", parent, "200");
 		await saved("2026-06", child, "300");
+		await toggled("2026-06", parent, true);
 		await sendOwn("PATCH", `/api/categories/${child}`, { parentId: parent });
 
 		const { body } = await copy("2026-08");
 		const budget = budgetBody.parse(body).data;
 
-		expect(lineOf(budget, parent)?.budgetedSpending).toBe(30_000);
-		expect(lineOf(budget, child)).toMatchObject({ budgetedSpending: 30_000, shared: false });
-		expect(budget.allocated).toBe(30_000);
+		expect(lineOf(budget, parent)).toMatchObject({
+			budgetedSpending: 20_000,
+			rolloverEnabled: true,
+		});
+		expect(lineOf(budget, child)).toMatchObject({
+			budgetedSpending: 30_000,
+			shared: false,
+			rolloverEnabled: false,
+		});
+		expect(budget.allocated).toBe(20_000);
 	});
 
 	it("refuses a month set up, and writes nothing", async () => {
@@ -1047,10 +1075,9 @@ describe("POST /api/budgets/:month/move", () => {
 		const { status, body } = await move("2026-09", parent, leisure, "701");
 
 		expect(status).toBe(400);
-		expect(errorBody.parse(body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "amount", code: "insufficient_funds" }],
-		});
+		const { error } = errorBody.parse(body);
+		expect(error.code).toBe("BUDGET_MOVE_INSUFFICIENT_FUNDS");
+		expect(error.fields).toBeUndefined();
 		await expect(amountsByName()).resolves.toEqual({
 			Maison: 100_000,
 			Travaux: 30_000,
@@ -1101,19 +1128,16 @@ describe("POST /api/budgets/:month/move", () => {
 	});
 
 	it.each([
-		["a parent to its child", "parent", "works", "parent_child"],
-		["a child to its parent", "works", "parent", "parent_child"],
-		["a category to itself", "parent", "parent", "same_category"],
+		["a parent to its child", "parent", "works", "BUDGET_MOVE_PARENT_CHILD"],
+		["a child to its parent", "works", "parent", "BUDGET_MOVE_PARENT_CHILD"],
+		["a category to itself", "parent", "parent", "BUDGET_MOVE_SAME_CATEGORY"],
 	] as const)("refuses %s, and writes nothing", async (_label, from, to, code) => {
 		const ids = await envelopes();
 
 		const { status, body } = await move("2026-09", ids[from], ids[to], "10");
 
 		expect(status).toBe(400);
-		expect(errorBody.parse(body).error).toMatchObject({
-			code: "VALIDATION_ERROR",
-			fields: [{ path: "toCategoryId", code }],
-		});
+		expect(errorBody.parse(body).error.code).toBe(code);
 		await expect(amountsByName()).resolves.toEqual({
 			Maison: 100_000,
 			Travaux: 30_000,
@@ -1122,11 +1146,20 @@ describe("POST /api/budgets/:month/move", () => {
 	});
 
 	it.each([
-		["a blank amount", "", "too_small"],
-		["zero", "0", "not_positive"],
-		["a negative amount", "-5", "not_positive"],
-		["text", "abc", "invalid_amount"],
-	])("refuses %s, and writes nothing", async (_label, amount, code) => {
+		["a blank amount", ""],
+		["zero", "0"],
+		["a negative amount", "-5"],
+	])("refuses %s, and writes nothing", async (_label, amount) => {
+		const { parent, leisure } = await envelopes();
+
+		const { status, body } = await move("2026-09", parent, leisure, amount);
+
+		expect(status).toBe(400);
+		expect(errorBody.parse(body).error.code).toBe("BUDGET_MOVE_NON_POSITIVE_AMOUNT");
+		await expect(amountsByName()).resolves.toMatchObject({ Maison: 100_000, Loisirs: 20_000 });
+	});
+
+	it.each(["abc", "1,234"])("rejects an invalid amount %s at the boundary", async (amount) => {
 		const { parent, leisure } = await envelopes();
 
 		const { status, body } = await move("2026-09", parent, leisure, amount);
@@ -1134,7 +1167,7 @@ describe("POST /api/budgets/:month/move", () => {
 		expect(status).toBe(400);
 		expect(errorBody.parse(body).error).toMatchObject({
 			code: "VALIDATION_ERROR",
-			fields: [{ path: "amount", code }],
+			fields: [{ path: "amount", code: "invalid_amount" }],
 		});
 		await expect(amountsByName()).resolves.toMatchObject({ Maison: 100_000, Loisirs: 20_000 });
 	});
@@ -1161,9 +1194,11 @@ describe("POST /api/budgets/:month/move", () => {
 			move("2026-09", "inconnue", parent, "10"),
 		]);
 
-		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual(
-			Array.from({ length: 3 }, () => [404, "NOT_FOUND"]),
-		);
+		expect(refused.map(({ status, body }) => [status, errorBody.parse(body).error.code])).toEqual([
+			[400, "BUDGET_MOVE_UNCATEGORISED"],
+			[400, "BUDGET_MOVE_UNCATEGORISED"],
+			[404, "NOT_FOUND"],
+		]);
 		await expect(amountsByName()).resolves.toMatchObject({ Maison: 100_000 });
 	});
 
