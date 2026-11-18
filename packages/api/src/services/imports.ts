@@ -34,6 +34,7 @@ import { detectFileSource, fileSource } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
 import { currencyOf, getAccount } from "./accounts.ts";
+import { reconcileGoalDeposits } from "./ledger/goal-deposits.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
 import { countsOf, ingest } from "./ledger/ingest.ts";
 import { runAutomaticRecurring } from "./recurring/pipeline.ts";
@@ -390,7 +391,7 @@ export async function confirmImport(
 					row.accountId,
 					statement,
 					{ importId: row.id },
-					{ origin: ORIGIN, expectedCounts },
+					{ origin: ORIGIN, expectedCounts, deferGoalReconciliation: true },
 				);
 
 				if (mapping !== undefined) {
@@ -447,6 +448,7 @@ export async function refreshAfterImport(deps: ImportDeps, importId: string): Pr
  * and never fails the request.
  */
 export async function detectAfterImport(deps: ImportDeps, importId: string): Promise<void> {
+	await reconcileGoalDeposits(deps);
 	await runRulesAfterSync(deps);
 
 	try {

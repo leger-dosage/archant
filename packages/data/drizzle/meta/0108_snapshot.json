@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "97c25945-a48c-4b23-b83d-a7264d4ccd63",
+  "id": "eeddf27d-07b2-4223-8cec-bdc10b08cda0",
   "prevId": "09cf1f9a-4363-4db5-b3d5-12c3e3ebf071",
   "tables": {
     "accounts": {
@@ -324,164 +324,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "passkeys": {
-      "name": "passkeys",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "public_key": {
-          "name": "public_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "factor_id": {
-          "name": "factor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_handle": {
-          "name": "user_handle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "credential_id": {
-          "name": "credential_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "counter": {
-          "name": "counter",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "device_type": {
-          "name": "device_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "backed_up": {
-          "name": "backed_up",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "transports": {
-          "name": "transports",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "aaguid": {
-          "name": "aaguid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "passkeys_credential_id_unique": {
-          "name": "passkeys_credential_id_unique",
-          "columns": [
-            "credential_id"
-          ],
-          "isUnique": true
-        },
-        "passkeys_user_id": {
-          "name": "passkeys_user_id",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
-        },
-        "passkeys_factor_id": {
-          "name": "passkeys_factor_id",
-          "columns": [
-            "factor_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "passkeys_user_id_users_id_fk": {
-          "name": "passkeys_user_id_users_id_fk",
-          "tableFrom": "passkeys",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "passkeys_factor_id_two_factors_id_fk": {
-          "name": "passkeys_factor_id_two_factors_id_fk",
-          "tableFrom": "passkeys",
-          "tableTo": "two_factors",
-          "columnsFrom": [
-            "factor_id"
           ],
           "columnsTo": [
             "id"
@@ -2100,6 +1942,196 @@
         "goal_accounts_allocated_amount_check": {
           "name": "goal_accounts_allocated_amount_check",
           "value": "\"goal_accounts\".\"allocated_amount\" >= 0"
+        }
+      }
+    },
+    "goal_deposits": {
+      "name": "goal_deposits",
+      "columns": {
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "snapshot_delta": {
+          "name": "snapshot_delta",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "claimed": {
+          "name": "claimed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        }
+      },
+      "indexes": {
+        "goal_deposits_claimed": {
+          "name": "goal_deposits_claimed",
+          "columns": [
+            "claimed"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "goal_deposits_entry_id_entries_id_fk": {
+          "name": "goal_deposits_entry_id_entries_id_fk",
+          "tableFrom": "goal_deposits",
+          "tableTo": "entries",
+          "columnsFrom": [
+            "entry_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "goal_deposits_snapshot_delta_check": {
+          "name": "goal_deposits_snapshot_delta_check",
+          "value": "\"goal_deposits\".\"snapshot_delta\" > 0"
+        }
+      }
+    },
+    "goal_pledges": {
+      "name": "goal_pledges",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "goal_id": {
+          "name": "goal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'open'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "matched_date": {
+          "name": "matched_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "goal_pledges_goal": {
+          "name": "goal_pledges_goal",
+          "columns": [
+            "goal_id"
+          ],
+          "isUnique": false
+        },
+        "goal_pledges_account_status": {
+          "name": "goal_pledges_account_status",
+          "columns": [
+            "account_id",
+            "status",
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "goal_pledges_goal_id_goals_id_fk": {
+          "name": "goal_pledges_goal_id_goals_id_fk",
+          "tableFrom": "goal_pledges",
+          "tableTo": "goals",
+          "columnsFrom": [
+            "goal_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "goal_pledges_account_id_accounts_id_fk": {
+          "name": "goal_pledges_account_id_accounts_id_fk",
+          "tableFrom": "goal_pledges",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "goal_pledges_amount_check": {
+          "name": "goal_pledges_amount_check",
+          "value": "\"goal_pledges\".\"amount\" > 0"
+        },
+        "goal_pledges_status_check": {
+          "name": "goal_pledges_status_check",
+          "value": "\"goal_pledges\".\"status\" in ('open', 'matched', 'cancelled')"
+        },
+        "goal_pledges_match_check": {
+          "name": "goal_pledges_match_check",
+          "value": "\"goal_pledges\".\"matched_date\" is null or \"goal_pledges\".\"status\" = 'matched'"
         }
       }
     },
