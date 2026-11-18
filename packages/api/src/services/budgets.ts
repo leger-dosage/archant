@@ -14,12 +14,12 @@ import type {
 	BudgetInput,
 	BudgetMoveInput,
 	BudgetRolloverInput,
-	BudgetUpdateInput,
 } from "../schemas/budgets.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { CashFlow } from "./reports.ts";
 
 import {
+	DrizzleQueryError,
 	and,
 	asc,
 	desc,
@@ -60,7 +60,6 @@ import {
 	budgetMoveSchema,
 	budgetRolloverBodySchema,
 	budgetSchema,
-	budgetUpdateSchema,
 } from "../schemas/budgets.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
 import {
@@ -358,10 +357,9 @@ export async function isBudgetableMonth(deps: ServiceDeps, month: IsoMonth): Pro
 
 /**
  * A month's budget beside its actuals and suggestions. Never writes: a month
- * not set up has no row, and reading it creates none, where Sure bootstraps
- * one on page open. What each category received is the rollover chain
- * computed again from the ledger as it stands, never the stored amount, which
- * only the next budget write refreshes. A month out of bounds is `NOT_FOUND`.
+ * without a stored row is computed without creating one. What each category
+ * received is computed again from the ledger as it stands, never taken from
+ * the stored rollover amount, which only the next budget write refreshes. A month out of bounds is `NOT_FOUND`.
  */
 export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<BudgetMonth> {
 	const { bounds } = await budgetMonths(deps);
@@ -370,6 +368,41 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 		throw notFound();
 	}
 
+	return readBudget(deps, month, bounds);
+}
+
+/** Sure's budget history, with only the target computed when nothing was saved. */
+export async function getBudgetHistory(deps: ServiceDeps, month: IsoMonth, priorMonths: number) {
+	const { bounds } = await budgetMonths(deps);
+	const earlier = Array.from({ length: priorMonths }, (_, index) =>
+		shiftMonth(month, index - priorMonths),
+	).filter((item) => isBudgetMonth(item, bounds));
+	const stored =
+		earlier.length === 0
+			? []
+			: await deps.db
+					.select({ month: budgets.month })
+					.from(budgets)
+					.where(inArray(budgets.month, earlier))
+					.orderBy(asc(budgets.month));
+	const months = stored.map((item) => item.month);
+
+	if (isBudgetMonth(month, bounds)) {
+		months.push(month);
+	}
+
+	return {
+		currency: getReportingCurrency(),
+		months: await Promise.all(months.map(async (item) => readBudget(deps, item, bounds))),
+		unavailable: earlier.length - stored.length,
+	};
+}
+
+async function readBudget(
+	deps: ServiceDeps,
+	month: IsoMonth,
+	bounds: MonthBounds,
+): Promise<BudgetMonth> {
 	const [
 		row,
 		chainMonths,
@@ -389,18 +422,25 @@ export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<Bud
 	const statistics = statisticsOf(monthRows);
 	const budgetedSpending = row?.budgetedSpending ?? null;
 	const expectedIncome = row?.expectedIncome ?? null;
-	// A month not set up has no row: its categories have 0 and nothing came in.
-	const shown = chainMonths.find((item) => item.month === month)?.rows ?? [];
+	// Partial budgets can hold category amounts before joining the rollover chain.
+	const shown =
+		row !== undefined && budgetedSpending === null
+			? await storedRowsOf(deps.db, row.id)
+			: new Map(
+					chainMonths
+						.find((item) => item.month === month)
+						?.rows.map((item) => [item.categoryId, item]),
+				);
 	const carried = chainOf(chainMonths, history, allCategories).get(month);
 	const envelopes = budgetCategories({
 		categories: allCategories,
-		amounts: new Map(shown.map((item) => [item.categoryId, item.budgetedSpending])),
+		amounts: new Map([...shown].map(([id, item]) => [id, item.budgetedSpending])),
 		rollover: new Map(
-			shown.map((item) => [
-				item.categoryId,
+			[...shown].map(([id, item]) => [
+				id,
 				{
 					enabled: item.rolloverEnabled,
-					carried: carried?.get(item.categoryId) ?? toMinorUnits(0),
+					carried: carried?.get(id) ?? toMinorUnits(0),
 				},
 			]),
 		),
@@ -470,19 +510,40 @@ export async function saveBudget(
 	return getBudget(deps, month);
 }
 
+type BudgetTotals = {
+	budgetedSpending: MinorUnits | undefined;
+	expectedIncome: MinorUnits | undefined;
+};
+
 /**
  * `saveBudget`'s write, under the caller's write lock and in its bounds:
  * creates the month's row on its first save, updates it after, and gives a
- * month set up for the first time the rollover switches it inherits.
+ * month its inherited rollover switches when planned spending is first set.
  */
 async function writeTotals(
 	tx: Db,
 	month: IsoMonth,
-	totals: { currency: CurrencyCode; budgetedSpending: MinorUnits; expectedIncome: MinorUnits },
+	totals: BudgetTotals & { currency: CurrencyCode },
 ) {
-	const now = Date.now();
-	const amounts = { ...totals, updatedAt: now };
 	const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+
+	if (
+		before !== undefined &&
+		totals.budgetedSpending === undefined &&
+		totals.expectedIncome === undefined
+	) {
+		return before.id;
+	}
+
+	const now = Date.now();
+	const amounts = {
+		...totals,
+		expectedIncome:
+			totals.expectedIncome ??
+			before?.expectedIncome ??
+			(totals.budgetedSpending === undefined ? null : 0),
+		updatedAt: now,
+	};
 	const budget = await tx
 		.insert(budgets)
 		.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
@@ -490,15 +551,17 @@ async function writeTotals(
 		.returning({ id: budgets.id })
 		.get();
 
-	if (before === undefined || before.budgetedSpending === null) {
+	if (totals.budgetedSpending !== undefined && (before?.budgetedSpending ?? null) === null) {
 		await inheritRollover(tx, month, budget.id, now);
 	}
+
+	return budget.id;
 }
 
 /**
  * Sure's `inherited_rollover_flags`: a row at 0, rollover on, for each
  * category whose switch is on in the latest month set up before
- * `month`. A month not set up has no row yet, so nothing here collides.
+ * `month`. Keep amounts saved by the assistant before the month was set up.
  */
 async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: number) {
 	const source = await latestSetUpBefore(tx, month);
@@ -529,7 +592,10 @@ async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: n
 					updatedAt: now,
 				})),
 			)
-			.onConflictDoNothing();
+			.onConflictDoUpdate({
+				target: [budgetCategoryRows.budgetId, budgetCategoryRows.categoryId],
+				set: { rolloverEnabled: true, updatedAt: now },
+			});
 	}
 }
 
@@ -628,86 +694,53 @@ async function writeCategoryAmount(
 	};
 
 	if (category.parentId === null) {
-		await write(
-			category.id,
-			parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) }),
-		);
-	} else {
-		const previousChild = await amountOf(category.id);
+		const saved = parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) });
+		await write(category.id, saved);
 
-		await write(category.id, amount);
-		await write(
-			category.parentId,
-			parentAfterChildSave({
-				parent: await amountOf(category.parentId),
-				siblings: await childrenOf(category.parentId, category.id),
-				previousChild,
-				child: amount,
-			}),
-		);
+		return saved;
 	}
+
+	const previousChild = await amountOf(category.id);
+
+	await write(category.id, amount);
+	await write(
+		category.parentId,
+		parentAfterChildSave({
+			parent: await amountOf(category.parentId),
+			siblings: await childrenOf(category.parentId, category.id),
+			previousChild,
+			child: amount,
+		}),
+	);
+
+	return amount;
 }
 
-/**
- * Sure's `UpdateBudget`, for an assistant: sets a month's total, expected
- * income and category amounts in one transaction, through the writes
- * `saveBudget` and `saveCategoryBudget` make, so a refusal anywhere leaves
- * the month as it was. A field absent keeps its stored value; a month not
- * set up needs both the total and the income, as the form does, so a half
- * set-up month never exists. Categories follow, subcategories first and
- * parents last as Sure's, so a parent given beside its child keeps the amount
- * given; a category amount needs the month set up, by this call or before.
- * Answers the month, as `getBudget` does.
- */
-export async function updateBudget(
-	deps: ServiceDeps,
-	month: IsoMonth,
-	input: BudgetUpdateInput,
-): Promise<BudgetMonth> {
+type BudgetUpdate = BudgetTotals & {
+	categories: readonly { categoryId: string; budgeted: MinorUnits }[];
+};
+
+/** Sure's `UpdateBudget`: create the month if needed and apply the patch atomically. */
+export async function updateBudget(deps: ServiceDeps, month: IsoMonth, input: BudgetUpdate) {
 	const currency = getReportingCurrency();
-	const parsed = budgetUpdateSchema(currency).safeParse(input);
+	const { budgetedSpending, expectedIncome, categories: categoryAmounts } = input;
 
-	if (!parsed.success) {
-		throw validationError(parsed.error);
-	}
+	const updated = await deps.db
+		.transaction(
+			async (tx) => {
+				const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-	const { budgetedSpending, expectedIncome, categories: categoryAmounts = [] } = parsed.data;
-
-	await deps.db.transaction(
-		async (tx) => {
-			const { bounds } = await budgetMonths({ ...deps, db: tx });
-
-			if (!isBudgetMonth(month, bounds)) {
-				throw notFound();
-			}
-
-			if (budgetedSpending !== undefined || expectedIncome !== undefined) {
-				const stored = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
-				const storedTotal = stored?.budgetedSpending ?? null;
-				const storedIncome = stored?.expectedIncome ?? null;
-				const total = budgetedSpending ?? (storedTotal === null ? null : toMinorUnits(storedTotal));
-				const income =
-					expectedIncome ?? (storedIncome === null ? null : toMinorUnits(storedIncome));
-
-				// Only a month not set up stores neither: both are then required.
-				if (total === null || income === null) {
-					throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
-						...(total === null ? [{ path: "budgetedSpending", code: "required" }] : []),
-						...(income === null ? [{ path: "expectedIncome", code: "required" }] : []),
-					]);
+				if (!isBudgetMonth(month, bounds)) {
+					throw notFound();
 				}
 
-				await writeTotals(tx, month, {
+				const budgetId = await writeTotals(tx, month, {
 					currency,
-					budgetedSpending: total,
-					expectedIncome: income,
+					budgetedSpending,
+					expectedIncome,
 				});
-			}
-
-			if (categoryAmounts.length > 0) {
-				const budget = await setUpBudget(tx, month);
 				const found = await tx
-					.select({ id: categories.id, parentId: categories.parentId })
+					.select({ id: categories.id, name: categories.name, parentId: categories.parentId })
 					.from(categories)
 					.where(
 						inArray(
@@ -725,27 +758,43 @@ export async function updateBudget(
 
 					return { category, amount: entry.budgeted };
 				});
-				// Subcategories first: each lifts its parent, which a parent given
-				// here then sets, never below what its ring-fenced children hold.
+				// Child saves update the parent, so explicit parent amounts apply last.
 				const ordered = [
 					...writes.filter(({ category }) => category.parentId !== null),
 					...writes.filter(({ category }) => category.parentId === null),
 				];
+				const saved = await ordered.reduce<
+					Promise<{ name: string; budgetedSpending: MinorUnits }[]>
+				>(async (previous, { category, amount }) => {
+					const written = await previous;
+					const savedAmount = await writeCategoryAmount(tx, budgetId, category, amount);
+					written.push({ name: category.name, budgetedSpending: savedAmount });
 
-				// In sequence, as every other write on this one connection.
-				await ordered.reduce<Promise<unknown>>(
-					(previous, { category, amount }) =>
-						previous.then(() => writeCategoryAmount(tx, budget.id, category, amount)),
-					Promise.resolve(),
-				);
+					return written;
+				}, Promise.resolve([]));
+
+				await refreshRollover(tx, deps);
+
+				return saved;
+			},
+			{ behavior: "immediate" },
+		)
+		.catch((error: unknown) => {
+			const cause = error instanceof DrizzleQueryError ? error.cause : error;
+
+			if (
+				cause instanceof Error &&
+				"code" in cause &&
+				typeof cause.code === "string" &&
+				cause.code.startsWith("SQLITE_CONSTRAINT")
+			) {
+				throw new AppError("VALIDATION_ERROR", "The budget row could not be saved.");
 			}
 
-			await refreshRollover(tx, deps);
-		},
-		{ behavior: "immediate" },
-	);
+			throw error;
+		});
 
-	return getBudget(deps, month);
+	return { budget: await getBudget(deps, month), updated };
 }
 
 /**
@@ -802,8 +851,11 @@ export async function copyBudget(
 				.get();
 			const copied = [...copiedRows({ categories: allCategories, source: sourceRows })];
 
-			// A month not set up has no amount of its own: a category's amount
-			// needs the month set up first, so nothing here can collide.
+			// Copy replaces the whole plan, including amounts saved before setup.
+			if (target !== undefined) {
+				await tx.delete(budgetCategoryRows).where(eq(budgetCategoryRows.budgetId, budget.id));
+			}
+
 			if (copied.length > 0) {
 				await tx.insert(budgetCategoryRows).values(
 					copied.map(([categoryId, { budgetedSpending, rolloverEnabled }]) => ({

@@ -1,6 +1,6 @@
 ## Approach
 
-Apply the new input and output rules in the assistant budget tools. Keep reads non-mutating and continue parsing amounts to integer minor units.
+Keep partial writes and rollover recomputation in the same transaction in `services/budgets.ts`. Distinguish a stored budget record from an initialized budget with planned spending, and use stored-record existence when listing earlier months. Keep reads non-mutating and continue parsing amounts to integer minor units.
 
 ## Source
 

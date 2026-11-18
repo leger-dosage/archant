@@ -4,11 +4,9 @@ import type { BudgetMonth } from "../services/budgets.ts";
 
 import { z } from "zod";
 
-import type { MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
-import { shiftMonth } from "@archant/data/months";
+import type { CurrencyCode, MinorUnits } from "@archant/data/money";
+import { minorUnitsOf, parseAmount, toMinorUnits } from "@archant/data/money";
 
-import { isBudgetMonth } from "../domain/budgets/months.ts";
 import { daysBetween, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import {
@@ -17,8 +15,9 @@ import {
 	sureMonthOf,
 	updateBudgetInput,
 } from "../schemas/assistants/budgets.ts";
-import { getBudget, isBudgetableMonth, updateBudget } from "../services/budgets.ts";
+import { getBudgetHistory, isBudgetableMonth, updateBudget } from "../services/budgets.ts";
 import { categoriesByRef, isUncategorisedName } from "../services/names.ts";
+import { getReportingCurrency } from "../services/settings.ts";
 import {
 	READ_ONLY,
 	REPLACES,
@@ -78,9 +77,7 @@ const monthOutput = z.object({
 	month: z.string().describe('Sure\'s slug, such as "aug-2026", which update_budget takes back.'),
 	period: z.object({ start_date: z.string(), end_date: z.string() }),
 	is_current: z.boolean(),
-	initialized: z
-		.boolean()
-		.describe("false until the month has its planned spending and expected income."),
+	initialized: z.boolean().describe("false until the month has its planned spending."),
 	totals: z.object({
 		budgeted_spending: formatted("The month's planned spending, 0 until set up"),
 		allocated_spending: formatted("The top-level categories' amounts, summed"),
@@ -91,7 +88,7 @@ const monthOutput = z.object({
 		overage_percent: percent("What went past budgeted_spending, over actual_spending; 0 within it"),
 	}),
 	income: z.object({
-		expected_income: formatted("The month's expected income, 0 until set up"),
+		expected_income: formatted("The month's expected income, 0 when unset"),
 		actual_income: formatted("What the month earned, as get_income_statement counts it"),
 		remaining_expected_income: formatted("expected_income less actual_income"),
 	}),
@@ -184,34 +181,32 @@ export const getBudgetTool = defineTool({
 	name: "get_budget",
 	title: "Budget",
 	description:
-		"Sure's get_budget: a calendar month's budget as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. A month not set up shows 0 for what it plans; months before the first one a budget can cover are left out and counted in months_unavailable.",
+		"Sure's get_budget: a calendar month's budget as the budget page shows it, and up to eleven months before it: the totals planned, allocated, spent and left, the income expected and earned, and each category with its subcategories, its amount, spending, what it has left and its status. Amounts are in the reporting currency and count the accounts the income statement counts; an account in another currency is left out until exchange rates exist. The target month is computed when in bounds. Earlier months appear only when a budget was saved, even if it has no planned spending.",
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: budgetInput,
 	output: z.object({
 		currency: z.string().describe("The reporting currency every amount is in."),
-		months: z.array(monthOutput).describe("Oldest first, month last."),
+		months: z.array(monthOutput).describe("Oldest first, with the target last when within bounds."),
 		months_unavailable: z
 			.number()
 			.int()
 			.optional()
-			.describe("Earlier months asked for that no budget can cover; absent when none."),
+			.describe("Earlier months within bounds with no saved budget; absent when none."),
 	}),
 	run: async (deps, input) => {
 		const day = today(deps.timeZone);
 		const month = input.month ?? day.slice(0, 7);
-		const target = await getBudget(deps, month);
-		const asked = Array.from({ length: input.prior_months }, (_, index) =>
-			shiftMonth(month, index - input.prior_months),
+		const { currency, months, unavailable } = await getBudgetHistory(
+			deps,
+			month,
+			input.prior_months,
 		);
-		const earlier = asked.filter((item) => isBudgetMonth(item, target.bounds));
-		const prior = await Promise.all(earlier.map(async (item) => getBudget(deps, item)));
-		const unavailable = asked.length - earlier.length;
 
 		return {
 			result: {
-				currency: target.currency,
-				months: [...prior, target].map((budget) => monthOf(budget, day)),
+				currency,
+				months: months.map((budget) => monthOf(budget, day)),
 				...(unavailable > 0 ? { months_unavailable: unavailable } : {}),
 			},
 			changedRows: 0,
@@ -252,67 +247,39 @@ function monthOfParam(raw: string | undefined, day: IsoDate): IsoMonth {
 	return month;
 }
 
-/** Sure's `parse_amount!`: a non-negative number, as decimal text for `updateBudget`. */
-function amountText(value: string | number, label: string): string {
+/** Sure's `parse_amount!`, with Archant's minor-unit precision. */
+function budgetAmount(value: string | number, label: string, currency: CurrencyCode): MinorUnits {
 	const text = sureDecimalText(value);
 
 	if (text === null || text.startsWith("-")) {
 		refuse("invalid_params", `${label} must be a non-negative number.`);
 	}
 
-	return text;
-}
+	const decimals = minorUnitsOf(currency);
 
-/** `updateBudget`'s field names as the tool's. */
-const FIELD_NAMES: Readonly<Record<string, string>> = {
-	budgetedSpending: "budgeted_spending",
-	expectedIncome: "expected_income",
-	categoryId: "category",
-	budgeted: "amount",
-};
-
-/**
- * What `updateBudget` refuses beyond Sure, a month not set up, a category
- * twice or more decimals than the currency holds, as Sure's
- * `validation_failed`, each field under the tool's name for it.
- */
-async function asValidationFailed<Answer>(write: Promise<Answer>): Promise<Answer> {
-	try {
-		return await write;
-	} catch (error) {
-		if (
-			error instanceof AppError &&
-			(error.code === "VALIDATION_ERROR" || error.code === "BUDGET_NOT_SET_UP")
-		) {
-			const fields = (error.fields ?? []).map(({ path, code }) => {
-				const named = path
-					.split(".")
-					.map((segment) => FIELD_NAMES[segment] ?? segment)
-					.join(".");
-
-				return named === "" ? code : `${named} ${code}`;
-			});
-
-			refuse(
-				"validation_failed",
-				fields.length === 0
-					? error.message
-					: [error.message.replace(/\.$/u, ""), ...fields].join("; "),
-			);
-		}
-
-		throw error;
+	if ((text.split(".")[1]?.length ?? 0) > decimals) {
+		refuse(
+			"invalid_params",
+			`${label} must be a non-negative number with at most ${decimals} decimal places.`,
+		);
 	}
+
+	const amount = parseAmount(text, currency);
+
+	if (amount === null) {
+		refuse("invalid_params", `${label} is outside the supported amount range.`);
+	}
+
+	return amount;
 }
 
 export const updateBudgetTool = defineTool({
 	name: "update_budget",
 	title: "Set a budget",
 	description:
-		"Sure's update_budget: sets a month's planned spending, expected income and category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. Call get_budget first for the current amounts and the category names. Amounts are non-negative numbers in the reporting currency. A category is named by its name, case aside, or its id; « Non catégorisé » is what budgeted_spending leaves unallocated and cannot be set. A field absent keeps its value; a month not set up needs both budgeted_spending and expected_income, and its categories need the month set up. Refusals answer Sure's keys in Sure's order: no_changes, invalid_params for the month, invalid_month, invalid_params for an amount or a category; what Archant refuses beyond Sure, validation_failed.",
+		"Sure's update_budget: sets a month's planned spending, expected income and category amounts, as the budget page does, in one write: a refusal anywhere changes nothing. Call get_budget first for the current amounts and the category names. Amounts are non-negative numbers in the reporting currency. A category is named by its name, case aside, or its id; « Non catégorisé » is what budgeted_spending leaves unallocated and cannot be set. Any supplied field can start a budget. An absent field keeps its value; setting planned spending defaults unset income to 0. Repeated categories apply in order, with subcategories before parents. Refusals use no_changes, invalid_params for a bad month slug, invalid_month for a month out of bounds, invalid_params for an amount or a category, and validation_failed for a refused save.",
 	scope: "archant:write",
 	annotations: REPLACES,
-	fieldPaths: FIELD_NAMES,
 	input: updateBudgetInput,
 	output: z.object({
 		success: z.literal(true),
@@ -358,19 +325,20 @@ export const updateBudgetTool = defineTool({
 			);
 		}
 
+		const currency = getReportingCurrency();
 		const budgetedSpending =
 			input.budgeted_spending === undefined
 				? undefined
-				: amountText(input.budgeted_spending, "budgeted_spending");
+				: budgetAmount(input.budgeted_spending, "budgeted_spending", currency);
 		const expectedIncome =
 			input.expected_income === undefined
 				? undefined
-				: amountText(input.expected_income, "expected_income");
+				: budgetAmount(input.expected_income, "expected_income", currency);
 		const found = await categoriesByRef(
 			deps,
 			entries.map((entry) => entry.category ?? ""),
 		);
-		const changes = entries.map((entry) => {
+		const categoryAmounts = entries.map((entry) => {
 			const ref = (entry.category ?? "").trim();
 
 			if (ref === "") {
@@ -382,33 +350,30 @@ export const updateBudgetTool = defineTool({
 			if (category === undefined) {
 				refuse(
 					"invalid_params",
-					isUncategorisedName(ref)
+					isUncategorisedName(ref) || ref.toLowerCase() === "non classé"
 						? `'${ref}' is the unallocated remainder of budgeted_spending and cannot be set directly. Adjust budgeted_spending or category amounts instead.`
 						: `Category '${ref}' not found. Use get_categories to list categories.`,
 				);
 			}
 
-			return { category, amount: amountText(entry.amount, `amount for '${category.name}'`) };
+			return {
+				categoryId: category.id,
+				budgeted: budgetAmount(entry.amount, `amount for '${category.name}'`, currency),
+			};
 		});
-		const budget = await asValidationFailed(
-			updateBudget(deps, month, {
-				budgetedSpending,
-				expectedIncome,
-				categories:
-					entries.length === 0
-						? undefined
-						: changes.map(({ category, amount }) => ({
-								categoryId: category.id,
-								budgeted: amount,
-							})),
-			}),
-		);
+		const { budget, updated } = await updateBudget(deps, month, {
+			budgetedSpending,
+			expectedIncome,
+			categories: categoryAmounts,
+		}).catch((error: unknown) => {
+			if (error instanceof AppError && error.code === "VALIDATION_ERROR") {
+				refuse("validation_failed", error.message);
+			}
+
+			throw error;
+		});
 		const money = (amount: MinorUnits) => formatMoney({ amount, currency: budget.currency });
 		const total = budget.budgetedSpending ?? toMinorUnits(0);
-		const written = [
-			...changes.filter(({ category }) => category.parentId !== null),
-			...changes.filter(({ category }) => category.parentId === null),
-		];
 		const [year = "", number = ""] = month.split("-");
 
 		return {
@@ -421,12 +386,9 @@ export const updateBudgetTool = defineTool({
 					allocated_spending: money(budget.allocated),
 					available_to_allocate: money(toMinorUnits(total - budget.allocated)),
 				},
-				updated_categories: written.map(({ category }) => ({
-					category: category.name,
-					budgeted_spending: money(
-						budget.categories.find((line) => line.categoryId === category.id)?.budgetedSpending ??
-							toMinorUnits(0),
-					),
+				updated_categories: updated.map(({ name, budgetedSpending: savedAmount }) => ({
+					category: name,
+					budgeted_spending: money(savedAmount),
 				})),
 				message: `Budget for ${MONTH_NAMES[Number(number) - 1]} ${year} updated.`,
 			},
