@@ -3,17 +3,20 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { goalBodySchema, goalEventParamSchema } from "../schemas/goals.ts";
+import { goalBodySchema, goalEventParamSchema, goalSpendSchema } from "../schemas/goals.ts";
 import {
 	createGoal,
 	deleteGoal,
 	getGoal,
 	getGoalHistory,
+	getGoalOutflows,
 	getGoalsSummary,
 	listGoals,
+	spendGoal,
 	transitionGoal,
 	updateGoal,
 } from "../services/goals.ts";
+import { requireRole } from "./middleware/roles.ts";
 
 export function goalsRoutes(deps: ServiceDeps) {
 	return (
@@ -24,6 +27,12 @@ export function goalsRoutes(deps: ServiceDeps) {
 			.get("/:id", async (c) => c.json({ data: await getGoal(deps, c.req.param("id")) }, 200))
 			.get("/:id/history", async (c) =>
 				c.json({ data: await getGoalHistory(deps, c.req.param("id")) }, 200),
+			)
+			.get("/:id/outflows", requireRole("admin"), async (c) =>
+				c.json({ data: await getGoalOutflows(deps, c.req.param("id")) }, 200),
+			)
+			.post("/:id/consume", validated("json", goalSpendSchema), async (c) =>
+				c.json({ data: await spendGoal(deps, c.req.param("id"), c.req.valid("json")) }, 200),
 			)
 			.post("/", validated("json", goalBodySchema), async (c) =>
 				c.json({ data: await createGoal(deps, c.req.valid("json")) }, 201),

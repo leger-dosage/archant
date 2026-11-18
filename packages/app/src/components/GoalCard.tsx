@@ -35,7 +35,7 @@ export function goalBadge(goal: Pick<GoalData, "state" | "status">): Status {
 /** « 200 € sur 1 000 € », what is saved against the target. */
 function savedOf(goal: GoalData, t: TFunction): string {
 	return t("goals.savedOf", {
-		saved: formatMoney({ amount: goal.saved, currency: goal.currency }),
+		saved: formatMoney({ amount: goal.progressAmount, currency: goal.currency }),
 		target: formatMoney({ amount: goal.targetAmount, currency: goal.currency }),
 	});
 }
@@ -67,6 +67,13 @@ export function GoalCard({ goal }: { goal: GoalData }) {
 			<div className="flex min-w-0 flex-1 flex-col gap-1">
 				<h2 className="truncate card-title">{goal.name}</h2>
 				<p className="tabular-nums">{savedOf(goal, t)}</p>
+				{goal.consumedAmount > 0 && (
+					<p className="text-sm text-muted-foreground">
+						{t("goals.includingUsed", {
+							amount: formatMoney({ amount: goal.consumedAmount, currency: goal.currency }),
+						})}
+					</p>
+				)}
 				<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
 					<StatusBadge status={goalBadge(goal)} />
 					{monthly !== null && (

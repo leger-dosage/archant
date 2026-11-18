@@ -30,6 +30,13 @@ export const goalBodySchema = z.object({
 	accounts: z.array(z.object({ accountId: z.string(), allocatedAmount: z.string() })),
 });
 
+export const goalSpendSchema = z.union([
+	z.strictObject({ amount: z.string(), accountId: z.string().min(1).optional() }),
+	z.strictObject({ entryId: z.string().min(1) }),
+]);
+
+export type GoalSpend = z.infer<typeof goalSpendSchema>;
+
 export type GoalInput = z.input<typeof goalBodySchema>;
 
 /** `POST /api/goals/:id/:event`: one of Sure's events, else a `VALIDATION_ERROR`. */
