@@ -801,7 +801,7 @@ export async function updateBudget(
 	const currency = await getReportingCurrency(deps.db);
 	const { budgetedSpending, expectedIncome, categories: categoryAmounts } = input;
 
-	const { month, updated } = await deps.db
+	const { month: savedMonth, updated } = await deps.db
 		.transaction(
 			async (tx) => {
 				const { bounds, current, startDay } = await budgetMonths({ ...deps, db: tx });
@@ -871,7 +871,7 @@ export async function updateBudget(
 			throw error;
 		});
 
-	return { budget: await getBudget(deps, month), updated };
+	return { budget: await getBudget(deps, savedMonth), updated };
 }
 
 /**
