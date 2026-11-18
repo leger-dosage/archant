@@ -1340,7 +1340,6 @@
 		"open": "Importer",
 		"title": "Importer un fichier",
 		"description": "Un relevé OFX, CSV ou QIF exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
-		"mobile": "Disponible sur ordinateur",
 		"steps": {
 			"label": "Étapes de l'import",
 			"file": "Fichier",
@@ -2927,7 +2926,6 @@
 			"description": "Après chaque synchronisation ou importation, une règle complète les opérations qu'elle vise : catégorie, marchand, étiquette ou libellé."
 		},
 		"add": "Ajouter une règle",
-		"mobile": "Disponible sur ordinateur",
 		"actions": "Actions pour {{name}}",
 		"toggle": "Activer {{name}}",
 		"edit": "Modifier",

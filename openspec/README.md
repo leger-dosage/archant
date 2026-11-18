@@ -20,7 +20,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 34.8  | [Import files and edit rules on a phone](changes/import-files-and-edit-rules-on-a-phone/proposal.md)                                            |                                                                      |
 | 34.9  | [Sure's few hotkeys](changes/sures-few-hotkeys/proposal.md)                                                                                     |                                                                      |
 | 34.10 | [Sure's layout under Archant's visual style](changes/sures-layout-under-archants-visual-style/proposal.md)                                      |                                                                      |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/household-preferences/proposal.md)                    |
