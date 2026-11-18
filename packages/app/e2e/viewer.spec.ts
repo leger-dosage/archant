@@ -634,6 +634,15 @@ reader.describe("a viewer", () => {
 				{ role: "button", name: `Actions pour ${goal.name}` },
 				{ role: "button", name: "Reprendre l'objectif" },
 			]);
+
+			const reached = await apiHelpers(administrator).createGoal({
+				targetAmount: "10",
+				accounts: [{ accountId: savings.id, allocatedAmount: "20" }],
+			});
+			await page.goto(`/goals/${reached.id}`);
+			const panel = page.getByRole("region", { name: "Cible atteinte" });
+			await expect(panel).toContainText("Vous avez atteint votre cible");
+			await expect(panel.getByRole("button", { name: "Clôturer cet objectif" })).toHaveCount(0);
 		},
 	);
 

@@ -46,7 +46,7 @@ Everything below works without a bank connection except the last line. [docs/sur
 - Categories, merchants and tags, and rules that categorise, tag, rename or exclude new and existing transactions.
 - Transfers between accounts, marked by hand or matched automatically.
 - Monthly budgets by category, with a copy from the last month, money moved between categories, and what is left carried over.
-- Savings goals and reserves funded by account balances, with what to put aside each month.
+- Savings goals and reserves funded by account balances. Each goal explains its status, its savings pace when measurable, and what you can do next.
 - Bills: recurring payments detected from history or declared by hand, with a schedule, due dates settled by the payments that match them, and a page of what is overdue, due and paid.
 - A dashboard with net worth over time and monthly income and expenses by category.
 - An export of every figure as one ZIP, in Sure's export format.

@@ -208,6 +208,7 @@ test("a goal the linked accounts' 90-day pace covers is on track", async ({ page
 	await expect(projection).toContainText(
 		`À ce rythme, vous aurez épargné ${euros(1_285_545)} le ${shortDate(daysAgo(-300))}.`,
 	);
+	await expect(projection).toContainText("Au rythme actuel, vous atteindrez cet objectif vers");
 	await expect(projection.locator(".recharts-line-curve")).toBeVisible();
 });
 
@@ -233,10 +234,110 @@ test("a goal without enough account history has an unknown pace and no projectio
 	const projection = page.getByRole("region", { name: "Projection" });
 	await expect(projection.getByRole("button", { name: "Voir le tableau" })).toBeVisible();
 	await expect(progress.getByText("Rythme inconnu", { exact: true })).toBeVisible();
-	await expect(projection).toContainText(
-		"L'historique des comptes liés ne suffit pas à calculer une projection.",
-	);
 	await expect(projection.locator(".recharts-line-curve")).toHaveCount(0);
+	await expect(projection).toContainText("opérations éligibles des 90 derniers jours");
+	await expect(page.getByRole("button", { name: "Ajuster l'objectif à la place" })).toHaveCount(0);
+});
+
+test("a goal behind explains the monthly shortfall and opens the goal editor", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("Livret fictif"),
+		openingBalance: "0",
+		openingDate: daysAgo(60),
+	});
+	await api.addTransaction(account.id, { date: daysAgo(10), label: "Dépôt fictif", amount: "300" });
+	const { id, name } = await api.createGoal({
+		name: uniqueName("Voyage fictif"),
+		targetAmount: "900",
+		targetDate: daysAgo(-60),
+		accounts: [{ accountId: account.id }],
+	});
+
+	await page.goto(`/goals/${id}`);
+	await expect(page.getByRole("heading", { name })).toBeVisible();
+	const header = page.locator("header").filter({ has: page.getByRole("heading", { name }) });
+	await expect(header.getByText("60 jours restants")).toBeVisible();
+	const catchUp = page.getByRole("region", {
+		name: `Épargnez ${euros(20_000)}/mois de plus pour rattraper le retard`,
+	});
+	await expect(catchUp).toBeVisible();
+	const projection = page.getByRole("region", { name: "Projection" });
+	await expect(projection).toContainText("Insuffisant au rythme actuel.");
+	await expect(projection.locator(".recharts-line-curve")).toBeVisible();
+	await catchUp.getByRole("button", { name: "Ajuster l'objectif à la place" }).click();
+	await expect(page.getByRole("dialog", { name: "Modifier l'objectif" })).toBeVisible();
+});
+
+test("a reached goal can be closed from its state panel after confirmation", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("Livret fictif"),
+		openingBalance: "900",
+	});
+	const { id, name } = await api.createGoal({
+		name: uniqueName("Vélo fictif"),
+		targetAmount: "600",
+		targetDate: daysAgo(-60),
+		accounts: [{ accountId: account.id }],
+	});
+
+	await page.goto(`/goals/${id}`);
+	await expect(page.getByRole("heading", { name })).toBeVisible();
+	const panel = page.getByRole("region", { name: "Cible atteinte" });
+	await expect(panel).toContainText(
+		`Vous avez atteint votre cible, à ${euros(90_000)} sur ${euros(60_000)}.`,
+	);
+	const projection = page.getByRole("region", { name: "Projection" });
+	await expect(projection).toContainText("Vous avez atteint la cible.");
+	await expect(projection.getByRole("button", { name: "Voir le tableau" })).toBeVisible();
+	await expect(projection.locator(".recharts-line-curve")).toHaveCount(0);
+	await panel.getByRole("button", { name: "Clôturer cet objectif" }).click();
+	await page
+		.getByRole("alertdialog")
+		.getByRole("button", { name: "Marquer comme terminé" })
+		.click();
+	await expect(page.getByRole("region", { name: "Objectif atteint. Bon travail !" })).toBeVisible();
+	await expect(panel).toHaveCount(0);
+});
+
+test("setting a target date explains a measured zero pace", async ({ page, api }) => {
+	const account = await api.openAccount({
+		name: uniqueName("Livret fictif"),
+		openingBalance: "0",
+		openingDate: daysAgo(150),
+	});
+	await api.addTransaction(account.id, {
+		date: daysAgo(100),
+		label: "Dépôt ancien",
+		amount: "300",
+	});
+	const { id } = await api.createGoal({
+		targetAmount: "900",
+		accounts: [{ accountId: account.id }],
+	});
+
+	await page.goto(`/goals/${id}`);
+	const projection = page.getByRole("region", { name: "Projection" });
+	await expect(projection).toContainText("Aucune date cible.");
+	await page
+		.getByRole("region", { name: "Ajouter une date cible" })
+		.getByRole("button", { name: "Définir la date cible" })
+		.click();
+	const edit = page.getByRole("dialog", { name: "Modifier l'objectif" });
+	await edit.getByLabel("Échéance (facultative)").fill(typed(daysAgo(-60)));
+	await edit.getByRole("button", { name: "Enregistrer" }).click();
+
+	await expect(edit).toBeHidden();
+	await expect(projection).toContainText("Le rythme net est de zéro.");
+	await expect(page.getByRole("region", { name: "Progression" })).toContainText(
+		`${euros(0)} par mois`,
+	);
+	await expect(page.getByRole("button", { name: "Ajuster l'objectif à la place" })).toBeVisible();
 });
 
 test("a goal is paused, completed, archived and restored from its menu and its banners, its chart read as a table", async ({
@@ -263,9 +364,6 @@ test("a goal is paused, completed, archived and restored from its menu and its b
 	const projection = page.getByRole("region", { name: "Projection" });
 	await expect(projection).toContainText(
 		`Épargné : ${euros(45_000)}, ${euros(0)} depuis le ${shortDate(daysAgo(30))}. Montant visé : ${euros(100_000)}.`,
-	);
-	await expect(projection).toContainText(
-		"L'historique des comptes liés ne suffit pas à calculer une projection.",
 	);
 	await projection.getByRole("button", { name: "Voir le tableau" }).click();
 	const rows = projection.getByRole("table").getByRole("row");
@@ -603,8 +701,17 @@ test("a covered reserve is « Constituée », one below its target « Entamée �
 		euros(80_000),
 		euros(50_000),
 	]);
+	await expect(page.getByRole("region", { name: "Réserve sous son solde cible" })).toBeVisible();
+	await expect(page.getByRole("region", { name: "Projection" })).toContainText(
+		"Une réserve maintient un solde cible",
+	);
 	const menu = await openMenu(page, depleted.name);
 	await expect(menu.getByRole("menuitem", { name: "Mettre en pause" })).toBeVisible();
 	await expect(menu.getByRole("menuitem", { name: "Archiver" })).toBeVisible();
 	await expect(menu.getByRole("menuitem", { name: "Marquer comme terminé" })).toHaveCount(0);
+
+	await page.goto(`/goals/${funded.id}`);
+	const reserve = page.getByRole("region", { name: "Réserve constituée" });
+	await expect(reserve).toContainText(euros(100_000));
+	await expect(reserve.getByRole("button")).toHaveCount(0);
 });
