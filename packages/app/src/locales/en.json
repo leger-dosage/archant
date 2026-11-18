@@ -629,7 +629,6 @@
 			"transfer": "Transfer",
 			"notes": "Notes",
 			"save": "Save",
-			"saveShortcut": "⌘Enter or Ctrl+Enter",
 			"excluded": "Exclude from reports",
 			"oneTime": "One-time {{type}}",
 			"oneTimeDescription": "One-time transactions will be excluded from certain budget calculations and reports to help you see what's really important.",
@@ -3316,6 +3315,8 @@
 		}
 	},
 	"settings": {
+		"previous": "Previous",
+		"escapeHint": "esc",
 		"title": "Settings",
 		"sections": {
 			"banks": "Banks",
