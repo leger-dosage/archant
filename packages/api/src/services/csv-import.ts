@@ -180,7 +180,12 @@ type Source = { kind: "csv"; table: CsvTable } | { kind: "qif"; qif: QifSheet };
  * (`CSV_INVALID`), more rows than Sure's `max_row_count`. A QIF file is read
  * by Sure's `QifParser` into its rows instead.
  */
-function readSource(request: CsvImportRequest, day: IsoDate, locale: Locale): Source {
+function readSource(
+	request: CsvImportRequest,
+	day: IsoDate,
+	locale: Locale,
+	currency: CurrencyCode,
+): Source {
 	const max = maxRowsOf(request.type);
 
 	if (request.file.bytes.length > MAX_CSV_BYTES) {
@@ -201,7 +206,7 @@ function readSource(request: CsvImportRequest, day: IsoDate, locale: Locale): So
 					maxRows: max,
 				},
 				day,
-				getReportingCurrency(),
+				currency,
 				locale,
 			),
 		};
@@ -954,6 +959,7 @@ async function analyse(
 	source: Source,
 	day: IsoDate,
 	locale: Locale,
+	currency: CurrencyCode,
 ): Promise<{ sheet: Sheet; analysis: Analysis }> {
 	if (source.kind === "qif") {
 		return {
@@ -978,7 +984,7 @@ async function analyse(
 		lookup,
 		configuration,
 		today: day,
-		currency: getReportingCurrency(),
+		currency,
 		edits: editsOf(request.edits, cleanColumnsOf(request.type, configuration.accountId)),
 	};
 
@@ -1042,9 +1048,12 @@ export async function previewCsvImport(
 	request: CsvImportRequest,
 ): Promise<CsvImportPreview> {
 	const day = today(deps.timeZone);
-	const locale = await householdLocale(deps.db);
-	const source = readSource(request, day, locale);
-	const { sheet, analysis } = await analyse(deps.db, request, source, day, locale);
+	const [locale, currency] = await Promise.all([
+		householdLocale(deps.db),
+		getReportingCurrency(deps.db),
+	]);
+	const source = readSource(request, day, locale, currency);
+	const { sheet, analysis } = await analyse(deps.db, request, source, day, locale, currency);
 	const qif = source.kind === "qif" ? source.qif : null;
 
 	return {
@@ -1082,11 +1091,14 @@ export async function importCsv(
 	try {
 		// Parsed before the write lock is taken: the table depends on no row.
 		const day = today(deps.timeZone);
-		const locale = await householdLocale(deps.db);
-		const source = readSource(request, day, locale);
+		const [locale, currency] = await Promise.all([
+			householdLocale(deps.db),
+			getReportingCurrency(deps.db),
+		]);
+		const source = readSource(request, day, locale, currency);
 		const { counts, committed } = await deps.db.transaction(
 			async (tx) => {
-				const { analysis } = await analyse(tx, request, source, day, locale);
+				const { analysis } = await analyse(tx, request, source, day, locale, currency);
 
 				if (analysis.errors.length > 0) {
 					throw new AppError("CSV_IMPORT_INVALID", "The file's preview found errors.");

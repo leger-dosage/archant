@@ -9,12 +9,7 @@ import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryIcon } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
-import {
-	FUNDABLE_ACCOUNT_TYPES,
-	RELEASED_GOAL_STATES,
-	canBackGoal,
-	goalTransition,
-} from "@archant/data/goals";
+import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -167,7 +162,7 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 	const date = today(deps.timeZone);
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
 	const expenses = {
-		currency: getReportingCurrency(),
+		currency: await getReportingCurrency(deps.db),
 		median: goalRows.some((goal) => goal.targetMode === "months_of_expenses")
 			? await monthlyExpenses(deps)
 			: null,
@@ -251,7 +246,7 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
  * The Plan card's goals that hold their money, summed in the reporting currency. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
-	return goalsSummary(await listGoals(deps), getReportingCurrency());
+	return goalsSummary(await listGoals(deps), await getReportingCurrency(deps.db));
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
@@ -298,10 +293,8 @@ export type GoalAccountChoice = {
 	name: string;
 	currency: string;
 	/**
-	 * What a new goal could still reserve, as Sure's `free_to_earmark`: the
-	 * balance today less the fixed amounts the goals holding their money
-	 * reserve on it, negative when they reserve more; zero once one of them
-	 * takes it whole.
+	 * Sure's `free_to_earmark`: today's balance less the fixed amounts reserved
+	 * by goals that still hold their money. Can be negative.
 	 */
 	freeToEarmark: MinorUnits;
 	/** A goal holding its money takes its whole balance: a new goal needs a fixed amount of it. */
@@ -309,8 +302,8 @@ export type GoalAccountChoice = {
 };
 
 /**
- * Every active account a goal may take, by name, with what a new goal could
- * still reserve on it, as Sure's `depository_account_payload`. Reads only.
+ * Active depository accounts and their remaining earmark amounts, as in
+ * Sure's `depository_account_payload`.
  */
 export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccountChoice[]> {
 	const date = today(deps.timeZone);
@@ -318,7 +311,7 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 		deps.db
 			.select({ id: accounts.id, name: accounts.name, currency: accounts.currency })
 			.from(accounts)
-			.where(and(eq(accounts.active, true), inArray(accounts.type, [...FUNDABLE_ACCOUNT_TYPES]))),
+			.where(and(eq(accounts.active, true), eq(accounts.type, "depository"))),
 		deps.db
 			.select({ accountId: goalAccounts.accountId, allocatedAmount: goalAccounts.allocatedAmount })
 			.from(goalAccounts)
@@ -330,13 +323,11 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 			const own = links.filter((link) => link.accountId === row.id);
 			const claimedInFull = own.some((link) => link.allocatedAmount === null);
 			const reserved = own.reduce((sum, link) => sum + (link.allocatedAmount ?? 0), 0);
-			const balance = claimedInFull ? null : await balanceOn(deps, row.id, date);
+			const balance = await balanceOn(deps, row.id, date);
 
 			return {
 				...row,
-				freeToEarmark: toMinorUnits(
-					claimedInFull ? 0 : (balance?.amount ?? toMinorUnits(0)) - reserved,
-				),
+				freeToEarmark: toMinorUnits((balance?.amount ?? 0) - reserved),
 				claimedInFull,
 			};
 		}),
@@ -346,12 +337,15 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 }
 
 /** A stored currency as the schema reads amounts in; the reporting one if it is no longer known. */
-function currencyCode(currency: string | undefined): CurrencyCode {
+async function currencyCode(
+	db: Pick<ServiceDeps["db"], "select">,
+	currency: string | undefined,
+): Promise<CurrencyCode> {
 	if (currency !== undefined && isCurrencyCode(currency)) {
 		return currency;
 	}
 
-	return getReportingCurrency();
+	return getReportingCurrency(db);
 }
 
 function parse(input: GoalInput, currency: CurrencyCode): GoalRequest {
@@ -480,7 +474,7 @@ async function storedTarget(
 		return target.amount;
 	}
 
-	const reported = currency === getReportingCurrency();
+	const reported = currency === (await getReportingCurrency(deps.db));
 	const amount = reported ? monthsOfExpenses(target.months, await monthlyExpenses(deps)) : null;
 
 	if (amount !== null) {
@@ -559,7 +553,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 
 	await deps.db.transaction(
 		async (tx) => {
-			const currency = currencyCode(await firstFundableCurrency(tx, input.accounts));
+			const currency = await currencyCode(tx, await firstFundableCurrency(tx, input.accounts));
 			const goal = parse(input, currency);
 			const now = Date.now();
 
@@ -603,7 +597,7 @@ export async function updateGoal(
 				throw notFound();
 			}
 
-			const goal = parse(input, currencyCode(existing.currency));
+			const goal = parse(input, await currencyCode(tx, existing.currency));
 
 			if (goal.kind !== existing.kind && RELEASED.includes(existing.state)) {
 				throw fieldError("kind", "kind_locked");

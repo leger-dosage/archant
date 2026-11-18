@@ -3,6 +3,7 @@ import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+import { RECONCILIATION_STATUSES } from "../reconciliation.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
 import { imports } from "./imports.ts";
@@ -35,6 +36,9 @@ export const entries = sqliteTable(
 			.references(() => accounts.id, { onDelete: "restrict" }),
 		kind: text("kind").$type<EntryKind>().notNull(),
 		valuationKind: text("valuation_kind").$type<ValuationKind>(),
+		reconciliationStatus: text("reconciliation_status", { enum: RECONCILIATION_STATUSES })
+			.notNull()
+			.default("unreconciled"),
 		date: text("date").notNull(),
 		amount: integer("amount").notNull(),
 		currency: text("currency").notNull(),
@@ -64,6 +68,10 @@ export const entries = sqliteTable(
 		updatedAt: integer("updated_at").notNull(),
 	},
 	(table) => [
+		check(
+			"entries_reconciliation_status_check",
+			sql`${table.reconciliationStatus} in ${inList(RECONCILIATION_STATUSES)}`,
+		),
 		check("entries_kind_check", sql`${table.kind} in ${inList(ENTRY_KINDS)}`),
 		// `is not null` spelled out: `null in (...)` is null, which a check lets through.
 		check(

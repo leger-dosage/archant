@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { z } from "zod";
 
 import { bankConnections } from "@archant/data/schema/bank-connections";
+import { settings } from "@archant/data/schema/settings";
 
 import { validateEnv } from "../env.ts";
 import { AppError } from "../lib/errors.ts";
@@ -110,6 +111,7 @@ beforeEach(async () => {
 	vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
 	vi.setSystemTime(BEFORE_DEFAULT);
 	await temp.db.delete(bankConnections);
+	await temp.db.delete(settings);
 	await settle(true);
 });
 
@@ -140,6 +142,26 @@ describe("startSyncSchedule", () => {
 		// And again the next day.
 		await jumpTo(BEFORE_DEFAULT + DAY, 5 * MINUTE);
 		expect(sync).toHaveBeenCalledTimes(2);
+	});
+
+	it("uses the saved zone on the next wake, across the local day boundary", async () => {
+		await settle(true, "00:01");
+		vi.setSystemTime(Date.parse("2026-09-23T23:59:00Z"));
+		const sync = spySync();
+		start();
+		await vi.advanceTimersByTimeAsync(0);
+
+		await temp.db
+			.insert(settings)
+			.values({ key: "time_zone", value: "UTC", updatedAt: Date.now() });
+		await vi.advanceTimersByTimeAsync(MINUTE);
+		expect(sync).not.toHaveBeenCalled();
+
+		await vi.advanceTimersByTimeAsync(MINUTE);
+		expect(sync).toHaveBeenCalledExactlyOnceWith(
+			expect.objectContaining({ timeZone: "UTC" }),
+			"schedule",
+		);
 	});
 
 	it("runs nothing while auto sync is off", async () => {

@@ -5,6 +5,12 @@ import type { ServiceDeps } from "./deps.ts";
 
 import { eq } from "drizzle-orm";
 
+import {
+	DEFAULT_HOUSEHOLD_COUNTRY,
+	DEFAULT_TIME_ZONE,
+	currencyForCountry,
+	defaultDateFormat,
+} from "@archant/data/household-preferences";
 import { users } from "@archant/data/schema/auth";
 import { settings } from "@archant/data/schema/settings";
 
@@ -12,9 +18,11 @@ import { AppError } from "../lib/errors.ts";
 import { sameSecret } from "../lib/secret.ts";
 import { saveHouseholdLocale } from "./household-locale.ts";
 import { seedDefaults } from "./seed.ts";
+import { saveHouseholdPreferences } from "./settings.ts";
 
 export type SetupDeps = Pick<ServiceDeps, "db"> & {
 	auth: Pick<Auth, "api">;
+	timeZone?: string;
 	logger: Logger;
 	/**
 	 * The token `index.ts` generated and logged at start because no user
@@ -70,9 +78,10 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 
 	await assertSetupOpen(deps);
 
+	const now = Date.now();
 	const claimed = await deps.db
 		.insert(settings)
-		.values({ key: SETUP_KEY, value: String(Date.now()), updatedAt: Date.now() })
+		.values({ key: SETUP_KEY, value: String(now), updatedAt: now })
 		.onConflictDoNothing()
 		.returning({ key: settings.key });
 
@@ -80,7 +89,24 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 		throw closed();
 	}
 
+	let administrator: { id: string };
+
 	try {
+		const locale = input.locale ?? "fr";
+		const country = input.country ?? DEFAULT_HOUSEHOLD_COUNTRY;
+
+		// Better Auth creates the user on another connection. Write the preferences
+		// first so an existing user always has the choices made at setup. A retry
+		// overwrites these choices if creating the user fails.
+		await saveHouseholdLocale(deps.db, locale);
+		await saveHouseholdPreferences(deps.db, {
+			country,
+			baseCurrency: input.baseCurrency ?? currencyForCountry(country),
+			dateFormat: input.dateFormat ?? defaultDateFormat(locale),
+			timeZone: deps.timeZone ?? DEFAULT_TIME_ZONE,
+			monthStartDay: 1,
+		});
+
 		// No headers: a server call, which the admin plugin allows without a
 		// session. The claim above is what stands between it and a stranger.
 		const { user } = await deps.auth.api.createUser({
@@ -93,21 +119,18 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 			},
 		});
 
-		deps.logger.info({ userId: user.id }, "administrator created");
-
-		// The language first: the default categories are written in it. Seeded
-		// here, not at start, because no start knows which language a new
-		// household will choose.
-		await saveHouseholdLocale(deps.db, input.locale ?? "fr");
-		if (deps.seedAtSetup === true) {
-			await seedDefaults(deps);
-		}
-
-		return { id: user.id };
+		administrator = user;
 	} catch (error) {
 		// Otherwise setup would stay closed with no user, and only editing the
 		// database could reopen it.
 		await deps.db.delete(settings).where(eq(settings.key, SETUP_KEY));
 		throw error;
 	}
+
+	deps.logger.info({ userId: administrator.id }, "administrator created");
+	if (deps.seedAtSetup === true) {
+		await seedDefaults(deps);
+	}
+
+	return { id: administrator.id };
 }

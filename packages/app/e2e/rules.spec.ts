@@ -1069,7 +1069,14 @@ test("a bank sync runs every enabled rule over the history and lists its run as 
 		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
 		await visit(page);
 
-		await expect(runRow(page, name).getByRole("cell")).toHaveText([
+		// Another sync can record a no-op run for the same rule.
+		const changingRun = runRow(page, name).filter({
+			has: page
+				.getByRole("cell")
+				.last()
+				.filter({ hasText: /^[1-9]\d*$/u }),
+		});
+		await expect(changingRun.first().getByRole("cell")).toHaveText([
 			/\S/u,
 			"Planifié",
 			"Réussi",
