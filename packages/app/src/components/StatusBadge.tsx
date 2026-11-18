@@ -78,6 +78,7 @@ const STATUSES = {
 	goalBehind: { icon: ClockAlertIcon, key: "goals.status.behind", tone: "warning" },
 	goalOnTrack: { icon: TrendingUpIcon, key: "goals.status.on_track", tone: "neutral" },
 	goalNoTargetDate: { icon: CalendarOffIcon, key: "goals.status.no_target_date", tone: "neutral" },
+	goalPaceUnknown: { icon: CircleHelpIcon, key: "goals.status.pace_unknown", tone: "neutral" },
 	goalReached: { icon: CircleCheckIcon, key: "goals.status.reached", tone: "neutral" },
 	// A reserve's, Sure's `funded` and `depleted`: one below its target needs
 	// refilling, which is attention, not an alarm.
