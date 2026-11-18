@@ -10,7 +10,6 @@ import { scaledQuantity, scaledTradePrice } from "@archant/data/decimals";
 import { runMigrations } from "@archant/data/migrate";
 import { toMinorUnits } from "@archant/data/money";
 import { balances } from "@archant/data/schema/balances";
-import { entries } from "@archant/data/schema/entries";
 import { holdings } from "@archant/data/schema/holdings";
 import { securities } from "@archant/data/schema/securities";
 import { trades } from "@archant/data/schema/trades";
@@ -140,14 +139,16 @@ describe("migration 0080", () => {
 		await migrateBefore(url, "0080");
 		const before = await open("upgraded.db");
 		await before.insert(securities).values(await current.select().from(securities));
-		// The columns `accounts` had before 0080, named: a later migration's
-		// column does not exist there yet.
+		// Name the columns from before 0080 so this fixture does not depend
+		// on columns added by later migrations.
 		await before.run(sql`attach database ${join(directory, "current.db")} as current`);
 		await before.run(
 			sql`insert into accounts (id, name, type, subtype, currency, details, active, excluded_from_reports, bank_account_id, created_at, updated_at) select id, name, type, subtype, currency, details, active, excluded_from_reports, bank_account_id, created_at, updated_at from current.accounts`,
 		);
+		await before.run(
+			sql`insert into entries (id, account_id, kind, valuation_kind, date, amount, currency, import_id, parent_entry_id, notes, created_at, updated_at) select id, account_id, kind, valuation_kind, date, amount, currency, import_id, parent_entry_id, notes, created_at, updated_at from current.entries`,
+		);
 		await before.run(sql`detach database current`);
-		await before.insert(entries).values(await current.select().from(entries));
 		await before.insert(balances).values(balanceRows);
 		await oneByOne(tradeRows, async (row) =>
 			before.run(

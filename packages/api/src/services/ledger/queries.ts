@@ -29,6 +29,7 @@ import type { ActivityLabel } from "@archant/data/activity-labels";
 import { INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
 import { accounts } from "@archant/data/schema/accounts";
 import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
@@ -76,6 +77,8 @@ export type TransactionRecord = {
 	oneTime: boolean;
 	/** Not booked by the bank yet: counted in the balance, left out of cash flow (AD-8, AD-9). */
 	pending: boolean;
+	/** Manual checklist status, null for a bank-linked account. */
+	reconciliationStatus: ReconciliationStatus | null;
 	/** `null` is « Sans catégorie ». */
 	categoryId: string | null;
 	/** `null` is « Sans marchand ». */
@@ -152,6 +155,7 @@ const transactionColumns = {
 	excluded: transactions.excluded,
 	oneTime: transactions.oneTime,
 	pending: transactions.pending,
+	reconciliationStatus: sql<ReconciliationStatus | null>`case when ${accounts.bankAccountId} is null then ${entries.reconciliationStatus} end`,
 	possibleDuplicate: transactions.possibleDuplicate,
 	postedMatchId: transactions.postedMatchId,
 	postedMatchConfidence: transactions.postedMatchConfidence,
@@ -286,6 +290,7 @@ export async function findTransaction(
 		.select({ ...transactionColumns, ...transferColumns })
 		.from(entries)
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
 		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))

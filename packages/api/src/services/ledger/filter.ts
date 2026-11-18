@@ -18,6 +18,7 @@ import {
 	sql,
 } from "drizzle-orm";
 
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
 import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 import { taggings } from "@archant/data/schema/taggings";
@@ -26,6 +27,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 
 import { LIKE_ESCAPE, escapeLike } from "../../domain/transaction-filter.ts";
+import { manualAccountIds } from "./reconciliation.ts";
 import { asInflow, asOutflow, notSplitParent } from "./shared.ts";
 
 /**
@@ -70,6 +72,7 @@ export type TransactionFilter = {
 	direction?: readonly Direction[] | undefined;
 	/** Only the lines a bank has not booked yet when `true`, only booked ones when `false`. */
 	pending?: boolean | undefined;
+	reconciliationStatus?: readonly ReconciliationStatus[] | undefined;
 };
 
 /** Whether the filter reads `transactions`, so the count and the sum must join it. */
@@ -235,6 +238,12 @@ export function filterCondition(
 		category,
 		merchantIds === undefined ? undefined : inArray(transactions.merchantId, [...merchantIds]),
 		filter.pending === undefined ? undefined : eq(transactions.pending, filter.pending),
+		filter.reconciliationStatus === undefined
+			? undefined
+			: and(
+					inArray(entries.reconciliationStatus, filter.reconciliationStatus),
+					inArray(accountId, manualAccountIds),
+				),
 		// `exists` rather than a join: a row with two of the tags would be listed,
 		// counted and summed twice.
 		tagIds === undefined

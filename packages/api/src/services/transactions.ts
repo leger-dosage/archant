@@ -81,6 +81,7 @@ import {
 	unsplitTransaction as unsplitLedgerTransaction,
 } from "./ledger/splits.ts";
 import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.ts";
+import { manualReconciliationEnabled } from "./manual-reconciliation.ts";
 import { categoryFilterNamed, idsNamed } from "./names.ts";
 import { recurringEntryIds } from "./recurring/series.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -332,7 +333,13 @@ async function categoryFilterOf(
  * actions so « Tout sélectionner » acts on exactly the rows the list counts.
  */
 async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<TransactionFilter> {
-	const { names = {} } = query;
+	const { names = {}, reconciliationStatus } = query;
+
+	if (reconciliationStatus !== undefined && !(await manualReconciliationEnabled(deps.db))) {
+		throw new AppError("VALIDATION_ERROR", "Manual reconciliation is disabled.", [
+			{ path: "reconciliationStatus", code: "invalid_value" },
+		]);
+	}
 	const [account, category, merchant, tag] = await Promise.all([
 		idsNamed(deps, "accounts", names.accounts),
 		categoryFilterNamed(deps, names.categories),
@@ -351,6 +358,7 @@ async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<T
 		tagIds: both(query.tag, tag),
 		direction: query.direction,
 		pending: query.pending,
+		reconciliationStatus,
 	};
 }
 

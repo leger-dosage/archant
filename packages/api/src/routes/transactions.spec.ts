@@ -1996,6 +1996,63 @@ describe("POST /api/transactions/:id/unlock", () => {
 	});
 });
 
+describe("manual reconciliation through the transactions API", () => {
+	it("validates status and uses the same filters for totals, rows and the bulk selection", async () => {
+		await ownDatabase();
+		const account = await openOwn();
+		const first = await postOwn(account.id, expense);
+		const second = await postOwn(account.id, { ...expense, label: "Café" });
+		const path = `/api/transactions/${first}/reconciliation`;
+		const filter = {
+			account: [account.id],
+			reconciliationStatus: ["unreconciled", "reconciled"],
+			status: "confirmed",
+		};
+		const query = `account=${account.id}&reconciliationStatus=unreconciled&reconciliationStatus=reconciled&status=confirmed`;
+
+		await expect(ownRequest("GET", `/api/transactions?${query}`)).resolves.toMatchObject({
+			status: 400,
+		});
+		await expect(
+			ownRequest("POST", "/api/transactions/bulk-update", {
+				filter,
+				patch: { notes: "Ne pas changer" },
+			}),
+		).resolves.toMatchObject({ status: 400 });
+		await expect(
+			ownRequest("PATCH", path, { reconciliationStatus: "cleared" }),
+		).resolves.toMatchObject({ status: 404 });
+		await ownRequest("PATCH", "/api/preferences", { manualReconciliation: true });
+		await expect(
+			ownRequest("PATCH", path, { reconciliationStatus: "invalid" }),
+		).resolves.toMatchObject({ status: 400 });
+		await expect(
+			ownRequest("PATCH", path, { reconciliationStatus: "cleared" }),
+		).resolves.toMatchObject({
+			status: 200,
+			body: { data: { reconciliationStatus: "cleared" } },
+		});
+		await expect(ownRequest("GET", `/api/transactions?${query}`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { items: [{ id: second }] } },
+		});
+		await expect(ownRequest("GET", `/api/transactions/totals?${query}`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { total: 1 } },
+		});
+		await expect(
+			ownRequest("POST", "/api/transactions/bulk-update", {
+				filter,
+				patch: { reconciliationStatus: "reconciled" },
+			}),
+		).resolves.toMatchObject({ status: 200, body: { data: { updated: 1, changed: 1 } } });
+		await expect(ownRequest("GET", `/api/transactions?${query}`)).resolves.toMatchObject({
+			status: 200,
+			body: { data: { items: [{ id: second, reconciliationStatus: "reconciled" }] } },
+		});
+	});
+});
+
 describe("a viewer and a one-time or labelled transaction", () => {
 	let viewerCookie: string;
 	let auth: Auth;
@@ -2022,6 +2079,51 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		expect(edit.status).toBe(403);
 		expect(errorBody.parse(await edit.json()).error.code).toBe("FORBIDDEN");
 		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: false }]);
+	});
+
+	it("lets a viewer read and filter reconciliation but refuses each write", async () => {
+		const account = await openAccount();
+		const created = await postTransaction(account.id, expense);
+		const id = z.object({ data: z.object({ id: z.string() }) }).parse(created.body).data.id;
+		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		await expect(
+			request("PATCH", "/api/preferences", { manualReconciliation: true }),
+		).resolves.toMatchObject({
+			status: 200,
+			body: { data: { manualReconciliation: true } },
+		});
+		try {
+			const mutations = [
+				[`/api/transactions/${id}/reconciliation`, "PATCH", { reconciliationStatus: "cleared" }],
+				[
+					"/api/transactions/bulk-update",
+					"POST",
+					{ ids: [id], patch: { reconciliationStatus: "cleared" } },
+				],
+				["/api/preferences", "PATCH", { manualReconciliation: false }],
+			] as const;
+			const responses = await Promise.all(
+				mutations.map(async ([path, method, data]) =>
+					viewer.request(path, {
+						method,
+						headers: { "content-type": "application/json" },
+						body: JSON.stringify(data),
+					}),
+				),
+			);
+
+			expect(responses.map((response) => response.status)).toEqual([403, 403, 403]);
+
+			const result = await viewer.request(
+				`/api/transactions?account=${account.id}&reconciliationStatus=unreconciled`,
+			);
+			expect(result.status).toBe(200);
+			expect(await result.json()).toMatchObject({
+				data: { items: [{ id, reconciliationStatus: "unreconciled" }] },
+			});
+		} finally {
+			await request("PATCH", "/api/preferences", { manualReconciliation: false });
+		}
 	});
 
 	it("refuses a viewer's unlock FORBIDDEN, every lock kept", async () => {

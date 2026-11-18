@@ -54,6 +54,7 @@ describe("GET /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -89,6 +90,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 		await expect(read.json()).resolves.toEqual({
@@ -98,6 +100,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -116,6 +119,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -139,6 +143,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: false,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 		await expect(readOff.json()).resolves.toEqual({
@@ -148,6 +153,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: false,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 		await expect(on.json()).resolves.toEqual({
@@ -157,6 +163,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -176,6 +183,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: "en",
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 		await expect(french.json()).resolves.toEqual({
@@ -185,6 +193,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: "fr",
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 		await expect(browser.json()).resolves.toEqual({
@@ -194,6 +203,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -246,6 +256,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -284,6 +295,7 @@ describe("PATCH /api/preferences", () => {
 				showSplitGrouped: true,
 				locale: null,
 				householdLocale: "fr",
+				manualReconciliation: false,
 			},
 		});
 	});
@@ -381,6 +393,7 @@ describe("PATCH /api/preferences", () => {
 					showSplitGrouped: true,
 					locale: null,
 					householdLocale: "fr",
+					manualReconciliation: false,
 				},
 			});
 		});

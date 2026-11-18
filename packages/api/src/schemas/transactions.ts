@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ACTIVITY_LABELS } from "@archant/data/activity-labels";
 import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
 import { entryDateSchema } from "./accounts.ts";
@@ -342,6 +343,11 @@ export function operatorBounds(
 }
 
 const statusSchema = z.enum(STATUSES);
+const reconciliationStatusSchema = z.enum(RECONCILIATION_STATUSES);
+
+export const reconciliationBodySchema = z.strictObject({
+	reconciliationStatus: reconciliationStatusSchema,
+});
 
 export const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
@@ -353,6 +359,10 @@ export const filterFields = {
 	// Sure's « Statut »: `confirmed`, `pending`, or both, which is no filter.
 	status: z
 		.union([statusSchema, z.array(statusSchema)])
+		.transform((value) => (typeof value === "string" ? [value] : [...new Set(value)]))
+		.optional(),
+	reconciliationStatus: z
+		.union([reconciliationStatusSchema, z.array(reconciliationStatusSchema).min(1)])
 		.transform((value) => (typeof value === "string" ? [value] : [...new Set(value)]))
 		.optional(),
 	category: repeated(MAX_CATEGORY_FILTER),
@@ -519,6 +529,7 @@ export const bulkPatchSchema = z
 		date: z.string().trim().transform(blankAsAbsent).pipe(entryDateSchema.optional()).optional(),
 		name: z.string().trim().max(LABEL_MAX_LENGTH).transform(blankAsAbsent).optional(),
 		notes: z.string().trim().max(NOTES_MAX_LENGTH).transform(blankAsAbsent).optional(),
+		reconciliationStatus: reconciliationStatusSchema.optional(),
 		// The ledger checks that the id names a category.
 		categoryId: z.string().trim().transform(blankAsAbsent).optional(),
 		// The ledger checks that the id names a merchant.

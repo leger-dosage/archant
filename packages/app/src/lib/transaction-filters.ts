@@ -8,6 +8,7 @@ import {
 	directionSchema,
 	parseAmountBound,
 } from "@archant/api/schemas/transactions";
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 
 import { isoToInput } from "@/lib/dates";
 
@@ -66,6 +67,12 @@ export const operationsSearchSchema = z
 			.transform((values) => (values.length === STATUSES.length ? undefined : values))
 			.optional()
 			.catch(undefined),
+		reconciliationStatus: z
+			.union([z.string().transform((value) => [value]), z.array(z.string())])
+			.pipe(z.array(z.enum(RECONCILIATION_STATUSES)).min(1))
+			.transform((values) => [...new Set(values)])
+			.optional()
+			.catch(undefined),
 		from: isoDate.optional().catch(undefined),
 		to: isoDate.optional().catch(undefined),
 		amount: text
@@ -106,6 +113,7 @@ export const FILTER_KINDS = [
 	"merchant",
 	"period",
 	"status",
+	"reconciliationStatus",
 	"amount",
 	"direction",
 ] as const;
@@ -137,6 +145,7 @@ const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]>
 	merchant: ["merchant"],
 	period: ["from", "to"],
 	status: ["status"],
+	reconciliationStatus: ["reconciliationStatus"],
 	amount: ["amount", "amountOperator"],
 	direction: ["direction"],
 	q: ["q"],
@@ -176,6 +185,9 @@ export function toTotalsQuery(filters: TransactionFilters) {
 		...(filters.from === undefined ? {} : { from: filters.from }),
 		...(filters.to === undefined ? {} : { to: filters.to }),
 		...(filters.status === undefined ? {} : { status: filters.status }),
+		...(filters.reconciliationStatus === undefined
+			? {}
+			: { reconciliationStatus: filters.reconciliationStatus }),
 		...(filters.amount === undefined ? {} : { amount: filters.amount }),
 		...(filters.amountOperator === undefined ? {} : { amountOperator: filters.amountOperator }),
 		...(filters.q === undefined ? {} : { q: filters.q }),
@@ -183,23 +195,25 @@ export function toTotalsQuery(filters: TransactionFilters) {
 	};
 }
 
-type ChipKey = `operations.chips.${
-	| "unknownAccount"
-	| "unknownCategory"
-	| "uncategorised"
-	| "unknownMerchant"
-	| "unknownTag"
-	| "periodBetween"
-	| "periodSince"
-	| "periodUntil"
-	| "statuses.confirmed"
-	| "statuses.pending"
-	| "amountEqual"
-	| "amountGreater"
-	| "amountLess"
-	| "directions.income"
-	| "directions.expense"
-	| "directions.transfer"}`;
+type ChipKey =
+	| `operations.chips.${
+			| "unknownAccount"
+			| "unknownCategory"
+			| "uncategorised"
+			| "unknownMerchant"
+			| "unknownTag"
+			| "periodBetween"
+			| "periodSince"
+			| "periodUntil"
+			| "statuses.confirmed"
+			| "statuses.pending"
+			| "amountEqual"
+			| "amountGreater"
+			| "amountLess"
+			| "directions.income"
+			| "directions.expense"
+			| "directions.transfer"}`
+	| `transactions.reconciliation.statuses.${(typeof RECONCILIATION_STATUSES)[number]}`;
 
 /** i18next's `t`, narrowed to the chip labels so a test can stand in for it. */
 export type Translate = (key: ChipKey, values?: Record<string, string>) => string;
@@ -298,6 +312,15 @@ export function filterChips(
 
 	if (filters.status !== undefined) {
 		chips.push({ kind: "status", label: statusLabel(filters.status, t) });
+	}
+
+	if (filters.reconciliationStatus !== undefined) {
+		chips.push({
+			kind: "reconciliationStatus",
+			label: filters.reconciliationStatus
+				.map((status) => t(`transactions.reconciliation.statuses.${status}`))
+				.join(", "),
+		});
 	}
 
 	if (filters.amount !== undefined) {

@@ -25,6 +25,7 @@
 		"./name-limits": "./name-limits.ts",
 		"./periods": "./periods.ts",
 		"./qif-options": "./qif-options.ts",
+		"./reconciliation": "./reconciliation.ts",
 		"./recurring": "./recurring.ts",
 		"./report-periods": "./report-periods.ts",
 		"./reports-layout": "./reports-layout.ts",
