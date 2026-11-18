@@ -4,7 +4,7 @@ import type { GoalAccountChoice, GoalSummary } from "../services/goals.ts";
 import { z } from "zod";
 
 import { sampleCategoryColor } from "@archant/data/category-presets";
-import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
+import { GOAL_KINDS } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 
 import { AppError } from "../lib/errors.ts";
@@ -126,8 +126,8 @@ export const getGoals = defineTool({
 });
 
 /** Sure's `parse_decimal` followed by its `> 0`: the decimal text of a positive amount, else `null`. */
-function positiveText(value: string | number | undefined): string | null {
-	const text = value === undefined ? null : sureDecimalText(value);
+function positiveText(value: string | number): string | null {
+	const text = sureDecimalText(value);
 
 	return text === null || text.startsWith("-") || /^[0.]+$/u.test(text) ? null : text;
 }
@@ -171,16 +171,9 @@ const GOAL_MESSAGES: Readonly<Record<string, string>> = {
 	"notes too_long": "Notes is too long (maximum is 1000 characters)",
 	"targetAmount invalid_amount": "Target amount is not a number",
 	"targetAmount not_positive": "Target amount must be greater than 0",
-	"targetMode reserve_only":
-		"Only a reserve you maintain can have a target set in months of expenses.",
-	"targetMonths invalid_months": `Target months must be a whole number from 1 to ${GOAL_TARGET_MONTHS_MAX}`,
-	"targetMonths no_expenses":
-		"Target months need monthly expenses to count from, and the household has none yet",
-	"targetMonths not_reporting_currency":
-		"Months of expenses only apply to accounts in the reporting currency",
 	"accounts no_account": "Pick at least one account to fund this goal.",
 	"accounts duplicate_account": "Linked accounts must not name an account twice",
-	"accounts not_fundable": "All linked accounts must be cash or investment accounts.",
+	"accounts not_fundable": "All linked accounts must be active depository accounts.",
 	"accounts currency_mismatch": "All linked accounts must share the same currency.",
 	"accounts invalid_amount": "Earmarks must be amounts in the goal's currency",
 	"accounts not_positive": "Earmarks must be greater than 0",
@@ -196,14 +189,7 @@ function sentenceOf(path: string, code: string): string {
 }
 
 /** The service's own refusals as Sure's `validation_failed`, sentences joined by `; `. */
-async function savedAsSure<Written>(
-	write: () => Promise<Written>,
-	sentences: readonly string[],
-): Promise<Written> {
-	if (sentences.length > 0) {
-		refuse("validation_failed", sentences.join("; "));
-	}
-
+async function savedAsSure(write: () => Promise<GoalSummary>): Promise<GoalSummary> {
 	try {
 		return await write();
 	} catch (error) {
@@ -220,7 +206,7 @@ async function savedAsSure<Written>(
 export const createGoalTool = defineTool({
 	name: "create_goal",
 	title: "Create a savings goal",
-	description: `Creates an active savings goal, as Sure's create_goal and « Nouvel objectif » in Archant. Before calling, confirm the key details by paraphrasing back to the owner: the name, target amount, target date (if mentioned), and which of their accounts will fund it, with any amount reserved from each. Only call once they've confirmed. The goal links to at least one of the household's active current, savings or investment accounts, named exactly as get_accounts gives them, case included, all in one currency, which becomes the goal's. An account another goal claims in full needs an amount in earmarks. On success it answers the goal's url to point the owner to; on a soft failure, such as a name that matches no account, it answers available_accounts, each with what a new goal could still reserve on it, so you can ask again. Archant's own kind "maintained" makes a reserve kept full, with no date, whose target may be target_months of expenses. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
+	description: `Creates an active one-off savings goal, as Sure's create_goal and « Nouvel objectif » in Archant. Before calling, confirm the key details by paraphrasing back to the owner: the name, target amount, target date (if mentioned), and which of their accounts will fund it, with any amount reserved from each. Only call once they've confirmed. The goal links to at least one of the household's active depository accounts, named exactly as get_accounts gives them, case included, all in one currency, which becomes the goal's. An account another goal claims in full needs an amount in earmarks. On success it answers the goal's url to point the owner to; on a soft failure, such as a name that matches no account, it answers available_accounts, each with what a new goal could still reserve on it, so you can ask again. Editing, pausing, completing, archiving and deleting a goal stay in Archant's interface. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: CREATES,
 	input: createGoalInput,
@@ -231,10 +217,6 @@ export const createGoalTool = defineTool({
 	}),
 	run: async (deps, input) => {
 		const name = input.name.trim();
-		const reserve = input.kind === "maintained";
-		// A one-off goal given months is refused by the service, as Sure's
-		// `months_requires_maintained`.
-		const months = input.target_months;
 		const targetAmount = positiveText(input.target_amount);
 		// Sure's `where(name: names)` links an account named twice once.
 		const names = [
@@ -245,7 +227,7 @@ export const createGoalTool = defineTool({
 			refuse("name_required", "Please provide a name for the goal.");
 		}
 
-		if (targetAmount === null && (!reserve || months === undefined)) {
+		if (targetAmount === null) {
 			refuse("target_amount_invalid", "Target amount must be greater than zero.");
 		}
 
@@ -324,35 +306,22 @@ export const createGoalTool = defineTool({
 			);
 		}
 
-		const targetDate = dateOf(input.target_date);
-		const created = await savedAsSure(
-			async () =>
-				createGoal(deps, {
-					name,
-					kind: input.kind,
-					targetMode: months === undefined ? "fixed" : "months_of_expenses",
-					targetAmount: targetAmount ?? "",
-					targetMonths: months === undefined ? "" : String(months),
-					targetDate,
-					// Sure's `create_goal`: `COLORS.sample`.
-					color: sampleCategoryColor(),
-					icon: null,
-					notes: input.notes ?? null,
-					accounts: matched.map((row) => ({
-						accountId: row.id,
-						allocatedAmount: earmarks.get(row.name) ?? "",
-					})),
-				}),
-			// The dialog hides a reserve's date and the service drops it: the
-			// owner would agree to a date nothing keeps.
-			[
-				...(reserve && input.target_amount !== undefined && months !== undefined
-					? ["Give target_amount or target_months, not both"]
-					: []),
-				...(reserve && targetDate !== null
-					? ["Target date can't be set on a reserve you maintain"]
-					: []),
-			],
+		const created = await savedAsSure(async () =>
+			createGoal(deps, {
+				name,
+				kind: "one_off",
+				targetMode: "fixed",
+				targetAmount,
+				targetDate: dateOf(input.target_date),
+				// Sure's `create_goal`: `COLORS.sample`.
+				color: sampleCategoryColor(),
+				icon: null,
+				notes: input.notes ?? null,
+				accounts: matched.map((row) => ({
+					accountId: row.id,
+					allocatedAmount: earmarks.get(row.name) ?? "",
+				})),
+			}),
 		);
 		const goal = goalOf(created, deps.trustedOrigin);
 
