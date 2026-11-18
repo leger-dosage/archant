@@ -11,8 +11,11 @@ describe("resolveReportsLayout", () => {
 				"net_worth",
 				"investment_performance",
 				"investment_flows",
+				"biggest_expenses",
 			],
+			biggestExpensesLimit: 10,
 			collapsedSections: {
+				biggest_expenses: false,
 				net_worth: false,
 				trends_insights: false,
 				transactions_breakdown: false,
@@ -26,6 +29,7 @@ describe("resolveReportsLayout", () => {
 			"net_worth",
 			"investment_performance",
 			"investment_flows",
+			"biggest_expenses",
 		]);
 	});
 
@@ -41,8 +45,10 @@ describe("resolveReportsLayout", () => {
 			"investment_performance",
 			"investment_flows",
 			"transactions_breakdown",
+			"biggest_expenses",
 		]);
 		expect(layout.collapsedSections).toEqual({
+			biggest_expenses: false,
 			net_worth: true,
 			trends_insights: false,
 			transactions_breakdown: false,
@@ -59,6 +65,16 @@ describe("mergeReportsLayout", () => {
 		expect(mergeReportsLayout(stored, { collapsedSections: { net_worth: true } })).toEqual({
 			sectionOrder: ["net_worth"],
 			collapsedSections: { trends_insights: true, net_worth: true },
+		});
+	});
+
+	it("keeps the expense limit when another tab changes the layout", () => {
+		const stored = mergeReportsLayout(null, { biggestExpensesLimit: 25 });
+		const collapsed = mergeReportsLayout(stored, { collapsedSections: { biggest_expenses: true } });
+
+		expect(resolveReportsLayout(collapsed)).toMatchObject({
+			biggestExpensesLimit: 25,
+			collapsedSections: { biggest_expenses: true },
 		});
 	});
 
@@ -88,6 +104,7 @@ it("keeps hidden investment sections' order and collapse when they reappear", ()
 			"investment_performance",
 			"trends_insights",
 			"transactions_breakdown",
+			"biggest_expenses",
 		],
 		collapsedSections: {
 			investment_flows: true,

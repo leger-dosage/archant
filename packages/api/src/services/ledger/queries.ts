@@ -29,6 +29,7 @@ import type { ActivityLabel } from "@archant/data/activity-labels";
 import { INTERNAL_MOVEMENT_LABELS } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import { BIGGEST_EXPENSES_LIMITS } from "@archant/data/reports-sections";
 import { accounts } from "@archant/data/schema/accounts";
 import { BANK_CONNECTOR_IDS } from "@archant/data/schema/bank-connections";
 import type { BankConnectorId } from "@archant/data/schema/bank-connections";
@@ -40,6 +41,7 @@ import { merchants } from "@archant/data/schema/merchants";
 import { trades } from "@archant/data/schema/trades";
 import { transactions } from "@archant/data/schema/transactions";
 import type { LockedFields, PostedMatchConfidence } from "@archant/data/schema/transactions";
+import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
 import { both, filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
@@ -672,14 +674,18 @@ export async function sumTransactionsByLabel(
 	return rows.map(toRecord);
 }
 
+type ActivityRange = Pick<TransactionFilter, "from" | "to" | "tagIds"> & {
+	accountIds: readonly string[];
+};
+
 /**
  * The rows Sure's reports breakdown and export read: transactions of
- * `accountIds` in the range, neither excluded nor one-time, and no transfer
+ * `accountIds` in the range, no excluded rows and no transfer
  * side but the outflow of a loan payment or an investment contribution, as
- * its `BUDGET_EXCLUDED_KINDS`; `null` when nothing can match. Pending rows
+ * its `BUDGET_EXCLUDED_KINDS`. Only the ranking includes one-time expenses. Pending rows
  * and internal movements count here, as in Sure's.
  */
-function activityCondition(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
+function activityCondition(range: ActivityRange, { includeOneTime = false } = {}) {
 	const where = filterCondition(range, joinedTransferSide);
 
 	return where === null
@@ -688,7 +694,7 @@ function activityCondition(range: { from?: IsoDate; to?: IsoDate; accountIds: re
 				where,
 				not(joinedTransferSide.uncounted),
 				eq(transactions.excluded, false),
-				eq(transactions.oneTime, false),
+				includeOneTime ? undefined : eq(transactions.oneTime, false),
 			);
 }
 
@@ -699,7 +705,7 @@ function activityCondition(range: { from?: IsoDate; to?: IsoDate; accountIds: re
  * disagree; `null` when nothing can match. No trade counts, as Sure's
  * `trades_subquery_sql`.
  */
-function countedInCashFlow(range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] }) {
+function countedInCashFlow(range: ActivityRange) {
 	const where = activityCondition(range);
 
 	return where === null
@@ -750,7 +756,7 @@ export async function cashFlowByCategory(
 /** `cashFlowByCategory`'s rows, each group also keyed by `key`, an expression of the entry's date. */
 async function cashFlowKeyed(
 	deps: ServiceDeps,
-	range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] },
+	range: ActivityRange,
 	key: SQL<string>,
 ): Promise<(CashFlowRow & { key: string })[]> {
 	const where = countedInCashFlow(range);
@@ -801,7 +807,7 @@ export async function cashFlowByMonth(
  */
 export async function cashFlowByDay(
 	deps: ServiceDeps,
-	range: { from?: IsoDate; to?: IsoDate; accountIds: readonly string[] },
+	range: ActivityRange,
 ): Promise<(CashFlowRow & { date: IsoDate })[]> {
 	const rows = await cashFlowKeyed(deps, range, sql<IsoDate>`${entries.date}`);
 
@@ -825,7 +831,7 @@ const outflowKey = sql<number>`${entries.amount} < 0`;
  */
 export async function activityByCategory(
 	deps: ServiceDeps,
-	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+	range: ActivityRange,
 ): Promise<ActivityRow[]> {
 	const where = activityCondition(range);
 
@@ -889,7 +895,7 @@ export async function activityTrades(
  */
 export async function transactionsByCategoryMonth(
 	deps: ServiceDeps,
-	range: { from: IsoDate; to: IsoDate; accountIds: readonly string[] },
+	range: ActivityRange,
 ): Promise<(Omit<ActivityRow, "count"> & { month: IsoMonth })[]> {
 	const where = activityCondition(range);
 
@@ -913,6 +919,53 @@ export async function transactionsByCategoryMonth(
 		.groupBy(month, transactions.categoryId, outflowKey);
 
 	return rows.map(toRecord);
+}
+
+/** The largest comparable expenses, including one-time expenses and individual split lines. */
+export async function biggestExpenses(
+	deps: ServiceDeps,
+	range: ActivityRange & { currency: string },
+) {
+	const where = activityCondition(range, { includeOneTime: true });
+
+	if (where === null) {
+		return [];
+	}
+
+	const amount = sql<number>`abs(${entries.amount})`;
+
+	return deps.db
+		.select({
+			id: entries.id,
+			date: entries.date,
+			label: transactions.label,
+			categoryId: transactions.categoryId,
+			accountName: accounts.name,
+			amount: amount.mapWith(toMinorUnits),
+			oneTime: transactions.oneTime,
+		})
+		.from(entries)
+		.innerJoin(transactions, eq(transactions.entryId, entries.id))
+		.innerJoin(accounts, eq(accounts.id, entries.accountId))
+		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
+		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
+		.where(
+			and(
+				where,
+				eq(entries.currency, range.currency),
+				// The transfer's outflow is the expense, even on an import with a reversed sign.
+				or(
+					outflowKey,
+					and(inArray(asOutflow.kind, [...EXPENSE_TRANSFER_KINDS]), not(eq(entries.amount, 0))),
+				),
+				or(
+					isNull(transactions.investmentActivityLabel),
+					notInArray(transactions.investmentActivityLabel, [...INTERNAL_MOVEMENT_LABELS]),
+				),
+			),
+		)
+		.orderBy(desc(amount), desc(entries.date), asc(entries.id))
+		.limit(Math.max(...BIGGEST_EXPENSES_LIMITS));
 }
 
 /** Sure's `Current.family.transactions.any?`: whether any account holds a transaction. */

@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
+import type { BiggestExpensesLimit } from "@archant/data/reports-sections";
 
+import { BiggestExpenses } from "@/components/reports/BiggestExpenses";
 import { ReportPrintInvestments } from "@/components/reports/ReportPrintInvestments";
 import { formatSignedMoney } from "@/lib/balance-change";
 import { longDate, monthLabel } from "@/lib/dates";
@@ -135,7 +137,13 @@ function SpendingTable({
  * categories of each side. It opens the print dialog once drawn, as Sure's
  * layout does.
  */
-export function ReportPrint({ data }: { data: ReportsPageData }) {
+export function ReportPrint({
+	data,
+	biggestExpensesLimit,
+}: {
+	data: ReportsPageData;
+	biggestExpensesLimit: BiggestExpensesLimit;
+}) {
 	const { t } = useTranslation();
 	const { summary, currency, trends, netWorth, breakdown, period } = data;
 	const sparkable = trends.length >= 2;
@@ -408,6 +416,13 @@ export function ReportPrint({ data }: { data: ReportsPageData }) {
 									/>
 								)}
 							</div>
+						</section>
+					)}
+
+					{data.biggestExpenses.length > 0 && (
+						<section className="tufte-section">
+							<h2 className="tufte-section-title">{t("reports.biggestExpenses.title")}</h2>
+							<BiggestExpenses data={data} limit={biggestExpensesLimit} print />
 						</section>
 					)}
 

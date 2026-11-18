@@ -12,7 +12,12 @@ export const REPORTS_SECTIONS = [
 	"investment_performance",
 	"investment_flows",
 	"transactions_breakdown",
+	"biggest_expenses",
 ] as const;
+
+export const BIGGEST_EXPENSES_LIMITS = [5, 10, 25] as const;
+export type BiggestExpensesLimit = (typeof BIGGEST_EXPENSES_LIMITS)[number];
+export const DEFAULT_BIGGEST_EXPENSES_LIMIT: BiggestExpensesLimit = 10;
 
 export type ReportsSection = (typeof REPORTS_SECTIONS)[number];
 
@@ -26,12 +31,13 @@ export const DEFAULT_REPORTS_ORDER: readonly ReportsSection[] = [
 ];
 
 /**
- * What `users.reports_layout` holds, Sure's `reports_section_order` and
- * `reports_collapsed_sections` of `users.preferences`. Both are optional: a
+ * What `users.reports_layout` holds, matching Sure's report preferences.
+ * Every field is optional: a
  * user who never arranged the page has nothing stored, and a stored key the
  * code no longer knows is dropped on read.
  */
 export type StoredReportsLayout = {
 	sectionOrder?: string[];
 	collapsedSections?: Record<string, boolean>;
+	biggestExpensesLimit?: BiggestExpensesLimit;
 };
