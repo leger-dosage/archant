@@ -1,6 +1,14 @@
-import type { ReportsSection, StoredReportsLayout } from "./reports-sections.ts";
+import type {
+	BiggestExpensesLimit,
+	ReportsSection,
+	StoredReportsLayout,
+} from "./reports-sections.ts";
 
-import { DEFAULT_REPORTS_ORDER, REPORTS_SECTIONS } from "./reports-sections.ts";
+import {
+	DEFAULT_BIGGEST_EXPENSES_LIMIT,
+	DEFAULT_REPORTS_ORDER,
+	REPORTS_SECTIONS,
+} from "./reports-sections.ts";
 
 // Pure, apart from the `users` table, so the API merges a change and the
 // interface applies it at once with the same code.
@@ -9,12 +17,14 @@ import { DEFAULT_REPORTS_ORDER, REPORTS_SECTIONS } from "./reports-sections.ts";
 export type ReportsLayout = {
 	sectionOrder: ReportsSection[];
 	collapsedSections: Record<ReportsSection, boolean>;
+	biggestExpensesLimit: BiggestExpensesLimit;
 };
 
-/** One change, as Sure's `update_preferences` takes it: an order, or collapsed sections. */
+/** The report preferences a single save can change. */
 export type ReportsLayoutPatch = {
 	sectionOrder?: ReportsSection[] | undefined;
 	collapsedSections?: Partial<Record<ReportsSection, boolean>> | undefined;
+	biggestExpensesLimit?: BiggestExpensesLimit | undefined;
 };
 
 const KNOWN = new Set<string>(REPORTS_SECTIONS);
@@ -50,7 +60,9 @@ export function resolveReportsLayout(stored: StoredReportsLayout | null): Report
 
 	return {
 		sectionOrder: [...order, ...REPORTS_SECTIONS.filter((key) => !order.includes(key))],
+		biggestExpensesLimit: stored?.biggestExpensesLimit ?? DEFAULT_BIGGEST_EXPENSES_LIMIT,
 		collapsedSections: {
+			biggest_expenses: clean.collapsedSections.biggest_expenses === true,
 			net_worth: clean.collapsedSections.net_worth === true,
 			trends_insights: clean.collapsedSections.trends_insights === true,
 			transactions_breakdown: clean.collapsedSections.transactions_breakdown === true,
@@ -71,9 +83,11 @@ export function mergeReportsLayout(
 ): StoredReportsLayout {
 	const clean = cleaned(stored);
 	const sectionOrder = patch.sectionOrder ?? clean.sectionOrder;
+	const biggestExpensesLimit = patch.biggestExpensesLimit ?? stored?.biggestExpensesLimit;
 
 	return {
 		...(sectionOrder === undefined ? {} : { sectionOrder: knownKeys(sectionOrder) }),
+		...(biggestExpensesLimit === undefined ? {} : { biggestExpensesLimit }),
 		collapsedSections: { ...clean.collapsedSections, ...patch.collapsedSections },
 	};
 }

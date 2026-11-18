@@ -315,3 +315,108 @@ test("investment trades, historical gains, cash funding and fixed print metrics 
 		}, Promise.resolve());
 	await print.close();
 });
+
+test("report tags persist across periods, export, print and category drill-down", async ({
+	page,
+	context,
+	api,
+}, testInfo) => {
+	const date = "2020-06-15";
+	const account = await api.openAccount({ openingDate: "2020-06-01" });
+	const category = await api.createCategory({ name: uniqueName("Projet") });
+	const otherCategory = await api.createCategory({ name: uniqueName("Hors projet") });
+	const first = await api.createTag(uniqueName("Maison"));
+	const second = await api.createTag(uniqueName("Jardin"));
+	const overlap = await api.addTransaction(account.id, {
+		date,
+		amount: "-80,00",
+		label: "Peinture",
+	});
+	const single = await api.addTransaction(account.id, { date, amount: "-20,00", label: "Graines" });
+	const untagged = await api.addTransaction(account.id, {
+		date,
+		amount: "-900,00",
+		label: "Voyage",
+	});
+	const otherPaint = await api.addTransaction(account.id, {
+		date,
+		amount: "-30,00",
+		label: "Autre peinture",
+	});
+	await api.categorise([overlap, single, otherPaint], category.id);
+	await api.categorise([untagged], otherCategory.id);
+	await (
+		[
+			[overlap, [first.id, second.id]],
+			[single, [second.id]],
+		] as const
+	).reduce(async (previous, [id, tagIds]) => {
+		await previous;
+		const response = await page.request.patch("/api/transactions/" + id, { data: { tagIds } });
+		expect(response.ok(), await response.text()).toBe(true);
+	}, Promise.resolve());
+	await context.addInitScript(() => {
+		window.print = () => undefined;
+	});
+	await page.goto("/reports?periodType=monthly&startDate=2020-06-01&endDate=2020-06-30");
+	const breakdown = page.getByRole("region", { name: "Répartition des activités" });
+	await expect(breakdown.getByRole("link", { name: category.name })).toBeVisible();
+	await page.screenshot({
+		path: testInfo.outputPath("report-before-selection.png"),
+		fullPage: true,
+	});
+	const tags = page.getByRole("button", { name: "Étiquettes", exact: true });
+	await tags.click();
+	await page.getByRole("checkbox", { name: first.name }).click();
+	await page.getByRole("checkbox", { name: second.name }).click();
+	await page.getByRole("button", { name: "Appliquer", exact: true }).click();
+	await expect(breakdown).not.toContainText(otherCategory.name);
+	await expect(breakdown).toContainText(euros(10000));
+	const largest = page.getByRole("region", { name: "Plus grosses dépenses", exact: true });
+	await expect(largest.getByRole("row").nth(1)).toContainText("Peinture");
+	await expect(largest.getByRole("row").nth(2)).toContainText("Graines");
+	await expect(largest).not.toContainText("Voyage");
+	await page.getByRole("link", { name: "Période précédente" }).click();
+	await expect(largest).toHaveCount(0);
+	await page.getByRole("link", { name: "Période suivante" }).click();
+	await expect(largest).toContainText("Peinture");
+	await expect(largest).not.toContainText("Voyage");
+	await page.screenshot({
+		path: testInfo.outputPath("report-after-selection.png"),
+		fullPage: true,
+	});
+	await page.emulateMedia({ colorScheme: "dark" });
+	await page.screenshot({ path: testInfo.outputPath("report-after-dark.png"), fullPage: true });
+
+	const downloading = page.waitForEvent("download");
+	await page.getByRole("link", { name: "CSV" }).click();
+	const csv = await readFile(await (await downloading).path(), "utf8");
+	expect(csv).toContain(category.name);
+	expect(csv).not.toContain(otherCategory.name);
+
+	const opened = context.waitForEvent("page");
+	await page.getByRole("link", { name: "Imprimer le rapport" }).click();
+	const print = await opened;
+	const printed = print.getByRole("table", { name: "Plus grosses dépenses" });
+	await expect(printed).toContainText("Peinture");
+	await expect(printed).not.toContainText("Voyage");
+	await print.screenshot({ path: testInfo.outputPath("report-print.png"), fullPage: true });
+	await print.close();
+
+	await breakdown.getByRole("link", { name: category.name }).click();
+	await expect(page).toHaveURL(/\/transactions\?/u);
+	const search = decodeURIComponent(new URL(page.url()).search);
+	expect(search).toContain(category.id);
+	expect(search).toContain(first.id);
+	expect(search).toContain(second.id);
+	await expect(page.getByText("Peinture", { exact: true })).toBeVisible();
+	await expect(page.getByText("Graines", { exact: true })).toBeVisible();
+	await expect(page.getByText("Autre peinture", { exact: true })).toHaveCount(0);
+	await page.goBack();
+	await expect(largest).not.toContainText("Voyage");
+	await tags.click();
+	await page.getByRole("checkbox", { name: first.name }).uncheck();
+	await page.getByRole("checkbox", { name: second.name }).uncheck();
+	await page.getByRole("button", { name: "Appliquer", exact: true }).click();
+	await expect(largest).toContainText("Voyage");
+});
