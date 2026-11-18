@@ -12,6 +12,7 @@ import type {
 	TransactionInput,
 	TransactionPatchInput,
 } from "@archant/api/schemas/transactions";
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
 
 import { useInvalidateAccount } from "@/hooks/useInvalidateAccount";
 import { useOfferRule, withdrawRulePrompt } from "@/hooks/useOfferRule";
@@ -309,6 +310,30 @@ export function useBulkUpdateTransactions() {
 				invalidate({ balances: input.patch.date !== undefined }),
 				queryClient.invalidateQueries({ queryKey: queryKeys.recurring.all }),
 			]),
+		onError: (error) => showErrorToast(errorCodeOf(error)),
+	});
+}
+
+export function useSetReconciliationStatus() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async ({
+			id,
+			reconciliationStatus,
+		}: {
+			id: string;
+			reconciliationStatus: ReconciliationStatus;
+		}) =>
+			(
+				await unwrap(
+					api.transactions[":id"].reconciliation.$patch({
+						param: { id },
+						json: { reconciliationStatus },
+					}),
+				)
+			).data,
+		onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 		onError: (error) => showErrorToast(errorCodeOf(error)),
 	});
 }

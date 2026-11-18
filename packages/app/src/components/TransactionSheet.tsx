@@ -6,12 +6,14 @@ import { useCallback, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ReconciliationBadge } from "@/components/ReconciliationBadge";
 import { TransactionForm } from "@/components/TransactionForm";
 import { TransferDetails } from "@/components/TransferDetails";
 import { TransferForm } from "@/components/TransferForm";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { usePreferences } from "@/hooks/usePreferences";
 import { formatShortDate } from "@/lib/balance-change";
 
 /** A row's button in the page, found again after a refetch remounted it. */
@@ -43,6 +45,7 @@ export function TransactionSheet({
 }: TransactionSheetProps) {
 	const { t } = useTranslation();
 	const admin = useIsAdmin();
+	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
 	const [wasOpen, setWasOpen] = useState(open);
@@ -79,6 +82,18 @@ export function TransactionSheet({
 	const transfer = transaction === null && type === "transfer";
 	const openedTransferId = transaction?.transfer?.id ?? null;
 	const Content = openedTransferId === null ? DialogContent : SheetContent;
+	const reconciliation =
+		manualReconciliation &&
+		transaction !== null &&
+		!transaction.splitParent &&
+		transaction.reconciliationStatus !== null ? (
+			<ReconciliationBadge
+				key={session}
+				id={transaction.id}
+				status={transaction.reconciliationStatus}
+				editable={admin}
+			/>
+		) : null;
 	const close = () => {
 		dirty.current = false;
 		onOpenChange(false);
@@ -127,7 +142,12 @@ export function TransactionSheet({
 				}
 			>
 				{openedTransferId !== null ? (
-					<TransferDetails key={session} transferId={openedTransferId} onClose={close} />
+					<TransferDetails
+						key={session}
+						transferId={openedTransferId}
+						onClose={close}
+						reconciliation={reconciliation}
+					/>
 				) : (
 					<SheetHeader className="shrink-0 border-b pr-12">
 						<SheetTitle>
@@ -161,6 +181,7 @@ export function TransactionSheet({
 										})
 									: t("transactions.sources.manual")}
 						</SheetDescription>
+						{reconciliation}
 					</SheetHeader>
 				)}
 				{openedTransferId !== null ? null : transfer ? (
