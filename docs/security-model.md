@@ -147,6 +147,10 @@ Once the ceiling is full, a sign-in carrying a cookie that verifies, has not exp
 
 A two-factor code works once. Better Auth accepts the code of the current 30-second step and of the steps on either side, and keeps no record of a step already used; `oneTimeTotp` in `packages/api/src/services/one-time-totp.ts` claims the step a correct code matches in `two_factors.last_used_step`, with one conditional update that only a later step passes, before Better Auth's handler runs, as Sure's `otp_last_used_at`. A code read over a shoulder or relayed by a phishing page is then refused like a wrong one, and counts toward the challenge's five attempts and the account's lockout; of two requests carrying the same code, one signs in. Turning two-factor on again forgets the step, and turning it off deletes it with the secret.
 
+### Recovery by email
+
+When a mail relay is configured, it receives the member's email address and a fifteen-minute password reset link. The database stores a hash of the link's token. The browser sends the token only in request bodies, and the application logs neither the token nor the email or relay password. Redeeming a link closes the member's sessions and invalidates their other links, trusted devices and pending second-factor challenges. The second factor stays enrolled.
+
 ## Trusted proxies
 
 The sign-in limits count failures per client address. By default that address is the TCP peer, which no visitor can fake. `TRUSTED_PROXIES` names the addresses whose `X-Forwarded-For` header is believed instead. The same address is the one a bank that requires it receives as `Psu-Ip-Address`.

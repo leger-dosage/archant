@@ -19,6 +19,12 @@ export const authClient = createAuthClient({
 	plugins: [adminClient(), twoFactorClient(), passkeyClient(), oauthProviderClient()],
 });
 
+export const passwordResetAvailability = queryOptions({
+	queryKey: queryKeys.passwordResetAvailability,
+	queryFn: () => unwrap(api["password-reset"].$get()),
+	retry: false,
+});
+
 export type Session = typeof authClient.$Infer.Session;
 
 /**

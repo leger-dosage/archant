@@ -50,6 +50,7 @@
 		"@types/react-dom": "^19.3.0",
 		"@vitejs/plugin-react": "^6.1.1",
 		"shadcn": "^4.21.0",
+		"smtp-server": "^3.21.6",
 		"tailwindcss": "^4.3.3",
 		"typescript": "catalog:",
 		"vite": "^8.3.1",

@@ -16,6 +16,7 @@ import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
 import { recomputeLinkedBalances, recomputeNonCashBalances } from "./services/ledger/balances.ts";
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
+import { passwordResetMailer } from "./services/password-reset-mailer.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { backfillHouseholdPreferences, householdTimeZone } from "./services/settings.ts";
 import { hasUser } from "./services/setup.ts";
@@ -156,6 +157,7 @@ if (setupToken !== null) {
 		`Setup is open. Open /setup and enter the setup token ${setupToken}. A new one is printed at every start.`,
 	);
 }
+const sendPasswordReset = passwordResetMailer(env);
 const auth = createAuth({
 	db,
 	secret: env.BETTER_AUTH_SECRET,
@@ -165,6 +167,7 @@ const auth = createAuth({
 	webauthnAllowedOrigins: env.WEBAUTHN_ALLOWED_ORIGINS,
 	trustedProxies: env.TRUSTED_PROXIES,
 	logger,
+	...(sendPasswordReset ? { sendPasswordReset } : {}),
 });
 // Its start writes to the database (`mcp()` seeds `/api/mcp` as a resource);
 // a failure there stops the server here rather than at the first sign-in.
