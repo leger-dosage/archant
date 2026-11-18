@@ -325,7 +325,7 @@ export const updateBudgetTool = defineTool({
 			);
 		}
 
-		const currency = getReportingCurrency();
+		const currency = await getReportingCurrency(deps.db);
 		const budgetedSpending =
 			input.budgeted_spending === undefined
 				? undefined

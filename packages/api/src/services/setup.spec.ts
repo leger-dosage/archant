@@ -76,6 +76,40 @@ describe("GET /api/setup", () => {
 });
 
 describe("POST /api/setup", () => {
+	it("stores the country, date format and currency override with the administrator", async () => {
+		const { app, db } = await freshApp();
+		const response = await postSetup(app, {
+			...ADMIN,
+			country: "GB",
+			baseCurrency: "CHF",
+			dateFormat: "YYYY-MM-DD",
+		});
+
+		expect(response.status).toBe(201);
+		await expect(db.all(sql`select key, value from settings`)).resolves.toEqual(
+			expect.arrayContaining([
+				{ key: "country", value: "GB" },
+				{ key: "base_currency", value: "CHF" },
+				{ key: "date_format", value: "YYYY-MM-DD" },
+				{ key: "time_zone", value: "Europe/Paris" },
+				{ key: "month_start_day", value: "1" },
+			]),
+		);
+	});
+
+	it("refuses unknown countries, currencies and date formats before setup", async () => {
+		const { app, db } = await freshApp();
+		const response = await postSetup(app, {
+			...ADMIN,
+			country: "XX",
+			baseCurrency: "ZZZ",
+			dateFormat: "unknown",
+		});
+
+		expect(response.status).toBe(400);
+		await expect(usersOf(db)).resolves.toEqual([]);
+	});
+
 	it("writes the household's language and seeds the default categories in it", async () => {
 		const { auth, db, logger } = await freshApp();
 
@@ -336,7 +370,7 @@ describe("POST /api/setup", () => {
 		const { app, auth, db } = await freshApp();
 		vi.spyOn(auth.api, "createUser").mockRejectedValueOnce(new Error("SQLITE_BUSY"));
 
-		const failed = await postSetup(app, ADMIN);
+		const failed = await postSetup(app, { ...ADMIN, country: "CH", baseCurrency: "USD" });
 
 		expect(failed.status).toBe(500);
 		await expect(failed.json()).resolves.toMatchObject({ error: { code: "INTERNAL_ERROR" } });
@@ -344,7 +378,12 @@ describe("POST /api/setup", () => {
 		await expect(usersOf(db)).resolves.toEqual([]);
 		expect((await app.request("/api/setup")).status).toBe(200);
 
-		await expect(postSetup(app, ADMIN)).resolves.toMatchObject({ status: 201 });
+		await expect(postSetup(app, { ...ADMIN, country: "GB" })).resolves.toMatchObject({
+			status: 201,
+		});
 		await expect(usersOf(db)).resolves.toHaveLength(1);
+		await expect(
+			db.all(sql`select value from settings where key = 'base_currency'`),
+		).resolves.toEqual([{ value: "GBP" }]);
 	});
 });

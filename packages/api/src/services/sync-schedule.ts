@@ -6,6 +6,7 @@ import { addDays, instantAt, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { clearEndedPsuAddresses, codeOf } from "./bank-connections.ts";
 import { bankSyncSettings } from "./bank-settings.ts";
+import { householdTimeZone } from "./settings.ts";
 import { syncAll } from "./sync.ts";
 
 /**
@@ -34,10 +35,23 @@ function clockOf(time: string): { hours: number; minutes: number } {
 }
 
 /**
+ * The chosen time yesterday, today and tomorrow: a wake just past
+ * midnight still sees 23:59, and the next wake may fall tomorrow.
+ */
+function dueTimes(time: string, now: number, timeZone: string) {
+	const { hours, minutes } = clockOf(time);
+	const day = today(timeZone, new Date(now));
+
+	return [addDays(day, -1), day, addDays(day, 1)].map((date) =>
+		instantAt(timeZone, date, hours, minutes),
+	);
+}
+
+/**
  * Sure's `AutoSyncScheduler` in process: a timer that wakes at least once a
  * minute and at the chosen time. On a wake, when « Activer la
  * synchronisation automatique » is on and « Heure de synchronisation »,
- * read in `APP_TIMEZONE`, fell after the previous wake and less than five
+ * read in the household's time zone, fell after the previous wake and less than five
  * minutes ago, it runs `syncAll`. At start and at the first wake of each
  * day, it clears the browser's address of every connection whose consent
  * has ended, as Sure's `DataCleanerJob`. Without bank credentials nothing
@@ -50,8 +64,8 @@ export function startSyncSchedule(deps: BankConnectionDeps): SyncSchedule {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let stopped = false;
 
-	const clean = async (now: number) => {
-		const day = today(deps.timeZone, new Date(now));
+	const clean = async (now: number, timeZone: string) => {
+		const day = today(timeZone, new Date(now));
 
 		if (cleanedOn === day) {
 			return;
@@ -71,27 +85,14 @@ export function startSyncSchedule(deps: BankConnectionDeps): SyncSchedule {
 		}
 	};
 
-	/**
-	 * The chosen time yesterday, today and tomorrow: a wake just past
-	 * midnight still sees 23:59, and the next wake may fall tomorrow.
-	 */
-	const dueTimes = (time: string, now: number) => {
-		const { hours, minutes } = clockOf(time);
-		const day = today(deps.timeZone, new Date(now));
-
-		return [addDays(day, -1), day, addDays(day, 1)].map((date) =>
-			instantAt(deps.timeZone, date, hours, minutes),
-		);
-	};
-
-	const run = async () => {
+	const run = async (timeZone: string) => {
 		// No key, no connector: an install without a bank stays silent.
 		if (deps.encryptionKey === null) {
 			return;
 		}
 
 		try {
-			const results = await syncAll(deps, "schedule");
+			const results = await syncAll({ ...deps, timeZone }, "schedule");
 
 			deps.logger.info({ connections: results.length }, "scheduled bank sync ran");
 		} catch (error) {
@@ -111,7 +112,8 @@ export function startSyncSchedule(deps: BankConnectionDeps): SyncSchedule {
 		previousWake = now;
 
 		try {
-			await clean(now);
+			const timeZone = await householdTimeZone(deps.db, deps.timeZone);
+			await clean(now, timeZone);
 
 			let settings: BankSyncSettings;
 
@@ -124,10 +126,10 @@ export function startSyncSchedule(deps: BankConnectionDeps): SyncSchedule {
 			}
 
 			if (settings.autoSyncEnabled) {
-				const due = dueTimes(settings.autoSyncTime, now);
+				const due = dueTimes(settings.autoSyncTime, now, timeZone);
 
 				if (due.some((instant) => instant > since && instant <= now && now - instant < GRACE_MS)) {
-					await run();
+					await run(timeZone);
 				}
 
 				const upcoming = due.find((instant) => instant > Date.now());

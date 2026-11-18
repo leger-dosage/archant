@@ -44,6 +44,7 @@ import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
+import { useHouseholdPreferences } from "@/hooks/useHouseholdPreferences";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import {
 	recurringSettingsQuery,
@@ -56,6 +57,7 @@ import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { dayAndMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
+import { formatHouseholdDate } from "@/lib/household-preferences";
 import { cn } from "@/lib/utils";
 
 // The router reads `?q=2024` as JSON, so a number, while a value set by the
@@ -304,6 +306,7 @@ function nextDate(row: BillRowData, t: TFunction) {
 /** Sure's month pulse: the month's four totals, then « Prochaine », the next four from today. */
 function Totals({ bills }: { bills: BillsData }) {
 	const { t } = useTranslation();
+	const format = useHouseholdPreferences().data?.dateFormat;
 	const money = (amount: BillsData["totals"]["paid"]) => (
 		<Money amount={amount} currency={bills.currency} />
 	);
@@ -338,7 +341,11 @@ function Totals({ bills }: { bills: BillsData }) {
 									resetScroll={false}
 									className="flex flex-col rounded-lg px-2 py-1.5 outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
 								>
-									<span className="truncate text-xs text-muted-foreground">{nextDate(row, t)}</span>
+									<span className="truncate text-xs text-muted-foreground">
+										{row.days > 1 && format !== undefined
+											? formatHouseholdDate(row.effectiveDueOn, format)
+											: nextDate(row, t)}
+									</span>
 									<span className="truncate text-sm">{row.name}</span>
 									<RowAmount row={row} className="text-sm" />
 								</Link>
