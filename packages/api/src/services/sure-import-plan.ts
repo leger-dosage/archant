@@ -47,6 +47,8 @@ import { parseMicros } from "@archant/data/micros";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 import type { BillType } from "@archant/data/recurring";
 import { BILL_TYPES, LAST_DAY_OF_MONTH, MAX_END_AFTER_COUNT } from "@archant/data/recurring";
 import type { CategoryOrigin } from "@archant/data/schema/categories";
@@ -144,6 +146,7 @@ type PlanSplitLine = {
 	amount: MinorUnits;
 	notes: string | null;
 	oneTime: boolean;
+	reconciliationStatus?: ReconciliationStatus | undefined;
 	categorySourceId: string | null;
 	/** `undefined` when the line names none: it takes its parent's, as Sure's. */
 	merchantSourceId: string | null | undefined;
@@ -162,6 +165,7 @@ export type PlanTransaction = {
 	notes: string | null;
 	excluded: boolean;
 	oneTime: boolean;
+	reconciliationStatus?: ReconciliationStatus | undefined;
 	pending: boolean;
 	reference: string | null;
 	possibleDuplicate: boolean;
@@ -469,6 +473,7 @@ function oldestDates(parsed: Parsed): Map<string, IsoDate> {
 }
 
 type Reader = {
+	baseCurrency: CurrencyCode;
 	parsed: Parsed;
 	findings: Findings;
 	timeZone: string;
@@ -509,7 +514,7 @@ function readAccounts(reader: Reader): PlanAccount[] {
 			return [];
 		}
 
-		const currency = data.currency ?? getReportingCurrency();
+		const currency = data.currency ?? reader.baseCurrency;
 
 		if (typeof currency !== "string" || !isCurrencyCode(currency)) {
 			findings.errors.push(invalid(record, "currency", currency));
@@ -783,6 +788,8 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 						amount: toMinorUnits(0 - lineAmount),
 						notes: cutOrNull(textOf(split.notes), NOTES_MAX_LENGTH),
 						oneTime: split.kind === "one_time",
+						reconciliationStatus:
+							oneOf(RECONCILIATION_STATUSES, archantOf(split).reconciliation_status) ?? undefined,
 						categorySourceId: idOf(split.category_id),
 						merchantSourceId: Object.hasOwn(split, "merchant_id")
 							? merchant(split.merchant_id)
@@ -820,6 +827,8 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 				notes: cutOrNull(textOf(data.notes), NOTES_MAX_LENGTH),
 				excluded: booleanOf(data.excluded, false),
 				oneTime: data.kind === "one_time",
+				reconciliationStatus:
+					oneOf(RECONCILIATION_STATUSES, archantOf(data).reconciliation_status) ?? undefined,
 				pending: archant.pending,
 				reference: archant.reference,
 				possibleDuplicate: archant.possibleDuplicate,
@@ -1254,7 +1263,7 @@ function readRecurring(reader: Reader, merchantIds: ReadonlySet<string>): PlanRe
 		const merchant =
 			merchantSourceId !== null && merchantIds.has(merchantSourceId) ? merchantSourceId : null;
 		const name = textOf(data.name)?.trim() ?? null;
-		const currency = data.currency ?? account?.currency ?? getReportingCurrency();
+		const currency = data.currency ?? account?.currency ?? reader.baseCurrency;
 		const day = Number(data.expected_day_of_month);
 		const last = dateOf(data.last_occurrence_date);
 		const next = dateOf(data.next_expected_date);
@@ -1383,7 +1392,7 @@ function readRecurring(reader: Reader, merchantIds: ReadonlySet<string>): PlanRe
  * a line in another is skipped, with its categories.
  */
 function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudgetCategory[] } {
-	const currency = getReportingCurrency();
+	const currency = reader.baseCurrency;
 	const budgets = recordsOf(reader.parsed, "Budget").flatMap((record): PlanBudget[] => {
 		const { data } = record;
 		const sourceId = idOf(data.id);
@@ -1460,12 +1469,15 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 }
 
 /** Archant's refusals, each on its line, and the plan of what Archant keeps. */
-function readPlan(parsed: Parsed, findings: Findings, timeZone: string, locale: Locale): SurePlan {
+function readPlan(
+	parsed: Parsed,
+	findings: Findings,
+	preferences: Pick<Reader, "timeZone" | "locale" | "baseCurrency">,
+): SurePlan {
 	const reader: Reader = {
 		parsed,
 		findings,
-		timeZone,
-		locale,
+		...preferences,
 		accounts: new Map(),
 		securityCurrencies: new Map(),
 	};
@@ -1511,9 +1523,12 @@ export async function readSureArchive(
 	file: { name: string; bytes: Uint8Array },
 	limits: SureImportLimits,
 ): Promise<SureArchive> {
-	const locale = await householdLocale(deps.db);
+	const [locale, baseCurrency] = await Promise.all([
+		householdLocale(deps.db),
+		getReportingCurrency(deps.db),
+	]);
 	const { kept, ...preflight } = await runPreflight(deps, file, limits, (parsed, findings) =>
-		readPlan(parsed, findings, deps.timeZone, locale),
+		readPlan(parsed, findings, { timeZone: deps.timeZone, locale, baseCurrency }),
 	);
 
 	return { ...preflight, plan: kept };

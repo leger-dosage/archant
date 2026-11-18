@@ -35,6 +35,7 @@ import { useUncategorisedCount } from "@/hooks/useCategorize";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useSelection } from "@/hooks/useSelection";
 import { useTags } from "@/hooks/useTags";
@@ -168,7 +169,14 @@ function OperationsPage() {
 	const { tab, ...search } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const page = search.page ?? 1;
-	const filters = useMemo(() => filtersOf(search), [search]);
+	const manualReconciliation = usePreferences().data?.manualReconciliation;
+	const filters = useMemo(
+		() =>
+			filtersOf(
+				manualReconciliation === false ? withoutFilter(search, "reconciliationStatus") : search,
+			),
+		[manualReconciliation, search],
+	);
 	const filtered = hasFilters(filters);
 	const transactions = useTransactions(filters, page);
 	const totals = useTransactionTotals(filters);
@@ -358,6 +366,7 @@ function OperationsPage() {
 						<div className="flex flex-wrap items-center gap-2">
 							<SearchField q={search.q} />
 							<TransactionFilters
+								manualReconciliation={manualReconciliation === true}
 								filters={filters}
 								accounts={accountOptions}
 								categories={categories.data ?? []}

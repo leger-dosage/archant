@@ -725,7 +725,10 @@ function sureSplitLine(line: SplitLineRow) {
 		kind: line.transaction.oneTime ? "one_time" : "standard",
 		created_at: timestamp(line.createdAt),
 		updated_at: timestamp(line.updatedAt),
-		archant: archantTransaction(line.transaction),
+		archant: {
+			...archantTransaction(line.transaction),
+			reconciliation_status: line.reconciliationStatus,
+		},
 	};
 }
 
@@ -1098,6 +1101,7 @@ async function* allNdjson(deps: ServiceDeps, readers: Readers, counts: Counts) {
 								: { split_lines: row.splitLines.map(sureSplitLine) }),
 							archant: {
 								...archantTransaction(row.transaction),
+								reconciliation_status: row.reconciliationStatus,
 								// Every transfer, Sure's or not: one Sure refuses keeps its link here.
 								transfer:
 									row.outflowOf === null

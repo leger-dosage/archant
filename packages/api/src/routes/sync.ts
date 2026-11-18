@@ -4,6 +4,7 @@ import { Hono } from "hono";
 
 import { AppError } from "../lib/errors.ts";
 import { sameSecret } from "../lib/secret.ts";
+import { householdTimeZone } from "../services/settings.ts";
 import { syncAll } from "../services/sync.ts";
 
 export type SyncRouteDeps = BankConnectionDeps & {
@@ -34,6 +35,8 @@ export function syncRoutes(deps: SyncRouteDeps) {
 			throw new AppError("UNAUTHORIZED", "A valid sync secret is required.");
 		}
 
-		return c.json({ data: { connections: await syncAll(deps) } }, 200);
+		const timeZone = await householdTimeZone(deps.db, deps.timeZone);
+
+		return c.json({ data: { connections: await syncAll({ ...deps, timeZone }) } }, 200);
 	});
 }
