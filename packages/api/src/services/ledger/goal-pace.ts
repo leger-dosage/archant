@@ -11,7 +11,7 @@ import { entries } from "@archant/data/schema/entries";
 import { transactions } from "@archant/data/schema/transactions";
 
 import { addDays } from "../../domain/dates.ts";
-import { GOAL_PACE_DAYS } from "../../domain/goals.ts";
+import { GOAL_BALANCE_PACE_DAYS, GOAL_PACE_DAYS } from "../../domain/goals.ts";
 import { balanceOn } from "./balances.ts";
 import { notSplitParent } from "./shared.ts";
 
@@ -57,7 +57,7 @@ export async function accountPaces(
 	}
 
 	// An opening anchor only establishes the starting balance.
-	const cutoff = addDays(date, -365);
+	const cutoff = addDays(date, -GOAL_BALANCE_PACE_DAYS);
 	const valuations = await deps.db
 		.selectDistinct({ accountId: entries.accountId })
 		.from(entries)

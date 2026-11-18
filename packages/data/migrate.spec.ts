@@ -3391,6 +3391,34 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("defaults existing goals to market value, keeping their frozen amounts and account links", async () => {
+		const before = await migratedBefore("0107");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertGoal(before, "g1", { state: "archived" });
+		await before.run(sql`update goals set completed_amount = 45000, completed_at = 1790000000000`);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select state, progress_basis, completed_amount, completed_at from goals`),
+		).resolves.toEqual([
+			{
+				state: "archived",
+				progress_basis: "balance",
+				completed_amount: 45_000,
+				completed_at: 1_790_000_000_000,
+			},
+		]);
+		await expect(database.all(sql`select * from goal_accounts`)).resolves.toEqual([
+			{ goal_id: "g1", account_id: "a1", allocated_amount: 30_000 },
+		]);
+		await expect(database.run(sql`update goals set progress_basis = 'other'`)).rejects.toThrow();
+	});
+
 	it("holds a fixed target, or a reserve's months of expenses between 1 and 120", async () => {
 		const database = await migrated();
 		await insertGoal(database, "g1");

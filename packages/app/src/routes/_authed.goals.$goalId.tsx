@@ -111,6 +111,16 @@ function Progress({ goal }: { goal: GoalData }) {
 							</span>
 						)}
 					</div>
+					{goal.progressBasis === "contributions" && (
+						<p className="text-sm text-muted-foreground">{t("goals.bases.contributions")}</p>
+					)}
+					{goal.marketValue !== null && (
+						<p className="text-sm text-muted-foreground tabular-nums">
+							{t("goals.figures.marketValue", {
+								amount: formatMoney({ amount: goal.marketValue, currency: goal.currency }),
+							})}
+						</p>
+					)}
 					{months !== null && <p className="text-sm text-muted-foreground">{months}</p>}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
 						<Figure label={t("goals.figures.saved")}>{money(goal.saved)}</Figure>

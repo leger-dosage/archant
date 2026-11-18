@@ -6,6 +6,7 @@ import {
 	GOAL_KINDS,
 	GOAL_NAME_MAX_LENGTH,
 	GOAL_NOTES_MAX_LENGTH,
+	GOAL_PROGRESS_BASES,
 	GOAL_TARGET_MODES,
 	GOAL_TARGET_MONTHS_MAX,
 } from "@archant/data/goals";
@@ -20,6 +21,7 @@ import { categoryColor } from "./categories.ts";
 export const goalBodySchema = z.object({
 	name: z.string(),
 	kind: z.string().optional(),
+	progressBasis: z.string().optional(),
 	targetMode: z.string().optional(),
 	targetAmount: z.string().optional(),
 	targetMonths: z.string().optional(),
@@ -126,6 +128,7 @@ export function goalSchema(currency: CurrencyCode) {
 					.transform((value) => value.normalize("NFC"))
 					.pipe(z.string().min(1).superRefine(atMost(GOAL_NAME_MAX_LENGTH))),
 				kind: z.enum(GOAL_KINDS).default("one_off"),
+				progressBasis: z.enum(GOAL_PROGRESS_BASES).optional(),
 				targetMode: z.enum(GOAL_TARGET_MODES).default("fixed"),
 				// Read by `targetOf`, which knows the mode: the field the mode does not
 				// use is ignored, as the dialog hides it.
@@ -201,6 +204,7 @@ export function goalSchema(currency: CurrencyCode) {
 				return {
 					name: value.name,
 					kind: value.kind,
+					progressBasis: value.progressBasis,
 					target,
 					// A reserve is kept, not reached by a day: Sure's
 					// `clear_target_date_for_maintained`.

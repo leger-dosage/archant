@@ -2261,6 +2261,7 @@ describe("exportArchive", () => {
 		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
 		const car = await goalOf({
 			name: "Voiture",
+			progressBasis: "contributions",
 			targetAmount: "8 000",
 			accounts: [{ accountId: ids.pea, allocatedAmount: "" }],
 		});
@@ -2311,6 +2312,7 @@ describe("exportArchive", () => {
 				notes: "Grèce",
 				state: "active",
 				kind: "one_off",
+				progress_basis: "balance",
 				target_mode: "fixed",
 				target_months: null,
 				completed_amount: null,
@@ -2323,6 +2325,7 @@ describe("exportArchive", () => {
 			type: "Goal",
 			data: {
 				id: car,
+				progress_basis: "contributions",
 				target_amount: "8000.00",
 				target_date: null,
 				notes: null,

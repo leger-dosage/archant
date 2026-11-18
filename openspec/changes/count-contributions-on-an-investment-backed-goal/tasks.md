@@ -1,8 +1,9 @@
 ## 1. Implementation
 
-- [ ] 1.1 Implement the savings-goals delta (choose a progress basis, exclude market movements, show market value, leave pledges unmatched).
+- [x] 1.1 Persist the progress basis for new and existing goals. Keep existing completion figures and update the basis field in the goal form and `goals.ndjson`.
+- [x] 1.2 Calculate contributions independently of market movement, retain the shared allocation rules and show the market value on a contributions goal. Use the same calculation for balance-based pace when that fallback is available.
 
 ## 2. Verification
 
-- [ ] 2.1 Vitest covers a gain, a loss below contributions, the floor at zero and a mixed goal; Playwright reads the market value on an investment-backed goal.
+- [x] 2.1 Vitest covers gains, losses, the floor at zero, mixed accounts, the market-value default, a saved choice that survives changes to links, and changes to a completed goal's basis. Playwright changes an investment-backed goal's basis and compares its progress with the displayed market value.
 - [ ] 2.2 Run the repository verification commands.

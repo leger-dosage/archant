@@ -12,7 +12,7 @@ import type { GoalFormInput } from "@archant/api/schemas/goals";
 import { goalSchema } from "@archant/api/schemas/goals";
 import { sampleCategoryColor } from "@archant/data/category-presets";
 import type { GoalKind, GoalTargetMode } from "@archant/data/goals";
-import { GOAL_KINDS, GOAL_TARGET_MODES } from "@archant/data/goals";
+import { GOAL_KINDS, GOAL_PROGRESS_BASES, GOAL_TARGET_MODES } from "@archant/data/goals";
 import type { CurrencyCode } from "@archant/data/money";
 import { isCurrencyCode } from "@archant/data/money";
 
@@ -45,6 +45,7 @@ type Link = GoalFormInput["accounts"][number];
 const FIELD_NAMES = [
 	"name",
 	"kind",
+	"progressBasis",
 	"targetMode",
 	"targetAmount",
 	"targetMonths",
@@ -72,6 +73,7 @@ function blank(): GoalFormInput {
 	return {
 		name: "",
 		kind: "one_off",
+		progressBasis: "balance",
 		targetMode: "fixed",
 		targetAmount: "",
 		targetMonths: "",
@@ -88,6 +90,7 @@ function valuesOf(goal: GoalData): GoalFormInput {
 	return {
 		name: goal.name,
 		kind: goal.kind,
+		progressBasis: goal.progressBasis,
 		targetMode: goal.targetMode,
 		targetAmount: amountToText(goal.targetAmount, goal.currency),
 		targetMonths: goal.targetMonths === null ? "" : String(goal.targetMonths),
@@ -215,6 +218,7 @@ export function GoalDialog({
 	const targetDate = useController({ control: form.control, name: "targetDate" });
 	// The preview's initial follows the name as it is typed, as Sure's form.
 	const name = form.watch("name");
+	const progressBasis = useController({ control: form.control, name: "progressBasis" });
 	const kind = useController({ control: form.control, name: "kind" });
 	const targetMode = useController({ control: form.control, name: "targetMode" });
 	const reserve = kind.field.value === "maintained";
@@ -235,6 +239,14 @@ export function GoalDialog({
 						.filter((link) => !accounts.some((account) => account.id === link.accountId))
 						.map((link) => ({ id: link.accountId, ...link })),
 				];
+
+	const basisLocked = goal !== undefined && goal.completedAt !== null;
+	const offersProgressBasis =
+		progressBasis.field.value === "contributions" ||
+		offered.some(
+			(account) =>
+				account.type === "investment" && linked.some((link) => link.accountId === account.id),
+		);
 
 	const toggle = (accountId: string, checked: boolean) => {
 		const next = checked
@@ -330,6 +342,34 @@ export function GoalDialog({
 						</div>
 						{message("kind")}
 					</fieldset>
+
+					{offersProgressBasis && (
+						<fieldset
+							className="flex flex-col gap-2 disabled:opacity-70"
+							disabled={basisLocked}
+							{...described("progressBasis")}
+						>
+							<legend className="mb-1 text-sm font-medium">{t("goals.form.progressBasis")}</legend>
+							<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+								{GOAL_PROGRESS_BASES.map((value) => (
+									<RadioCard
+										key={value}
+										name="goal-progress-basis"
+										value={value}
+										checked={progressBasis.field.value === value}
+										label={t(`goals.bases.${value}`)}
+										onChange={() => progressBasis.field.onChange(value)}
+									/>
+								))}
+							</div>
+							{basisLocked && (
+								<p className="text-xs text-muted-foreground">
+									{t("errors.fields.progress_basis_locked")}
+								</p>
+							)}
+							{message("progressBasis")}
+						</fieldset>
+					)}
 
 					<div className="flex items-end gap-3">
 						{/* Sure's form previews the goal as the cards will draw it. */}

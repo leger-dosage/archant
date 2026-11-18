@@ -2429,7 +2429,12 @@
 		"monthly": "{{amount}} per month",
 		"until": "Due: {{date}}",
 		"months": "{{count}} months of expenses",
+		"bases": {
+			"balance": "Market value",
+			"contributions": "Net contributions"
+		},
 		"figures": {
+			"marketValue": "Market value {{amount}}",
 			"title": "Progress",
 			"saved": "Saved",
 			"target": "Target amount",
@@ -2470,6 +2475,7 @@
 			"editTitle": "Edit goal",
 			"description": "It fills up with the balance of the linked accounts, in full or for a fixed amount.",
 			"preview": "Goal preview",
+			"progressBasis": "Progress basis",
 			"kind": "Goal type",
 			"kinds": {
 				"one_off": {
@@ -3909,6 +3915,7 @@
 			"reserve_only": "Only a reserve can target a number of months of expenses.",
 			"no_expenses": "No month has expenses yet: choose a fixed amount.",
 			"not_reporting_currency": "Expenses are counted in a different currency than these accounts: choose a fixed amount.",
+			"progress_basis_locked": "Reopen or restore this goal to change its progress basis.",
 			"kind_locked": "Reopen or restore this goal before changing its type.",
 			"invalid_quantity": "Invalid quantity: a number greater than zero, 18 decimals at most. Example: 12.5.",
 			"invalid_price": "Invalid price: zero or a positive number, 10 decimals at most. Example: 612.40.",

@@ -8,15 +8,22 @@ import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
+import type {
+	GoalEvent,
+	GoalKind,
+	GoalProgressBasis,
+	GoalState,
+	GoalTargetMode,
+} from "@archant/data/goals";
 import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
-import { minDate, today } from "../domain/dates.ts";
+import { addDays, minDate, today } from "../domain/dates.ts";
 import {
+	GOAL_BALANCE_PACE_DAYS,
 	backingShares,
 	compareGoals,
 	goalHistoryStart,
@@ -30,6 +37,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { goalMarketGains } from "./ledger/goal-market.ts";
 import { accountPaces } from "./ledger/goal-pace.ts";
 import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -51,6 +59,9 @@ type GoalAccountShare = {
 };
 
 export type GoalSummary = GoalProgress & {
+	progressBasis: GoalProgressBasis;
+	/** Live balance backing, shown alongside investment contributions. */
+	marketValue: MinorUnits | null;
 	id: string;
 	name: string;
 	/** The target as read: for a reserve in months, the months times `monthlyExpenses`. */
@@ -131,7 +142,30 @@ async function loadGoals(deps: ServiceDeps) {
 	return { goalRows, linkRows, competing };
 }
 
-type LinkRow = { goalId: string; accountId: string; allocatedAmount: number | null };
+type LinkRow = {
+	goalId: string;
+	accountId: string;
+	allocatedAmount: number | null;
+	type: AccountType;
+};
+
+function investmentLinks(links: readonly LinkRow[]): string[] {
+	return [
+		...new Set(links.filter((link) => link.type === "investment").map((link) => link.accountId)),
+	];
+}
+
+function shareOn(
+	balance: MinorUnits,
+	row: LinkRow,
+	competing: GoalLink[],
+	marketGain?: MinorUnits,
+) {
+	return (
+		backingShares(toMinorUnits(balance - (marketGain ?? 0)), competing).get(row.goalId) ??
+		toMinorUnits(0)
+	);
+}
 
 function linkOf(row: LinkRow): GoalLink {
 	return {
@@ -175,11 +209,23 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 			),
 		),
 	);
-	const paces = await accountPaces(deps, balances, date);
+	const contributions = new Set(
+		goalRows.filter((goal) => goal.progressBasis === "contributions").map((goal) => goal.id),
+	);
+	const [paces, marketGains] = await Promise.all([
+		accountPaces(deps, balances, date),
+		goalMarketGains(
+			deps,
+			investmentLinks(linkRows.filter((row) => contributions.has(row.goalId))),
+			date,
+			addDays(date, -GOAL_BALANCE_PACE_DAYS),
+		),
+	]);
 
 	return goalRows
 		.map((goal): GoalSummary => {
 			const links = linkRows.filter((row) => row.goalId === goal.id);
+			const countsContributions = goal.progressBasis === "contributions";
 			const shares = links.map((row): GoalAccountShare => {
 				const balance = balances.get(row.accountId) ?? toMinorUnits(0);
 
@@ -191,7 +237,12 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 					balance,
 					active: row.active,
 					allocatedAmount: linkOf(row).allocatedAmount,
-					share: backingShares(balance, competing(row)).get(goal.id) ?? toMinorUnits(0),
+					share: shareOn(
+						balance,
+						row,
+						competing(row),
+						countsContributions ? marketGains.get(row.accountId)?.total : undefined,
+					),
 				};
 			});
 			const { targetAmount, monthlyExpenses: median } = targetAsRead(
@@ -206,12 +257,30 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 				),
 				targetDate: goal.targetDate,
 				today: date,
-				accounts: links.map((row) => paces.get(row.accountId)),
+				accounts: links.map((row) => {
+					const pace = paces.get(row.accountId);
+					const gain = countsContributions ? marketGains.get(row.accountId)?.since : undefined;
+					return pace?.months === 12 && gain !== undefined
+						? { ...pace, change: toMinorUnits(pace.change - gain) }
+						: pace;
+				}),
 				completed: goal.state === "completed",
 			});
 
 			return {
 				id: goal.id,
+				progressBasis: goal.progressBasis,
+				marketValue:
+					countsContributions && links.some((row) => row.type === "investment")
+						? toMinorUnits(
+								links.reduce(
+									(total, row) =>
+										total +
+										shareOn(balances.get(row.accountId) ?? toMinorUnits(0), row, competing(row)),
+									0,
+								),
+							)
+						: null,
 				name: goal.name,
 				targetAmount,
 				targetMode: goal.targetMode,
@@ -268,15 +337,22 @@ export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<Goa
 	);
 	const opened = starts.filter((start) => start !== null);
 	const from = goalHistoryStart(date, opened.length === 0 ? null : opened.reduce(minDate));
-	const accountsSeries = await Promise.all(
-		links.map(async (row) => balancesBetween(deps, row.accountId, from, date)),
-	);
+	const [accountsSeries, marketGains] = await Promise.all([
+		Promise.all(links.map((row) => balancesBetween(deps, row.accountId, from, date))),
+		goalMarketGains(
+			deps,
+			goal.progressBasis === "contributions" && goal.completedAmount === null
+				? investmentLinks(links)
+				: [],
+			date,
+		),
+	]);
 	const saved = toMinorUnits(
 		goal.completedAmount ??
 			links.reduce((total, row, index) => {
 				const balance = accountsSeries[index]?.at(-1)?.balance ?? toMinorUnits(0);
 
-				return total + (backingShares(balance, competing(row)).get(id) ?? 0);
+				return total + shareOn(balance, row, competing(row), marketGains.get(row.accountId)?.total);
 			}, 0),
 	);
 
@@ -563,6 +639,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 			await tx.insert(goals).values({
 				id,
 				name: goal.name,
+				progressBasis: goal.progressBasis ?? "balance",
 				...targetColumns(goal, targetAmount),
 				currency,
 				color: goal.color,
@@ -604,6 +681,12 @@ export async function updateGoal(
 				throw fieldError("kind", "kind_locked");
 			}
 
+			const progressBasis = goal.progressBasis ?? existing.progressBasis;
+
+			if (progressBasis !== existing.progressBasis && existing.completedAmount !== null) {
+				throw fieldError("progressBasis", "progress_basis_locked");
+			}
+
 			await assertFundable(tx, id, existing.currency, goal.accounts);
 			const unchanged =
 				existing.targetMode === "months_of_expenses" &&
@@ -619,6 +702,7 @@ export async function updateGoal(
 				.update(goals)
 				.set({
 					name: goal.name,
+					progressBasis,
 					...targetColumns(goal, targetAmount),
 					color: goal.color,
 					icon: goal.icon,
@@ -684,11 +768,6 @@ export async function transitionGoal(
 	id: string,
 	event: GoalEvent,
 ): Promise<GoalSummary> {
-	// Read before the write lock, which the balance reads do not run under:
-	// the transaction rechecks the state, and one household's single writer
-	// leaves a balance moving in between harmless.
-	const frozen = event === "complete" ? (await getGoal(deps, id)).saved : null;
-
 	await deps.db.transaction(
 		async (tx) => {
 			const existing = await tx
@@ -716,6 +795,8 @@ export async function transitionGoal(
 				await assertWholeAccountsFree(tx, id);
 			}
 
+			// Freeze the amount under the same lock as a change to its basis.
+			const frozen = next === "completed" ? (await getGoal({ ...deps, db: tx }, id)).saved : null;
 			const now = Date.now();
 
 			await tx
