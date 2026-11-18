@@ -1053,6 +1053,9 @@
 			"gap": "Gap"
 		},
 		"form": {
+			"overview": "Overview",
+			"details": "Details",
+			"settings": "Settings",
 			"addTitle": "Add balance",
 			"editTitle": "Edit balance",
 			"description": "The balance your bank shows at the end of this day, or the amount owed for a card. It replaces the calculated balance from this date on.",
@@ -1125,6 +1128,11 @@
 			"amount": "Amount"
 		},
 		"form": {
+			"details": "Details",
+			"additionalDetails": "Additional details",
+			"note": "Note",
+			"notePlaceholder": "Add any additional comments here...",
+			"settings": "Settings",
 			"addTitle": "Add trade",
 			"editTitle": "Edit trade",
 			"description": "A buy, a sell, a dividend or interest. Quantity × price plus fees leaves the account for a buy; quantity × price minus fees enters it for a sell; the amount of a dividend or interest enters it.",

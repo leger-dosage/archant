@@ -506,3 +506,72 @@ test("« À venir » says when no payment is expected", async ({ page }) => {
 		page.getByText("Aucun paiement récurrent attendu dans les dix prochains jours."),
 	).toBeVisible();
 });
+
+test("transaction creation is centred and editing keeps explicit saves beside blur notes", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({ openingDate: daysAgo(30) });
+	const label = uniqueName("Achat fictif");
+	const transaction = await api.addTransaction(account.id, {
+		date: daysAgo(2),
+		label,
+		amount: "-42",
+	});
+	const assertLayout = async (dialog: ReturnType<Page["getByRole"]>, docked: boolean) => {
+		const { width, height } = page.viewportSize() ?? { width: 0, height: 0 };
+		await expect
+			.poll(async () => {
+				const box = await dialog.boundingBox();
+				if (box === null) {
+					return false;
+				}
+
+				return docked
+					? Math.abs(width - box.x - box.width - 12) < 1 && Math.abs(box.width - 550) < 1
+					: Math.abs(box.x - (width - box.width) / 2) < 1 &&
+							Math.abs(box.y - (height - box.height) / 2) < 1;
+			})
+			.toBe(true);
+	};
+
+	await page.goto(`/accounts/${account.id}`);
+	const creation = await openNewSheet(page);
+	await assertLayout(creation, false);
+	await page.keyboard.press("Escape");
+	await expect(creation).toBeHidden();
+
+	const opener = row(page, label);
+	await page.setViewportSize({ width: 1024, height: 900 });
+	await opener.click();
+	const drawer = page.getByRole("dialog", { name: "Modifier l'opération" });
+	await assertLayout(drawer, true);
+	await page.setViewportSize({ width: 1023, height: 900 });
+	await assertLayout(drawer, false);
+	await drawer.getByLabel("Montant").fill("58,00");
+	const notes = drawer.getByLabel("Notes");
+	await notes.fill("Reçu fictif");
+	const saved = page.waitForResponse(
+		(response) =>
+			response.request().method() === "PATCH" &&
+			response.url().endsWith(`/transactions/${transaction}`),
+	);
+	await notes.press("Tab");
+	const response = await saved;
+	expect(response.request().postDataJSON()).toEqual({ notes: "Reçu fictif" });
+	expect(response.ok()).toBe(true);
+	await drawer.getByLabel("Montant").press("Control+Enter");
+	await expect(drawer).toBeVisible();
+	await expect(drawer.getByLabel("Montant")).toHaveValue("58,00");
+	await page.keyboard.press("Escape");
+	await expect(page.getByRole("alertdialog")).toBeVisible();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Abandonner" }).click();
+	await expect(opener).toBeFocused();
+
+	await page.reload();
+	await expect(opener).toContainText(euros(-4200));
+	await opener.click();
+	await expect(notes).toHaveValue("Reçu fictif");
+	await page.keyboard.press("Escape");
+	await expect(opener).toBeFocused();
+});
