@@ -434,7 +434,7 @@ describe("planActions", () => {
 		]);
 	});
 
-	it("lets a later matching rule overwrite an earlier one, and skips candidates no rule reaches", () => {
+	it("keeps the first matching rule’s category and skips candidates no rule reaches", () => {
 		expect(
 			plan(
 				[
@@ -451,7 +451,7 @@ describe("planActions", () => {
 				],
 			),
 		).toEqual([
-			["e1", { categoryId: "loisirs" }],
+			["e1", { categoryId: "courses" }],
 			["e2", { categoryId: "courses" }],
 		]);
 	});
@@ -683,15 +683,15 @@ describe("planActions' replacement in the label", () => {
 		).toEqual([]);
 	});
 
-	it("lets a later rule read the label an earlier one wrote, so a prefix and a suffix both go", () => {
+	it("lets a later rule match the new label while the first rule keeps its claim", () => {
 		const rules = [
 			replacing("^CARTE \\d{2}/\\d{2}/\\d{2} ", "", "r1"),
 			replacing("\\s*CB\\*\\d{4}$", "", "r2", [label("like", "picard sa 788 4 cb*")]),
 		];
 
-		expect(plan(rules, [candidate({ label: "CARTE 29/09/26 PICARD SA 788 4 CB*2769" })])).toEqual([
-			["e1", { label: "PICARD SA 788 4" }],
-		]);
+		const rows = [candidate({ label: "CARTE 29/09/26 PICARD SA 788 4 CB*2769" })];
+		expect(plan(rules, rows)).toEqual([["e1", { label: "PICARD SA 788 4 CB*2769" }]]);
+		expect(tallies(rules, rows)[1]).toEqual({ ruleId: "r2", matched: 1, changed: 0 });
 	});
 
 	it("applies after a rename of the same rule, in the order of its actions", () => {
@@ -761,7 +761,7 @@ describe("planActions' per-rule tallies", () => {
 		]);
 	});
 
-	it("counts a row a later rule overwrites once in the plan, and once for each rule", () => {
+	it("counts a claimed row as matched for both rules but changed only for the first", () => {
 		const rules = [
 			withActions([{ type: "set_transaction_category", categoryId: "courses" }]),
 			withActions([{ type: "set_transaction_category", categoryId: "loisirs" }], [], "r2"),
@@ -769,8 +769,41 @@ describe("planActions' per-rule tallies", () => {
 
 		expect(tallies(rules, [candidate()])).toEqual([
 			{ ruleId: "r1", matched: 1, changed: 1 },
-			{ ruleId: "r2", matched: 1, changed: 1 },
+			{ ruleId: "r2", matched: 1, changed: 0 },
 		]);
-		expect(plan(rules, [candidate()])).toEqual([["e1", { categoryId: "loisirs" }]]);
+		expect(plan(rules, [candidate()])).toEqual([["e1", { categoryId: "courses" }]]);
 	});
+});
+
+it("claims unchanged and locked fields, adds tags and stops only the matched row", () => {
+	const first = rule([label("like", "carrefour")], {
+		actions: [
+			{ type: "set_transaction_category", categoryId: "courses" },
+			{ type: "set_transaction_tags", tagIds: ["first"] },
+		],
+	});
+	const second = withActions(
+		[
+			{ type: "set_transaction_category", categoryId: "loisirs" },
+			{ type: "set_transaction_tags", tagIds: ["second"] },
+		],
+		[],
+		"r2",
+	);
+	const rows = [
+		candidate({ categoryId: "courses" }),
+		candidate({ id: "e2", lockedFields: { category: null } }),
+		candidate({ id: "e3", label: "Loyer" }),
+	];
+
+	expect(plan([first, second], rows)).toEqual([
+		["e1", { addTagIds: ["first", "second"] }],
+		["e2", { addTagIds: ["first", "second"] }],
+		["e3", { categoryId: "loisirs", addTagIds: ["second"] }],
+	]);
+	expect(plan([{ ...first, stopProcessing: true }, second], rows)).toEqual([
+		["e1", { addTagIds: ["first"] }],
+		["e2", { addTagIds: ["first"] }],
+		["e3", { categoryId: "loisirs", addTagIds: ["second"] }],
+	]);
 });

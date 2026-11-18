@@ -147,6 +147,8 @@ describe("rules", () => {
 			id: rule.id,
 			name: null,
 			enabled: false,
+			position: 0,
+			stopProcessing: false,
 			effectiveDate: null,
 			updatedAt: rule.updatedAt,
 			conditions: [
@@ -159,6 +161,7 @@ describe("rules", () => {
 			param: { id: rule.id },
 			json: {
 				name: "Sorties",
+				stopProcessing: true,
 				effectiveDate: "2026-09-01",
 				conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1234,5" }],
 				actions: [{ actionType: "set_transaction_category", value: leisure.id }],
@@ -167,6 +170,7 @@ describe("rules", () => {
 		expect(replaced.status).toBe(200);
 		expect((await replaced.json()).data).toMatchObject({
 			name: "Sorties",
+			stopProcessing: true,
 			effectiveDate: "2026-09-01",
 			conditions: [{ conditionType: "transaction_amount", operator: ">=", value: "1234.5" }],
 			actions: [{ value: leisure.id }],
@@ -415,15 +419,25 @@ describe("rules", () => {
 		]);
 	});
 
-	it("lets the later of two matching rules win", async () => {
+	it("lets the first matching rule win after an automatic run and respects a saved reorder", async () => {
 		const account = await openAccount();
 		const groceries = await createCategory(uniqueCategory("Courses"));
 		const leisure = await createCategory(uniqueCategory("Loisirs"));
-		await createRule(labelRule("carrefour", groceries.id));
-		vi.setSystemTime(new Date("2026-09-21T10:00:01Z"));
-		await createRule(labelRule("carrefour", leisure.id));
+		const first = await createRule(labelRule("carrefour", groceries.id));
+		const second = await createRule(labelRule("carrefour", leisure.id));
 
 		await postTransaction(account.id, { ...expense, label: "CB CARREFOUR" });
+		await nextSync();
+
+		await expect(categoriesOf(account.id)).resolves.toEqual([
+			{ label: "CB CARREFOUR", category: groceries.id, origin: "rule" },
+		]);
+		await expect(
+			request("PUT", "/api/rules/order", { ids: [second.id, first.id] }),
+		).resolves.toMatchObject({
+			status: 200,
+			body: { data: [{ id: second.id }, { id: first.id }] },
+		});
 		await nextSync();
 
 		await expect(categoriesOf(account.id)).resolves.toEqual([
@@ -845,7 +859,7 @@ describe("rules", () => {
 			expect.objectContaining({ conditionType: "transaction_details", value: "5411" }),
 		);
 		await expect(previewOf(`/api/rules/${details.id}/preview`)).resolves.toBe(1);
-		await expect(previewOf(`/api/rules/${empty.id}/preview`)).resolves.toBe(1);
+		await expect(previewOf(`/api/rules/${empty.id}/preview`)).resolves.toBe(2);
 		await request("POST", "/api/rules/apply");
 
 		await expect(categoriesOf(account.id)).resolves.toEqual([
@@ -1076,6 +1090,12 @@ describe("a guest and every rule", () => {
 		);
 		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
+		const reorder = await guest.request("/api/rules/order", {
+			method: "PUT",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ ids: [] }),
+		});
+		expect(reorder.status).toBe(403);
 		const response = await guest.request("/api/rules", { method: "DELETE" });
 
 		expect(response.status).toBe(403);

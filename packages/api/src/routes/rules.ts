@@ -3,7 +3,7 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { ruleBodySchema, ruleEnabledSchema } from "../schemas/rules.ts";
+import { ruleBodySchema, ruleEnabledSchema, ruleOrderSchema } from "../schemas/rules.ts";
 import { pageQuerySchema } from "../schemas/transactions.ts";
 import {
 	applyRules,
@@ -13,6 +13,7 @@ import {
 	listRuleRuns,
 	listRules,
 	previewRules,
+	reorderRules,
 	setRuleEnabled,
 	updateRule,
 } from "../services/rules.ts";
@@ -27,6 +28,9 @@ export function rulesRoutes(deps: ServiceDeps) {
 			.post("/apply", async (c) => c.json({ data: await applyRules(deps) }, 200))
 			.get("/runs", validated("query", pageQuerySchema), async (c) =>
 				c.json({ data: await listRuleRuns(deps, c.req.valid("query")) }, 200),
+			)
+			.put("/order", validated("json", ruleOrderSchema), async (c) =>
+				c.json({ data: await reorderRules(deps, c.req.valid("json").ids) }, 200),
 			)
 			.get("/:id/preview", async (c) =>
 				c.json({ data: await previewRules(deps, c.req.param("id")) }, 200),

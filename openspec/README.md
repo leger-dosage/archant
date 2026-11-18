@@ -52,3 +52,5 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 
 [story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
+
+- [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).

@@ -226,8 +226,9 @@ async function household() {
 	});
 	await sendOwn("PUT", `/api/budgets/2026-09/categories/${food}`, { budgetedSpending: "300" });
 
-	await created("/api/rules", {
+	const firstRule = await created("/api/rules", {
 		name: "Boulangerie",
+		stopProcessing: true,
 		enabled: true,
 		conditions: [
 			{ conditionType: "transaction_name", operator: "like", value: "BOULANGERIE" },
@@ -246,6 +247,7 @@ async function household() {
 		actions: [{ actionType: "exclude_transaction", value: null }],
 	});
 	await sendOwn("PATCH", `/api/rules/${off}`, { enabled: false });
+	await sendOwn("PUT", "/api/rules/order", { ids: [off, firstRule] });
 }
 
 /** What a database holds, by names rather than ids, in a stable order. */
@@ -304,7 +306,7 @@ async function snapshotOf(db: Database) {
 				(select group_concat(x.frequency || ':' || x.interval || ':' || coalesce(x.day_of_month, '')) from recurrence_rules x where x.recurring_transaction_id = r.id) as rules
 			from recurring_transactions r left join accounts a on a.id = r.account_id where r.manual = 1 order by r.amount`),
 		rules: await rows(
-			sql`select name, enabled, effective_date as effectiveDate from rules order by name`,
+			sql`select name, enabled, effective_date as effectiveDate, position, stop_processing from rules order by position`,
 		),
 		// An id stored in a value reads as the name of the row it names.
 		actions: await rows(sql`
@@ -463,6 +465,27 @@ describe("importSureArchive", () => {
 		expect(after.merchants).toEqual(before.merchants);
 		expect(after.budgets).toEqual(before.budgets);
 		expect(after.budgetCategories).toEqual(before.budgetCategories);
+	});
+
+	it("appends legacy rules in file order with stop disabled", async () => {
+		await ownDatabase();
+		await importLines(
+			["Z règle ancienne", "A règle ancienne"].map((name) =>
+				line("Rule", {
+					id: name,
+					name,
+					conditions: [],
+					actions: [{ action_type: "exclude_transaction" }],
+				}),
+			),
+		);
+
+		await expect(
+			source().all(sql`select name, stop_processing from rules order by position`),
+		).resolves.toEqual([
+			{ name: "Z règle ancienne", stop_processing: 0 },
+			{ name: "A règle ancienne", stop_processing: 0 },
+		]);
 	});
 
 	it("writes nothing when the preflight finds an error", async () => {
