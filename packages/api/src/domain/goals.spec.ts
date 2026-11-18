@@ -344,6 +344,17 @@ const daily = (from: string, amounts: readonly number[]) =>
 	amounts.map((amount, index) => ({ date: addDays(from, index), balance: toMinorUnits(amount) }));
 
 describe("goalSeries", () => {
+	it("draws zero while the linked account has no starting balance", () => {
+		expect(
+			goalSeries({
+				from: "2026-09-21",
+				to: "2026-09-21",
+				saved: toMinorUnits(0),
+				accounts: [[]],
+			}),
+		).toEqual([{ date: "2026-09-21", saved: 0 }]);
+	});
+
 	it("scales the sum of balances, including one opened during the window", () => {
 		const points = goalSeries({
 			from: "2026-09-18",

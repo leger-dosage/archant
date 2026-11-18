@@ -471,6 +471,21 @@ describe("goals", () => {
 		).resolves.toMatchObject({ saved: 172_000, pace: 10_000, status: "on_track" });
 	});
 
+	it("uses the full annual change when a valuation has no excluded flows", async () => {
+		const account = await savings("400");
+		await sendOwn("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "1 600",
+		});
+
+		await expect(
+			create("Voyage", [{ accountId: account.id }], {
+				targetAmount: "1 700",
+				targetDate: "2026-10-21",
+			}),
+		).resolves.toMatchObject({ saved: 160_000, pace: 10_000, status: "on_track" });
+	});
+
 	it("requires a year of history for a valuation and reports unknown pace for mixed evidence", async () => {
 		const fresh = await savings("500", { openingDate: "2026-03-01" });
 		const measured = await savedInto("LDDS");
