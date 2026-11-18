@@ -14,8 +14,8 @@ type BudgetSection = "over" | "onTrack";
 /** What a card, a field of the categories step and the sheet read of an envelope. */
 type Envelope = {
 	/**
-	 * The stored amount, 0 without a row. A parent's is its total: its
-	 * ring-fenced children's amounts plus its own reserve.
+	 * The stored amount, 0 without a row. A child save rebuilds its parent's
+	 * total from the ring-fenced amounts and the parent's reserve.
 	 */
 	budgetedSpending: MinorUnits;
 	/** Sure's `budgeted?`: money in this envelope, the parent's for a shared child. */
@@ -42,6 +42,8 @@ type Envelope = {
 export type BudgetCategoryLine = Envelope & {
 	categoryId: string;
 	parentId: string | null;
+	/** A missing row and a saved zero share the parent, but only the latter fills the field. */
+	hasStoredAmount: boolean;
 	name: string;
 	color: string;
 	icon: CategoryIcon;
@@ -93,20 +95,6 @@ export function parentAfterChildSave(amounts: {
 	const { parent, siblings, previousChild, child } = amounts;
 
 	return toMinorUnits(siblings + child + Math.max(parent - siblings - previousChild, 0));
-}
-
-/**
- * A parent saved for itself: never below what its ring-fenced children hold,
- * so its amount stays their sum plus a reserve that is never negative. Sure
- * stores it as typed and lifts it at the next child's save; until then its
- * allocation undercounts, and « Valider » could pass the total.
- */
-export function parentAfterOwnSave(amounts: {
-	typed: MinorUnits;
-	/** Its children's stored amounts, summed: a shared child's is 0. */
-	children: MinorUnits;
-}): MinorUnits {
-	return toMinorUnits(Math.max(amounts.typed, amounts.children));
 }
 
 /**
@@ -302,6 +290,7 @@ export function budgetCategories(input: {
 		return {
 			categoryId: category.id,
 			parentId: category.parentId,
+			hasStoredAmount: amounts.has(category.id),
 			name: category.name,
 			color: category.color,
 			icon: category.icon,

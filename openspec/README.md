@@ -20,8 +20,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 34.10 | [Sure's layout under Archant's visual style](changes/sures-layout-under-archants-visual-style/proposal.md)                                      |                                                                      |
-| 35.2  | [Budget every category as Sure](changes/budget-every-category-as-sure/proposal.md)                                                              |                                                                      |
 | 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
 | 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9]                                                               |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
@@ -51,5 +49,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 35.11: [Filter, search and summarise goals](changes/archive/2026-11-18-filter-search-and-summarise-goals/proposal.md).
 
 - Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
+
+- Story 34.10: [Sure's layout under Archant's visual style](changes/archive/2026-11-18-sures-layout-under-archants-visual-style/proposal.md).
 
 - [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).

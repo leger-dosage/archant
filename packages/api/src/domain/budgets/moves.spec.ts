@@ -60,7 +60,7 @@ describe("moveAllocation", () => {
 	});
 
 	it("never takes from a parent what its ring-fenced children hold", () => {
-		expect(move(P, Q, 70_100)).toEqual({ refusal: { path: "amount", code: "insufficient_funds" } });
+		expect(move(P, Q, 70_100)).toEqual({ refusal: "BUDGET_MOVE_INSUFFICIENT_FUNDS" });
 		expect(after(move(P, Q, 70_000), stored)).toEqual({ P: 30_000, A: 30_000, Q: 90_000 });
 	});
 
@@ -88,28 +88,28 @@ describe("moveAllocation", () => {
 		});
 	});
 
-	it("lifts a receiving parent stored below its children", () => {
+	it("adds only the moved amount to a receiving parent stored below its children", () => {
 		const low = { P: 10_000, A: 30_000, Q: 20_000 };
 
-		expect(after(move(Q, P, 5_000, low), low)).toEqual({ P: 30_000, A: 30_000, Q: 15_000 });
+		expect(after(move(Q, P, 5_000, low), low)).toEqual({ P: 15_000, A: 30_000, Q: 15_000 });
 	});
 
 	it("gives nothing from a shared child, or from a parent all held by its children", () => {
-		expect(move(B, Q, 1)).toEqual({ refusal: { path: "amount", code: "insufficient_funds" } });
+		expect(move(B, Q, 1)).toEqual({ refusal: "BUDGET_MOVE_INSUFFICIENT_FUNDS" });
 		expect(move(P, Q, 1, { P: 30_000, A: 30_000 })).toEqual({
-			refusal: { path: "amount", code: "insufficient_funds" },
+			refusal: "BUDGET_MOVE_INSUFFICIENT_FUNDS",
 		});
 	});
 
 	it("refuses a move between a parent and its own child, either way", () => {
-		const refusal = { refusal: { path: "toCategoryId", code: "parent_child" } };
+		const refusal = { refusal: "BUDGET_MOVE_PARENT_CHILD" };
 
 		expect(move(P, A, 100)).toEqual(refusal);
 		expect(move(A, P, 100)).toEqual(refusal);
 	});
 
 	it("refuses a move to the source itself", () => {
-		expect(move(P, P, 100)).toEqual({ refusal: { path: "toCategoryId", code: "same_category" } });
+		expect(move(P, P, 100)).toEqual({ refusal: "BUDGET_MOVE_SAME_CATEGORY" });
 	});
 });
 
@@ -147,21 +147,21 @@ describe("copiedRows", () => {
 		);
 	});
 
-	it("lifts a parent to the children re-parented under it since", () => {
+	it("keeps a parent below the amounts of children re-parented under it since", () => {
 		const copied = copiedRows({
 			categories: [P, category("C", "P")],
 			source: rows({ P: [20_000, true], C: [30_000, false] }),
 		});
 
-		expect(copied).toEqual(rows({ P: [30_000, true], C: [30_000, false] }));
+		expect(copied).toEqual(rows({ P: [20_000, true], C: [30_000, false] }));
 	});
 
-	it("gives a parent without a row its children's amounts, rollover off", () => {
+	it("copies only stored rows, even when the parent has none", () => {
 		const copied = copiedRows({
 			categories: [P, A, Q],
 			source: rows({ A: [30_000, true] }),
 		});
 
-		expect(copied).toEqual(rows({ P: [30_000, false], A: [30_000, true] }));
+		expect(copied).toEqual(rows({ A: [30_000, true] }));
 	});
 });

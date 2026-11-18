@@ -1053,6 +1053,9 @@
 			"gap": "Écart"
 		},
 		"form": {
+			"overview": "Aperçu",
+			"details": "Détails",
+			"settings": "Paramètres",
 			"addTitle": "Ajouter un solde",
 			"editTitle": "Modifier le solde",
 			"description": "Le solde affiché par votre banque à la fin de cette journée, ou le montant dû pour une carte. Il remplace le solde calculé à partir de cette date.",
@@ -1125,6 +1128,11 @@
 			"amount": "Montant"
 		},
 		"form": {
+			"details": "Détails",
+			"additionalDetails": "Détails supplémentaires",
+			"note": "Note",
+			"notePlaceholder": "Ajoutez tout commentaire supplémentaire ici...",
+			"settings": "Paramètres",
 			"addTitle": "Ajouter un ordre",
 			"editTitle": "Modifier l'ordre",
 			"description": "Un achat, une vente, un dividende ou des intérêts. Quantité × prix plus les frais sortent du compte pour un achat ; quantité × prix moins les frais y entrent pour une vente ; le montant d'un dividende ou d'intérêts y entre.",
@@ -2286,7 +2294,7 @@
 		"move": {
 			"open": "Déplacer de l'argent depuis {{name}}",
 			"title": "Déplacer de l'argent depuis {{name}}",
-			"description": "{{name}} peut donner jusqu'à {{amount}} ce mois-ci.",
+			"description": "Budget de {{name}} ce mois-ci : {{amount}}",
 			"amount": "Montant",
 			"target": "Vers",
 			"placeholder": "Choisir une catégorie",
@@ -3871,6 +3879,11 @@
 		"TRANSACTION_CHANGED": "Cette opération a changé depuis qu'elle vous a été montrée. Elle n'a pas été supprimée.",
 		"BUDGET_NOT_SET_UP": "Définissez d'abord les dépenses prévues de ce mois.",
 		"BUDGET_ALREADY_SET_UP": "Ce mois a déjà un budget. Il n'a pas été modifié.",
+		"BUDGET_MOVE_NON_POSITIVE_AMOUNT": "Le montant doit être supérieur à zéro.",
+		"BUDGET_MOVE_UNCATEGORISED": "Impossible de déplacer de l'argent depuis ou vers « Sans catégorie ».",
+		"BUDGET_MOVE_SAME_CATEGORY": "Choisissez une autre catégorie que la source.",
+		"BUDGET_MOVE_PARENT_CHILD": "Impossible entre une catégorie et sa sous-catégorie.",
+		"BUDGET_MOVE_INSUFFICIENT_FUNDS": "Cette catégorie ne peut pas donner autant.",
 		"UNAUTHORIZED": "Votre session a expiré. Connectez-vous pour continuer.",
 		"FORBIDDEN": "Cette action n'est pas autorisée.",
 		"ORIGIN_MISMATCH": "Archant est configuré pour une autre adresse. Donnez à ARCHANT_URL l'adresse affichée dans la barre d'adresse, puis redémarrez Archant.",
@@ -3941,7 +3954,6 @@
 			"invalid_two_factor_code": "Code incorrect. Vérifiez l'heure de votre téléphone, ou utilisez un code de secours encore inutilisé.",
 			"two_factor_code_already_used": "Ce code a déjà été utilisé. Veuillez saisir le code suivant de votre application d'authentification.",
 			"not_positive": "Le montant doit être supérieur à zéro.",
-			"insufficient_funds": "Cette catégorie ne peut pas donner autant.",
 			"same_category": "Choisissez une autre catégorie que la source.",
 			"same_merchant": "Choisissez un autre marchand que la cible.",
 			"parent_child": "Impossible entre une catégorie et sa sous-catégorie.",

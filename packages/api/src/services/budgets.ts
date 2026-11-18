@@ -37,7 +37,7 @@ import {
 } from "drizzle-orm";
 
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { toMinorUnits } from "@archant/data/money";
+import { parseAmount, toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
 import { budgetCategories as budgetCategoryRows, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
@@ -46,7 +46,6 @@ import { actualsOf, spendingSegments } from "../domain/budgets/actuals.ts";
 import {
 	budgetCategories,
 	parentAfterChildSave,
-	parentAfterOwnSave,
 	spentByCategory,
 } from "../domain/budgets/categories.ts";
 import {
@@ -63,10 +62,10 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import {
 	budgetCategorySchema,
-	budgetMoveSchema,
 	budgetRolloverBodySchema,
 	budgetSchema,
 } from "../schemas/budgets.ts";
+import { UNCATEGORISED } from "../schemas/transactions.ts";
 import { cashFlowByDay, oldestEntryDate } from "./ledger/queries.ts";
 import {
 	cashFlowAccounts,
@@ -676,7 +675,7 @@ async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: n
  * `update_budgeted_spending!`: creates its row on the first save. A
  * subcategory's save also sets its parent to its children's amounts plus its
  * own reserve, creating the parent's row if needed, in the same transaction;
- * a parent's own save never goes below its ring-fenced children.
+ * a parent keeps the amount entered until a child save recalculates it.
  * Answers the whole month, as `getBudget` does.
  */
 export async function saveCategoryBudget(
@@ -723,8 +722,7 @@ export async function saveCategoryBudget(
 
 /**
  * `saveCategoryBudget`'s write, under the caller's write lock, in a month set
- * up: its amount, then its parent's, as
- * `parentAfterOwnSave` and `parentAfterChildSave` compute them.
+ * up: the typed amount, then the parent's rebuilt total for a child.
  */
 async function writeCategoryAmount(
 	tx: Db,
@@ -747,9 +745,8 @@ async function writeCategoryAmount(
 	const now = Date.now();
 	const write = (id: string, budgetedSpending: MinorUnits) =>
 		writeAmount(tx, budgetId, id, budgetedSpending, now);
-	// The children's stored amounts under `parentId`, `except` one: a
-	// shared child's is 0, so this is what the ring-fenced ones hold.
-	const childrenOf = async (parentId: string, except?: string) => {
+	// A shared sibling has zero stored, so this sums only ring-fenced amounts.
+	const siblingsOf = async (parentId: string) => {
 		const [children] = await tx
 			.select({ total: sum(budgetCategoryRows.budgetedSpending).mapWith(Number) })
 			.from(budgetCategoryRows)
@@ -758,7 +755,7 @@ async function writeCategoryAmount(
 				and(
 					eq(budgetCategoryRows.budgetId, budgetId),
 					eq(categories.parentId, parentId),
-					except === undefined ? undefined : ne(budgetCategoryRows.categoryId, except),
+					ne(budgetCategoryRows.categoryId, category.id),
 				),
 			);
 
@@ -766,24 +763,21 @@ async function writeCategoryAmount(
 	};
 
 	if (category.parentId === null) {
-		const saved = parentAfterOwnSave({ typed: amount, children: await childrenOf(category.id) });
-		await write(category.id, saved);
+		await write(category.id, amount);
+	} else {
+		const previousChild = await amountOf(category.id);
 
-		return saved;
+		await write(category.id, amount);
+		await write(
+			category.parentId,
+			parentAfterChildSave({
+				parent: await amountOf(category.parentId),
+				siblings: await siblingsOf(category.parentId),
+				previousChild,
+				child: amount,
+			}),
+		);
 	}
-
-	const previousChild = await amountOf(category.id);
-
-	await write(category.id, amount);
-	await write(
-		category.parentId,
-		parentAfterChildSave({
-			parent: await amountOf(category.parentId),
-			siblings: await childrenOf(category.parentId, category.id),
-			previousChild,
-			child: amount,
-		}),
-	);
 
 	return amount;
 }
@@ -835,7 +829,7 @@ export async function updateBudget(
 
 					return { category, amount: entry.budgeted };
 				});
-				// Child saves update the parent, so explicit parent amounts apply last.
+				// A parent amount given explicitly wins over the totals rebuilt by child saves.
 				const ordered = [
 					...writes.filter(({ category }) => category.parentId !== null),
 					...writes.filter(({ category }) => category.parentId === null),
@@ -910,9 +904,7 @@ export async function copyBudget(
 			}
 
 			const sourceRows = await storedRowsOf(tx, source.id);
-			const allCategories = await tx
-				.select({ id: categories.id, parentId: categories.parentId })
-				.from(categories);
+			const allCategories = await tx.select({ id: categories.id }).from(categories);
 			const now = Date.now();
 			const amounts = {
 				currency,
@@ -963,24 +955,38 @@ export async function copyBudget(
 	return { ...(await getBudget(deps, month)), copiedFrom };
 }
 
+const moveRefusalMessages = {
+	BUDGET_MOVE_SAME_CATEGORY: "Choose a different destination category.",
+	BUDGET_MOVE_PARENT_CHILD: "Money cannot move between a parent category and its child.",
+	BUDGET_MOVE_INSUFFICIENT_FUNDS: "The source category cannot give that much.",
+};
+
 /**
  * Sure's `BudgetCategory.move_allocation!`: moves an amount from one
  * category to another in a month set up, both sides in one transaction, as
- * `moveAllocation` computes them. A refusal is a field of `VALIDATION_ERROR`,
- * so the dialog shows it under its field. Answers the month, as `getBudget` does.
+ * `moveAllocation` computes them. The month in the route scopes both
+ * categories, so a move between two budgets cannot be represented.
  */
 export async function moveCategoryBudget(
 	deps: ServiceDeps,
 	month: IsoMonth,
 	input: BudgetMoveInput,
 ): Promise<BudgetMonth> {
-	const parsed = budgetMoveSchema(await getReportingCurrency(deps.db)).safeParse(input);
+	const { fromCategoryId, toCategoryId } = input;
+	const amount =
+		input.amount.trim() === ""
+			? toMinorUnits(0)
+			: parseAmount(input.amount, await getReportingCurrency(deps.db));
 
-	if (!parsed.success) {
-		throw validationError(parsed.error);
+	if (amount === null) {
+		throw new AppError("VALIDATION_ERROR", "The request is invalid.", [
+			{ path: "amount", code: "invalid_amount" },
+		]);
 	}
 
-	const { fromCategoryId, toCategoryId, amount } = parsed.data;
+	if (amount <= 0) {
+		throw new AppError("BUDGET_MOVE_NON_POSITIVE_AMOUNT", "Enter an amount greater than zero.");
+	}
 
 	await deps.db.transaction(
 		async (tx) => {
@@ -997,7 +1003,10 @@ export async function moveCategoryBudget(
 			const from = allCategories.find((category) => category.id === fromCategoryId);
 			const to = allCategories.find((category) => category.id === toCategoryId);
 
-			// « Sans catégorie » has no row to give from or to receive.
+			if (fromCategoryId === UNCATEGORISED || toCategoryId === UNCATEGORISED) {
+				throw new AppError("BUDGET_MOVE_UNCATEGORISED", "Uncategorised money cannot be moved.");
+			}
+
 			if (from === undefined || to === undefined) {
 				throw unknownCategory();
 			}
@@ -1012,7 +1021,7 @@ export async function moveCategoryBudget(
 			});
 
 			if ("refusal" in result) {
-				throw new AppError("VALIDATION_ERROR", "The request is invalid.", [result.refusal]);
+				throw new AppError(result.refusal, moveRefusalMessages[result.refusal]);
 			}
 
 			const now = Date.now();
