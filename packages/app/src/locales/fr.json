@@ -3111,6 +3111,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Plus grosses dépenses",
+			"limit": "Nombre de dépenses affichées",
+			"transaction": "Opération",
+			"oneTime": "Ponctuelle"
+		},
 		"title": "Rapports",
 		"subtitle": "Aperçus complets de votre santé financière",
 		"printReport": "Imprimer le rapport",

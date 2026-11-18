@@ -70,8 +70,12 @@ export const queryKeys = {
 		 * balances and the transactions, and every write that moves a balance
 		 * invalidates `all`; a category's own edit refreshes it once stale.
 		 */
-		reportsPage: (period: { periodType: string; startDate?: string; endDate?: string }) =>
-			["accounts", "reports-page", period] as const,
+		reportsPage: (period: {
+			periodType: string;
+			startDate?: string;
+			endDate?: string;
+			tag?: string[];
+		}) => ["accounts", "reports-page", period] as const,
 		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change

@@ -3111,6 +3111,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Biggest expenses",
+			"limit": "Number of expenses shown",
+			"transaction": "Transaction",
+			"oneTime": "One-time"
+		},
 		"title": "Reports",
 		"subtitle": "Comprehensive insights into your financial health",
 		"printReport": "Print Report",
