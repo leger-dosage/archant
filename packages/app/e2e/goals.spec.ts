@@ -137,6 +137,37 @@ async function openNewGoal(page: Page) {
 	return dialog;
 }
 
+test("an investment goal can show net contributions beside its market value", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("PEA"),
+		kind: "pea",
+		openingBalance: "1 000",
+		openingDate: daysAgo(30),
+	});
+	await api.recordSnapshot(account.id, { date: daysAgo(2), balance: "1 500" });
+	const { id } = await api.createGoal({
+		targetAmount: "2 000",
+		accounts: [{ accountId: account.id }],
+	});
+	await page.goto(`/goals/${id}`);
+	const progress = page.getByRole("region", { name: "Progression" });
+	await expect(progress.getByRole("definition").first()).toHaveText(euros(150_000));
+
+	await page.getByRole("button", { name: "Modifier" }).click();
+	const dialog = page.getByRole("dialog", { name: "Modifier l'objectif" });
+	await expect(dialog.getByRole("radio", { name: "Valeur de marché" })).toBeChecked();
+	await dialog.getByRole("radio", { name: "Apports nets" }).check();
+	await dialog.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(dialog).toBeHidden();
+
+	await expect(progress.getByRole("definition").first()).toHaveText(euros(100_000));
+	await expect(progress.getByText("Apports nets", { exact: true })).toBeVisible();
+	await expect(progress.getByText(`Valeur de marché ${euros(150_000)}`)).toBeVisible();
+});
+
 test("a goal created from the dialog shows its card, its page and each account's share, then is edited and deleted", async ({
 	page,
 	api,

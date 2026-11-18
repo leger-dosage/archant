@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2be031e8-6a69-4340-9749-948a0986e53b",
+  "id": "7c619a39-8d1a-4f44-819b-51a6db32e13b",
   "prevId": "6897fc35-649a-42a5-a178-79c21dc170e0",
   "tables": {
     "accounts": {
@@ -953,7 +953,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"users\".\"role\" in ('admin', 'viewer')"
         },
         "users_default_account_order_check": {
           "name": "users_default_account_order_check",
@@ -2368,6 +2368,14 @@
           "autoincrement": false,
           "default": "'one_off'"
         },
+        "progress_basis": {
+          "name": "progress_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'balance'"
+        },
         "target_mode": {
           "name": "target_mode",
           "type": "text",
@@ -2436,6 +2444,10 @@
         "goals_kind_check": {
           "name": "goals_kind_check",
           "value": "\"goals\".\"kind\" in ('one_off', 'maintained')"
+        },
+        "goals_progress_basis_check": {
+          "name": "goals_progress_basis_check",
+          "value": "\"goals\".\"progress_basis\" in ('balance', 'contributions')"
         },
         "goals_target_mode_check": {
           "name": "goals_target_mode_check",
@@ -2942,7 +2954,7 @@
       "checkConstraints": {
         "invitations_role_check": {
           "name": "invitations_role_check",
-          "value": "\"invitations\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"invitations\".\"role\" in ('admin', 'viewer')"
         }
       }
     },

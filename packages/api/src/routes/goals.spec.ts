@@ -182,6 +182,104 @@ async function goalCount() {
 	return rows[0]?.count;
 }
 
+describe("goal progress basis", () => {
+	it.each([
+		{ price: "15", withdrawal: null, saved: 130_000, marketValue: 180_000 },
+		{ price: "4", withdrawal: null, saved: 130_000, marketValue: 70_000 },
+		{ price: "15", withdrawal: "-1 200", saved: 30_000, marketValue: 60_000 },
+	])(
+		"separates market value from net contributions ($price, $withdrawal)",
+		async ({ price, withdrawal, saved, marketValue }) => {
+			const account = await savings("1 000", { type: "investment", subtype: "pea" });
+			const cash = await savings("300");
+			const trade = await sendOwn("POST", `/api/accounts/${account.id}/trades`, {
+				side: "buy",
+				security: { source: "manual", name: "Fund" },
+				date: "2025-06-01",
+				quantity: "100",
+				price: "10",
+				fee: "0",
+			});
+			const { data } = z
+				.object({ data: z.object({ security: z.object({ id: z.string() }) }) })
+				.parse(trade);
+			await sendOwn("POST", `/api/securities/${data.security.id}/prices`, {
+				date: "2026-09-19",
+				price,
+			});
+			if (withdrawal !== null) {
+				await postOwn(account.id, { date: "2026-09-20", label: "Withdrawal", amount: withdrawal });
+			}
+
+			const links = [{ accountId: account.id }, { accountId: cash.id }];
+			const created = await create("Voyage", links);
+			expect(created.saved).toBe(marketValue);
+
+			const changed = await send(
+				"PUT",
+				`/api/goals/${created.id}`,
+				body("Voyage", links, {
+					progressBasis: "contributions",
+				}),
+			);
+			expect(changed.status).toBe(200);
+			expect(changed.body).toMatchObject({
+				data: { progressBasis: "contributions", saved, marketValue },
+			});
+		},
+	);
+
+	it("uses the same basis for annual pace and allocates each basis after earmarks", async () => {
+		const account = await savings("1 000", { type: "investment", subtype: "pea" });
+		await create("Earmark", [{ accountId: account.id, allocatedAmount: "200" }]);
+		await postOwn(account.id, { date: "2026-01-01", label: "Deposit", amount: "120" });
+		await sendOwn("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "1 600",
+		});
+		const links = [{ accountId: account.id }];
+		const created = await create("Voyage", links);
+		expect(created).toMatchObject({ saved: 140_000, pace: 5_000 });
+
+		const updated = await send(
+			"PUT",
+			`/api/goals/${created.id}`,
+			body("Voyage", links, {
+				progressBasis: "contributions",
+			}),
+		);
+		expect(updated.body).toMatchObject({
+			data: { progressBasis: "contributions", saved: 92_000, marketValue: 140_000, pace: 1_000 },
+		});
+	});
+
+	it("keeps the basis through link changes and locks it while a completion amount is frozen", async () => {
+		const invested = await savings("500", { type: "investment", subtype: "pea" });
+		const cash = await savings("1 000");
+		const links = [{ accountId: cash.id }];
+		const created = await create("Voyage", [{ accountId: invested.id }], {
+			progressBasis: "contributions",
+		});
+		const path = `/api/goals/${created.id}`;
+		const edited = await send("PUT", path, body("New name", links));
+		expect(edited.body).toMatchObject({ data: { progressBasis: "contributions", saved: 100_000 } });
+
+		await fire(created.id, "complete");
+		const patch = body("New name", links, { progressBasis: "balance" });
+		const locked = await rejection(patch, "PUT", path);
+		expect(locked.fields).toEqual([{ path: "progressBasis", code: "progress_basis_locked" }]);
+		await fire(created.id, "archive");
+		expect(await rejection(patch, "PUT", path)).toEqual(locked);
+		expect((await send("GET", path)).body).toMatchObject({
+			data: { saved: 100_000, progressBasis: "contributions" },
+		});
+		await fire(created.id, "restore");
+		expect((await send("PUT", path, patch)).body).toMatchObject({
+			data: { progressBasis: "balance" },
+		});
+	});
+});
+
 describe("goals", () => {
 	it("creates an active one-off goal in its first account's currency, and reads it back", async () => {
 		const account = await savings("1 500,00", { currency: "USD" });
@@ -1827,6 +1925,28 @@ describe("goal consumption", () => {
 			status: 200,
 		});
 		await refused(orphan.id, { amount: "10" }, "no_linked_account");
+	});
+
+	it("freezes net contributions and counts recorded spending once on completion", async () => {
+		const account = await savings("1 000", { type: "investment", subtype: "pea" });
+		await sendOwn("POST", `/api/accounts/${account.id}/snapshots`, {
+			date: "2026-09-20",
+			balance: "1 600",
+		});
+		const voyage = await create("Voyage", [{ accountId: account.id }], {
+			targetAmount: "2 000",
+			progressBasis: "contributions",
+		});
+		expect((await send("GET", `/api/goals/${voyage.id}`)).body).toMatchObject({
+			data: { saved: 100_000, marketValue: 160_000 },
+		});
+		expect(await consume(voyage.id, { amount: "200" })).toMatchObject({ status: 200 });
+
+		expect(await fire(voyage.id, "complete")).toMatchObject({
+			saved: 100_000,
+			consumedAmount: 20_000,
+			progressAmount: 120_000,
+		});
 	});
 
 	it("keeps spending when restored from a direct archive and when the source debit is deleted", async () => {
