@@ -1188,19 +1188,19 @@ describe("rules after a sync", () => {
 		await expect(categoryOf(smallForeign)).resolves.toBeNull();
 	});
 
-	it("lets the later of two matching rules win, and skips a disabled one", async () => {
+	it("lets the first enabled rule win even when a disabled rule is above it", async () => {
 		const account = await openChecking();
 		const groceries = await newCategory("Courses");
 		const leisure = await newCategory("Loisirs");
 		const other = await newCategory("Autre");
-		await newRule(groceries);
-		await newRule(leisure);
 		const disabled = await newRule(other);
 		await setRuleEnabled(deps(), disabled.id, { enabled: false });
+		await newRule(groceries);
+		await newRule(leisure);
 
 		const id = await addThenRun(account.id);
 
-		await expect(categoryOf(id)).resolves.toBe(leisure);
+		await expect(categoryOf(id)).resolves.toBe(groceries);
 	});
 
 	it("reaches only the lines dated on or after the start date", async () => {

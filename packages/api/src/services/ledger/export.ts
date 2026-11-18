@@ -321,6 +321,8 @@ export const EXPORTED_COLUMNS = {
 		id: rules.id,
 		name: rules.name,
 		enabled: rules.enabled,
+		position: rules.position,
+		stopProcessing: rules.stopProcessing,
 		effectiveDate: rules.effectiveDate,
 		createdAt: rules.createdAt,
 		updatedAt: rules.updatedAt,
@@ -863,7 +865,10 @@ export function exportedGoalAccounts(db: Reader) {
 /** Every rule in application order, with its conditions and actions in the form's order. */
 export async function exportedRules(db: Reader) {
 	const [ruleRows, conditionRows, actionRows] = await Promise.all([
-		db.select(EXPORTED_COLUMNS.rules).from(rules).orderBy(asc(rules.createdAt), asc(rules.id)),
+		db
+			.select(EXPORTED_COLUMNS.rules)
+			.from(rules)
+			.orderBy(asc(rules.position), asc(rules.createdAt), asc(rules.id)),
 		db
 			.select(EXPORTED_COLUMNS.rule_conditions)
 			.from(ruleConditions)

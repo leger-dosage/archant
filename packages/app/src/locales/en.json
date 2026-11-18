@@ -2914,7 +2914,7 @@
 	},
 	"rules": {
 		"title": "Rules",
-		"description": "After every sync or import, each enabled rule completes all the transactions it targets, older ones included: category, merchant, tag, name, activity label, exclusion or expected transfer. A new rule stays disabled until you confirm it should apply to existing transactions. Rules apply in the order they were created, whatever the list is sorted by, and each one sees what the previous ones changed. When two rules change the same field, the last one wins; a tag is added to the others. A field you edited by hand is never replaced.",
+		"description": "After every sync or import, each enabled rule completes all the transactions it targets, older ones included: category, merchant, tag, name, activity label, exclusion or expected transfer. A new rule stays disabled until you confirm it should apply to existing transactions. Rules apply in their saved order, whatever the list is sorted by, and each one sees what the previous ones changed. The first matching rule that sets a field takes priority. Tags are additive. A field you edited by hand is never replaced.",
 		"list": "Rules",
 		"prompt": {
 			"message": "Category changed to {{name}}",
@@ -3020,12 +3020,22 @@
 			"exclude_transaction": "Exclude",
 			"set_as_transfer_or_payment": "Transfer with an account"
 		},
+		"order": {
+			"title": "Execution order",
+			"description": "Rules run from top to bottom.",
+			"up": "Move {{name}} up",
+			"down": "Move {{name}} down",
+			"save": "Save order",
+			"saved": "Rule order saved."
+		},
 		"form": {
 			"addTitle": "Add rule",
 			"editTitle": "Edit rule",
 			"description": "After every sync or import, the rule applies to the transactions that meet all its conditions. With no condition, it applies to all of them. After saving, you can apply it to existing transactions.",
 			"name": "Name",
 			"namePlaceholder": "Optional",
+			"stopProcessing": "Stop processing",
+			"stopProcessingHint": "Skip later rules for transactions matched by this rule.",
 			"effectiveDate": "Starting from",
 			"effectiveDateHint": "Optional. The rule only touches transactions dated on or after this day.",
 			"conditions": "If",
@@ -3068,9 +3078,10 @@
 			"description_one": "You are about to apply this rule to {{count}} transaction that matches its criteria. A field you edited by hand is never replaced.",
 			"description_other": "You are about to apply this rule to {{count}} transactions that match its criteria. A field you edited by hand is never replaced.",
 			"confirm": "Confirm changes",
+			"withPredecessors": "This rule and the enabled rules above it affect {{rows}}. Manually edited fields stay locked.",
 			"allTitle": "Apply all rules",
 			"allDescription_one": "You are about to apply {{count}} rule affecting {{rows}}. A field you edited by hand is never replaced.",
-			"allDescription_other": "You are about to apply {{count}} rules affecting {{rows}}, in the order they were created. A field you edited by hand is never replaced.",
+			"allDescription_other": "You are about to apply {{count}} rules affecting {{rows}}, in their saved order. A field you edited by hand is never replaced.",
 			"uniqueRows_one": "{{count}} unique transaction",
 			"uniqueRows_other": "{{count}} unique transactions",
 			"allConfirm": "Confirm and apply all",
@@ -3786,6 +3797,7 @@
 		"SURE_IMPORT_INVALID": "The file changed or contains errors: nothing was imported. Upload it again.",
 		"CSV_IMPORT_INVALID": "The file changed or contains errors: nothing was imported. Upload it again.",
 		"IMPORT_PREVIEW_STALE": "The account changed since the preview. Check before importing.",
+		"RULE_ORDER_STALE": "The list of rules changed. Reopen the order and try again.",
 		"RULE_PREVIEW_STALE": "The transactions changed since the preview ({{changed}} to change now). Run the preview again before applying.",
 		"BULK_COUNT_STALE": "The selected transactions changed ({{count}} now). Check the selection before editing.",
 		"TRANSFER_FORM_STALE": "This transfer was already created with different details. Check your transactions before creating another.",

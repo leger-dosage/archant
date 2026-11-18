@@ -4166,3 +4166,25 @@ describe("loan terms", () => {
 		]);
 	});
 });
+
+it("preserves existing rule order by creation date and id on upgrade", async () => {
+	await migrateBefore(url, "0106_order_rules");
+	const previous = await createDb(url);
+
+	try {
+		await previous.run(
+			sql`insert into rules (id, created_at, updated_at) values ('b', 1, 0), ('c', 0, 2), ('a', 1, 1)`,
+		);
+	} finally {
+		previous.$client.close();
+	}
+
+	const database = await migrated();
+	await expect(
+		database.all(sql`select id, position, stop_processing from rules order by position`),
+	).resolves.toEqual([
+		{ id: "c", position: 0, stop_processing: 0 },
+		{ id: "a", position: 1, stop_processing: 0 },
+		{ id: "b", position: 2, stop_processing: 0 },
+	]);
+});
