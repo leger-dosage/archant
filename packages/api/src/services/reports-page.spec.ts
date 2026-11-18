@@ -12,7 +12,7 @@ import { categories } from "@archant/data/schema/categories";
 import { securityPrices } from "@archant/data/schema/securities";
 
 import { quantity as qty, tradePrice } from "../testing/decimals.ts";
-import { removeReportSnapshots, seedReportLock } from "../testing/ledger.ts";
+import { insertTransfer, removeReportSnapshots, seedReportLock } from "../testing/ledger.ts";
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { saveBudget, saveCategoryBudget } from "./budgets.ts";
@@ -20,8 +20,11 @@ import { createAccount } from "./ledger/accounts.ts";
 import { updateTransaction } from "./ledger/edits.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { ingest } from "./ledger/ingest.ts";
+import { oneByOne } from "./ledger/shared.ts";
+import { splitTransaction } from "./ledger/splits.ts";
 import { recordTrade } from "./ledger/trades.ts";
 import { getReportsCsv, getReportsPage } from "./reports-page.ts";
+import { createTag } from "./tags.ts";
 
 let temp: TempDatabase;
 const deps = () => ({ db: temp.db, timeZone: "Europe/Paris" });
@@ -59,7 +62,11 @@ async function book(
 	accountId: string,
 	date: string,
 	amount: number,
-	{ categoryId, pending = false }: { categoryId?: string; pending?: boolean } = {},
+	{
+		categoryId,
+		pending = false,
+		currency = "EUR",
+	}: { categoryId?: string; pending?: boolean; currency?: string } = {},
 ) {
 	const { created } = await ingest(
 		deps(),
@@ -70,7 +77,7 @@ async function book(
 					externalId: null,
 					date,
 					amount: toMinorUnits(amount),
-					currency: "EUR",
+					currency,
 					label: "CB",
 					reference: null,
 					notes: null,
@@ -126,6 +133,129 @@ describe("getReportsPage", () => {
 		});
 		expect(report.navigation).toMatchObject({ atLatest: true });
 		expect(report).toMatchObject({ hasTransactions: false, hasAccounts: false });
+	});
+
+	it("filters both periods and every transaction figure without changing household figures", async () => {
+		const checking = await account();
+		const categoryId = await category("Project");
+		await saveBudget(deps(), "2026-11", { budgetedSpending: "200", expectedIncome: "0" });
+		await saveCategoryBudget(deps(), "2026-11", categoryId, { budgetedSpending: "200" });
+		const brokerage = await account({ name: "Trading", type: "investment", subtype: "brokerage" });
+		const security = await insertSecurity(temp.db, {}, { held: false });
+		await recordTrade(
+			deps(),
+			brokerage,
+			{
+				side: "buy",
+				security: { source: "known", id: security },
+				date: "2026-11-05",
+				quantity: qty("1"),
+				price: tradePrice("40"),
+				fee: toMinorUnits(0),
+			},
+			{ origin: "user" },
+		);
+		const a = await createTag(deps(), { name: "House" });
+		const b = await createTag(deps(), { name: "Garden" });
+		const overlap = await book(checking, "2026-11-02", -8000, { categoryId });
+		const single = await book(checking, "2026-11-03", -2000, { categoryId });
+		const previous = await book(checking, "2026-10-15", -5000);
+		await book(checking, "2026-10-16", -9999);
+		await book(checking, "2026-11-04", -9999, { categoryId: await category("Unrelated") });
+		await oneByOne(
+			[
+				[overlap, [a.id, b.id]],
+				[single, [b.id]],
+				[previous, [a.id]],
+			] as const,
+			([id, tagIds]) => updateTransaction(deps(), id, { tagIds: [...tagIds] }, { origin: "user" }),
+		);
+		const unfiltered = await page();
+		const tag = [a.id, b.id];
+		const report = await page({ tag });
+
+		expect(report.summary).toMatchObject({
+			expenses: 10000,
+			expenseChange: 100,
+			budgetPercent: 100,
+		});
+		expect(report.summary.budgetPercent).toBe(unfiltered.summary.budgetPercent);
+		expect(report.trends).toMatchObject([{ expenses: 10000 }]);
+		expect(unfiltered.breakdown.expense).toContainEqual(
+			expect.objectContaining({ kind: "other_investments" }),
+		);
+		expect(report.biggestExpenses.map(({ id }) => id)).toEqual([overlap, single]);
+		expect(report.breakdown.expense).toMatchObject([{ categoryId, total: 10000, count: 2 }]);
+		expect(report.netWorth).toEqual(unfiltered.netWorth);
+		expect(report.investments).toEqual(unfiltered.investments);
+		expect(report.investmentFlows).toEqual(unfiltered.investmentFlows);
+		const csv = await getReportsCsv(
+			deps(),
+			{
+				periodType: "monthly",
+				startDate: undefined,
+				endDate: undefined,
+				tag,
+			},
+			{ userId: "missing", acceptLanguage: "en" },
+		);
+		expect(csv.body).toContain("Project");
+		expect(csv.body).not.toContain("Unrelated");
+	});
+
+	it("ranks split lines, one-time expenses and the outflow of an expense transfer by magnitude", async () => {
+		const checking = await account();
+		const savings = await account({ name: "Savings" });
+		const foreign = await account({ name: "Other currency", currency: "USD" });
+		const date = "2026-11-02";
+		const oneTime = await book(checking, date, -9000);
+		const parent = await book(checking, date, -10000);
+		const excluded = await book(checking, date, -50000);
+		const internal = await book(checking, date, -40000);
+		const incoming = await book(savings, date, 40001);
+		const card = await book(checking, date, -30000);
+		const cardIn = await book(savings, date, 30001);
+		const loan = await book(checking, date, 7000);
+		const loanIn = await book(savings, date, -7001);
+		const contribution = await book(checking, date, -5000);
+		const contributionIn = await book(savings, date, 5001);
+		await book(checking, date, 20000);
+		await book(foreign, date, -60000, { currency: "USD" });
+		await updateTransaction(deps(), oneTime, { oneTime: true }, { origin: "user" });
+		await updateTransaction(deps(), excluded, { excluded: true }, { origin: "user" });
+		const split = await splitTransaction(
+			deps(),
+			parent,
+			[
+				{ label: "A", amount: toMinorUnits(-8000), categoryId: null },
+				{ label: "B", amount: toMinorUnits(-2000), categoryId: null },
+			],
+			{ origin: "user" },
+		);
+		await oneByOne(
+			[
+				[internal, incoming, "internal_move"],
+				[card, cardIn, "credit_card_payment"],
+				[loan, loanIn, "loan_payment"],
+				[contribution, contributionIn, "investment_contribution"],
+			] as const,
+			([outflow, inflow, kind]) => insertTransfer(outflow, inflow, kind, temp.db),
+		);
+
+		const report = await page();
+		const [largeLine, smallLine] = report.biggestExpenses.filter(({ id }) =>
+			split.childIds.includes(id),
+		);
+		expect([largeLine?.label, smallLine?.label]).toEqual(["A", "B"]);
+		expect(
+			report.biggestExpenses.map(({ id, amount, oneTime: marked }) => [id, amount, marked]),
+		).toEqual([
+			[oneTime, 9000, true],
+			[largeLine?.id, 8000, false],
+			[loan, 7000, false],
+			[contribution, 5000, false],
+			[smallLine?.id, 2000, false],
+		]);
 	});
 
 	it("compares income and expenses with the period before, 0 % without a previous figure", async () => {

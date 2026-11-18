@@ -1053,6 +1053,7 @@ const reportsLayoutBody = z.object({
 	data: z.strictObject({
 		sectionOrder: z.array(z.string()),
 		collapsedSections: z.record(z.string(), z.boolean()),
+		biggestExpensesLimit: z.literal([5, 10, 25]),
 	}),
 });
 
@@ -1073,8 +1074,11 @@ describe("/api/reports/layout", () => {
 				"net_worth",
 				"investment_performance",
 				"investment_flows",
+				"biggest_expenses",
 			],
+			biggestExpensesLimit: 10,
 			collapsedSections: {
+				biggest_expenses: false,
 				net_worth: false,
 				trends_insights: false,
 				transactions_breakdown: false,
@@ -1083,7 +1087,10 @@ describe("/api/reports/layout", () => {
 			},
 		});
 
-		await ownRequest("PATCH", "/api/reports/layout", { collapsedSections: { net_worth: true } });
+		await ownRequest("PATCH", "/api/reports/layout", {
+			collapsedSections: { net_worth: true },
+			biggestExpensesLimit: 25,
+		});
 		await ownRequest("PATCH", "/api/reports/layout", {
 			sectionOrder: ["transactions_breakdown", "trends_insights", "net_worth"],
 		});
@@ -1096,8 +1103,11 @@ describe("/api/reports/layout", () => {
 				"net_worth",
 				"investment_performance",
 				"investment_flows",
+				"biggest_expenses",
 			],
+			biggestExpensesLimit: 25,
 			collapsedSections: {
+				biggest_expenses: false,
 				net_worth: true,
 				trends_insights: false,
 				transactions_breakdown: false,
@@ -1168,6 +1178,7 @@ describe("/api/reports/layout", () => {
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
 					collapsedSections: { investment_performance: true, investment_flows: true },
+					biggestExpensesLimit: 5,
 				}),
 			});
 			const exported = await guest().request("/api/reports/export");
@@ -1197,6 +1208,7 @@ it("accepts both investment section keys for administrator layout writes", async
 			"net_worth",
 			"trends_insights",
 			"transactions_breakdown",
+			"biggest_expenses",
 		],
 		collapsedSections: { investment_flows: true, investment_performance: true },
 	});

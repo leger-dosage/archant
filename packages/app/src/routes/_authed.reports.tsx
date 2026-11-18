@@ -13,6 +13,7 @@ import type { ReportsSection as ReportsSectionKey } from "@archant/data/reports-
 import { useDashboardSortable } from "@/components/DashboardWidget";
 import { Page } from "@/components/Page";
 import { ActivityBreakdown } from "@/components/reports/ActivityBreakdown";
+import { BiggestExpenses, BiggestExpensesLimitControl } from "@/components/reports/BiggestExpenses";
 import { InvestmentFlows } from "@/components/reports/InvestmentFlows";
 import { InvestmentPerformance } from "@/components/reports/InvestmentPerformance";
 import { ReportsEmptyState } from "@/components/reports/ReportsEmptyState";
@@ -20,6 +21,7 @@ import { ReportsNetWorth } from "@/components/reports/ReportsNetWorth";
 import { ReportsPeriodControls } from "@/components/reports/ReportsPeriodControls";
 import { ReportsSection } from "@/components/reports/ReportsSection";
 import { ReportsSummary } from "@/components/reports/ReportsSummary";
+import { ReportsTagFilter } from "@/components/reports/ReportsTagFilter";
 import { TrendsSection } from "@/components/reports/TrendsSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,8 +40,16 @@ export const Route = createFileRoute("/_authed/reports")({
 });
 
 /** The period the page shows, its dates written out, as the CSV and the print layout read it. */
-function periodSearch(period: ReportsPageData["period"]) {
-	return { periodType: period.type, startDate: period.from, endDate: period.to };
+function periodSearch({ period, tag }: ReportsPageData) {
+	return { periodType: period.type, startDate: period.from, endDate: period.to, tag };
+}
+
+function exportHref(data: ReportsPageData) {
+	const { tag, ...period } = periodSearch(data);
+	const query = new URLSearchParams(period);
+	tag?.forEach((id) => query.append("tag", id));
+
+	return `/api/reports/export?${query}`;
 }
 
 function ReportsPage() {
@@ -69,15 +79,11 @@ function ReportsPage() {
 
 	const sections = (page: ReportsPageData): Record<ReportsSectionKey, ReactNode> => ({
 		trends_insights: <TrendsSection data={page} />,
-		transactions_breakdown: (
-			<ActivityBreakdown
-				data={page}
-				csvHref={`/api/reports/export?${new URLSearchParams(periodSearch(page.period))}`}
-			/>
-		),
+		transactions_breakdown: <ActivityBreakdown data={page} csvHref={exportHref(page)} />,
 		net_worth: <ReportsNetWorth data={page} />,
 		investment_performance: <InvestmentPerformance data={page} />,
 		investment_flows: <InvestmentFlows data={page} />,
+		biggest_expenses: <BiggestExpenses data={page} limit={layout.biggestExpensesLimit} />,
 	});
 
 	return (
@@ -90,7 +96,7 @@ function ReportsPage() {
 						{/* Sure's print layout, in a tab of its own that prints itself. */}
 						<Link
 							to="/reports/print"
-							search={periodSearch(data.period)}
+							search={periodSearch(data)}
 							target="_blank"
 							rel="noopener"
 							aria-label={t("reports.printReport")}
@@ -102,6 +108,12 @@ function ReportsPage() {
 				)
 			}
 		>
+			<div className="mb-4">
+				<ReportsTagFilter
+					selected={search.tag}
+					onApply={(tag) => void navigate({ search: (previous) => ({ ...previous, tag }) })}
+				/>
+			</div>
 			{report.isPending && <Skeleton className="h-96 w-full rounded-xl" aria-hidden="true" />}
 
 			{report.isError && (
@@ -124,7 +136,9 @@ function ReportsPage() {
 						data={data}
 						hotkeysOff={sortable.grabbed !== null}
 						onCustomRange={(startDate, endDate) =>
-							void navigate({ search: { periodType: "custom", startDate, endDate } })
+							void navigate({
+								search: ({ tag }) => ({ periodType: "custom", startDate, endDate, tag }),
+							})
 						}
 					/>
 					{data.hasTransactions || data.investments.available ? (
@@ -153,19 +167,35 @@ function ReportsPage() {
 									}}
 								>
 									{order
-										.filter((key) =>
-											key === "investment_performance"
-												? data.investments.available
-												: key === "investment_flows"
-													? data.investmentFlows.available
-													: true,
-										)
+										.filter((key) => {
+											switch (key) {
+												case "investment_performance":
+													return data.investments.available;
+												case "investment_flows":
+													return data.investmentFlows.available;
+												case "biggest_expenses":
+													return data.biggestExpenses.length > 0;
+												default:
+													return true;
+											}
+										})
 										.map((key) => (
 											<ReportsSection
 												key={key}
 												sectionKey={key}
 												collapsed={layout.collapsedSections[key]}
 												editable={canWrite}
+												action={
+													canWrite &&
+													key === "biggest_expenses" && (
+														<BiggestExpensesLimitControl
+															limit={layout.biggestExpensesLimit}
+															onChange={(biggestExpensesLimit) =>
+																updateLayout.mutate({ biggestExpensesLimit })
+															}
+														/>
+													)
+												}
 												sortable={sortable}
 												onToggle={() =>
 													updateLayout.mutate({
