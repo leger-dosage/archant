@@ -3694,8 +3694,6 @@
 		"backupCodesTitle": "Codes de secours",
 		"backupCodesDescription": "Chaque code permet une seule connexion sans votre téléphone. Conservez-les en lieu sûr : ils ne seront plus affichés.",
 		"backupCodesDone": "J'ai conservé ces codes",
-		"regenerate": "Régénérer les codes de secours",
-		"regenerateHint": "Les anciens codes de secours cessent de fonctionner.",
 		"disable": "Désactiver la double authentification",
 		"disabled": "Double authentification désactivée."
 	},
