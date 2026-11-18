@@ -45,7 +45,7 @@ export function oneTimeTotp() {
 					handler: createAuthMiddleware(async (ctx) => {
 						const body = verifyTotpBodySchema.safeParse(ctx.body);
 						const session = await getSessionFromCtx(ctx);
-						const userId = session?.user.id ?? (await challengedUserId(ctx));
+						const userId = session?.user.id ?? (await pendingTwoFactor(ctx))?.userId ?? null;
 						const replayed =
 							body.success &&
 							userId !== null &&
@@ -97,7 +97,7 @@ export function oneTimeTotp() {
 type HookContext = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0];
 
 /** The user of the password step, read from its signed cookie as Better Auth does. */
-async function challengedUserId(ctx: HookContext): Promise<string | null> {
+export async function pendingTwoFactor(ctx: HookContext) {
 	const cookie = ctx.context.createAuthCookie("two_factor");
 	const identifier = await ctx.getSignedCookie(cookie.name, ctx.context.secret);
 
@@ -107,7 +107,9 @@ async function challengedUserId(ctx: HookContext): Promise<string | null> {
 
 	const verification = await ctx.context.internalAdapter.findVerificationValue(identifier);
 
-	return verification?.value ?? null;
+	return verification === null || verification.expiresAt <= new Date()
+		? null
+		: { identifier, userId: verification.value };
 }
 
 /**
@@ -153,7 +155,7 @@ async function claimStep(ctx: HookContext, userId: string, code: string): Promis
 }
 
 /** The step whose code this is, among those Better Auth accepts now. */
-async function matchingStep(secret: string, code: string): Promise<number | null> {
+export async function matchingStep(secret: string, code: string): Promise<number | null> {
 	const otp = createOTP(secret, { period: PERIOD_SECONDS, digits: DIGITS });
 	const now = Math.floor(Date.now() / (PERIOD_SECONDS * 1000));
 	const steps = WINDOW.map((offset) => now + offset);

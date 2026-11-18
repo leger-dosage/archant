@@ -66,7 +66,7 @@ test("the consent page tells a viewer only an administrator connects an assistan
 	await expect(page).toHaveURL(/\/sign-in\?/u);
 	await page.getByLabel("Adresse e-mail").fill(email);
 	await page.getByLabel("Mot de passe").fill(PASSWORD);
-	await page.getByRole("button", { name: "Se connecter" }).click();
+	await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 
 	await expect(page).toHaveURL(/\/oauth\/consent\?/u);
 	await expect(

@@ -15,7 +15,7 @@ async function passwordStep(page: Page, password: string = NEW_PASSWORD) {
 	await page.goto("/sign-in");
 	await page.getByLabel("Adresse e-mail").fill(ADMIN.email);
 	await page.getByLabel("Mot de passe").fill(password);
-	await page.getByRole("button", { name: "Se connecter" }).click();
+	await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 }
 
 async function codeStep(page: Page, code: string) {

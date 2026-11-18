@@ -36,7 +36,7 @@ for (const mode of ["light", "dark"] as const) {
 			await page.goto("/sign-in");
 
 			await expectOutsideShell(page, "Connexion", mode);
-			await expect(page.getByRole("button", { name: "Se connecter" })).toBeVisible();
+			await expect(page.getByRole("button", { name: "Se connecter", exact: true })).toBeVisible();
 		});
 
 		test("setup shows the logo above its box", async ({ page }) => {
