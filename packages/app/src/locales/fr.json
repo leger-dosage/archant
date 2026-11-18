@@ -3793,6 +3793,25 @@
 		"submit": "Modifier le mot de passe",
 		"changed": "Mot de passe modifié."
 	},
+	"passkeys": {
+		"delete": "Supprimer",
+		"title": "Clés d’accès et clés de sécurité",
+		"name": "Nom de la clé",
+		"code": "Code de l’application d’authentification",
+		"add": "Ajouter une clé",
+		"signIn": "Se connecter avec une clé d’accès",
+		"verify": "Utiliser une clé de sécurité",
+		"unnamed": "Clé de sécurité",
+		"addedAt": "Ajoutée le {{date}}",
+		"lastUsedAt": "Dernière utilisation : {{date}}",
+		"neverUsed": "jamais",
+		"removeTitle": "Supprimer « {{name}} » ?",
+		"removeDescription": "Cette clé ne permettra plus de se connecter à Archant.",
+		"failed": "La clé n’a pas pu être vérifiée.",
+		"invalidCode": "Le code est incorrect.",
+		"usedCode": "Ce code a déjà servi. Saisissez le suivant.",
+		"tooMany": "Trop de tentatives. Réessayez dans quelques instants."
+	},
 	"twoFactor": {
 		"title": "Double authentification",
 		"descriptionOff": "Désactivée. Activée, elle demande à chaque connexion, après le mot de passe, un code donné par une application d'authentification sur votre téléphone.",

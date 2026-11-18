@@ -3392,7 +3392,7 @@ describe("goals", () => {
 	});
 
 	it("preserves reserves, linked accounts and pledges when widening the month bound", async () => {
-		const before = await migratedBefore("0109_goal_target_months_precision");
+		const before = await migratedBefore("0110_goal_target_months_precision");
 		await insertAccount(before, "a1", "depository", "savings");
 		await insertGoal(before, "g1", { kind: "maintained" });
 		await before.run(

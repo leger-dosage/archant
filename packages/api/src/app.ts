@@ -473,6 +473,7 @@ export function createApp(defaults: AppDeps) {
 				"/api/auth/sign-in/email",
 				"/api/auth/two-factor/verify-totp",
 				"/api/auth/two-factor/verify-backup-code",
+				"/api/auth/passkey/sign-in",
 			],
 			deviceCookie(deps),
 		)
