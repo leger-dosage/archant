@@ -9,6 +9,7 @@ import { z } from "zod";
 
 import { monthSchema } from "@archant/api/schemas/reports";
 
+import { BudgetAvailableCash } from "@/components/BudgetAvailableCash";
 import { BUDGET_FILTERS, BudgetCategories } from "@/components/BudgetCategories";
 import { BudgetDonut } from "@/components/BudgetDonut";
 import { BudgetMonthPicker, BudgetOutOfRange } from "@/components/BudgetMonthPicker";
@@ -172,9 +173,9 @@ function BudgetMonthPage() {
 				</div>
 			)}
 
-			{data !== undefined &&
-				(data.setUp ? (
-					<>
+			{data !== undefined && (
+				<>
+					{data.setUp ? (
 						<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 							{data.allocated > (data.budgetedSpending ?? 0) ? (
 								<OverAllocation budget={data} />
@@ -183,18 +184,24 @@ function BudgetMonthPage() {
 							)}
 							<BudgetSummary budget={data} />
 						</div>
-						<LeftOutNotice accounts={data.leftOut} />
-						<BudgetCategories
-							budget={data}
-							filter={filter}
-							onFilterChange={(next) =>
-								void navigate({ search: { filter: next }, replace: true, resetScroll: false })
-							}
-						/>
-					</>
-				) : (
-					<NotSetUp budget={data} />
-				))}
+					) : (
+						<NotSetUp budget={data} />
+					)}
+					<BudgetAvailableCash />
+					{data.setUp && (
+						<>
+							<LeftOutNotice accounts={data.leftOut} />
+							<BudgetCategories
+								budget={data}
+								filter={filter}
+								onFilterChange={(next) =>
+									void navigate({ search: { filter: next }, replace: true, resetScroll: false })
+								}
+							/>
+						</>
+					)}
+				</>
+			)}
 		</Page>
 	);
 }

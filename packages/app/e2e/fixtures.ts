@@ -23,7 +23,10 @@ import type { GoalEvent, GoalKind, GoalTargetMode } from "@archant/data/goals";
 import { formatMoney, toMinorUnits } from "@archant/data/money";
 import type { SurePeriod } from "@archant/data/periods";
 import { DEFAULT_PERIOD } from "@archant/data/periods";
-import { DEFAULT_REPORTS_ORDER } from "@archant/data/reports-sections";
+import {
+	DEFAULT_BIGGEST_EXPENSES_LIMIT,
+	DEFAULT_REPORTS_ORDER,
+} from "@archant/data/reports-sections";
 import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
 
@@ -458,12 +461,14 @@ export function apiHelpers(request: APIRequestContext) {
 			const response = await request.patch("/api/reports/layout", {
 				data: {
 					sectionOrder: [...DEFAULT_REPORTS_ORDER],
+					biggestExpensesLimit: DEFAULT_BIGGEST_EXPENSES_LIMIT,
 					collapsedSections: {
 						net_worth: false,
 						trends_insights: false,
 						transactions_breakdown: false,
 						investment_performance: false,
 						investment_flows: false,
+						biggest_expenses: false,
 					},
 				} satisfies ReportsLayoutInput,
 			});
