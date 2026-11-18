@@ -392,6 +392,7 @@ export const LEFT_OUT = {
 	oauth_consents: SECRETS,
 	oauth_refresh_tokens: SECRETS,
 	oauth_resources: SECRETS,
+	passkeys: SECRETS,
 	rate_limits: "Sign-in throttling.",
 	recurring_transactions: {
 		labelKey: "The normalised label detection groups by, derived from the label again.",

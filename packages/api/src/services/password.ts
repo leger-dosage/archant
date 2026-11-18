@@ -1,5 +1,7 @@
 import type { Auth } from "./auth.ts";
 
+import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context";
+
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../schemas/setup.ts";
 
 /** Why a reset was refused, as a code the caller turns into its own words. */
@@ -50,23 +52,22 @@ export async function resetPassword(
 	}
 
 	const hash = await context.password.hash(newPassword);
-	await context.internalAdapter.updatePassword(found.user.id, hash);
-	await context.internalAdapter.deleteUserSessions(found.user.id);
-	// The plugin's field, which the core user type does not declare.
-	const wasEnabled = "twoFactorEnabled" in found.user && found.user.twoFactorEnabled === true;
+	return runWithTransaction(context.adapter, async () => {
+		const userId = found.user.id;
+		await context.internalAdapter.updatePassword(userId, hash);
+		const user = await context.internalAdapter.findUserById(userId);
+		const wasEnabled =
+			user !== null && "twoFactorEnabled" in user && user.twoFactorEnabled === true;
+		if (wasEnabled) {
+			await context.internalAdapter.updateUser(userId, { twoFactorEnabled: false });
+		}
 
-	// Off first: should the delete below fail, the user is left with a
-	// one-step sign-in, never with two-factor on and no secret to check.
-	if (wasEnabled) {
-		await context.internalAdapter.updateUser(found.user.id, { twoFactorEnabled: false });
-	}
+		const adapter = await getCurrentAdapter(context.adapter);
+		// The same write transaction revokes sessions and the enrolment's
+		// credentials, so a concurrent passkey sign-in cannot survive recovery.
+		await adapter.deleteMany({ model: "twoFactor", where: [{ field: "userId", value: userId }] });
+		await context.internalAdapter.deleteUserSessions(userId);
 
-	// The secret and the backup codes go with it: turning it on again starts
-	// from a new secret, scanned again.
-	await context.adapter.deleteMany({
-		model: "twoFactor",
-		where: [{ field: "userId", value: found.user.id }],
+		return { userId, twoFactorDisabled: wasEnabled };
 	});
-
-	return { userId: found.user.id, twoFactorDisabled: wasEnabled };
 }

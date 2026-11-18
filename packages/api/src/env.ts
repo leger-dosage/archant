@@ -109,6 +109,25 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return url.pathname === "/" && url.search === "" && url.hash === "";
 				}),
+			AUTH_PASSKEY_LOGIN_ENABLED: z
+				.enum(["true", "false"])
+				.default("true")
+				.transform((value) => value === "true"),
+			WEBAUTHN_RP_ID: z.hostname().toLowerCase().optional(),
+			WEBAUTHN_ALLOWED_ORIGINS: z
+				.string()
+				.optional()
+				.transform((value) => value?.split(",").map((origin) => origin.trim()))
+				.pipe(
+					z
+						.array(
+							z.url({ protocol: /^https?$/u }).refine((origin) => {
+								const url = new URL(origin);
+								return isHttpsOrLoopback(origin) && url.origin === origin;
+							}),
+						)
+						.optional(),
+				),
 			SMTP_ADDRESS: z.union([z.hostname(), z.ipv4(), z.ipv6()]).optional(),
 			SMTP_PORT: z.coerce.number().int().min(1).max(65_535).default(465),
 			SMTP_USERNAME: z.string().optional(),

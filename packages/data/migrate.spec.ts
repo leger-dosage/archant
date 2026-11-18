@@ -3392,7 +3392,7 @@ describe("goals", () => {
 	});
 
 	it("defaults existing goals to market value, preserving frozen amounts, links and pledges", async () => {
-		const before = await migratedBefore("0109_goal_progress_basis");
+		const before = await migratedBefore("0110_goal_progress_basis");
 		await insertAccount(before, "a1", "investment", "pea");
 		await insertGoal(before, "g1", { state: "archived" });
 		await before.run(sql`update goals set completed_amount = 45000, completed_at = 1790000000000`);
