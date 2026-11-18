@@ -1,11 +1,17 @@
 import type { CategoryIcon } from "../category-presets.ts";
-import type { GoalKind, GoalState, GoalTargetMode } from "../goals.ts";
+import type { GoalKind, GoalProgressBasis, GoalState, GoalTargetMode } from "../goals.ts";
 import type { CurrencyCode } from "../money.ts";
 
 import { sql } from "drizzle-orm";
 import { check, index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";
 
-import { GOAL_KINDS, GOAL_STATES, GOAL_TARGET_MODES, GOAL_TARGET_MONTHS_MAX } from "../goals.ts";
+import {
+	GOAL_KINDS,
+	GOAL_PROGRESS_BASES,
+	GOAL_STATES,
+	GOAL_TARGET_MODES,
+	GOAL_TARGET_MONTHS_MAX,
+} from "../goals.ts";
 import { accounts } from "./accounts.ts";
 import { inList } from "./check.ts";
 import { entries } from "./entries.ts";
@@ -36,6 +42,7 @@ export const goals = sqliteTable(
 		notes: text("notes"),
 		state: text("state").$type<GoalState>().notNull().default("active"),
 		kind: text("kind").$type<GoalKind>().notNull().default("one_off"),
+		progressBasis: text("progress_basis").$type<GoalProgressBasis>().notNull().default("balance"),
 		targetMode: text("target_mode").$type<GoalTargetMode>().notNull().default("fixed"),
 		/** How many months of expenses a reserve holds; set in that mode only. */
 		targetMonths: integer("target_months"),
@@ -55,6 +62,10 @@ export const goals = sqliteTable(
 		check("goals_target_amount_check", sql`${table.targetAmount} > 0`),
 		check("goals_state_check", sql`${table.state} in ${inList(GOAL_STATES)}`),
 		check("goals_kind_check", sql`${table.kind} in ${inList(GOAL_KINDS)}`),
+		check(
+			"goals_progress_basis_check",
+			sql`${table.progressBasis} in ${inList(GOAL_PROGRESS_BASES)}`,
+		),
 		check("goals_target_mode_check", sql`${table.targetMode} in ${inList(GOAL_TARGET_MODES)}`),
 		check(
 			"goals_target_months_check",

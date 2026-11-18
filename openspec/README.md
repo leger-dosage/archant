@@ -21,7 +21,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
-| 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
@@ -53,6 +52,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 36.7: [Sign in with a passkey](changes/archive/2026-11-18-sign-in-with-a-passkey/proposal.md).
 
 - Story 35.6: [Pledge a deposit toward a goal](changes/archive/2026-11-18-pledge-a-deposit-toward-a-goal/proposal.md).
+
+- Story 35.8: [Count contributions on an investment-backed goal](changes/archive/2026-11-18-count-contributions-on-an-investment-backed-goal/proposal.md).
 
 - Story 34.10: [Sure's layout under Archant's visual style](changes/archive/2026-11-18-sures-layout-under-archants-visual-style/proposal.md).
 

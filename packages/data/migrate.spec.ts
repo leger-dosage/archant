@@ -3463,6 +3463,52 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
+	it("defaults existing goals to market value, preserving frozen amounts, links and pledges", async () => {
+		const before = await migratedBefore("0112_goal_progress_basis");
+		await insertAccount(before, "a1", "investment", "pea");
+		await insertGoal(before, "g1", { state: "archived" });
+		await before.run(sql`update goals set completed_amount = 45000, completed_at = 1790000000000`);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
+		);
+		await before.run(
+			sql`insert into goal_pledges (id, goal_id, account_id, amount, currency, status, created_at, expires_at, matched_date) values ('p1', 'g1', 'a1', 10000, 'EUR', 'matched', 1790000000000, 1790604800000, '2026-09-21')`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select state, progress_basis, completed_amount, completed_at from goals`),
+		).resolves.toEqual([
+			{
+				state: "archived",
+				progress_basis: "balance",
+				completed_amount: 45_000,
+				completed_at: 1_790_000_000_000,
+			},
+		]);
+		await expect(database.all(sql`select * from goal_accounts`)).resolves.toEqual([
+			{ goal_id: "g1", account_id: "a1", allocated_amount: 30_000 },
+		]);
+		await expect(
+			database.all(
+				sql`select id, goal_id, account_id, amount, status, matched_date from goal_pledges`,
+			),
+		).resolves.toEqual([
+			{
+				id: "p1",
+				goal_id: "g1",
+				account_id: "a1",
+				amount: 10_000,
+				status: "matched",
+				matched_date: "2026-09-21",
+			},
+		]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+		await expect(database.run(sql`update goals set progress_basis = 'other'`)).rejects.toThrow();
+	});
+
 	it("holds a fixed target, or a reserve's months of expenses as a positive safe integer", async () => {
 		const database = await migrated();
 		await insertGoal(database, "g1");

@@ -6,7 +6,7 @@ A market swing never moves the goal, as Sure.
 
 ## What changes
 
-- Track investment-backed goal progress by contributions and show its market value separately.
+- Let the household choose how goals count progress. Default to current market value and show that value separately when the household chooses net contributions.
 
 ## Capabilities
 

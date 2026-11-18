@@ -55,6 +55,7 @@ function maxOf(a: bigint, b: bigint): bigint {
 const DAYS_PER_MONTH = 30;
 
 export const GOAL_PACE_DAYS = 90;
+export const GOAL_BALANCE_PACE_DAYS = 365;
 
 /** The chart begins at most 90 days ago and never before the accounts' earliest history. */
 export function goalHistoryStart(today: IsoDate, startDate: IsoDate | null): IsoDate {
