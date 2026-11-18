@@ -88,6 +88,8 @@ export const queryKeys = {
 		 * totals, and an id is a UUID, never « summary ».
 		 */
 		goalsSummary: ["accounts", "goals", "summary"] as const,
+		/** Both a balance and a goal allocation change the cash available beside the budget. */
+		budgetCash: ["accounts", "goals", "budget-cash"] as const,
 	},
 	/** The whole category list, one query: a household keeps a few dozen. */
 	categories: {

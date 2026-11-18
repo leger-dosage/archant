@@ -2237,6 +2237,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Available cash",
+			"description": "Alongside the plan above, outside its totals.",
+			"goals": "View goals",
+			"available": "Cash on hand",
+			"earmarked": "Already earmarked for goals",
+			"free": "Really free"
+		},
 		"title": "{{ofMonth}} budget",
 		"previous": "Previous month",
 		"next": "Next month",
