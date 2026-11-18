@@ -19,6 +19,7 @@ import { csrf } from "hono/csrf";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { z } from "zod";
 
 import type { Database } from "@archant/data/client";
@@ -75,6 +76,7 @@ import {
 	signDeviceCookie,
 } from "./services/device-cookie.ts";
 import { emailPasswordResetAvailable } from "./services/email-password-reset.ts";
+import { householdTimeZone } from "./services/settings.ts";
 import {
 	SIGN_IN_CEILING,
 	deviceCeiling,
@@ -363,7 +365,21 @@ function serveInterface(app: Hono<SessionEnv>, root: string) {
  * interface's fallback, which would otherwise answer an unknown API route with
  * the page.
  */
-export function createApp(deps: AppDeps) {
+export function createApp(defaults: AppDeps) {
+	// Mounted routes share their dependencies. Keep one zone per request so a
+	// preference edit cannot move the calendar day of work already in flight.
+	const requestZone = new AsyncLocalStorage<string>();
+	const deps: AppDeps = {
+		...defaults,
+		get timeZone() {
+			return requestZone.getStore() ?? defaults.timeZone;
+		},
+	};
+	const inHouseholdTimeZone = createMiddleware(async (_c, next) => {
+		const timeZone = await householdTimeZone(deps.db, defaults.timeZone);
+		await requestZone.run(timeZone, next);
+	});
+
 	// Assistants need HTTPS or loopback (`assistantsAvailable`); without them
 	// `/api/mcp` is the API's ordinary `404`.
 	const mcp = assistantsAvailable(deps.trustedOrigin) ? mcpHandler(deps) : null;
@@ -483,6 +499,7 @@ export function createApp(deps: AppDeps) {
 		// Before the day's sync and every route: a viewer's write is refused
 		// before anything reads it, and their reads still start the sync.
 		.use("/api/*", viewerReadOnly())
+		.use("/api/*", except(["/api/setup", "/api/health", "/api/sync"], inHouseholdTimeZone))
 		.use("/api/*", dailySync(deps))
 		.use("/api/*", dailyPrices(deps))
 		.use("/api/*", dailyRecurring(deps))

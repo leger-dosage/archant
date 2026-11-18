@@ -6,16 +6,9 @@ import { isAbsolute } from "node:path";
 import { z } from "zod";
 
 import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
+import { DEFAULT_TIME_ZONE, isTimeZone } from "@archant/data/household-preferences";
 
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
-
-function isTimeZone(value: string): boolean {
-	try {
-		return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions().timeZone !== "";
-	} catch {
-		return false;
-	}
-}
 
 /** Whether `url` is HTTPS, or plain HTTP to this machine's own loopback. */
 function isHttpsOrLoopback(url: string): boolean {
@@ -89,9 +82,8 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 			DATABASE_URL: z.string().min(1),
 			// A local file needs no token; a `libsql://` URL does.
 			DATABASE_AUTH_TOKEN: z.string().optional(),
-			// Decides which calendar day "today" is, so a balance written at 00:30
-			// in Paris lands on the right date whatever the server's clock zone.
-			APP_TIMEZONE: z.string().refine(isTimeZone).default("Europe/Paris"),
+			// Legacy default used while the household has no saved zone.
+			APP_TIMEZONE: z.string().refine(isTimeZone).default(DEFAULT_TIME_ZONE),
 			LOG_LEVEL: z.enum(LOG_LEVELS).default("info"),
 			// Also read by packages/app/vite.config.ts as its proxy target: one
 			// variable names the API's port in both processes, so they cannot drift.
