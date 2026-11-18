@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 Update `keyboard.spec.ts` to check explicit save and focus restoration. Cover Escape with and without a settings dialog and a direct settings visit. Run the existing account-picker and report keyboard coverage.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
