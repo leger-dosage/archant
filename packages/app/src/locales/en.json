@@ -2359,6 +2359,9 @@
 			"budgetedLabel": "Budgeted: ",
 			"leftLabel": "Left: ",
 			"overByLabel": "Over by: ",
+			"billsReserved": "{{amount}} reserved for bills",
+			"billsUnconvertible_one": "1 bill is not reserved because no exchange rate is available",
+			"billsUnconvertible_other": "{{count}} bills are not reserved because no exchange rate is available",
 			"shared": "Shared",
 			"empty": "No category has a budget or spending this month."
 		},

@@ -2359,6 +2359,9 @@
 			"budgetedLabel": "Budgété : ",
 			"leftLabel": "Reste : ",
 			"overByLabel": "Dépassement : ",
+			"billsReserved": "{{amount}} réservés par des factures",
+			"billsUnconvertible_one": "1 facture n'est pas réservée, aucun taux de change disponible",
+			"billsUnconvertible_other": "{{count}} factures ne sont pas réservées, aucun taux de change disponible",
 			"shared": "Partagé",
 			"empty": "Aucune catégorie n'a de budget ni de dépense ce mois-ci."
 		},
