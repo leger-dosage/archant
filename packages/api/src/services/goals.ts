@@ -24,17 +24,18 @@ import { minDate, today } from "../domain/dates.ts";
 import {
 	backingShares,
 	compareGoals,
+	goalHistoryStart,
 	goalProgress,
 	goalSeries,
 	goalsSummary,
 	monthsOfExpenses,
-	paceStart,
 	targetAsRead,
 } from "../domain/goals.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { accountPaces } from "./ledger/goal-pace.ts";
 import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -46,10 +47,7 @@ type GoalAccountShare = {
 	currency: string;
 	/** The account's balance at the end of today. */
 	balance: MinorUnits;
-	/**
-	 * `false` once deactivated: it then backs nothing, left out of the goal as
-	 * it is out of its group's total, and the dialog no longer offers it.
-	 */
+	/** Inactive accounts still back their existing goals. */
 	active: boolean;
 	/** The fixed amount asked for, `null` for the whole balance. */
 	allocatedAmount: MinorUnits | null;
@@ -92,17 +90,6 @@ const notFound = () => new AppError("NOT_FOUND", "No goal has this id.");
 const byName = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
 
 const RELEASED: readonly GoalState[] = RELEASED_GOAL_STATES;
-
-/** An account's balance today, and on the day its 90-day pace starts from (AD-8). */
-async function accountFigures(deps: ServiceDeps, accountId: string, date: IsoDate) {
-	const [now, startDate] = await Promise.all([
-		balanceOn(deps, accountId, date),
-		historyStartOf(deps.db, accountId, null),
-	]);
-	const before = await balanceOn(deps, accountId, paceStart(date, startDate));
-
-	return { now: now?.amount ?? toMinorUnits(0), before: before?.amount ?? toMinorUnits(0) };
-}
 
 /**
  * Every goal, every link with its account, and, by account, the links of the
@@ -186,30 +173,30 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 			: null,
 	};
 	const accountIds = [...new Set(linkRows.map((row) => row.accountId))];
-	const figures = new Map(
+	const balances = new Map(
 		await Promise.all(
-			accountIds.map(async (id) => [id, await accountFigures(deps, id, date)] as const),
+			accountIds.map(
+				async (id) => [id, (await balanceOn(deps, id, date))?.amount ?? toMinorUnits(0)] as const,
+			),
 		),
 	);
+	const paces = await accountPaces(deps, balances, date);
 
 	return goalRows
 		.map((goal): GoalSummary => {
 			const links = linkRows.filter((row) => row.goalId === goal.id);
 			const shares = links.map((row): GoalAccountShare => {
-				const { now } = figures.get(row.accountId) ?? { now: toMinorUnits(0) };
+				const balance = balances.get(row.accountId) ?? toMinorUnits(0);
 
 				return {
 					accountId: row.accountId,
 					name: row.name,
 					type: row.type,
 					currency: row.currency,
-					balance: now,
+					balance,
 					active: row.active,
 					allocatedAmount: linkOf(row).allocatedAmount,
-					// A deactivated account backs nothing, as it counts in no total.
-					share: row.active
-						? (backingShares(now, competing(row)).get(goal.id) ?? toMinorUnits(0))
-						: toMinorUnits(0),
+					share: backingShares(balance, competing(row)).get(goal.id) ?? toMinorUnits(0),
 				};
 			});
 			const { targetAmount, monthlyExpenses: median } = targetAsRead(
@@ -224,7 +211,7 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 				),
 				targetDate: goal.targetDate,
 				today: date,
-				accounts: links.flatMap((row) => (row.active ? (figures.get(row.accountId) ?? []) : [])),
+				accounts: links.map((row) => paces.get(row.accountId)),
 				completed: goal.state === "completed",
 			});
 
@@ -270,12 +257,7 @@ export async function getGoalsSummary(deps: ServiceDeps) {
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
 
-/**
- * What a goal had saved each day of its chart, as Sure's projection panel's
- * `balance_series_values`: from 90 days ago, or from the earliest history
- * start of its active accounts if later, to today, each day its share of each active
- * account's balance under today's links (AD-8). Reads only.
- */
+/** Whole linked balances over the last 90 days, scaled to today's backing (AD-8). Reads only. */
 export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<GoalHistory> {
 	const date = today(deps.timeZone);
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
@@ -285,24 +267,29 @@ export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<Goa
 		throw notFound();
 	}
 
-	const links = linkRows.filter((row) => row.goalId === id && row.active);
+	const links = linkRows.filter((row) => row.goalId === id);
 	const starts = await Promise.all(
 		links.map(async (row) => historyStartOf(deps.db, row.accountId, null)),
 	);
 	const opened = starts.filter((start) => start !== null);
-	const from = paceStart(date, opened.length === 0 ? null : opened.reduce(minDate));
+	const from = goalHistoryStart(date, opened.length === 0 ? null : opened.reduce(minDate));
 	const accountsSeries = await Promise.all(
-		links.map(async (row) => ({
-			balances: await balancesBetween(deps, row.accountId, from, date),
-			links: competing(row),
-		})),
+		links.map(async (row) => balancesBetween(deps, row.accountId, from, date)),
+	);
+	const saved = toMinorUnits(
+		goal.completedAmount ??
+			links.reduce((total, row, index) => {
+				const balance = accountsSeries[index]?.at(-1)?.balance ?? toMinorUnits(0);
+
+				return total + (backingShares(balance, competing(row)).get(id) ?? 0);
+			}, 0),
 	);
 
 	return {
 		currency: goal.currency,
 		from,
 		to: date,
-		points: goalSeries({ goalId: id, from, to: date, accounts: accountsSeries }),
+		points: goalSeries({ from, to: date, saved, accounts: accountsSeries }),
 	};
 }
 
@@ -408,7 +395,7 @@ async function wholeTakenElsewhere(
 
 /**
  * Refuses a link to an account that cannot back the goal, as Sure's
- * validations: unknown, inactive or neither a depository nor an investment
+ * validations: unknown, newly linked while inactive or neither a depository nor an investment
  * account, held in another currency, or taken whole by another goal that
  * holds its money, which two whole-balance links on one account would count
  * twice. A whole-balance link the goal already had is not checked again, as
@@ -424,7 +411,7 @@ async function assertFundable(
 	links: GoalRequest["accounts"],
 ): Promise<void> {
 	const ids = links.map((link) => link.accountId);
-	const [rows, takenWhole, ownWhole] = await Promise.all([
+	const [rows, takenWhole, ownLinks] = await Promise.all([
 		db
 			.select({
 				id: accounts.id,
@@ -438,16 +425,22 @@ async function assertFundable(
 		goalId === null
 			? []
 			: db
-					.select({ accountId: goalAccounts.accountId })
+					.select({
+						accountId: goalAccounts.accountId,
+						allocatedAmount: goalAccounts.allocatedAmount,
+					})
 					.from(goalAccounts)
-					.where(and(eq(goalAccounts.goalId, goalId), isNull(goalAccounts.allocatedAmount))),
+					.where(eq(goalAccounts.goalId, goalId)),
 	]);
 	const found = new Map(rows.map((row) => [row.id, row]));
-	const kept = new Set(ownWhole.map((row) => row.accountId));
+	const kept = new Map(ownLinks.map((row) => [row.accountId, row.allocatedAmount]));
 	const fields = links.flatMap((link, index): FieldError[] => {
 		const account = found.get(link.accountId);
 
-		if (account === undefined || !canBackGoal(account)) {
+		if (
+			account === undefined ||
+			!canBackGoal({ ...account, active: account.active || kept.has(link.accountId) })
+		) {
 			return [{ path: `accounts.${index}.accountId`, code: "not_fundable" }];
 		}
 
@@ -458,7 +451,7 @@ async function assertFundable(
 		if (
 			link.allocatedAmount === null &&
 			takenWhole.has(link.accountId) &&
-			!kept.has(link.accountId)
+			kept.get(link.accountId) !== null
 		) {
 			return [{ path: `accounts.${index}.allocatedAmount`, code: "whole_balance_taken" }];
 		}

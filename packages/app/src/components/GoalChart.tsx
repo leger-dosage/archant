@@ -41,6 +41,7 @@ const HEIGHT = CHART_HEIGHTS[256];
 const LONG_RANGE_DAYS = 200;
 
 const DAY_MS = 86_400_000;
+const HUNDREDTHS_OF_DAYS_PER_PROJECTION_MONTH = 3044n;
 
 /** A day on the axis: milliseconds at UTC midnight, so the line to a far date keeps its slope. */
 const atMidnight = (iso: string) => Date.parse(`${iso}T00:00:00Z`);
@@ -49,24 +50,27 @@ const isoOf = (milliseconds: number) => new Date(milliseconds).toISOString().sli
 
 type Point = { day: number; date: string; saved?: MinorUnits; projection?: MinorUnits };
 
-/**
- * Where the line to the target goes, for an active goal with a date ahead
- * and something left; `null` otherwise. A paused goal has stopped saving.
- */
+/** Sure's projection end, using 30.44 days per month and never below today's backing. */
 function aheadOf(goal: GoalData, history: GoalHistoryData) {
-	return goal.state === "active" &&
-		goal.targetDate !== null &&
-		goal.targetDate > history.to &&
-		goal.remaining > 0
-		? { date: goal.targetDate, target: goal.targetAmount, monthly: goal.monthlyNeeded }
-		: null;
+	if (
+		goal.state !== "active" ||
+		goal.targetDate === null ||
+		goal.targetDate <= history.to ||
+		goal.remaining === 0 ||
+		goal.pace === null
+	) {
+		return null;
+	}
+
+	const days = (atMidnight(goal.targetDate) - atMidnight(history.to)) / DAY_MS;
+	const month = HUNDREDTHS_OF_DAYS_PER_PROJECTION_MONTH;
+	const growth = (BigInt(Math.max(goal.pace, 0)) * BigInt(days) * 100n + month / 2n) / month;
+	// A date far enough ahead can take a valid pace beyond the chart's integer range.
+	const amount = toMinorUnits(Math.min(goal.saved + Number(growth), Number.MAX_SAFE_INTEGER));
+
+	return { date: goal.targetDate, amount };
 }
 
-/**
- * The days drawn: what was saved each day, then, for an active goal with a
- * date ahead and something left, a line from today's amount to the target on
- * its date, as Sure's projection panel. A paused goal has stopped saving.
- */
 function pointsOf(goal: GoalData, history: GoalHistoryData): Point[] {
 	const points: Point[] = history.points.map((point) => ({
 		day: atMidnight(point.date),
@@ -82,33 +86,34 @@ function pointsOf(goal: GoalData, history: GoalHistoryData): Point[] {
 
 	return [
 		...points.slice(0, -1),
-		{ ...last, projection: last.saved ?? toMinorUnits(0) },
-		{ day: atMidnight(ahead.date), date: ahead.date, projection: ahead.target },
+		{ ...last, projection: goal.saved },
+		{ day: atMidnight(ahead.date), date: ahead.date, projection: ahead.amount },
 	];
 }
 
 function Summary({ goal, history }: { goal: GoalData; history: GoalHistoryData }) {
 	const { t } = useTranslation();
 	const first = history.points.at(0)?.saved ?? toMinorUnits(0);
-	const last = history.points.at(-1)?.saved ?? toMinorUnits(0);
+	const saved = goal.saved;
 	const money = (amount: MinorUnits) => formatMoney({ amount, currency: goal.currency });
-	// The line to the target, in words: what to put aside each month to reach it on its date.
 	const ahead = aheadOf(goal, history);
 
 	return (
 		<p className="text-sm text-muted-foreground">
 			{t("goals.chart.summary", {
-				saved: money(last),
-				change: formatSignedMoney(toMinorUnits(last - first), goal.currency),
+				saved: money(saved),
+				change: formatSignedMoney(toMinorUnits(saved - first), goal.currency),
 				from: formatShortDate(history.from),
 				target: money(goal.targetAmount),
 			})}
 			{ahead !== null &&
-				ahead.monthly !== null &&
 				` ${t("goals.chart.projection", {
 					date: formatShortDate(ahead.date),
-					monthly: money(ahead.monthly),
+					amount: money(ahead.amount),
 				})}`}
+			{goal.status === "pace_unknown" &&
+				goal.state === "active" &&
+				` ${t("goals.chart.paceUnknown")}`}
 		</p>
 	);
 }
@@ -226,17 +231,19 @@ function Chart({ goal, history }: { goal: GoalData; history: GoalHistoryData }) 
 					activeDot={{ r: 4 }}
 					isAnimationActive={false}
 				/>
-				<Line
-					dataKey="projection"
-					type="linear"
-					stroke="var(--color-projection)"
-					strokeWidth={1.5}
-					strokeDasharray="3 3"
-					dot={false}
-					activeDot={false}
-					connectNulls
-					isAnimationActive={false}
-				/>
+				{projections.length > 0 && (
+					<Line
+						dataKey="projection"
+						type="linear"
+						stroke="var(--color-projection)"
+						strokeWidth={1.5}
+						strokeDasharray="3 3"
+						dot={false}
+						activeDot={false}
+						connectNulls
+						isAnimationActive={false}
+					/>
+				)}
 			</ComposedChart>
 		</ChartContainer>
 	);
@@ -282,7 +289,7 @@ function DataTable({
 /**
  * A goal's chart, as Sure's projection panel: what it saved each day over
  * its last 90 days, a dashed line at its target and, with a date ahead and
- * something left, the line from today's amount to the target on its date. A
+ * measured pace, the projected amount on its target date. A
  * sentence above says it in words, and the days read as a table on demand
  * (EXPERIENCE.md, accessibility floor).
  */
@@ -297,6 +304,16 @@ export function GoalChart({
 	const [showTable, setShowTable] = useState(false);
 	const tableId = useId();
 	const data = history.data;
+	// The line meets today's backing, even when another linked account is overdrawn.
+	const displayedHistory =
+		data === undefined
+			? undefined
+			: {
+					...data,
+					points: data.points.map((point) =>
+						point.date === data.to ? { ...point, saved: goal.saved } : point,
+					),
+				};
 
 	return (
 		<div className="flex flex-col gap-3 p-4">
@@ -311,13 +328,13 @@ export function GoalChart({
 				</div>
 			)}
 
-			{data !== undefined && (
+			{displayedHistory !== undefined && (
 				<>
-					<Summary goal={goal} history={data} />
+					<Summary goal={goal} history={displayedHistory} />
 					{showTable ? (
-						<DataTable goal={goal} history={data} id={tableId} />
+						<DataTable goal={goal} history={displayedHistory} id={tableId} />
 					) : (
-						<Chart goal={goal} history={data} />
+						<Chart goal={goal} history={displayedHistory} />
 					)}
 					<div>
 						<Button

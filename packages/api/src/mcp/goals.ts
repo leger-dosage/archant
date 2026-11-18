@@ -64,7 +64,9 @@ const goalOutput = z.object({
 	monthly_target_amount: formatted("What to put aside each month to reach the target by its date")
 		.nullable()
 		.describe("null without a date, and for a reserve."),
-	pace: formatted("Its accounts' monthly change over the last 90 days"),
+	pace: formatted("Monthly pace across its linked accounts")
+		.nullable()
+		.describe("Null when the pace cannot be measured."),
 	earmarks: z
 		.record(z.string(), z.string())
 		.describe(
@@ -96,7 +98,7 @@ function goalOf(goal: GoalSummary, trustedOrigin: string): z.input<typeof goalOu
 		current_balance: money(goal.saved),
 		remaining_amount: money(goal.remaining),
 		monthly_target_amount: goal.monthlyNeeded === null ? null : money(goal.monthlyNeeded),
-		pace: money(goal.pace),
+		pace: goal.pace === null ? null : money(goal.pace),
 		earmarks: Object.fromEntries(
 			goal.accounts.flatMap((account) =>
 				account.allocatedAmount === null ? [] : [[account.name, money(account.allocatedAmount)]],
