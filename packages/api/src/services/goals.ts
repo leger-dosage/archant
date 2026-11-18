@@ -1,7 +1,7 @@
 import type { IsoDate } from "../domain/dates.ts";
 import type { GoalLink, GoalProgress, SavedPoint } from "../domain/goals.ts";
 import type { FieldError } from "../lib/errors.ts";
-import type { GoalInput, GoalRequest, GoalTarget } from "../schemas/goals.ts";
+import type { GoalInput, GoalRequest, GoalSpend, GoalTarget } from "../schemas/goals.ts";
 import type { ServiceDeps } from "./deps.ts";
 import type { GoalPledge } from "./goal-pledges.ts";
 
@@ -12,7 +12,7 @@ import type { CategoryIcon } from "@archant/data/category-presets";
 import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
 import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
-import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
+import { isCurrencyCode, parseAmount, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
@@ -32,6 +32,7 @@ import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { readGoalPledges } from "./goal-pledges.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { claimGoalOutflow, listGoalOutflows } from "./ledger/goal-outflows.ts";
 import { accountPaces, goalContributionWindows } from "./ledger/goal-pace.ts";
 import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -214,6 +215,7 @@ export async function listGoals(
 			const progress = goalProgress({
 				kind: goal.kind,
 				target: targetAmount,
+				consumedAmount: toMinorUnits(goal.consumedAmount),
 				saved: toMinorUnits(
 					goal.completedAmount ?? shares.reduce((sum, account) => sum + account.share, 0),
 				),
@@ -689,6 +691,14 @@ export async function updateGoal(
 				goal.target,
 				unchanged ? toMinorUnits(existing.targetAmount) : null,
 			);
+			if (targetAmount < existing.consumedAmount) {
+				throw fieldError("targetAmount", "below_consumed");
+			}
+
+			if (existing.consumedAmount > 0 && goal.kind === "maintained") {
+				throw fieldError("kind", "kind_locked_once_consumed");
+			}
+
 			await tx
 				.update(goals)
 				.set({
@@ -747,6 +757,23 @@ async function assertWholeAccountsFree(db: Db, goalId: string): Promise<void> {
 	}
 }
 
+/** Read just the linked balances under the write lock; pace is not part of the snapshot. */
+async function completionBacking(deps: ServiceDeps, id: string): Promise<MinorUnits> {
+	const { linkRows, competing } = await loadGoals(deps);
+	const date = today(deps.timeZone);
+	const shares = await Promise.all(
+		linkRows
+			.filter((row) => row.goalId === id)
+			.map(async (row) => {
+				const balance = (await balanceOn(deps, row.accountId, date))?.amount ?? toMinorUnits(0);
+
+				return backingShares(balance, competing(row)).get(id) ?? 0;
+			}),
+	);
+
+	return toMinorUnits(shares.reduce<number>((total, share) => total + share, 0));
+}
+
 /**
  * Moves a goal through one of Sure's events, then returns it with its
  * figures. Completing freezes what it saved and when; becoming active again
@@ -758,15 +785,10 @@ export async function transitionGoal(
 	id: string,
 	event: GoalEvent,
 ): Promise<GoalSummary> {
-	// Read before the write lock, which the balance reads do not run under:
-	// the transaction rechecks the state, and one household's single writer
-	// leaves a balance moving in between harmless.
-	const frozen = event === "complete" ? (await getGoal(deps, id)).saved : null;
-
 	await deps.db.transaction(
 		async (tx) => {
 			const existing = await tx
-				.select({ state: goals.state, kind: goals.kind })
+				.select({ state: goals.state, kind: goals.kind, completedAmount: goals.completedAmount })
 				.from(goals)
 				.where(eq(goals.id, id))
 				.get();
@@ -790,6 +812,8 @@ export async function transitionGoal(
 				await assertWholeAccountsFree(tx, id);
 			}
 
+			// A spend committed before completion must be part of the frozen figures.
+			const frozen = next === "completed" ? await completionBacking({ ...deps, db: tx }, id) : null;
 			const now = Date.now();
 
 			await tx
@@ -799,6 +823,138 @@ export async function transitionGoal(
 					updatedAt: now,
 					...(next === "completed" ? { completedAmount: frozen, completedAt: now } : {}),
 					...(thawed ? { completedAmount: null, completedAt: null } : {}),
+					...(thawed && existing.completedAmount !== null ? { consumedAmount: 0 } : {}),
+				})
+				.where(eq(goals.id, id));
+		},
+		{ behavior: "immediate" },
+	);
+
+	return getGoal(deps, id);
+}
+
+const SPEND_REFUSALS = {
+	non_positive: "Enter an amount greater than zero.",
+	maintained: "A reserve is drawn down and refilled.",
+	not_active: "This goal is no longer active.",
+	no_linked_account: "This goal has no funding account left.",
+	account_required: "Choose which account the money came from.",
+	account_not_linked: "This account does not fund this goal.",
+	exceeds_target: "This is more than the goal was meant to save.",
+	exceeds_earmark: "This is more than the goal set aside in this account.",
+} as const;
+
+function spendRefused(reason: keyof typeof SPEND_REFUSALS) {
+	return new AppError("GOAL_SPEND_REFUSED", SPEND_REFUSALS[reason], undefined, { reason });
+}
+
+export async function getGoalOutflows(deps: ServiceDeps, id: string) {
+	const goal = await deps.db.select().from(goals).where(eq(goals.id, id)).get();
+
+	if (goal === undefined) {
+		throw notFound();
+	}
+
+	if (goal.kind !== "one_off" || goal.state !== "active") {
+		return [];
+	}
+
+	const links = await deps.db
+		.select({ accountId: goalAccounts.accountId })
+		.from(goalAccounts)
+		.where(eq(goalAccounts.goalId, id));
+
+	return listGoalOutflows(deps.db, {
+		accountIds: links.map((link) => link.accountId),
+		currency: await currencyCode(deps.db, goal.currency),
+		date: today(deps.timeZone),
+	});
+}
+
+export async function spendGoal(deps: ServiceDeps, id: string, input: GoalSpend) {
+	await deps.db.transaction(
+		async (tx) => {
+			const { goalRows, linkRows, competing } = await loadGoals({ ...deps, db: tx });
+			const goal = goalRows.find((row) => row.id === id);
+
+			if (goal === undefined) {
+				throw notFound();
+			}
+
+			if (goal.kind === "maintained") {
+				throw spendRefused("maintained");
+			}
+
+			if (goal.state !== "active") {
+				throw spendRefused("not_active");
+			}
+
+			const links = linkRows.filter((row) => row.goalId === id);
+			const currency = await currencyCode(tx, goal.currency);
+			const date = today(deps.timeZone);
+
+			if (links.length === 0) {
+				throw spendRefused("no_linked_account");
+			}
+
+			const { accountId, amount } =
+				"entryId" in input
+					? await claimGoalOutflow(
+							tx,
+							{ accountIds: links.map((row) => row.accountId), currency, date },
+							input.entryId,
+							id,
+						)
+					: { accountId: input.accountId, amount: parseAmount(input.amount, currency) };
+
+			if (amount === null || amount <= 0) {
+				throw spendRefused("non_positive");
+			}
+
+			if (accountId === undefined && links.length > 1) {
+				throw spendRefused("account_required");
+			}
+
+			const link =
+				links.find((row) => row.accountId === accountId) ??
+				(accountId === undefined ? links[0] : undefined);
+
+			if (link === undefined) {
+				throw spendRefused("account_not_linked");
+			}
+
+			const stillNeeded = goal.targetAmount - goal.consumedAmount - amount;
+
+			if (stillNeeded < 0) {
+				throw spendRefused("exceeds_target");
+			}
+
+			const balance =
+				link.allocatedAmount === null
+					? await balanceOn({ ...deps, db: tx }, link.accountId, date)
+					: null;
+			const backed =
+				link.allocatedAmount ??
+				backingShares(balance?.amount ?? toMinorUnits(0), competing(link)).get(id) ??
+				0;
+
+			if (amount > backed) {
+				throw spendRefused("exceeds_earmark");
+			}
+
+			// The debit may already be reflected in a whole balance. Capping it at
+			// what is left to fund avoids deducting the debit twice.
+			const allocatedAmount =
+				link.allocatedAmount === null ? Math.min(backed, stillNeeded) : backed - amount;
+			await tx
+				.update(goalAccounts)
+				.set({ allocatedAmount })
+				.where(and(eq(goalAccounts.goalId, id), eq(goalAccounts.accountId, link.accountId)));
+			await tx
+				.update(goals)
+				.set({
+					consumedAmount: goal.consumedAmount + amount,
+					updatedAt: Date.now(),
 				})
 				.where(eq(goals.id, id));
 		},

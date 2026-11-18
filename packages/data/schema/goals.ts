@@ -40,6 +40,7 @@ export const goals = sqliteTable(
 		targetMode: text("target_mode").$type<GoalTargetMode>().notNull().default("fixed"),
 		/** How many months of expenses a reserve holds; set in that mode only. */
 		targetMonths: integer("target_months"),
+		consumedAmount: integer("consumed_amount").notNull().default(0),
 		/**
 		 * What the goal had saved when it was completed, in minor units, and
 		 * when, in epoch milliseconds, as Sure's: a closed goal reports what it

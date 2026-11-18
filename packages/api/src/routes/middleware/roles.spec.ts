@@ -66,6 +66,7 @@ const ADMIN_READS = [
 const WRITER_READS = {
 	"/api/securities": "?q=MC",
 	"/api/transactions/x/rule-prompt": "",
+	"/api/goals/x/outflows": "",
 };
 
 const ADMIN_WRITE_GROUPS = [
@@ -194,6 +195,7 @@ describe("a guest's writes", () => {
 				"PUT /api/goals/x",
 				"DELETE /api/goals/x",
 				"POST /api/goals/x/x",
+				"POST /api/goals/x/consume",
 				"PUT /api/prices/settings",
 				"POST /api/prices/update",
 				"POST /api/accounts/x/trades",
@@ -464,8 +466,10 @@ describe("a guest's reads", () => {
 		"allows a member to read %s for editing",
 		async (path, query) => {
 			const url = `${path}${query}`;
-			expect((await admin().request(url)).status).toBe(200);
-			expect((await member().request(url)).status).toBe(200);
+			// Outflows requires an existing goal, unlike the other lookups here.
+			const status = path === "/api/goals/x/outflows" ? 404 : 200;
+			expect((await admin().request(url)).status).toBe(status);
+			expect((await member().request(url)).status).toBe(status);
 			expect(await answer(guest(), "GET", url)).toMatchObject(refused);
 		},
 	);

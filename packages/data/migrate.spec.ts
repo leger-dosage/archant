@@ -291,7 +291,7 @@ describe("users and settings", () => {
 	});
 
 	it("upgrades viewers and invitations without losing authentication or invitation data", async () => {
-		const before = await migratedBefore("0110_household_roles");
+		const before = await migratedBefore("0111_household_roles");
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertUser(before, "u1", "admin");
 		await insertUser(before, "u2", "viewer");
@@ -3332,6 +3332,36 @@ const insertGoal = (
 	);
 
 describe("goals", () => {
+	it("keeps existing completion, funding and outflow rows when adding spending columns", async () => {
+		const before = await migratedBefore("0110_goal_consumption");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { state: "completed" });
+		await before.run(
+			sql`update goals set completed_amount = 40000, completed_at = 123 where id = 'g1'`,
+		);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 40000)`,
+		);
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`update entries set amount = -10000 where id = 'e1'`);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Train')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.get(
+				sql`select completed_amount, completed_at, consumed_amount from goals where id = 'g1'`,
+			),
+		).resolves.toEqual({ completed_amount: 40_000, completed_at: 123, consumed_amount: 0 });
+		await expect(
+			database.get(sql`select allocated_amount from goal_accounts where goal_id = 'g1'`),
+		).resolves.toEqual({ allocated_amount: 40_000 });
+		await expect(
+			database.get(sql`select consumed_goal_id from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ consumed_goal_id: null });
+	});
+
 	it("holds a positive target, Sure's states and kinds", async () => {
 		const database = await migrated();
 

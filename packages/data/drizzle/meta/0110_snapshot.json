@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "100b35bf-1f5b-48b9-b3cc-18619eec1496",
+  "id": "0033e340-944e-467e-9a5f-6a284c147a73",
   "prevId": "ec8040b0-70f0-4b30-abc9-7822c6f31aa5",
   "tables": {
     "accounts": {
@@ -953,7 +953,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"users\".\"role\" in ('admin', 'viewer')"
         },
         "users_default_account_order_check": {
           "name": "users_default_account_order_check",
@@ -2383,6 +2383,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "consumed_amount": {
+          "name": "consumed_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "completed_amount": {
           "name": "completed_amount",
           "type": "integer",
@@ -2934,7 +2942,7 @@
       "checkConstraints": {
         "invitations_role_check": {
           "name": "invitations_role_check",
-          "value": "\"invitations\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"invitations\".\"role\" in ('admin', 'viewer')"
         }
       }
     },
@@ -6222,6 +6230,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "consumed_goal_id": {
+          "name": "consumed_goal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "locked_fields": {
           "name": "locked_fields",
