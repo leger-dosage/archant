@@ -168,6 +168,7 @@
 			"ofTargets": "of {{target}} across all goals",
 			"behind_one": "{{count}} behind",
 			"behind_other": "{{count}} behind",
+			"paceUnknown": "{{count}} with unknown pace",
 			"onPace": "Everything is on track",
 			"list": "Goals in progress",
 			"all": "All goals"
@@ -1353,7 +1354,6 @@
 		"open": "Import",
 		"title": "Import a file",
 		"description": "An OFX, CSV or QIF statement exported by your bank. Nothing is saved until you confirm.",
-		"mobile": "Available on desktop",
 		"steps": {
 			"label": "Import steps",
 			"file": "File",
@@ -2250,6 +2250,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Available cash",
+			"description": "Alongside the plan above, outside its totals.",
+			"goals": "View goals",
+			"available": "Cash on hand",
+			"earmarked": "Already earmarked for goals",
+			"free": "Really free"
+		},
 		"title": "{{ofMonth}} budget",
 		"previous": "Previous month",
 		"next": "Next month",
@@ -2411,6 +2419,7 @@
 			"behind": "Behind",
 			"on_track": "On track",
 			"no_target_date": "No due date",
+			"pace_unknown": "Pace unknown",
 			"reached": "Reached",
 			"funded": "Funded",
 			"depleted": "Depleted"
@@ -2428,7 +2437,8 @@
 			"refill": "To refill",
 			"monthly": "Per month",
 			"date": "Due date",
-			"pace": "90-day pace",
+			"pace": "Savings pace",
+			"paceUnknown": "Unknown",
 			"perMonth": "{{amount}} per month",
 			"noDate": "None",
 			"reachedOn": "Reached on {{date}} · {{amount}}",
@@ -2439,7 +2449,6 @@
 			"title": "Linked accounts",
 			"earmarked": "{{share}} earmarked of {{balance}}",
 			"whole": "Whole balance",
-			"inactive": "Account disabled, not counted",
 			"none": "No linked account: the goal no longer fills up."
 		},
 		"notes": "Notes",
@@ -2565,8 +2574,9 @@
 		"chart": {
 			"title": "Projection",
 			"summary": "Saved: {{saved}}, {{change}} since {{from}}. Target amount: {{target}}.",
-			"projection": "To reach it on {{date}}, you need to save {{monthly}} per month.",
+			"projection": "At this pace, you will have {{amount}} on {{date}}.",
 			"saved": "Saved",
+			"paceUnknown": "There is not enough account history to draw a projection.",
 			"projected": "Projection",
 			"target": "Target amount"
 		}
@@ -2940,7 +2950,6 @@
 			"description": "After every sync or import, a rule completes the transactions it targets: category, merchant, tag or name."
 		},
 		"add": "Add rule",
-		"mobile": "Available on desktop",
 		"actions": "Actions for {{name}}",
 		"toggle": "Enable {{name}}",
 		"edit": "Edit",
@@ -3124,6 +3133,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Biggest expenses",
+			"limit": "Number of expenses shown",
+			"transaction": "Transaction",
+			"oneTime": "One-time"
+		},
 		"title": "Reports",
 		"subtitle": "Comprehensive insights into your financial health",
 		"printReport": "Print Report",
@@ -3707,8 +3722,6 @@
 		"backupCodesTitle": "Backup codes",
 		"backupCodesDescription": "Each code allows one sign-in without your phone. Keep them somewhere safe: they will not be shown again.",
 		"backupCodesDone": "I have saved these codes",
-		"regenerate": "Regenerate backup codes",
-		"regenerateHint": "The old backup codes stop working.",
 		"disable": "Disable two-factor authentication",
 		"disabled": "Two-factor authentication disabled."
 	},

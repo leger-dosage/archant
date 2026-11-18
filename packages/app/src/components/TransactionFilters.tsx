@@ -14,7 +14,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { AmountOperator } from "@archant/api/schemas/transactions";
-import { UNCATEGORISED, parseAmountBound } from "@archant/api/schemas/transactions";
+import { MAX_TAG_FILTER, UNCATEGORISED, parseAmountBound } from "@archant/api/schemas/transactions";
 import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 
 import { DateField } from "@/components/DateField";
@@ -186,11 +186,13 @@ type NamedItem = { id: string; name: string };
  */
 function SearchableEditor({
 	selectedIds,
+	max,
 	items,
 	texts,
 	onApply,
 }: {
 	selectedIds: readonly string[] | undefined;
+	max?: number;
 	items: readonly NamedItem[];
 	texts: { search: string; legend: string; empty: string };
 	onApply: (ids: string[] | undefined) => void;
@@ -225,6 +227,7 @@ function SearchableEditor({
 								type="checkbox"
 								className="size-4 accent-primary"
 								checked={selected.has(item.id)}
+								disabled={max !== undefined && selected.size >= max && !selected.has(item.id)}
 								onChange={(event) => setSelected(toggled(selected, item.id, event.target.checked))}
 							/>
 							<span className="truncate">{item.name}</span>
@@ -257,19 +260,28 @@ function MerchantEditor({
 	);
 }
 
-function TagEditor({ filters, tags, onApply }: EditorProps & { tags: readonly TagData[] }) {
+export function TagFilterEditor({
+	selectedIds,
+	tags,
+	onApply,
+}: {
+	selectedIds: readonly string[] | undefined;
+	tags: readonly TagData[];
+	onApply: (ids: string[] | undefined) => void;
+}) {
 	const { t } = useTranslation();
 
 	return (
 		<SearchableEditor
-			selectedIds={filters.tag}
+			selectedIds={selectedIds}
+			max={MAX_TAG_FILTER}
 			items={tags}
 			texts={{
 				search: t("transactions.tags.search"),
 				legend: t("operations.editor.tags"),
 				empty: t("transactions.tags.empty"),
 			}}
-			onApply={(tag) => onApply({ tag })}
+			onApply={onApply}
 		/>
 	);
 }
@@ -629,7 +641,13 @@ export function TransactionFilters({
 							{pane === "category" && (
 								<CategoryEditor filters={filters} categories={categories} onApply={apply} />
 							)}
-							{pane === "tag" && <TagEditor filters={filters} tags={tags} onApply={apply} />}
+							{pane === "tag" && (
+								<TagFilterEditor
+									selectedIds={filters.tag}
+									tags={tags}
+									onApply={(tag) => apply({ tag })}
+								/>
+							)}
 							{pane === "merchant" && (
 								<MerchantEditor filters={filters} merchants={merchants} onApply={apply} />
 							)}

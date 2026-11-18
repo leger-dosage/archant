@@ -349,6 +349,10 @@ export const reconciliationBodySchema = z.strictObject({
 	reconciliationStatus: reconciliationStatusSchema,
 });
 
+export const tagFilterSchema = repeated(MAX_TAG_FILTER)
+	.transform((ids) => (ids === undefined || ids.length === 0 ? undefined : [...new Set(ids)]))
+	.optional();
+
 export const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
 	// Repeats are dropped rather than refused: « Revenus » twice is still « Revenus ».
@@ -367,7 +371,7 @@ export const filterFields = {
 		.optional(),
 	category: repeated(MAX_CATEGORY_FILTER),
 	merchant: repeated(MAX_MERCHANT_FILTER),
-	tag: repeated(MAX_TAG_FILTER),
+	tag: tagFilterSchema,
 	from: z.iso.date().optional(),
 	to: z.iso.date().optional(),
 	// Sure's one amount and its operator; either alone filters nothing, as

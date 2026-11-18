@@ -168,6 +168,7 @@
 			"ofTargets": "sur {{target}} tous objectifs confondus",
 			"behind_one": "{{count}} en retard",
 			"behind_other": "{{count}} en retard",
+			"paceUnknown": "{{count}} au rythme inconnu",
 			"onPace": "Tout est dans les temps",
 			"list": "Objectifs en cours",
 			"all": "Tous les objectifs"
@@ -1353,7 +1354,6 @@
 		"open": "Importer",
 		"title": "Importer un fichier",
 		"description": "Un relevé OFX, CSV ou QIF exporté par votre banque. Rien n'est enregistré avant votre confirmation.",
-		"mobile": "Disponible sur ordinateur",
 		"steps": {
 			"label": "Étapes de l'import",
 			"file": "Fichier",
@@ -2250,6 +2250,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Trésorerie disponible",
+			"description": "À côté du plan ci-dessus, pas dedans.",
+			"goals": "Voir les objectifs",
+			"available": "Disponible en cash",
+			"earmarked": "Déjà fléché vers des objectifs",
+			"free": "Réellement libre"
+		},
 		"title": "Budget {{ofMonth}}",
 		"previous": "Mois précédent",
 		"next": "Mois suivant",
@@ -2411,6 +2419,7 @@
 			"behind": "En retard",
 			"on_track": "En bonne voie",
 			"no_target_date": "Sans échéance",
+			"pace_unknown": "Rythme inconnu",
 			"reached": "Atteint",
 			"funded": "Constituée",
 			"depleted": "Entamée"
@@ -2428,7 +2437,8 @@
 			"refill": "À recompléter",
 			"monthly": "Par mois",
 			"date": "Échéance",
-			"pace": "Rythme sur 90 jours",
+			"pace": "Rythme d'épargne",
+			"paceUnknown": "Inconnu",
 			"perMonth": "{{amount}} par mois",
 			"noDate": "Aucune",
 			"reachedOn": "Atteint le {{date}} · {{amount}}",
@@ -2439,7 +2449,6 @@
 			"title": "Comptes liés",
 			"earmarked": "{{share}} affectés sur {{balance}}",
 			"whole": "Solde entier",
-			"inactive": "Compte désactivé, non compté",
 			"none": "Aucun compte lié : l'objectif ne se remplit plus."
 		},
 		"notes": "Notes",
@@ -2565,8 +2574,9 @@
 		"chart": {
 			"title": "Projection",
 			"summary": "Épargné : {{saved}}, {{change}} depuis le {{from}}. Montant visé : {{target}}.",
-			"projection": "Pour l'atteindre le {{date}}, il faut épargner {{monthly}} par mois.",
+			"projection": "À ce rythme, vous aurez épargné {{amount}} le {{date}}.",
 			"saved": "Épargné",
+			"paceUnknown": "L'historique des comptes liés ne suffit pas à calculer une projection.",
 			"projected": "Projection",
 			"target": "Montant visé"
 		}
@@ -2940,7 +2950,6 @@
 			"description": "Après chaque synchronisation ou importation, une règle complète les opérations qu'elle vise : catégorie, marchand, étiquette ou libellé."
 		},
 		"add": "Ajouter une règle",
-		"mobile": "Disponible sur ordinateur",
 		"actions": "Actions pour {{name}}",
 		"toggle": "Activer {{name}}",
 		"edit": "Modifier",
@@ -3124,6 +3133,12 @@
 		}
 	},
 	"reports": {
+		"biggestExpenses": {
+			"title": "Plus grosses dépenses",
+			"limit": "Nombre de dépenses affichées",
+			"transaction": "Opération",
+			"oneTime": "Ponctuelle"
+		},
 		"title": "Rapports",
 		"subtitle": "Aperçus complets de votre santé financière",
 		"printReport": "Imprimer le rapport",
@@ -3707,8 +3722,6 @@
 		"backupCodesTitle": "Codes de secours",
 		"backupCodesDescription": "Chaque code permet une seule connexion sans votre téléphone. Conservez-les en lieu sûr : ils ne seront plus affichés.",
 		"backupCodesDone": "J'ai conservé ces codes",
-		"regenerate": "Régénérer les codes de secours",
-		"regenerateHint": "Les anciens codes de secours cessent de fonctionner.",
 		"disable": "Désactiver la double authentification",
 		"disabled": "Double authentification désactivée."
 	},

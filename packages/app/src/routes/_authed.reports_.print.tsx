@@ -1,7 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
+import { DEFAULT_BIGGEST_EXPENSES_LIMIT } from "@archant/data/reports-sections";
+
 import { ReportPrint } from "@/components/reports/ReportPrint";
+import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useReportsLayout } from "@/hooks/useReportsLayout";
 import { useReportsPage } from "@/hooks/useReportsPage";
 import { errorCodeOf } from "@/lib/api";
 import { reportsSearchSchema, settledSearch } from "@/lib/reports";
@@ -19,15 +23,23 @@ export const Route = createFileRoute("/_authed/reports_/print")({
 function ReportPrintPage() {
 	const { t } = useTranslation();
 	const report = useReportsPage(settledSearch(Route.useSearch()));
+	const admin = useIsAdmin();
+	const layout = useReportsLayout({ enabled: admin });
+	const error = report.error ?? (admin ? layout.error : null);
 
-	if (report.data !== undefined) {
-		return <ReportPrint data={report.data} />;
+	if (report.data !== undefined && (!admin || layout.data !== undefined)) {
+		return (
+			<ReportPrint
+				data={report.data}
+				biggestExpensesLimit={layout.data?.biggestExpensesLimit ?? DEFAULT_BIGGEST_EXPENSES_LIMIT}
+			/>
+		);
 	}
 
 	return (
 		<main className="grid min-h-svh place-items-center p-6 text-muted-foreground">
-			<p role={report.isError ? "alert" : "status"}>
-				{report.isError ? t(`errors.${errorCodeOf(report.error)}`) : t("reports.print.loading")}
+			<p role={error === null ? "status" : "alert"}>
+				{error === null ? t("reports.print.loading") : t(`errors.${errorCodeOf(error)}`)}
 			</p>
 		</main>
 	);

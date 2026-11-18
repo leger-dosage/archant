@@ -32,6 +32,13 @@ export function useBudget(month: string) {
 	});
 }
 
+export function useBudgetCash() {
+	return useQuery({
+		queryKey: queryKeys.accounts.budgetCash,
+		queryFn: async () => (await unwrap(api.budgets["available-cash"].$get())).data,
+	});
+}
+
 export function useSaveBudget(month: string) {
 	const queryClient = useQueryClient();
 
