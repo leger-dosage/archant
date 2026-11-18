@@ -144,3 +144,31 @@ export function useDeleteGoal(id: string) {
 		},
 	});
 }
+
+export function useCreateGoalPledge(id: string) {
+	const invalidate = useInvalidateGoals();
+
+	return useMutation({
+		mutationFn: async (json: { amount: string; accountId: string }) =>
+			(await unwrap(api.goals[":id"].pledges.$post({ param: { id }, json }))).data,
+		onSuccess: invalidate,
+	});
+}
+
+export function useChangeGoalPledge(id: string) {
+	const invalidate = useInvalidateGoals();
+	const endpoint = api.goals[":id"].pledges[":pledgeId"];
+
+	return useMutation({
+		mutationFn: async ({ pledgeId, action }: { pledgeId: string; action: "extend" | "cancel" }) => {
+			const param = { id, pledgeId };
+
+			return (
+				await unwrap(
+					action === "extend" ? endpoint.extend.$post({ param }) : endpoint.$delete({ param }),
+				)
+			).data;
+		},
+		onSettled: invalidate,
+	});
+}

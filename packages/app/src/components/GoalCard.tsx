@@ -69,6 +69,9 @@ export function GoalCard({ goal }: { goal: GoalData }) {
 				<p className="tabular-nums">{savedOf(goal, t)}</p>
 				<div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
 					<StatusBadge status={goalBadge(goal)} />
+					{goal.pledges.some(({ status }) => status === "open") && (
+						<span>{t("goals.pledge.badge")}</span>
+					)}
 					{monthly !== null && (
 						<span className="tabular-nums">
 							{t("goals.monthly", {

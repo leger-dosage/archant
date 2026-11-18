@@ -3,7 +3,8 @@ import type { ServiceDeps } from "../services/deps.ts";
 import { Hono } from "hono";
 
 import { validated } from "../lib/validated.ts";
-import { goalBodySchema, goalEventParamSchema } from "../schemas/goals.ts";
+import { goalBodySchema, goalEventParamSchema, goalPledgeBodySchema } from "../schemas/goals.ts";
+import { cancelGoalPledge, createGoalPledge, extendGoalPledge } from "../services/goal-pledges.ts";
 import {
 	createGoal,
 	deleteGoal,
@@ -29,6 +30,21 @@ export function goalsRoutes(deps: ServiceDeps) {
 			)
 			.post("/", validated("json", goalBodySchema), async (c) =>
 				c.json({ data: await createGoal(deps, c.req.valid("json")) }, 201),
+			)
+			.post("/:id/pledges", validated("json", goalPledgeBodySchema), async (c) =>
+				c.json({ data: await createGoalPledge(deps, c.req.param("id"), c.req.valid("json")) }, 201),
+			)
+			.post("/:id/pledges/:pledgeId/extend", async (c) =>
+				c.json(
+					{ data: await extendGoalPledge(deps, c.req.param("id"), c.req.param("pledgeId")) },
+					200,
+				),
+			)
+			.delete("/:id/pledges/:pledgeId", async (c) =>
+				c.json(
+					{ data: await cancelGoalPledge(deps, c.req.param("id"), c.req.param("pledgeId")) },
+					200,
+				),
 			)
 			.post("/:id/:event", validated("param", goalEventParamSchema), async (c) => {
 				const { id, event } = c.req.valid("param");
