@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import type { HouseholdDateFormat } from "@archant/data/household-preferences";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
@@ -33,10 +34,12 @@ import {
 	useCategorizeStep,
 	useRefreshCategorize,
 } from "@/hooks/useCategorize";
+import { useHouseholdPreferences } from "@/hooks/useHouseholdPreferences";
 import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
 import { isoToInput } from "@/lib/dates";
+import { formatHouseholdDate } from "@/lib/household-preferences";
 import { matchesSearch } from "@/lib/search-match";
 
 const searchSchema = z.object({
@@ -160,6 +163,7 @@ function RuleText({
 /** One line: ticked to be categorised with the group, or given its own category at once. */
 function LineRow({
 	line,
+	dateFormat,
 	ticked,
 	choices,
 	disabled,
@@ -167,6 +171,7 @@ function LineRow({
 	onAssign,
 }: {
 	line: CategorizeLine;
+	dateFormat: HouseholdDateFormat | undefined;
 	ticked: boolean;
 	choices: readonly CategoryChoice[];
 	disabled: boolean;
@@ -186,7 +191,11 @@ function LineRow({
 			/>
 			<span className="truncate font-medium">{line.label}</span>
 			<Money amount={line.amount} currency={line.currency} signed className="text-right" />
-			<span className="col-start-2 text-sm text-muted-foreground">{isoToInput(line.date)}</span>
+			<time dateTime={line.date} className="col-start-2 text-sm text-muted-foreground">
+				{dateFormat === undefined
+					? isoToInput(line.date)
+					: formatHouseholdDate(line.date, dateFormat)}
+			</time>
 			<Select value="" onValueChange={onAssign} disabled={disabled}>
 				<SelectTrigger
 					size="sm"
@@ -300,6 +309,7 @@ function GroupStep({
 }) {
 	const { t } = useTranslation();
 	const categories = useCategories();
+	const dateFormat = useHouseholdPreferences().data?.dateFormat;
 	const categorize = useCategorize();
 	const refresh = useRefreshCategorize();
 	const choices = useMemo(() => choicesOf(categories.data ?? []), [categories.data]);
@@ -422,6 +432,7 @@ function GroupStep({
 									<LineRow
 										key={line.id}
 										line={line}
+										dateFormat={dateFormat}
 										ticked={!unticked.has(line.id)}
 										choices={choices}
 										disabled={busy}

@@ -3473,12 +3473,21 @@
 	"preferences": {
 		"title": "Préférences",
 		"general": {
+			"country": "Pays",
+			"timeZone": "Fuseau horaire",
+			"dateFormat": "Format de date",
+			"baseCurrency": "Devise de base",
 			"title": "Général",
 			"subtitle": "Configurez vos préférences",
 			"defaultAccountOrder": "Ordre d'affichage des comptes par défaut",
 			"locale": "Langue",
 			"householdLocale": "Langue des données du foyer",
 			"householdLocaleHint": "Langue des catégories par défaut et des noms de virement qu'Archant écrit. Ce qui existe déjà n'est pas renommé."
+		},
+		"budget": {
+			"title": "Budget",
+			"monthStartDay": "Le mois budgétaire commence le",
+			"monthStartDayHint": "Ce jour sera utilisé lorsque les périodes budgétaires personnalisées seront disponibles."
 		},
 		"transactions": {
 			"title": "Opérations",
@@ -3492,6 +3501,7 @@
 			"balance_asc": "Solde (de bas en haut)",
 			"balance_desc": "Solde (haut à bas)"
 		},
+		"householdSaved": "Préférences du foyer enregistrées.",
 		"saved": "Votre profil a été mis à jour.",
 		"locales": {
 			"browser": "Langue du navigateur",
@@ -3735,6 +3745,7 @@
 		"resetWithSampleDataDone": "Votre compte a été réinitialisé et les données d'exemple sont chargées."
 	},
 	"setup": {
+		"currency": "Devise",
 		"title": "Créer le compte administrateur",
 		"description": "Ce compte administre Archant. Il n'existe pas d'inscription publique, vous inviterez ensuite les membres du foyer depuis les réglages.",
 		"token": "Jeton de configuration",

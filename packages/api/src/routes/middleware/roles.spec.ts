@@ -79,6 +79,7 @@ const ADMIN_WRITES = new Set([
 	"DELETE /api/financial-data",
 	"DELETE /api/accounts/x/unlink",
 	"PUT /api/recurring/settings",
+	"PATCH /api/preferences/household",
 ]);
 
 const refused = {

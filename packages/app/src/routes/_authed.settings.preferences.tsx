@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import type { HouseholdPreferencesInput } from "@archant/api/schemas/household-preferences";
 import type { PreferencesInput } from "@archant/api/schemas/preferences";
 import type { AccountOrder } from "@archant/data/account-orders";
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
@@ -12,29 +13,40 @@ import { LOCALES } from "@archant/data/locales";
 import { ChoiceField } from "@/components/ChoiceField";
 import { Page } from "@/components/Page";
 import { Section } from "@/components/Section";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import {
+	useHouseholdPreferences,
+	useUpdateHouseholdPreferences,
+} from "@/hooks/useHouseholdPreferences";
 import { useIsAdmin } from "@/hooks/usePermissions";
 import { usePreferences, useUpdatePreferences } from "@/hooks/usePreferences";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
+import {
+	countryOptions,
+	currencyLabel,
+	dateFormatOptions,
+	timeZoneOptions,
+} from "@/lib/household-preferences";
 
 export const Route = createFileRoute("/_authed/settings/preferences")({
 	component: PreferencesPage,
 });
 
-/**
- * « Réglages › Préférences », Sure's `settings/preferences/show`: its
- * « Général » section with the account order alone, the other fields
- * belonging to later stories, then the « Transactions » section of Sure's
- * `settings/appearances/show`, Archant having no « Apparence » page. Each
- * control saves on change, as Sure's `auto-submit-form`, and every list
- * follows.
- */
+const monthStartOptions = Array.from({ length: 28 }, (_, index) => {
+	const day = String(index + 1);
+
+	return { value: day, label: day };
+});
+
 function PreferencesPage() {
 	const { t } = useTranslation();
 	const preferences = usePreferences();
+	const household = useHouseholdPreferences();
+	const updateHousehold = useUpdateHouseholdPreferences();
 	const update = useUpdatePreferences();
 	const admin = useIsAdmin();
 
@@ -56,6 +68,12 @@ function PreferencesPage() {
 	const save = (input: PreferencesInput) =>
 		update.mutate(input, {
 			onSuccess: () => toast.success(t("preferences.saved")),
+			onError: (error) => showErrorToast(errorCodeOf(error)),
+		});
+
+	const saveHousehold = (input: HouseholdPreferencesInput) =>
+		updateHousehold.mutate(input, {
+			onSuccess: () => toast.success(t("preferences.householdSaved")),
 			onError: (error) => showErrorToast(errorCodeOf(error)),
 		});
 
@@ -106,8 +124,65 @@ function PreferencesPage() {
 							/>
 						</>
 					)}
+					{admin && household.isError && (
+						<p role="alert" className="text-muted-foreground">
+							{t(`errors.${errorCodeOf(household.error)}`)}
+						</p>
+					)}
+					{admin && household.isPending && <Skeleton className="h-14 w-full" />}
+					{admin && household.data !== undefined && (
+						<>
+							<ChoiceField
+								id="household-time-zone"
+								label={t("preferences.general.timeZone")}
+								value={household.data.timeZone}
+								options={timeZoneOptions(household.data.timeZone)}
+								disabled={updateHousehold.isPending}
+								onChange={(timeZone) => saveHousehold({ timeZone })}
+							/>
+							<ChoiceField
+								id="household-date-format"
+								label={t("preferences.general.dateFormat")}
+								value={household.data.dateFormat}
+								options={dateFormatOptions}
+								disabled={updateHousehold.isPending}
+								onChange={(dateFormat) => saveHousehold({ dateFormat })}
+							/>
+							<ChoiceField
+								id="household-country"
+								label={t("preferences.general.country")}
+								value={household.data.country}
+								options={countryOptions}
+								disabled={updateHousehold.isPending}
+								onChange={(country) => saveHousehold({ country })}
+							/>
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="household-currency">{t("preferences.general.baseCurrency")}</Label>
+								<Input
+									id="household-currency"
+									readOnly
+									value={currencyLabel(household.data.baseCurrency)}
+								/>
+							</div>
+						</>
+					)}
 				</div>
 			</Section>
+			{admin && household.data !== undefined && (
+				<Section title={t("preferences.budget.title")}>
+					<div className="p-4">
+						<ChoiceField
+							id="household-month-start"
+							label={t("preferences.budget.monthStartDay")}
+							description={t("preferences.budget.monthStartDayHint")}
+							value={String(household.data.monthStartDay)}
+							options={monthStartOptions}
+							disabled={updateHousehold.isPending}
+							onChange={(day) => saveHousehold({ monthStartDay: Number(day) })}
+						/>
+					</div>
+				</Section>
+			)}
 			<Section title={t("preferences.transactions.title")}>
 				<div className="flex flex-col gap-4 p-4">
 					<p className="text-sm text-muted-foreground">{t("preferences.transactions.subtitle")}</p>

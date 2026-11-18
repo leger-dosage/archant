@@ -67,6 +67,17 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	await expect(token).toHaveAccessibleDescription(/Ce jeton de configuration est incorrect\./u);
 	await expect(page).toHaveURL(/\/setup$/u);
 
+	const country = page.getByRole("combobox", { name: "Pays", exact: true });
+	const currency = page.getByRole("combobox", { name: "Devise", exact: true });
+	await country.click();
+	await page.getByRole("option", { name: "Royaume-Uni", exact: true }).click();
+	await expect(currency).toContainText("GBP");
+	await currency.click();
+	await page.getByRole("option", { name: /^EUR /u }).click();
+	await expect(currency).toContainText("EUR");
+	await page.getByRole("combobox", { name: "Format de date" }).click();
+	await page.getByRole("option", { name: "DD/MM/YYYY", exact: true }).click();
+
 	// The token the run's server printed at start, as an owner reads it in the logs.
 	await token.fill(await readFile(SETUP_TOKEN_FILE, "utf8"));
 	await page.getByRole("button", { name: "Créer le compte" }).click();
@@ -75,6 +86,12 @@ test("a first launch leads to setup, and creating the administrator signs in", a
 	await expect(
 		page.getByRole("heading", { level: 1, name: `Bonjour ${ADMIN_FIRST_NAME}` }),
 	).toBeVisible();
+
+	const preferences = await page.request.get("/api/preferences/household");
+	expect(preferences.ok()).toBe(true);
+	expect(await preferences.json()).toMatchObject({
+		data: { country: "GB", baseCurrency: "EUR", dateFormat: "DD/MM/YYYY" },
+	});
 
 	await page.context().storageState({ path: ADMIN_STATE });
 

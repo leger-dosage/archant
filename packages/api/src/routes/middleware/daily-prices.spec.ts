@@ -1,10 +1,11 @@
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import { securityPrices } from "@archant/data/schema/securities";
 
 import { createLogger } from "../../lib/logger.ts";
+import * as prices from "../../services/prices.ts";
 import { buildApp, ownDatabase, template, useSignedInApp } from "../../testing/app.ts";
 import { addTestUser, buildTestApp, createTestAuth, withSession } from "../../testing/auth.ts";
 import { insertSecurity } from "../../testing/prices.ts";
@@ -125,16 +126,11 @@ describe("the first visit of the day", () => {
 			buildTestApp(db, createLogger("info", { write: (text: string) => lines.push(text) })),
 			template.cookie,
 		);
-		await db.run(sql`alter table settings rename to settings_gone`);
+		vi.spyOn(prices, "startDailyPrices").mockRejectedValueOnce(new Error("daily job failed"));
+		const response = await app.request("/api/accounts");
 
-		try {
-			const response = await app.request("/api/accounts");
-
-			expect(response.status).toBe(200);
-			expect(lines.join("\n")).toContain("daily price update failed to start");
-			expect(requests).toEqual([]);
-		} finally {
-			await db.run(sql`alter table settings_gone rename to settings`);
-		}
+		expect(response.status).toBe(200);
+		expect(lines.join("\n")).toContain("daily price update failed to start");
+		expect(requests).toEqual([]);
 	});
 });

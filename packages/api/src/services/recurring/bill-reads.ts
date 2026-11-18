@@ -199,7 +199,7 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 
 	return {
 		bills,
-		familyCurrency: getReportingCurrency(),
+		familyCurrency: await getReportingCurrency(deps.db),
 		totals: {
 			activeCount: bills.filter((bill) => bill.status === "active").length,
 			overdueCount: bills.filter((bill) => bill.currentOccurrence?.state === "overdue").length,

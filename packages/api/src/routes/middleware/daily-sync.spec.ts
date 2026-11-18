@@ -5,6 +5,7 @@ import { testClient } from "hono/testing";
 import { describe, expect, it, vi } from "vitest";
 
 import { createLogger } from "../../lib/logger.ts";
+import * as sync from "../../services/sync.ts";
 import {
 	configuredBank,
 	linkedConnection,
@@ -131,23 +132,16 @@ describe("the first visit of the day", () => {
 		const before = await syncState(db, connection.id);
 		const lines: string[] = [];
 		const logger = createLogger("info", { write: (text: string) => lines.push(text) });
-		// A stored pair is read from `settings`: failing that read throws
-		// something other than `BANK_CONNECTOR_UNAVAILABLE`.
 		const app = withSession(
 			buildTestApp(db, logger, undefined, {}, { ...configuredBank(), bankCredentials: null }),
 			template.cookie,
 		);
-		await db.run(sql`alter table settings rename to settings_gone`);
+		vi.spyOn(sync, "startDailySync").mockRejectedValueOnce(new Error("daily job failed"));
+		const response = await app.request("/api/accounts");
 
-		try {
-			const response = await app.request("/api/accounts");
-
-			expect(response.status).toBe(200);
-			expect(lines.join("\n")).toContain("daily bank sync failed to start");
-			await expect(syncState(db, connection.id)).resolves.toEqual(before);
-		} finally {
-			await db.run(sql`alter table settings_gone rename to settings`);
-		}
+		expect(response.status).toBe(200);
+		expect(lines.join("\n")).toContain("daily bank sync failed to start");
+		await expect(syncState(db, connection.id)).resolves.toEqual(before);
 	});
 
 	it("starts nothing from the health check or from a request without a session", async () => {
