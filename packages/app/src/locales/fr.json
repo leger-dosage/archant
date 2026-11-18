@@ -3802,6 +3802,16 @@
 		"verify": "Vérifier",
 		"challengeExpired": "La vérification a expiré ou a échoué trop de fois. Connectez-vous de nouveau."
 	},
+	"passwordRecovery": {
+		"forgotTitle": "Mot de passe oublié ?",
+		"send": "Envoyer le lien",
+		"sent": "Veuillez vérifier votre boîte mail pour un lien de réinitialisation de votre mot de passe.",
+		"resetTitle": "Réinitialiser votre mot de passe",
+		"checking": "Vérification du lien…",
+		"reset": "Réinitialiser le mot de passe",
+		"invalid": "Jeton invalide.",
+		"success": "Votre mot de passe a été réinitialisé."
+	},
 	"errors": {
 		"NOT_FOUND": "Cette ressource n'existe pas.",
 		"ASSISTANT_NOT_FOUND": "Cet assistant est déjà déconnecté.",

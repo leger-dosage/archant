@@ -7,8 +7,8 @@
 ## 2. Verification
 
 - [x] 2.1 Verify creation dialogs, wide and centred edit drawers, independent note persistence in all three editors, and loan cards with a long amount at 390 px and a narrower or zoomed layout.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
 
 ## Local verification
 
-The static checks, data and app tests, API unit tests with ledger coverage, and all 28 volume tests on an isolated retry passed. Eleven targeted Chromium tests passed on port 8809 after the drawer and split-action corrections. The complete Chromium run before those corrections had 559 passes, four failures and 25 dependent tests that did not run. The four failed tests passed on the targeted rerun, including the shell navigation test without changes to the shell. The complete Chromium suite still needs a passing run on the final tree before syncing and archiving.
+The static checks, data and app tests, API unit tests with ledger coverage, and all 28 volume tests on an isolated retry passed. Eleven targeted Chromium tests passed on port 8809 after the drawer and split-action corrections. The complete Chromium run before those corrections had 559 passes, four failures and 25 dependent tests that did not run. The four failed tests passed on the targeted rerun, including the shell navigation test without changes to the shell. All required GitHub checks passed after integrating the dashboard test fix, including the complete Chromium suite.
