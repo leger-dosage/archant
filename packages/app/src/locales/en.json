@@ -26,7 +26,7 @@
 		"accounts": "Accounts",
 		"operations": "Transactions",
 		"budgets": "Budgets",
-		"goals": "Goals",
+		"plan": "Plan",
 		"bills": "Bills",
 		"reports": "Reports",
 		"rules": "Rules",
@@ -160,18 +160,6 @@
 			"title": "No accounts yet",
 			"description": "Connect a bank or import a statement to see your net worth here.",
 			"viewerDescription": "The household admin adds accounts. They will appear here."
-		},
-		"goals": {
-			"title": "Goals",
-			"count_one": "{{count}} active",
-			"count_other": "{{count}} active",
-			"ofTargets": "of {{target}} across all goals",
-			"behind_one": "{{count}} behind",
-			"behind_other": "{{count}} behind",
-			"paceUnknown": "{{count}} with unknown pace",
-			"onPace": "Everything is on track",
-			"list": "Goals in progress",
-			"all": "All goals"
 		},
 		"sections": "Dashboard sections",
 		"toggleSection": "Toggle section visibility",
@@ -2415,6 +2403,33 @@
 			"recent": "Recent transactions",
 			"all": "View all transactions",
 			"noTransactions": "No transactions this month."
+		}
+	},
+	"plan": {
+		"description": "Decide where your money goes: what you spend and what you save.",
+		"budget": {
+			"title": "This month",
+			"ofTotal": "of {{total}}",
+			"daysLeft_one": "{{count}} day left",
+			"daysLeft_other": "{{count}} days left",
+			"percentUsed": "{{percent}}% used",
+			"topCategories": "Top categories",
+			"empty": "This month’s budget is not set up yet.",
+			"setUp": "Set up this month’s budget",
+			"view": "View full budget"
+		},
+		"goals": {
+			"title": "Your goals",
+			"count_one": "{{count}} active",
+			"count_other": "{{count}} active",
+			"ofTargets": "of {{target}} across all goals",
+			"behind_one": "{{count}} behind",
+			"behind_other": "{{count}} behind",
+			"paceUnknown": "{{count}} with unknown pace",
+			"onPace": "Everything is on track",
+			"list": "Active goals",
+			"all": "All goals",
+			"empty": "No active goals yet."
 		}
 	},
 	"goals": {

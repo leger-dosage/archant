@@ -23,7 +23,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
-| 35.10 | [Budgets and goals on a Plan page](changes/budgets-and-goals-on-a-plan-page/proposal.md)                                                        |                                                                      |
 | 35.12 | [Refresh a months-of-expenses reserve monthly](changes/refresh-a-months-of-expenses-reserve-monthly/proposal.md)                                |                                                                      |
 | 35.14 | [Explain a goal's state on its page](changes/explain-a-goals-state-on-its-page/proposal.md)                                                     | [35.9]                                                               |
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
@@ -54,3 +53,5 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 34.10: [Sure's layout under Archant's visual style](changes/archive/2026-11-18-sures-layout-under-archants-visual-style/proposal.md).
 
 - [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).
+
+- Story 35.10: [Budgets and goals on a Plan page](changes/archive/2026-11-18-budgets-and-goals-on-a-plan-page/proposal.md).
