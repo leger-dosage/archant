@@ -191,15 +191,6 @@ export function TransferForm({
 				noValidate
 				className="flex flex-1 flex-col gap-4 overflow-y-auto px-4"
 				onSubmit={(event) => void submit(event)}
-				onKeyDown={(event) => {
-					if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-						event.preventDefault();
-
-						if (!form.formState.isSubmitting) {
-							void submit();
-						}
-					}
-				}}
 			>
 				<TransactionTypeTabs value="transfer" onChange={onTypeChange} />
 
@@ -261,13 +252,7 @@ export function TransferForm({
 				<Button type="button" variant="outline" onClick={onCancel}>
 					{t("common.cancel")}
 				</Button>
-				<Button
-					type="submit"
-					form="transfer-form"
-					disabled={isSubmitting}
-					title={t("transactions.form.saveShortcut")}
-					aria-keyshortcuts="Meta+Enter Control+Enter"
-				>
+				<Button type="submit" form="transfer-form" disabled={isSubmitting}>
 					{t("transfers.form.submit")}
 				</Button>
 			</SheetFooter>
