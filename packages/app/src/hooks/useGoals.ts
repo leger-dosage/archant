@@ -26,6 +26,11 @@ export type GoalHistoryData = InferResponseType<
 
 export type GoalsSummaryData = InferResponseType<typeof api.goals.summary.$get, 200>["data"];
 
+export type GoalIndicatorsData = InferResponseType<
+	typeof api.goals.overview.$get,
+	200
+>["data"]["indicators"];
+
 /**
  * The accounts a goal's dialog offers, as Sure's: the active depository and
  * investment accounts, by name as Sure's `alphabetically`, with the
@@ -45,10 +50,10 @@ export function useFundableAccounts() {
 	return useAccounts({ select: fundableOf });
 }
 
-export function useGoals() {
+export function useGoalsOverview() {
 	return useQuery({
 		queryKey: queryKeys.accounts.goals,
-		queryFn: async () => (await unwrap(api.goals.$get())).data,
+		queryFn: async () => (await unwrap(api.goals.overview.$get())).data,
 	});
 }
 
