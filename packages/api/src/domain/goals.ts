@@ -300,7 +300,7 @@ type Summarised = {
 };
 
 /**
- * The dashboard's card, as Sure's `Goal.summary_for` on its Plan page: the
+ * The Plan card, as Sure's `Goal.summary_for`: the
  * goals that hold their money, active and paused, counted; what they saved
  * and aim for, summed over those in `currency`, the others named as left out
  * (AD-6); how many active ones are behind, as Sure's `behind_pace?`, which
