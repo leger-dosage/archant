@@ -2236,6 +2236,14 @@
 		}
 	},
 	"budgets": {
+		"availableCash": {
+			"title": "Trésorerie disponible",
+			"description": "À côté du plan ci-dessus, pas dedans.",
+			"goals": "Voir les objectifs",
+			"available": "Disponible en cash",
+			"earmarked": "Déjà fléché vers des objectifs",
+			"free": "Réellement libre"
+		},
 		"title": "Budget {{ofMonth}}",
 		"previous": "Mois précédent",
 		"next": "Mois suivant",
