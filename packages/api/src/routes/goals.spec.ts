@@ -1528,6 +1528,109 @@ describe("a goal's history", () => {
 	});
 });
 
+describe("the goals' overview", () => {
+	it("reads both contribution windows and counts only active goals with a measured pace", async () => {
+		const behind = await savings("0");
+		await postOwn(behind.id, { date: "2026-08-22", label: "Current deposit", amount: "200" });
+		await postOwn(behind.id, { date: "2026-08-21", label: "Prior deposit", amount: "100" });
+		await postOwn(behind.id, { date: "2026-09-22", label: "Future deposit", amount: "700" });
+		await postOwn(behind.id, { date: "2026-07-22", label: "Older deposit", amount: "400" });
+		await create("Voyage", [{ accountId: behind.id }], { targetDate: "2026-10-21" });
+
+		const onTrack = await savings("800");
+		await postOwn(onTrack.id, { date: "2026-09-21", label: "Deposit", amount: "150" });
+		await create("Vélo", [{ accountId: onTrack.id }], {
+			targetAmount: "950",
+			targetDate: "2026-10-21",
+		});
+		await create("Réserve", [{ accountId: onTrack.id, allocatedAmount: "25" }], {
+			kind: "maintained",
+		});
+
+		const pauseAccount = await savings("0");
+		await postOwn(pauseAccount.id, { date: "2026-07-01", label: "Old deposit", amount: "10" });
+		const paused = await create("En pause", [{ accountId: pauseAccount.id }], {
+			targetDate: "2026-10-21",
+		});
+		await fire(paused.id, "pause");
+		const unknown = await savings("200");
+		await create("Rythme inconnu", [{ accountId: unknown.id }], { targetDate: "2026-10-21" });
+		const reached = await savings("1200");
+		await create("Atteint", [{ accountId: reached.id }], { targetDate: "2026-10-21" });
+		const open = await savings("0");
+		await create("Libre", [{ accountId: open.id }]);
+		const released = await savings("0");
+		await postOwn(released.id, { date: "2026-09-01", label: "Withdrawal", amount: "-50" });
+		const excluded = await postOwn(released.id, {
+			date: "2026-09-02",
+			label: "Excluded",
+			amount: "90",
+		});
+		await sendOwn("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+		const pending = await postOwn(released.id, {
+			date: "2026-09-03",
+			label: "Pending",
+			amount: "120",
+		});
+		await (
+			await own()
+		).db.run(sql`update transactions set pending = 1 where entry_id = ${pending}`);
+		const completed = await create("Terminé", [{ accountId: released.id }]);
+		await fire(completed.id, "complete");
+		const archived = await create("Archivé", [{ accountId: released.id }]);
+		await fire(archived.id, "archive");
+
+		const { status, body: answer } = await send("GET", "/api/goals/overview");
+
+		expect(status).toBe(200);
+		const { goals } = z.object({ data: z.object({ goals: z.array(goal) }) }).parse(answer).data;
+		expect(goals.map(({ name, status: pace }) => [name, pace])).toEqual(
+			expect.arrayContaining([
+				["Voyage", "behind"],
+				["Vélo", "on_track"],
+				["Rythme inconnu", "pace_unknown"],
+			]),
+		);
+		expect(answer).toMatchObject({
+			data: {
+				indicators: {
+					currency: "EUR",
+					contributed: 30_000,
+					priorContribution: 10_000,
+					monthlyNeeded: 30_000,
+					behind: 1,
+					onTrack: 1,
+					tracked: 2,
+					paceUnknown: 1,
+				},
+			},
+		});
+	});
+
+	it("leaves foreign amounts out while counting those goals' pace", async () => {
+		const dollars = await savings("0", { name: "Dollar savings", currency: "USD" });
+		await postOwn(dollars.id, { date: "2026-09-01", label: "Deposit", amount: "100" });
+		await create("Voyage", [{ accountId: dollars.id }], { targetDate: "2026-10-21" });
+
+		await expect(send("GET", "/api/goals/overview")).resolves.toMatchObject({
+			status: 200,
+			body: {
+				data: {
+					indicators: {
+						currency: "EUR",
+						contributed: 0,
+						contributionLeftOut: [{ name: "Dollar savings" }],
+						monthlyNeeded: 0,
+						monthlyLeftOut: [{ name: "Voyage" }],
+						behind: 1,
+						tracked: 1,
+					},
+				},
+			},
+		});
+	});
+});
+
 describe("the goals' summary", () => {
 	it("sums the goals holding their money in the reporting currency, naming the others", async () => {
 		const first = await savings("200");

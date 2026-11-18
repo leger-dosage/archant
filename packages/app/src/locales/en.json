@@ -2412,6 +2412,31 @@
 		"description": "A goal fills up with the balance of the accounts that hold the money: what is set aside, what is left, and what to save each month.",
 		"add": "New goal",
 		"list": "Goals",
+		"filters": {
+			"label": "Filter goals by status",
+			"all": "All",
+			"search": "Search goals",
+			"placeholder": "Search goals…",
+			"emptyFilter": "No goals match that filter.",
+			"emptySearch": "No goals match \"{{query}}\".",
+			"emptyBoth": "No goals match \"{{query}}\" with that filter."
+		},
+		"indicators": {
+			"label": "Goal indicators",
+			"contributed": "Contributed · Last 30 days",
+			"firstWindow": "First 30 days of activity",
+			"flat": "Unchanged from previous 30 days",
+			"up": "↑ {{percent}} vs previous 30 days",
+			"down": "↓ {{percent}} vs previous 30 days",
+			"needed": "Needed this month",
+			"behind_zero": "No goals behind",
+			"behind_one": "{{count}} goal behind",
+			"behind_other": "{{count}} goals behind",
+			"onTrack": "Goals on track",
+			"fraction": "{{onTrack}} of {{total}}",
+			"paceUnknown_one": "{{count}} goal with unknown pace",
+			"paceUnknown_other": "{{count}} goals with unknown pace"
+		},
 		"empty": {
 			"title": "No goals yet",
 			"description": "Set an amount to reach, a vacation or a reserve, and link the savings accounts that hold it."
