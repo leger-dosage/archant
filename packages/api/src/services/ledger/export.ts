@@ -185,6 +185,7 @@ export const EXPORTED_COLUMNS = {
 		accountId: entries.accountId,
 		kind: entries.kind,
 		valuationKind: entries.valuationKind,
+		reconciliationStatus: entries.reconciliationStatus,
 		date: entries.date,
 		amount: entries.amount,
 		currency: entries.currency,

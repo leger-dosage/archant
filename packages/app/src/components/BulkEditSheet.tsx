@@ -5,6 +5,8 @@ import type { FormEvent } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
+
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -13,6 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
 	Sheet,
 	SheetContent,
 	SheetDescription,
@@ -20,6 +29,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useBulkUpdateTransactions } from "@/hooks/useTransactions";
 import { ApiError } from "@/lib/api";
 import { toIsoDate } from "@/lib/dates";
@@ -31,7 +41,7 @@ type BulkEditSheetProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	selection: BulkSelectionInput;
-	/** Called with how many rows the API matched, once it saved. */
+	/** Called with the number of rows reported in the confirmation. */
 	onSaved: (updated: number) => void;
 };
 
@@ -80,6 +90,8 @@ function BulkEditForm({
 }) {
 	const { t } = useTranslation();
 	const update = useBulkUpdateTransactions();
+	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
+	const [status, setStatus] = useState("unchanged");
 	const [date, setDate] = useState("");
 	const [name, setName] = useState("");
 	const [notes, setNotes] = useState("");
@@ -94,7 +106,11 @@ function BulkEditForm({
 
 	const submit = async (event: FormEvent) => {
 		event.preventDefault();
+		const reconciliationStatus = manualReconciliation
+			? RECONCILIATION_STATUSES.find((value) => value === status)
+			: undefined;
 		const patch = {
+			...(reconciliationStatus === undefined ? {} : { reconciliationStatus }),
 			...(date.trim() === "" ? {} : { date }),
 			...(name.trim() === "" ? {} : { name }),
 			...(notes.trim() === "" ? {} : { notes }),
@@ -113,9 +129,9 @@ function BulkEditForm({
 		setErrors({});
 
 		try {
-			const { updated } = await update.mutateAsync({ ...selection, patch });
+			const { updated, changed } = await update.mutateAsync({ ...selection, patch });
 			onClose();
-			onSaved(updated);
+			onSaved(reconciliationStatus === undefined ? updated : changed);
 		} catch (error) {
 			// The hook shows the toast; the selection stays for another try.
 			if (error instanceof ApiError) {
@@ -213,6 +229,32 @@ function BulkEditForm({
 									: {})}
 							/>
 						</div>
+
+						{manualReconciliation && (
+							<div className="flex flex-col gap-1.5">
+								<Label htmlFor="bulk-reconciliation">
+									{t("operations.kinds.reconciliationStatus")}
+								</Label>
+								<Select value={status} onValueChange={setStatus}>
+									<SelectTrigger id="bulk-reconciliation" className="w-full">
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="unchanged">
+											{t("transactions.reconciliation.unchanged")}
+										</SelectItem>
+										{RECONCILIATION_STATUSES.map((value) => (
+											<SelectItem key={value} value={value}>
+												{t(`transactions.reconciliation.statuses.${value}`)}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+								<p className="text-xs text-muted-foreground">
+									{t("transactions.reconciliation.manualOnly")}
+								</p>
+							</div>
+						)}
 
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="bulk-notes">{t("transactions.form.notes")}</Label>

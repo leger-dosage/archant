@@ -597,6 +597,18 @@
 		"ariaLabel": "Time period: {{period}}"
 	},
 	"transactions": {
+		"reconciliation": {
+			"setting": "Manual reconciliation",
+			"settingDescription": "Track cleared and reconciled transactions against statements for manually managed accounts.",
+			"unchanged": "No change",
+			"manualOnly": "Only transactions in accounts without a bank connection change status.",
+			"advance": "{{current}}. Change to {{next}}.",
+			"statuses": {
+				"unreconciled": "Unreconciled",
+				"cleared": "Cleared",
+				"reconciled": "Reconciled"
+			}
+		},
 		"add": "Add transaction",
 		"empty": {
 			"title": "No transactions yet",
@@ -890,6 +902,7 @@
 		},
 		"filter": "Filter",
 		"kinds": {
+			"reconciliationStatus": "Reconciliation",
 			"account": "Account",
 			"category": "Category",
 			"tag": "Tag",
@@ -933,6 +946,7 @@
 			}
 		},
 		"editor": {
+			"reconciliationStatuses": "Reconciliation statuses",
 			"accounts": "Accounts to show",
 			"noAccount": "No accounts.",
 			"categories": "Categories to show",
