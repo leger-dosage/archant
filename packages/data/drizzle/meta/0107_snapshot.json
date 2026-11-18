@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "1fee85ab-859c-450a-a425-bbcbb4a0cd67",
+  "id": "09cf1f9a-4363-4db5-b3d5-12c3e3ebf071",
   "prevId": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "tables": {
     "accounts": {
@@ -324,164 +324,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
-    "passkeys": {
-      "name": "passkeys",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "public_key": {
-          "name": "public_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "factor_id": {
-          "name": "factor_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_handle": {
-          "name": "user_handle",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "credential_id": {
-          "name": "credential_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "counter": {
-          "name": "counter",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "device_type": {
-          "name": "device_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "backed_up": {
-          "name": "backed_up",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "transports": {
-          "name": "transports",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "aaguid": {
-          "name": "aaguid",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "passkeys_credential_id_unique": {
-          "name": "passkeys_credential_id_unique",
-          "columns": [
-            "credential_id"
-          ],
-          "isUnique": true
-        },
-        "passkeys_user_id": {
-          "name": "passkeys_user_id",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": false
-        },
-        "passkeys_factor_id": {
-          "name": "passkeys_factor_id",
-          "columns": [
-            "factor_id"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "passkeys_user_id_users_id_fk": {
-          "name": "passkeys_user_id_users_id_fk",
-          "tableFrom": "passkeys",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "passkeys_factor_id_two_factors_id_fk": {
-          "name": "passkeys_factor_id_two_factors_id_fk",
-          "tableFrom": "passkeys",
-          "tableTo": "two_factors",
-          "columnsFrom": [
-            "factor_id"
           ],
           "columnsTo": [
             "id"
@@ -5363,6 +5205,22 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "stop_processing": {
+          "name": "stop_processing",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

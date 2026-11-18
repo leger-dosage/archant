@@ -51,3 +51,5 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
 
 - Story 36.7: [Sign in with a passkey](changes/archive/2026-11-18-sign-in-with-a-passkey/proposal.md).
+
+- [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).

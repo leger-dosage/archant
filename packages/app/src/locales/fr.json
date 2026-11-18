@@ -2953,7 +2953,7 @@
 	},
 	"rules": {
 		"title": "Règles",
-		"description": "Après chaque synchronisation ou importation, chaque règle activée complète toutes les opérations qu'elle vise, anciennes comprises : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l'ordre de leur création, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. Quand deux règles changent le même champ, la dernière l'emporte ; une étiquette s'ajoute aux autres. Un champ modifié à la main n'est jamais remplacé.",
+		"description": "Après chaque synchronisation ou importation, chaque règle activée complète toutes les opérations qu'elle vise, anciennes comprises : catégorie, marchand, étiquette, libellé, libellé d'activité, exclusion ou virement attendu. Une nouvelle règle reste désactivée tant que vous n'avez pas confirmé son application aux opérations existantes. Les règles s'appliquent dans l’ordre enregistré, quel que soit le tri de la liste, et chacune voit ce que les précédentes ont changé. La première règle qui attribue une valeur à un champ est prioritaire. Les étiquettes s’ajoutent. Un champ modifié à la main n'est jamais remplacé.",
 		"list": "Règles",
 		"prompt": {
 			"message": "Catégorie changée en {{name}}",
@@ -3059,12 +3059,22 @@
 			"exclude_transaction": "Exclure",
 			"set_as_transfer_or_payment": "Virement avec un compte"
 		},
+		"order": {
+			"title": "Ordre d’exécution",
+			"description": "Les règles s’appliquent de haut en bas.",
+			"up": "Monter {{name}}",
+			"down": "Descendre {{name}}",
+			"save": "Enregistrer l’ordre",
+			"saved": "Ordre des règles enregistré."
+		},
 		"form": {
 			"addTitle": "Ajouter une règle",
 			"editTitle": "Modifier la règle",
 			"description": "La règle s'applique, après chaque synchronisation ou importation, aux opérations qui remplissent toutes ses conditions. Sans condition, elle s'applique à toutes. Après l'enregistrement, vous pourrez l'appliquer aux opérations existantes.",
 			"name": "Nom",
 			"namePlaceholder": "Facultatif",
+			"stopProcessing": "Arrêter le traitement",
+			"stopProcessingHint": "Les règles suivantes ignorent les opérations qui répondent aux critères de cette règle.",
 			"effectiveDate": "À partir du",
 			"effectiveDateHint": "Facultatif. La règle ne touche que les opérations datées de ce jour ou après.",
 			"conditions": "Si",
@@ -3107,9 +3117,10 @@
 			"description_one": "Vous êtes sur le point d'appliquer cette règle à {{count}} opération qui répond à ses critères. Un champ modifié à la main n'est jamais remplacé.",
 			"description_other": "Vous êtes sur le point d'appliquer cette règle aux {{count}} opérations qui répondent à ses critères. Un champ modifié à la main n'est jamais remplacé.",
 			"confirm": "Confirmer les modifications",
+			"withPredecessors": "Cette règle et les règles actives qui la précèdent concernent {{rows}}. Les champs modifiés à la main restent verrouillés.",
 			"allTitle": "Appliquer toutes les règles",
 			"allDescription_one": "Vous êtes sur le point d'appliquer {{count}} règle affectant {{rows}}. Un champ modifié à la main n'est jamais remplacé.",
-			"allDescription_other": "Vous êtes sur le point d'appliquer {{count}} règles affectant {{rows}}, dans l'ordre de leur création. Un champ modifié à la main n'est jamais remplacé.",
+			"allDescription_other": "Vous êtes sur le point d'appliquer {{count}} règles affectant {{rows}}, dans l’ordre enregistré. Un champ modifié à la main n'est jamais remplacé.",
 			"uniqueRows_one": "{{count}} opération unique",
 			"uniqueRows_other": "{{count}} opérations uniques",
 			"allConfirm": "Confirmer et appliquer tout",
@@ -3865,6 +3876,7 @@
 		"SURE_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",
 		"CSV_IMPORT_INVALID": "Le fichier a changé ou contient des erreurs : rien n'a été importé. Téléversez-le de nouveau.",
 		"IMPORT_PREVIEW_STALE": "Le compte a changé depuis l'aperçu. Vérifiez avant d'importer.",
+		"RULE_ORDER_STALE": "La liste des règles a changé. Rouvrez l’ordre d’exécution et réessayez.",
 		"RULE_PREVIEW_STALE": "Les opérations ont changé depuis l'aperçu ({{changed}} à modifier maintenant). Relancez l'aperçu avant d'appliquer.",
 		"BULK_COUNT_STALE": "Les opérations sélectionnées ont changé ({{count}} maintenant). Vérifiez la sélection avant de modifier.",
 		"TRANSFER_FORM_STALE": "Ce virement a déjà été créé avec d'autres informations. Vérifiez vos opérations avant d'en créer un autre.",
