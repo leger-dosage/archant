@@ -13,6 +13,7 @@ import type { CurrencyCode } from "@archant/data/money";
 import { parseAmount } from "@archant/data/money";
 
 import { BalanceConfirmation } from "@/components/BalanceConfirmation";
+import { BlurNoteField } from "@/components/BlurNoteField";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { DateField } from "@/components/DateField";
 import { FieldMessage } from "@/components/FieldMessage";
@@ -27,7 +28,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
 	useCreateSnapshot,
 	useDeleteSnapshot,
@@ -42,7 +42,7 @@ import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 import { formatMoney } from "@/lib/format-money";
 
-const FIELD_NAMES = ["date", "balance", "notes"] as const;
+const FIELD_NAMES = ["date", "balance"] as const;
 
 type SnapshotAccount = { id: string; currency: CurrencyCode; type: AccountType };
 
@@ -52,7 +52,6 @@ function valuesOf(snapshot: SnapshotData | null): SnapshotFormInput {
 		: {
 				date: snapshot.date,
 				balance: amountToText(snapshot.balance, snapshot.currency),
-				notes: snapshot.notes ?? "",
 			};
 }
 
@@ -131,14 +130,12 @@ function SnapshotForm({ account, snapshot, onClose, onSavingChange }: SnapshotFo
 
 	const submit = form.handleSubmit(async (values) => {
 		try {
-			// Sure's drawer saves notes apart from the reconciliation: with the
-			// date and the amount as they were, nothing needs confirming.
 			if (
 				snapshot !== null &&
 				values.date === snapshot.date &&
 				parseAmount(values.balance, account.currency) === snapshot.balance
 			) {
-				await save(values);
+				onClose();
 
 				return;
 			}
@@ -192,7 +189,7 @@ function SnapshotForm({ account, snapshot, onClose, onSavingChange }: SnapshotFo
 
 		return (
 			<>
-				<DialogHeader>
+				<DialogHeader className={update ? "pr-8" : undefined}>
 					<DialogTitle>
 						{t(update ? "snapshots.confirm.updateTitle" : "snapshots.confirm.createTitle")}
 					</DialogTitle>
@@ -235,7 +232,7 @@ function SnapshotForm({ account, snapshot, onClose, onSavingChange }: SnapshotFo
 
 	return (
 		<>
-			<DialogHeader>
+			<DialogHeader className={snapshot === null ? undefined : "pr-8"}>
 				<DialogTitle>
 					{t(snapshot === null ? "snapshots.form.addTitle" : "snapshots.form.editTitle")}
 				</DialogTitle>
@@ -246,7 +243,13 @@ function SnapshotForm({ account, snapshot, onClose, onSavingChange }: SnapshotFo
 				noValidate
 				className="flex flex-col gap-4"
 				onSubmit={(event) => void submit(event)}
+				aria-labelledby={snapshot === null ? undefined : "snapshot-overview"}
 			>
+				{snapshot !== null && (
+					<h3 id="snapshot-overview" className="text-base font-medium">
+						{t("snapshots.form.overview")}
+					</h3>
+				)}
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="snapshot-date">{t("snapshots.form.date")}</Label>
 					<DateField
@@ -277,41 +280,55 @@ function SnapshotForm({ account, snapshot, onClose, onSavingChange }: SnapshotFo
 				</div>
 
 				{snapshot !== null && (
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="snapshot-notes">{t("snapshots.form.notes")}</Label>
-						<Textarea
-							id="snapshot-notes"
-							// A pasted reference without spaces would widen the dialog past the screen.
-							className="wrap-anywhere"
-							placeholder={t("snapshots.form.notesPlaceholder")}
-							aria-invalid={errors.notes !== undefined}
-							{...(errors.notes === undefined
-								? {}
-								: { "aria-describedby": "snapshot-notes-error" })}
-							{...form.register("notes")}
-						/>
-						<FieldMessage id="snapshot-notes-error" error={errors.notes} />
+					<div className="flex justify-end">
+						<Button type="submit" disabled={isSubmitting}>
+							{t("snapshots.form.save")}
+						</Button>
 					</div>
 				)}
 			</form>
 
-			<DialogFooter className="flex-row items-center justify-between sm:justify-between">
-				{snapshot === null ? (
-					<span />
-				) : (
-					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
-						{t("snapshots.delete.action")}
-					</Button>
-				)}
-				<div className="flex gap-2">
+			{snapshot === null ? (
+				<DialogFooter className="flex-row justify-end">
 					<Button type="button" variant="outline" onClick={onClose}>
 						{t("common.cancel")}
 					</Button>
 					<Button type="submit" form="snapshot-form" disabled={isSubmitting}>
 						{t("snapshots.form.save")}
 					</Button>
-				</div>
-			</DialogFooter>
+				</DialogFooter>
+			) : (
+				<>
+					<section aria-labelledby="snapshot-details" className="flex flex-col gap-3 border-t pt-4">
+						<h3 id="snapshot-details" className="text-base font-medium">
+							{t("snapshots.form.details")}
+						</h3>
+						<BlurNoteField
+							id="snapshot-notes"
+							label={t("snapshots.form.notes")}
+							initialNote={snapshot.notes}
+							placeholder={t("snapshots.form.notesPlaceholder")}
+							onSave={(notes) => updateSnapshot.mutateAsync({ id: snapshot.id, input: { notes } })}
+						/>
+					</section>
+					<section
+						aria-labelledby="snapshot-settings"
+						className="flex flex-col gap-3 border-t pt-4"
+					>
+						<h3 id="snapshot-settings" className="text-base font-medium">
+							{t("snapshots.form.settings")}
+						</h3>
+						<div className="flex justify-between gap-2">
+							<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
+								{t("snapshots.delete.action")}
+							</Button>
+							<Button type="button" variant="outline" onClick={onClose}>
+								{t("common.cancel")}
+							</Button>
+						</div>
+					</section>
+				</>
+			)}
 
 			{snapshot !== null && (
 				<ConfirmDialog
@@ -372,10 +389,9 @@ export function SnapshotDialog({ account, open, snapshot, onOpenChange }: Snapsh
 			}}
 		>
 			<DialogContent
-				showCloseButton={false}
-				// Long notes grow the field; the dialog scrolls rather than push
-				// « Enregistrer » off the screen.
-				className="max-h-[90vh] overflow-y-auto"
+				showCloseButton={snapshot !== null}
+				layout={snapshot === null ? "dialog" : "drawer"}
+				className={snapshot === null ? "max-h-[90dvh] overflow-y-auto" : undefined}
 				onOpenAutoFocus={() => {
 					opener.current =
 						document.activeElement instanceof HTMLElement ? document.activeElement : null;

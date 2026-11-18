@@ -1053,6 +1053,9 @@
 			"gap": "Gap"
 		},
 		"form": {
+			"overview": "Overview",
+			"details": "Details",
+			"settings": "Settings",
 			"addTitle": "Add balance",
 			"editTitle": "Edit balance",
 			"description": "The balance your bank shows at the end of this day, or the amount owed for a card. It replaces the calculated balance from this date on.",
@@ -1125,6 +1128,11 @@
 			"amount": "Amount"
 		},
 		"form": {
+			"details": "Details",
+			"additionalDetails": "Additional details",
+			"note": "Note",
+			"notePlaceholder": "Add any additional comments here...",
+			"settings": "Settings",
 			"addTitle": "Add trade",
 			"editTitle": "Edit trade",
 			"description": "A buy, a sell, a dividend or interest. Quantity × price plus fees leaves the account for a buy; quantity × price minus fees enters it for a sell; the amount of a dividend or interest enters it.",
@@ -2286,7 +2294,7 @@
 		"move": {
 			"open": "Move money from {{name}}",
 			"title": "Move money from {{name}}",
-			"description": "{{name}} can give up to {{amount}} this month.",
+			"description": "{{name}} budget this month: {{amount}}",
 			"amount": "Amount",
 			"target": "To",
 			"placeholder": "Choose a category",
@@ -3886,6 +3894,11 @@
 		"TRANSACTION_CHANGED": "This transaction changed since it was shown to you. It was not deleted.",
 		"BUDGET_NOT_SET_UP": "Set this month's planned expenses first.",
 		"BUDGET_ALREADY_SET_UP": "This month already has a budget. It was not changed.",
+		"BUDGET_MOVE_NON_POSITIVE_AMOUNT": "The amount must be greater than zero.",
+		"BUDGET_MOVE_UNCATEGORISED": "Money cannot move to or from Uncategorized.",
+		"BUDGET_MOVE_SAME_CATEGORY": "Choose a different category than the source.",
+		"BUDGET_MOVE_PARENT_CHILD": "Money cannot move between a parent category and its child.",
+		"BUDGET_MOVE_INSUFFICIENT_FUNDS": "This category cannot give that much.",
 		"UNAUTHORIZED": "Your session has expired. Sign in to continue.",
 		"FORBIDDEN": "This action is not allowed.",
 		"ORIGIN_MISMATCH": "Archant is configured for a different address. Set ARCHANT_URL to the address shown in the address bar, then restart Archant.",
@@ -3959,7 +3972,6 @@
 			"invalid_two_factor_code": "Incorrect code. Check the time on your phone, or use a backup code you have not used yet.",
 			"two_factor_code_already_used": "This code has already been used. Please enter the next code from your authenticator app.",
 			"not_positive": "The amount must be greater than zero.",
-			"insufficient_funds": "This category cannot give that much.",
 			"same_category": "Choose a different category than the source.",
 			"same_merchant": "Choose a different merchant than the target.",
 			"parent_child": "Not possible between a category and its subcategory.",

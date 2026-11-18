@@ -119,6 +119,7 @@ describe("POST /api/accounts/:id/trades", () => {
 				isin: "FR0000121014",
 			},
 			convertedFrom: null,
+			notes: null,
 		});
 		await expect(balanceOnDay(account.id, "2026-09-09")).resolves.toBe(2_500_000);
 		// The cash less the buy, the 10 shares at its price on top.
@@ -319,6 +320,29 @@ describe("GET /api/accounts/:id/trades", () => {
 });
 
 describe("PATCH /api/trades/:id", () => {
+	it("sets and clears a trade's note independently of its figures", async () => {
+		const account = await openPea();
+		const securityId = await newSecurity();
+		const trade = await recorded(account.id, buyBody(securityId));
+		const endpoint = `/api/trades/${trade.id}`;
+		const figures = { date: "2026-09-10", quantity: "10", price: "612.4", fee: 250 };
+
+		const noted = await request("PATCH", endpoint, { notes: "  Fictional order, page 2 " });
+		expect(noted.status).toBe(200);
+		expect(noted.body).toMatchObject({ data: { ...figures, notes: "Fictional order, page 2" } });
+
+		const invalid = await request("PATCH", endpoint, { notes: "x".repeat(2001) });
+		expect(invalid.status).toBe(400);
+		expect(errorBody.parse(invalid.body).error.fields).toEqual([
+			{ path: "notes", code: "too_big" },
+		]);
+
+		const edited = await request("PATCH", endpoint, { fee: "5" });
+		expect(edited.body).toMatchObject({ data: { fee: 500, notes: "Fictional order, page 2" } });
+		const cleared = await request("PATCH", endpoint, { fee: "2,50", notes: " " });
+		expect(cleared.body).toMatchObject({ data: { ...figures, notes: null } });
+	});
+
 	it("changes the side, date, quantity, price and fee, and recomputes from the earlier date", async () => {
 		const account = await openPea();
 		const securityId = await newSecurity();
@@ -456,6 +480,7 @@ describe("dividends and interest", () => {
 			amount: 1234,
 			security: { id: securityId },
 			convertedFrom: null,
+			notes: null,
 		});
 		expect(interest).toMatchObject({ side: "interest", amount: 300, security: null });
 		await expect(balanceOf(account.id)).resolves.toBe(before + 1234 + 300);
