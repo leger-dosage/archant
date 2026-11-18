@@ -454,8 +454,13 @@ export async function transferRows(entryId: string) {
 		);
 }
 
-export async function insertTransfer(outflow: string, inflow: string, kind: TransferKind) {
-	await temp.db.insert(transfers).values({
+export async function insertTransfer(
+	outflow: string,
+	inflow: string,
+	kind: TransferKind,
+	db: ServiceDeps["db"] = temp.db,
+) {
+	await db.insert(transfers).values({
 		id: crypto.randomUUID(),
 		outflowTransactionId: outflow,
 		inflowTransactionId: inflow,

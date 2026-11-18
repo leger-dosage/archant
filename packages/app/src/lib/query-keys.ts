@@ -71,8 +71,12 @@ export const queryKeys = {
 		 * balances and the transactions, and every write that moves a balance
 		 * invalidates `all`; a category's own edit refreshes it once stale.
 		 */
-		reportsPage: (period: { periodType: string; startDate?: string; endDate?: string }) =>
-			["accounts", "reports-page", period] as const,
+		reportsPage: (period: {
+			periodType: string;
+			startDate?: string;
+			endDate?: string;
+			tag?: string[];
+		}) => ["accounts", "reports-page", period] as const,
 		/**
 		 * Every goal, and one goal, under `all` too: a goal reads its accounts'
 		 * balances, so every write that moves one refreshes it with no change
@@ -89,6 +93,8 @@ export const queryKeys = {
 		 * totals, and an id is a UUID, never « summary ».
 		 */
 		goalsSummary: ["accounts", "goals", "summary"] as const,
+		/** Both a balance and a goal allocation change the cash available beside the budget. */
+		budgetCash: ["accounts", "goals", "budget-cash"] as const,
 	},
 	/** The whole category list, one query: a household keeps a few dozen. */
 	categories: {
