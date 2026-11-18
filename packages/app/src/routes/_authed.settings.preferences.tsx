@@ -206,6 +206,25 @@ function PreferencesPage() {
 							/>
 						</div>
 					)}
+					{admin && preferences.data !== undefined && (
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex flex-col gap-1 text-sm">
+								<Label htmlFor="manual-reconciliation">
+									{t("transactions.reconciliation.setting")}
+								</Label>
+								<p id="manual-reconciliation-description" className="text-muted-foreground">
+									{t("transactions.reconciliation.settingDescription")}
+								</p>
+							</div>
+							<Switch
+								id="manual-reconciliation"
+								aria-describedby="manual-reconciliation-description"
+								checked={preferences.data.manualReconciliation}
+								disabled={update.isPending}
+								onCheckedChange={(manualReconciliation) => save({ manualReconciliation })}
+							/>
+						</div>
+					)}
 				</div>
 			</Section>
 		</Page>

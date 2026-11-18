@@ -597,6 +597,18 @@
 		"ariaLabel": "Période : {{period}}"
 	},
 	"transactions": {
+		"reconciliation": {
+			"setting": "Rapprochement manuel",
+			"settingDescription": "Suivez les opérations pointées et rapprochées avec un relevé sur les comptes gérés manuellement.",
+			"unchanged": "Sans modification",
+			"manualOnly": "Seules les opérations de comptes non reliés à une banque changent de statut.",
+			"advance": "{{current}}. Passer à « {{next}} ».",
+			"statuses": {
+				"unreconciled": "Non pointée",
+				"cleared": "Pointée",
+				"reconciled": "Rapprochée"
+			}
+		},
 		"add": "Ajouter une opération",
 		"empty": {
 			"title": "Aucune opération pour l'instant",
@@ -890,6 +902,7 @@
 		},
 		"filter": "Filtrer",
 		"kinds": {
+			"reconciliationStatus": "Rapprochement",
 			"account": "Compte",
 			"category": "Catégorie",
 			"tag": "Étiquette",
@@ -933,6 +946,7 @@
 			}
 		},
 		"editor": {
+			"reconciliationStatuses": "États de rapprochement",
 			"accounts": "Comptes à afficher",
 			"noAccount": "Aucun compte.",
 			"categories": "Catégories à afficher",
