@@ -3819,6 +3819,16 @@
 		"verify": "Verify",
 		"challengeExpired": "The verification expired or failed too many times. Sign in again."
 	},
+	"passwordRecovery": {
+		"forgotTitle": "Forgot your password?",
+		"send": "Send the link",
+		"sent": "Check your inbox for a link to reset your password.",
+		"resetTitle": "Reset your password",
+		"checking": "Checking the link…",
+		"reset": "Reset password",
+		"invalid": "Invalid token.",
+		"success": "Your password has been reset."
+	},
 	"errors": {
 		"NOT_FOUND": "This resource does not exist.",
 		"ASSISTANT_NOT_FOUND": "This assistant is already disconnected.",
