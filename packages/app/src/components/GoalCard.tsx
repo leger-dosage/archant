@@ -15,6 +15,7 @@ const GOAL_BADGES = {
 	behind: "goalBehind",
 	on_track: "goalOnTrack",
 	no_target_date: "goalNoTargetDate",
+	pace_unknown: "goalPaceUnknown",
 	reached: "goalReached",
 	funded: "goalFunded",
 	depleted: "goalDepleted",

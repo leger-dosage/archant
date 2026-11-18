@@ -84,12 +84,7 @@ function blank(): GoalFormInput {
 	};
 }
 
-/**
- * The goal as the form shows it. A link to an account no longer offered,
- * deactivated since, is left out: saving drops it, as the server would
- * refuse it.
- */
-function valuesOf(goal: GoalData, offered: ReadonlySet<string>): GoalFormInput {
+function valuesOf(goal: GoalData): GoalFormInput {
 	return {
 		name: goal.name,
 		kind: goal.kind,
@@ -100,13 +95,11 @@ function valuesOf(goal: GoalData, offered: ReadonlySet<string>): GoalFormInput {
 		color: goal.color,
 		icon: goal.icon,
 		notes: goal.notes ?? "",
-		accounts: goal.accounts
-			.filter((link) => offered.has(link.accountId))
-			.map((link) => ({
-				accountId: link.accountId,
-				allocatedAmount:
-					link.allocatedAmount === null ? "" : amountToText(link.allocatedAmount, goal.currency),
-			})),
+		accounts: goal.accounts.map((link) => ({
+			accountId: link.accountId,
+			allocatedAmount:
+				link.allocatedAmount === null ? "" : amountToText(link.allocatedAmount, goal.currency),
+		})),
 	};
 }
 
@@ -214,8 +207,7 @@ export function GoalDialog({
 	resolver.current = resolve;
 	const form = useForm<GoalFormInput>({
 		resolver: async (values, context, options) => resolver.current(values, context, options),
-		defaultValues:
-			goal === undefined ? blank() : valuesOf(goal, new Set(accounts.map((account) => account.id))),
+		defaultValues: goal === undefined ? blank() : valuesOf(goal),
 	});
 	const { errors, isSubmitting } = form.formState;
 	const color = useController({ control: form.control, name: "color" });
@@ -237,11 +229,16 @@ export function GoalDialog({
 	const offered =
 		goal === undefined
 			? accounts
-			: accounts.filter((account) => account.currency === goal.currency);
+			: [
+					...accounts.filter((account) => account.currency === goal.currency),
+					...goal.accounts
+						.filter((link) => !accounts.some((account) => account.id === link.accountId))
+						.map((link) => ({ id: link.accountId, ...link })),
+				];
 
 	const toggle = (accountId: string, checked: boolean) => {
 		const next = checked
-			? accounts
+			? offered
 					.filter(
 						(account) =>
 							account.id === accountId || linked.some((link) => link.accountId === account.id),
