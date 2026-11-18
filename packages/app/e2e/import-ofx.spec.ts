@@ -276,22 +276,18 @@ test("a text file shows the unreadable-file message", async ({ page, api }) => {
 	await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Fichier/u);
 });
 
-test("« Importer » opens the import on an account page, and a narrow screen is told to use a computer", async ({
-	page,
-	api,
-}) => {
+test("« Importer » opens and previews an OFX statement below 768 px", async ({ page, api }) => {
 	const account = await api.openAccount();
 
-	await page.goto(`/accounts/${account.id}`);
-	await expect(header(page, account.name)).toBeVisible();
-	await page.getByRole("button", { name: "Importer", exact: true }).click();
-	await expect(dialog(page).getByLabel("Relevé bancaire")).toBeVisible();
-	await page.keyboard.press("Escape");
-
 	await page.setViewportSize({ width: 600, height: 900 });
-	await page.getByRole("button", { name: "Importer", exact: true }).click();
-	await expect(dialog(page).getByText("Disponible sur ordinateur")).toBeVisible();
-	await expect(dialog(page).getByLabel("Relevé bancaire")).toHaveCount(0);
+	await openImport(page, account.id, account.name);
+	await choose(page, sgml(threeLines()));
+
+	await expect(dialog(page).locator('[aria-current="step"]')).toHaveText(/Aperçu/u);
+	await expect(tab(page, "À créer", 3)).toHaveAttribute("aria-selected", "true");
+	await expect(dialog(page).getByRole("button", { name: "Importer 3 opérations" })).toBeInViewport({
+		ratio: 1,
+	});
 });
 
 // Story 2.2: the file's LEDGERBAL becomes a snapshot.

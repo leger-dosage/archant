@@ -1340,7 +1340,6 @@
 		"open": "Import",
 		"title": "Import a file",
 		"description": "An OFX, CSV or QIF statement exported by your bank. Nothing is saved until you confirm.",
-		"mobile": "Available on desktop",
 		"steps": {
 			"label": "Import steps",
 			"file": "File",
@@ -2929,7 +2928,6 @@
 			"description": "After every sync or import, a rule completes the transactions it targets: category, merchant, tag or name."
 		},
 		"add": "Add rule",
-		"mobile": "Available on desktop",
 		"actions": "Actions for {{name}}",
 		"toggle": "Enable {{name}}",
 		"edit": "Edit",

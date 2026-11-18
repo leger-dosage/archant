@@ -37,7 +37,6 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useConfirmImport, usePreviewImport, useUploadImport } from "@/hooks/useImports";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate, formatSignedMoney, formatTableDate } from "@/lib/balance-change";
 import { showErrorToast } from "@/lib/error-toast";
@@ -53,10 +52,6 @@ import {
 	sameMapping,
 } from "@/lib/import-preview";
 import { cn } from "@/lib/utils";
-
-// Below this width the preview's five tabs and three columns do not fit
-// (EXPERIENCE.md): the dialog says so instead.
-const DESKTOP_QUERY = "(min-width: 768px)";
 
 // Long enough that picking three roles in a row sends one preview, short
 // enough that the counts follow the choices.
@@ -74,7 +69,7 @@ function Steps({ current, csv }: { current: Step; csv: boolean }) {
 	const currentIndex = steps.indexOf(current);
 
 	return (
-		<ol aria-label={t("imports.steps.label")} className="flex gap-4 text-sm">
+		<ol aria-label={t("imports.steps.label")} className="flex flex-wrap gap-x-4 gap-y-2 text-sm">
 			{steps.map((step, index) => (
 				<li
 					key={step}
@@ -273,9 +268,12 @@ function Preview({ preview, currency, stale, previewing, onDateOrder }: PreviewP
 			)}
 
 			<Tabs value={tab} onValueChange={setTab} className="gap-3">
-				<TabsList aria-label={t("imports.groups.label")} className="w-full">
+				<TabsList
+					aria-label={t("imports.groups.label")}
+					className="w-full flex-wrap group-data-horizontal/tabs:h-auto"
+				>
 					{IMPORT_GROUPS.map((group) => (
-						<TabsTrigger key={group} value={group}>
+						<TabsTrigger key={group} value={group} className="basis-auto">
 							{t(`imports.groups.${group}`)}{" "}
 							<span className="inline-flex h-5.5 min-w-5.5 items-center justify-center rounded-md bg-badge px-1.5 text-xs text-foreground-secondary tabular-nums">
 								{counts[group]}
@@ -283,23 +281,21 @@ function Preview({ preview, currency, stale, previewing, onDateOrder }: PreviewP
 						</TabsTrigger>
 					))}
 				</TabsList>
-				<div className="max-h-[50vh] overflow-y-auto">
-					{(["created", "present", "matched", "duplicates"] as const).map((group) => (
-						<TabsContent key={group} value={group} className="flex flex-col gap-2">
-							{(group === "matched" || group === "duplicates") && counts[group] > 0 && (
-								<p className="text-muted-foreground">{t(`imports.hints.${group}`)}</p>
-							)}
-							<LinesTable lines={preview.groups[group]} currency={currency} />
-						</TabsContent>
-					))}
-					<TabsContent value="rejected" className="flex flex-col items-start gap-2">
-						<RejectedTable
-							lines={preview.groups.rejected}
-							currency={currency}
-							csv={preview.source === "csv"}
-						/>
+				{(["created", "present", "matched", "duplicates"] as const).map((group) => (
+					<TabsContent key={group} value={group} className="flex flex-col gap-2">
+						{(group === "matched" || group === "duplicates") && counts[group] > 0 && (
+							<p className="text-muted-foreground">{t(`imports.hints.${group}`)}</p>
+						)}
+						<LinesTable lines={preview.groups[group]} currency={currency} />
 					</TabsContent>
-				</div>
+				))}
+				<TabsContent value="rejected" className="flex flex-col gap-2">
+					<RejectedTable
+						lines={preview.groups.rejected}
+						currency={currency}
+						csv={preview.source === "csv"}
+					/>
+				</TabsContent>
 			</Tabs>
 		</div>
 	);
@@ -526,55 +522,81 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						: t("imports.summary", counts)}
 			</p>
 
-			{preview === null && (
-				<div
-					onDragOver={(event) => {
-						event.preventDefault();
-						setDragging(true);
-					}}
-					onDragLeave={() => setDragging(false)}
-					onDrop={onDrop}
-					className={cn(
-						"flex flex-col gap-3 rounded-lg border border-dashed p-6",
-						dragging && "border-primary bg-muted",
-					)}
-				>
-					<p className="text-muted-foreground">{t("imports.drop")}</p>
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="import-file">{t("imports.file")}</Label>
-						<Input
-							id="import-file"
-							type="file"
-							accept=".ofx,.qfx,.csv,.qif"
-							disabled={upload.isPending}
-							aria-invalid={refusal !== null}
-							{...(refusal === null ? {} : { "aria-describedby": "import-file-error" })}
-							onChange={(event) => {
-								void read(event.target.files?.[0]);
-								// The same file chosen again must fire a change.
-								event.target.value = "";
-							}}
-						/>
+			{/* Scroll the current step while keeping the confirmation in reach. */}
+			<div key={step} className="min-h-0 overflow-y-auto">
+				{preview === null && (
+					<div
+						onDragOver={(event) => {
+							event.preventDefault();
+							setDragging(true);
+						}}
+						onDragLeave={() => setDragging(false)}
+						onDrop={onDrop}
+						className={cn(
+							"flex flex-col gap-3 rounded-lg border border-dashed p-6",
+							dragging && "border-primary bg-muted",
+						)}
+					>
+						<p className="text-muted-foreground">{t("imports.drop")}</p>
+						<div className="flex flex-col gap-1.5">
+							<Label htmlFor="import-file">{t("imports.file")}</Label>
+							<Input
+								id="import-file"
+								type="file"
+								accept=".ofx,.qfx,.csv,.qif"
+								disabled={upload.isPending}
+								aria-invalid={refusal !== null}
+								{...(refusal === null ? {} : { "aria-describedby": "import-file-error" })}
+								onChange={(event) => {
+									void read(event.target.files?.[0]);
+									// The same file chosen again must fire a change.
+									event.target.value = "";
+								}}
+							/>
+						</div>
+						{upload.isPending && <p>{t("imports.reading")}</p>}
+						{refusal !== null && (
+							<p id="import-file-error" role="alert" className="text-destructive">
+								{refusal}
+							</p>
+						)}
 					</div>
-					{upload.isPending && <p>{t("imports.reading")}</p>}
-					{refusal !== null && (
-						<p id="import-file-error" role="alert" className="text-destructive">
-							{refusal}
-						</p>
-					)}
-				</div>
-			)}
+				)}
 
-			{preview !== null && step === "columns" && csv !== null && draft !== null && (
-				<div className="flex max-h-[65vh] min-w-0 flex-col gap-4 overflow-y-auto">
-					<CsvColumns
-						sample={csv.sample}
-						sampleDelimiter={mappingOf(csv).delimiter}
-						mapping={draft}
-						onChange={setDraft}
-					/>
-					{!draftValid && <p className="text-muted-foreground">{t("imports.csv.invalid")}</p>}
-					{draftValid && computed && (
+				{preview !== null && step === "columns" && csv !== null && draft !== null && (
+					<div className="flex flex-col gap-4">
+						<CsvColumns
+							sample={csv.sample}
+							sampleDelimiter={mappingOf(csv).delimiter}
+							mapping={draft}
+							onChange={setDraft}
+						/>
+						{!draftValid && <p className="text-muted-foreground">{t("imports.csv.invalid")}</p>}
+						{draftValid && computed && (
+							<Preview
+								key={version}
+								preview={preview}
+								currency={account.currency}
+								stale={stale}
+								previewing={previewAgain.isPending}
+								onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
+							/>
+						)}
+					</div>
+				)}
+
+				{preview !== null && step === "preview" && (
+					<div className="flex flex-col gap-3">
+						{csv !== null && (
+							<Button
+								type="button"
+								variant="outline"
+								className="self-start"
+								onClick={() => setStep("columns")}
+							>
+								{t("imports.csv.edit")}
+							</Button>
+						)}
 						<Preview
 							key={version}
 							preview={preview}
@@ -583,27 +605,9 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 							previewing={previewAgain.isPending}
 							onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
 						/>
-					)}
-				</div>
-			)}
-
-			{preview !== null && step === "preview" && (
-				<div className="flex min-w-0 flex-col items-start gap-3">
-					{csv !== null && (
-						<Button type="button" variant="outline" onClick={() => setStep("columns")}>
-							{t("imports.csv.edit")}
-						</Button>
-					)}
-					<Preview
-						key={version}
-						preview={preview}
-						currency={account.currency}
-						stale={stale}
-						previewing={previewAgain.isPending}
-						onDateOrder={(dateOrder) => void changeDateOrder(dateOrder)}
-					/>
-				</div>
-			)}
+					</div>
+				)}
+			</div>
 
 			<DialogFooter className="flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between">
 				<p className="text-muted-foreground">
@@ -611,7 +615,7 @@ function ImportFlow({ account, onClose }: ImportFlowProps) {
 						? t("imports.nothingNew")
 						: ""}
 				</p>
-				<div className="flex justify-end gap-2">
+				<div className="flex flex-wrap justify-end gap-2">
 					<Button type="button" variant="outline" onClick={onClose}>
 						{t("common.cancel")}
 					</Button>
@@ -652,7 +656,6 @@ type ImportDialogProps = {
  */
 export function ImportDialog({ account, open, onOpenChange }: ImportDialogProps) {
 	const { t } = useTranslation();
-	const desktop = useMediaQuery(DESKTOP_QUERY);
 	const [session, setSession] = useState(0);
 	const [wasOpen, setWasOpen] = useState(open);
 
@@ -665,23 +668,13 @@ export function ImportDialog({ account, open, onOpenChange }: ImportDialogProps)
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className={cn(desktop && "sm:max-w-[700px]")}>
-				<DialogHeader>
+			<DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)_auto] sm:max-w-[700px]">
+				<DialogHeader className="pr-8">
 					<DialogTitle>{t("imports.title")}</DialogTitle>
-					<DialogDescription>
-						{desktop ? t("imports.description") : t("imports.mobile")}
-					</DialogDescription>
+					<DialogDescription>{t("imports.description")}</DialogDescription>
 				</DialogHeader>
-				{desktop ? (
-					// A fresh flow each time the dialog opens.
-					<ImportFlow key={session} account={account} onClose={() => onOpenChange(false)} />
-				) : (
-					<DialogFooter>
-						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-							{t("common.close")}
-						</Button>
-					</DialogFooter>
-				)}
+				{/* A fresh flow each time the dialog opens. */}
+				<ImportFlow key={session} account={account} onClose={() => onOpenChange(false)} />
 			</DialogContent>
 		</Dialog>
 	);

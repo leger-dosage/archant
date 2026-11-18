@@ -181,7 +181,7 @@ export function ActionRow({
 
 	return (
 		<div className="flex flex-col gap-1">
-			<div className="flex items-start gap-2">
+			<div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
 				<Select
 					value={actionType}
 					onValueChange={(next) => {
@@ -197,7 +197,7 @@ export function ActionRow({
 					}}
 				>
 					<SelectTrigger
-						className={cn("w-52 shrink-0", levelWithPattern)}
+						className={cn("w-full shrink-0 sm:w-52", levelWithPattern && "sm:mt-5.5")}
 						aria-label={t("rules.form.action", { index: label })}
 					>
 						<SelectValue />
