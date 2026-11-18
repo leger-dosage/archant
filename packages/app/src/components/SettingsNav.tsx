@@ -1,9 +1,12 @@
+import type { ParsedLocation } from "@tanstack/react-router";
+
 import { Link } from "@tanstack/react-router";
 import {
 	BanknoteIcon,
 	BoltIcon,
 	BotIcon,
 	ChartLineIcon,
+	ChevronLeftIcon,
 	DatabaseIcon,
 	DownloadIcon,
 	RepeatIcon,
@@ -72,13 +75,29 @@ export function canAccessSettings(path: string, role: string | null | undefined)
  * every other page, as in Sure. Not a route export: the router plugin splits
  * route files, and the shell renders this outside the settings route.
  */
-export function SettingsNav() {
+export function SettingsNav({ returnTo }: { returnTo: ParsedLocation | undefined }) {
 	const { t } = useTranslation();
 	const role = useRole();
 	const sections = SETTINGS_SECTIONS.filter(({ to }) => canAccessSettings(to, role));
 
 	return (
 		<nav aria-label={t("settings.title")} className="flex flex-col gap-4 p-3">
+			<Link
+				to={returnTo?.pathname ?? "/"}
+				search={() => returnTo?.search ?? {}}
+				hash={returnTo?.hash ?? ""}
+				aria-keyshortcuts="Escape"
+				className="flex h-9 items-center gap-2 self-start rounded-lg px-3 font-medium text-foreground-secondary outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+			>
+				<ChevronLeftIcon aria-hidden="true" className="size-4 text-muted-foreground" />
+				{t("settings.previous")}
+				<kbd
+					aria-hidden="true"
+					className="hidden rounded bg-muted px-1 text-xs text-muted-foreground lg:inline"
+				>
+					{t("settings.escapeHint")}
+				</kbd>
+			</Link>
 			<ul className="flex flex-col gap-1">
 				{sections.map(({ to, label, icon: Icon }) => (
 					<li key={to}>

@@ -629,7 +629,6 @@
 			"transfer": "Virement",
 			"notes": "Notes",
 			"save": "Enregistrer",
-			"saveShortcut": "⌘Entrée ou Ctrl+Entrée",
 			"excluded": "Exclure des rapports",
 			"oneTime": "Transaction ponctuelle ({{type}})",
 			"oneTimeDescription": "Les transactions ponctuelles seront exclues de certains calculs budgétaires et rapports afin de vous aider à voir ce qui compte vraiment.",
@@ -3318,6 +3317,8 @@
 		}
 	},
 	"settings": {
+		"previous": "Précédent",
+		"escapeHint": "esc",
 		"title": "Réglages",
 		"sections": {
 			"banks": "Banques",

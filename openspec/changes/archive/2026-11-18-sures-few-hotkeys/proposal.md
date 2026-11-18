@@ -2,7 +2,7 @@
 
 ## Why
 
-My keys do in Archant what they do in Sure.
+Members can use Sure's keyboard shortcuts to navigate settings and choose an account type, while transaction saves stay explicit.
 
 ## What changes
 

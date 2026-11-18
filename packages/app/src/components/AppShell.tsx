@@ -1,8 +1,9 @@
 import type { AccountTab, AccountTypeGroup } from "@/lib/account-group-totals";
+import type { ParsedLocation } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarIcon,
 	ChartColumnIcon,
@@ -329,13 +330,44 @@ function AccountsColumn({ id }: { id?: string }) {
  */
 export function AppShell({ children }: { children: ReactNode }) {
 	const { t } = useTranslation();
-	const pathname = useRouterState({ select: (router) => router.location.pathname });
+	const router = useRouter();
+	const location = useRouterState({ select: (state) => state.location });
 	const [columnOpen, setColumnOpen] = useStoredFlag("archant.accountsColumn", true);
 	const [menuOpen, setMenuOpen] = useState(false);
+	const [returnTo, setReturnTo] = useState<ParsedLocation>();
+	const { pathname } = location;
 	const isSettings = pathname === "/settings" || pathname.startsWith("/settings/");
 	// One id, on the wide column the fold button controls; the sheet's copy has none.
 	const column = (id?: string) =>
-		isSettings ? <SettingsNav /> : <AccountsColumn {...(id === undefined ? {} : { id })} />;
+		isSettings ? (
+			<SettingsNav returnTo={returnTo} />
+		) : (
+			<AccountsColumn {...(id === undefined ? {} : { id })} />
+		);
+
+	useEffect(() => {
+		if (!isSettings) {
+			setReturnTo(location);
+		}
+	}, [isSettings, location]);
+
+	useEffect(() => {
+		if (!isSettings) {
+			return undefined;
+		}
+
+		const leaveSettings = (event: KeyboardEvent) => {
+			// Radix handles Escape at the document before it reaches the shell.
+			if (event.key === "Escape" && !event.defaultPrevented && !event.repeat) {
+				event.preventDefault();
+				void router.navigate({ href: returnTo?.href ?? "/" });
+			}
+		};
+
+		window.addEventListener("keydown", leaveSettings);
+
+		return () => window.removeEventListener("keydown", leaveSettings);
+	}, [isSettings, returnTo, router]);
 
 	const isWide = useMediaQuery("(min-width: 1024px)");
 

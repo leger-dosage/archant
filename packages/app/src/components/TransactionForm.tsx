@@ -297,7 +297,7 @@ export function TransactionForm({
 		}
 	});
 
-	const save = (event?: FormEvent<HTMLFormElement>) => {
+	const save = (event: FormEvent<HTMLFormElement>) => {
 		if (chosen === null) {
 			setAccountMissing(true);
 		}
@@ -353,21 +353,6 @@ export function TransactionForm({
 					}
 
 					save(event);
-				}}
-				onKeyDown={(event) => {
-					// Same bubbling: ⌘Enter in a dialog of a block is that dialog's.
-					if (!(event.target instanceof Node) || !event.currentTarget.contains(event.target)) {
-						return;
-					}
-
-					if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canWrite) {
-						event.preventDefault();
-						// The button is disabled while saving; the shortcut must be too,
-						// or a double press records the transaction twice.
-						if (!form.formState.isSubmitting) {
-							save();
-						}
-					}
 				}}
 			>
 				{tabs && (
@@ -694,13 +679,7 @@ export function TransactionForm({
 						{canWrite ? t("common.cancel") : t("common.close")}
 					</Button>
 					{canWrite && (
-						<Button
-							type="submit"
-							form="transaction-form"
-							disabled={isSubmitting}
-							title={t("transactions.form.saveShortcut")}
-							aria-keyshortcuts="Meta+Enter Control+Enter"
-						>
+						<Button type="submit" form="transaction-form" disabled={isSubmitting}>
 							{t("transactions.form.save")}
 						</Button>
 					)}

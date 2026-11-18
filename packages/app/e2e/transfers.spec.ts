@@ -875,6 +875,10 @@ test("« Virement » creates both sides of a transfer and its fee, as Sure's tra
 	await form.getByText("Frais bancaires").click();
 	await expect(form.getByRole("textbox", { name: "Frais de transfert entrant" })).toBeVisible();
 	await form.getByRole("textbox", { name: "Frais de transfert sortant" }).fill("1,50");
+	await page.keyboard.press("Meta+Enter");
+	await expect(form).toBeVisible();
+	await page.keyboard.press("Control+Enter");
+	await expect(form).toBeVisible();
 	await form.getByRole("button", { name: "Créer le virement" }).click();
 	await expect(form).toBeHidden();
 
