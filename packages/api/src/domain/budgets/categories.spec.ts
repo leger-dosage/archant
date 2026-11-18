@@ -6,12 +6,7 @@ import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
 import { categoryStats } from "../statistics.ts";
-import {
-	budgetCategories,
-	parentAfterChildSave,
-	parentAfterOwnSave,
-	spentByCategory,
-} from "./categories.ts";
+import { budgetCategories, parentAfterChildSave, spentByCategory } from "./categories.ts";
 
 const category = (id: string, overrides: Partial<CashFlowCategory> = {}): CashFlowCategory => ({
 	id,
@@ -488,16 +483,5 @@ describe("parentAfterChildSave", () => {
 				child: minor(2_000),
 			}),
 		).toBe(7_000);
-	});
-});
-
-describe("parentAfterOwnSave", () => {
-	it("stores what is typed above its ring-fenced children", () => {
-		expect(parentAfterOwnSave({ typed: minor(100_000), children: minor(30_000) })).toBe(100_000);
-	});
-
-	it("never goes below what its ring-fenced children hold", () => {
-		expect(parentAfterOwnSave({ typed: minor(10_000), children: minor(30_000) })).toBe(30_000);
-		expect(parentAfterOwnSave({ typed: minor(0), children: minor(0) })).toBe(0);
 	});
 });

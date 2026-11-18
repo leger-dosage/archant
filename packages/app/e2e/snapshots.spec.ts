@@ -275,7 +275,7 @@ test("a snapshot is edited, then deleted after confirmation", async ({ page, api
 	await expect(header(page, account.name)).toContainText(euros(100_000));
 });
 
-test("a snapshot's notes are written in its dialog, kept, and cleared, as Sure's valuation", async ({
+test("a snapshot's drawer saves and clears notes on blur without reconciling a typed balance", async ({
 	page,
 	api,
 }) => {
@@ -285,31 +285,43 @@ test("a snapshot's notes are written in its dialog, kept, and cleared, as Sure's
 
 	await page.goto(`/accounts/${account.id}?tab=snapshots`);
 	await page.getByRole("button", { name: "Ajouter un solde" }).click();
-	await expect(
-		page.getByRole("dialog", { name: "Ajouter un solde" }).getByLabel("Notes"),
-	).toHaveCount(0);
+	const creation = page.getByRole("dialog", { name: "Ajouter un solde" });
+	await expect(creation.getByLabel("Notes")).toHaveCount(0);
+	await expect(creation).toHaveCSS("left", "720px");
 	await page.getByRole("button", { name: "Annuler" }).click();
 
 	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Modifier le solde" });
+	await expect(dialog).toHaveCSS("right", "12px");
+	await expect(dialog).toHaveCSS("width", "550px");
 	const notes = dialog.getByLabel("Notes");
 	await expect(notes).toHaveValue("");
 	await expect(notes).toHaveAttribute(
 		"placeholder",
 		"Ajoutez tout détail supplémentaire à ce bilan",
 	);
+	await dialog.getByLabel("Solde").fill("1 234,56");
 	await notes.fill("Relevé de fin de mois, page 2");
-	await dialog.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(dialog).toBeHidden();
+	const saved = page.waitForResponse(
+		(response) => response.request().method() === "PATCH" && response.url().includes("/snapshots/"),
+	);
+	await notes.press("Tab");
+	expect((await saved).ok()).toBe(true);
+	await expect(dialog.getByLabel("Solde")).toHaveValue("1 234,56");
+	await expect(stored(page, `/api/accounts/${account.id}/snapshots`)).resolves.toMatchObject({
+		items: [{ date, balance: 200_000, notes: "Relevé de fin de mois, page 2" }],
+	});
 
+	await page.reload();
 	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
 	await expect(notes).toHaveValue("Relevé de fin de mois, page 2");
 	await notes.fill("");
-	await dialog.getByRole("button", { name: "Enregistrer" }).click();
-	await expect(dialog).toBeHidden();
-
-	await page.getByRole("button", { name: formatTableDate(date), exact: true }).click();
-	await expect(notes).toHaveValue("");
+	await notes.press("Tab");
+	await expect
+		.poll(() => stored(page, `/api/accounts/${account.id}/snapshots`))
+		.toMatchObject({
+			items: [{ date, balance: 200_000, notes: null }],
+		});
 });
 
 test("a transaction on a snapshot day moves the gap, not the balance", async ({ page, api }) => {
