@@ -51,7 +51,7 @@ Everything below works without a bank connection except the last line. [docs/sur
 - A dashboard with net worth over time and monthly income and expenses by category.
 - An export of every figure as one ZIP, in Sure's export format.
 - Members: an administrator created on first launch, others invited by a link as administrators or read-only viewers, two-factor sign-in, and a password reset from the server's shell.
-- An AI assistant connected over MCP, the Model Context Protocol, which reads your finances and, if you allow it, writes rules, classifies, records, imports or deletes transactions, records balances, pairs transfers, and sets budgets, goals and bills.
+- An AI assistant connected over MCP, the Model Context Protocol, which reads your finances and, if you allow it, writes rules, classifies, records, imports or deletes transactions, records balances, pairs transfers, sets budgets and bills, and creates one-off savings goals backed by depository accounts.
 - Bank synchronisation through Enable Banking: connect a bank, choose how far back the first sync reads, up to two years, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
 
 ## Structure

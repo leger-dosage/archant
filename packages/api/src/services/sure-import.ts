@@ -293,7 +293,7 @@ async function importBudgets(
 	taxonomy: Taxonomy,
 	now: number,
 ): Promise<void> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(tx);
 	const months = new Map<string, string>();
 
 	await oneByOne(plan.budgets, async (budget) => {

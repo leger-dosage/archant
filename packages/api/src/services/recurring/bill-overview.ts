@@ -438,7 +438,7 @@ async function priceNotices(db: Reader, day: IsoDate): Promise<PriceNotice[]> {
 export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 	const day = today(deps.timeZone);
 	const { from: monthStart, to: monthEnd } = monthRange(day.slice(0, 7));
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	const { rows, allocations } = await loadBills(
 		deps.db,
 		and(
