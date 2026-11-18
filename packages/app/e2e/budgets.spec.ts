@@ -511,13 +511,19 @@ test("a month is copied from the latest one set up, then money moves between its
 	api,
 	request,
 }) => {
-	// Story 17.3: March 2024 is set up, April left alone, May copied. No line
-	// is needed: the account only keeps March inside the budgets' bounds.
-	await api.openAccount({ openingBalance: "0", openingDate: "2024-03-01" });
+	// March 2024 is set up, April left alone, May copied.
+	const account = await api.openAccount({ openingBalance: "0", openingDate: "2024-03-01" });
 	const house = await api.createCategory({ name: uniqueName("Maison") });
 	const works = await api.createCategory({ name: uniqueName("Travaux"), parentId: house.id });
 	const garden = await api.createCategory({ name: uniqueName("Jardin"), parentId: house.id });
 	const leisure = await api.createCategory({ name: uniqueName("Loisirs") });
+	const salary = await api.createCategory({ name: uniqueName("Salaire") });
+	const income = await api.addTransaction(account.id, {
+		date: "2024-03-05",
+		label: "Salaire fictif",
+		amount: "2000",
+	});
+	await api.categorise([income], salary.id);
 	const setUp = await request.put("/api/budgets/2024-03", {
 		data: { budgetedSpending: "1 500,00", expectedIncome: "2 000,00" },
 	});
@@ -564,6 +570,22 @@ test("a month is copied from the latest one set up, then money moves between its
 		await expect(allocation(page)).toContainText("80 % alloués");
 	});
 
+	await test.step("a saved zero survives reload and an income category takes an amount", async () => {
+		await field(page, garden.name).fill("0");
+		const savingZero = page.waitForResponse(
+			(response) => response.url().endsWith(`/categories/${garden.id}`) && response.ok(),
+		);
+		await field(page, garden.name).press("Tab");
+		await savingZero;
+		await page.reload();
+		await expect(field(page, garden.name)).toHaveValue("0,00");
+		await expect(field(page, garden.name)).toHaveAttribute("placeholder", "Partagé");
+
+		await field(page, salary.name).fill("15");
+		await field(page, salary.name).press("Tab");
+		await expect(field(page, salary.name)).toHaveValue("15,00");
+	});
+
 	await test.step("only a category that can give some offers a move", async () => {
 		await expect(moveButton(page, house.name)).toBeVisible();
 		await expect(moveButton(page, works.name)).toBeVisible();
@@ -574,8 +596,7 @@ test("a month is copied from the latest one set up, then money moves between its
 	await test.step("a move refuses more than the source can give, then moves", async () => {
 		await moveButton(page, house.name).click();
 		const dialog = page.getByRole("dialog", { name: `Déplacer de l'argent depuis ${house.name}` });
-		// What « Maison » keeps beyond « Travaux »: 700, not its 1 000.
-		await expect(dialog).toContainText(`${house.name} peut donner jusqu'à ${euros(70_000)}`);
+		await expect(dialog).toContainText(`Budget de ${house.name} ce mois-ci : ${euros(100_000)}`);
 
 		await dialog.getByRole("combobox", { name: "Vers" }).click();
 		const options = page.getByRole("listbox");
@@ -586,7 +607,9 @@ test("a month is copied from the latest one set up, then money moves between its
 
 		await dialog.getByLabel("Montant").fill("701");
 		await dialog.getByRole("button", { name: "Déplacer" }).click();
-		await expect(dialog.getByText("Cette catégorie ne peut pas donner autant.")).toBeVisible();
+		await expect(page.getByText("Cette catégorie ne peut pas donner autant.")).toBeVisible();
+		await expect(dialog.getByText("Cette catégorie ne peut pas donner autant.")).toHaveCount(0);
+		await expect(dialog.getByLabel("Montant")).not.toHaveAttribute("aria-invalid", "true");
 
 		await dialog.getByLabel("Montant").fill("50");
 		await dialog.getByRole("button", { name: "Déplacer" }).click();
@@ -595,7 +618,7 @@ test("a month is copied from the latest one set up, then money moves between its
 		await expect(page.getByText("Argent déplacé.")).toBeVisible();
 		await expect(field(page, house.name)).toHaveValue("950,00");
 		await expect(field(page, leisure.name)).toHaveValue("250,00");
-		await expect(allocation(page)).toContainText("80 % alloués");
+		await expect(allocation(page)).toContainText("81 % alloués");
 	});
 
 	await test.step("a subcategory cannot send to its own parent", async () => {

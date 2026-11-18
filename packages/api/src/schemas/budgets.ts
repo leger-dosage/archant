@@ -154,29 +154,12 @@ export type BudgetUpdateInput = z.input<ReturnType<typeof budgetUpdateSchema>>;
 
 // Text, as `budgetBodySchema`: the service parses the amount in the reporting currency.
 export const budgetMoveBodySchema = z.object({
-	fromCategoryId: z.string(),
-	toCategoryId: z.string(),
+	fromCategoryId: z.string().min(1),
+	toCategoryId: z.string().min(1),
 	amount: z.string(),
 });
 
 export type BudgetMoveInput = z.input<typeof budgetMoveBodySchema>;
-
-/**
- * Money moved from one category to another, as Sure's move dialog: the
- * amount is required and above zero. What the source can give, and which
- * destinations it may reach, need the month's amounts: the service checks
- * them. Shared with the interface's dialog, so both report the same codes.
- */
-export function budgetMoveSchema(currency: CurrencyCode) {
-	return z.object({
-		fromCategoryId: z.string().min(1),
-		toCategoryId: z.string().min(1),
-		amount: z.string().trim().min(1).transform(amountIn(currency, true)),
-	});
-}
-
-/** What the move dialog's form holds: the text typed, before the schema parses it. */
-export type BudgetMoveFormInput = z.input<ReturnType<typeof budgetMoveSchema>>;
 
 /** One category's « Report » switch, in a month and the later ones set up. */
 export const budgetRolloverBodySchema = z.object({ rolloverEnabled: z.boolean() });

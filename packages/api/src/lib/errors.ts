@@ -159,6 +159,12 @@ export const ERROR_STATUSES = {
 	 * that is not, and never overwrites. Nothing is written.
 	 */
 	BUDGET_ALREADY_SET_UP: 409,
+	// Sure's InvalidMove reasons for a move scoped to one budget.
+	BUDGET_MOVE_NON_POSITIVE_AMOUNT: 400,
+	BUDGET_MOVE_UNCATEGORISED: 400,
+	BUDGET_MOVE_SAME_CATEGORY: 400,
+	BUDGET_MOVE_PARENT_CHILD: 400,
+	BUDGET_MOVE_INSUFFICIENT_FUNDS: 400,
 	/**
 	 * A change of the signed-in member's own role, or their own removal, as
 	 * Sure's `cannot_remove_self`: another administrator does it. Nothing is written.
