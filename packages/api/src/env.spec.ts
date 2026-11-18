@@ -15,6 +15,30 @@ const required = {
 };
 
 describe("validateEnv", () => {
+	it("validates optional mail delivery and keeps secrets out of validation errors", () => {
+		expect(validateEnv(required)).toMatchObject({
+			SMTP_PORT: 465,
+			SMTP_TLS_ENABLED: true,
+			SMTP_TLS_SKIP_VERIFY: false,
+		});
+		expect(
+			validateEnv({
+				...required,
+				SMTP_ADDRESS: "relay.example.test",
+				SMTP_PORT: "587",
+				SMTP_TLS_ENABLED: "false",
+				EMAIL_SENDER: "sender@example.test",
+			}),
+		).toMatchObject({ SMTP_PORT: 587, SMTP_TLS_ENABLED: false });
+		expect(() =>
+			validateEnv({
+				...required,
+				SMTP_ADDRESS: "relay.example.test",
+				SMTP_PASSWORD: "a fictional secret",
+			}),
+		).toThrow("Invalid environment variables: SMTP_USERNAME");
+	});
+
 	it("names every missing variable", () => {
 		expect(() => validateEnv({})).toThrow(/DATABASE_URL.*BETTER_AUTH_SECRET.*BETTER_AUTH_URL/u);
 	});
