@@ -89,7 +89,7 @@ export const queryKeys = {
 		/** Under `goal(id)`: a chart reads the same balances and links as its goal. */
 		goalHistory: (id: string) => ["accounts", "goals", id, "history"] as const,
 		/**
-		 * The dashboard's card, under `goals`: a goal's own write changes the
+		 * The Plan card, under `goals`: a goal's own write changes the
 		 * totals, and an id is a UUID, never « summary ».
 		 */
 		goalsSummary: ["accounts", "goals", "summary"] as const,
