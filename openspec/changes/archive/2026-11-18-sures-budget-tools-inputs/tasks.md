@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers category-only, income-only and spending-only writes, a repeated category, refusal order and rollback. Cover `get_budget` with missing and partially saved months and an out-of-bounds target with earlier in-bounds months.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
