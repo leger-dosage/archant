@@ -2,7 +2,7 @@
 
 ## Why
 
-I read Sure's advice, not only figures, as Sure.
+The goal page shows how much the household has saved. It should also explain what the figures mean and offer the actions available for the current state.
 
 ## What changes
 
@@ -20,4 +20,4 @@ I read Sure's advice, not only figures, as Sure.
 
 Scope and acceptance criteria come from Story 35.14 in `docs/archive/bmad/planning-artifacts/epics.md`.
 
-Implement after `a-goals-pace-and-history-as-sure` (Story 35.9).
+The pace and history come from `a-goals-pace-and-history-as-sure` (Story 35.9, merged in #315).
