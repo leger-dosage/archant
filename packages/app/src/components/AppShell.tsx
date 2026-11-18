@@ -7,12 +7,11 @@ import { Link, useRouter, useRouterState } from "@tanstack/react-router";
 import {
 	CalendarIcon,
 	ChartColumnIcon,
+	CompassIcon,
 	EllipsisIcon,
 	FunnelIcon,
-	GoalIcon,
 	LayoutDashboardIcon,
 	MenuIcon,
-	PiggyBankIcon,
 	PlusIcon,
 	ReceiptIcon,
 	SettingsIcon,
@@ -65,13 +64,12 @@ export function useShell(): ShellState | null {
 
 // Sure's order: the home, then the lists, then the settings. `exact` for
 // Comptes: on an account page the column's row is the current entry.
-// `phone`: one of the bottom bar's four; the others wait under « Plus ».
+// `phone`: a page in the bottom bar; the others wait under « Plus ».
 const DESTINATIONS = [
 	{ to: "/", label: "nav.dashboard", icon: LayoutDashboardIcon, exact: false, phone: true },
 	{ to: "/transactions", label: "nav.operations", icon: ReceiptIcon, exact: false, phone: true },
 	{ to: "/accounts", label: "nav.accounts", icon: WalletIcon, exact: true, phone: false },
-	{ to: "/budgets", label: "nav.budgets", icon: PiggyBankIcon, exact: false, phone: true },
-	{ to: "/goals", label: "nav.goals", icon: GoalIcon, exact: false, phone: true },
+	{ to: "/plan", label: "nav.plan", icon: CompassIcon, exact: false, phone: true },
 	{ to: "/bills", label: "nav.bills", icon: CalendarIcon, exact: false, phone: false },
 	{ to: "/reports", label: "nav.reports", icon: ChartColumnIcon, exact: false, phone: false },
 	{ to: "/rules", label: "nav.rules", icon: FunnelIcon, exact: false, phone: false },
@@ -111,12 +109,25 @@ function EntryContent({ icon: Icon, label }: { icon: LucideIcon; label: string }
 	);
 }
 
+/** Budget and goal URLs stay in place under the Plan navigation entry. */
+export function isPlanChild(pathname: string): boolean {
+	return /^\/(budgets|goals)(?:\/|$)/u.test(pathname);
+}
+
 function DestinationLink({ destination }: { destination: Destination }) {
 	const { t } = useTranslation();
 	const { to, label, icon, exact } = destination;
+	const planChild = useRouterState({
+		select: (router) => to === "/plan" && isPlanChild(router.location.pathname),
+	});
 
 	return (
-		<Link to={to} activeOptions={{ exact, includeSearch: false }} className={ENTRY}>
+		<Link
+			to={to}
+			activeOptions={{ exact, includeSearch: false }}
+			inactiveProps={planChild ? { "aria-current": "page" } : {}}
+			className={ENTRY}
+		>
 			<EntryContent icon={icon} label={t(label)} />
 		</Link>
 	);
@@ -146,7 +157,7 @@ function MainNav({ className }: { className?: string }) {
 
 /**
  * Below 1024 px, Sure's bottom bar of four to six entries: « Accueil »,
- * « Opérations », « Budgets » and « Objectifs », then « Plus », a menu of
+ * « Opérations » and « Plan », then « Plus », a menu of
  * the others, marked current when the page is one of them. Eight entries cut
  * their labels at 390 px. The accounts list and the settings are also in the
  * top bar's menu and avatar, as Sure's.

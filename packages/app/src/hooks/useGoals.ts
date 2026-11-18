@@ -71,7 +71,7 @@ export function useGoalHistory(id: string, enabled: boolean) {
 	});
 }
 
-/** The dashboard's card: the goals that hold their money, summed in the reporting currency. */
+/** The Plan card: the goals that hold their money, summed in the reporting currency. */
 export function useGoalsSummary() {
 	return useQuery({
 		queryKey: queryKeys.accounts.goalsSummary,

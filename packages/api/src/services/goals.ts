@@ -248,8 +248,7 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
 }
 
 /**
- * The dashboard's card: the goals that hold their money, summed in the
- * reporting currency, as Sure's Plan card. Reads only.
+ * The Plan card's goals that hold their money, summed in the reporting currency. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
 	return goalsSummary(await listGoals(deps), getReportingCurrency());

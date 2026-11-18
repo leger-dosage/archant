@@ -15,7 +15,6 @@ describe("resolveLayout", () => {
 			"money_flow",
 			"spending_trend",
 			"investment_summary",
-			"goals",
 		]);
 		expect(layout.hiddenSections).toEqual([]);
 		expect(Object.values(layout.collapsedSections).every((collapsed) => !collapsed)).toBe(true);
@@ -37,14 +36,29 @@ describe("resolveLayout", () => {
 		expect(Object.keys(layout.sectionLayout)).not.toContain("insights_feed");
 	});
 
-	it("appends a key the stored order misses, in the default order", () => {
-		const layout = resolveLayout({ sectionOrder: ["goals", "balance_sheet"] });
+	it("drops the retired goals widget and keeps the rest of the saved layout", () => {
+		const layout = resolveLayout({
+			sectionOrder: ["balance_sheet", "goals", "net_worth_chart"],
+			hiddenSections: ["goals", "money_flow"],
+			collapsedSections: { goals: true, balance_sheet: true },
+			sectionLayout: {
+				goals: { colSpan: "full" },
+				net_worth_chart: { height: "tall", colSpan: "full" },
+			},
+		});
 
 		expect(layout.sectionOrder).toEqual([
-			"goals",
 			"balance_sheet",
-			...DEFAULT_DASHBOARD_ORDER.filter((key) => key !== "goals" && key !== "balance_sheet"),
+			"net_worth_chart",
+			...DEFAULT_DASHBOARD_ORDER.filter(
+				(key) => key !== "balance_sheet" && key !== "net_worth_chart",
+			),
 		]);
+		expect(layout.hiddenSections).toEqual(["money_flow"]);
+		expect(layout.collapsedSections).toMatchObject({ balance_sheet: true });
+		expect(layout.collapsedSections).not.toHaveProperty("goals");
+		expect(layout.sectionLayout).not.toHaveProperty("goals");
+		expect(layout.sectionLayout.net_worth_chart).toEqual({ height: "tall", colSpan: "full" });
 	});
 
 	it("ignores a stored size the guardrails do not offer", () => {
@@ -102,11 +116,11 @@ describe("mergeLayout", () => {
 	});
 
 	it("hides then shows one widget at a time, leaving another hidden", () => {
-		const hidden = mergeLayout(null, { hiddenSections: { money_flow: true, goals: true } });
+		const hidden = mergeLayout(null, { hiddenSections: { money_flow: true, balance_sheet: true } });
 		const shown = mergeLayout(hidden, { hiddenSections: { money_flow: false } });
 
-		expect(hidden.hiddenSections).toEqual(["money_flow", "goals"]);
-		expect(shown.hiddenSections).toEqual(["goals"]);
+		expect(hidden.hiddenSections).toEqual(["money_flow", "balance_sheet"]);
+		expect(shown.hiddenSections).toEqual(["balance_sheet"]);
 	});
 
 	it("keeps a hidden widget in place when the order omits it", () => {
@@ -119,7 +133,6 @@ describe("mergeLayout", () => {
 				"net_worth_chart",
 				"spending_trend",
 				"investment_summary",
-				"goals",
 			],
 		});
 
@@ -131,14 +144,13 @@ describe("mergeLayout", () => {
 			"net_worth_chart",
 			"spending_trend",
 			"investment_summary",
-			"goals",
 		]);
 	});
 
 	it("drops a stale stored key as it writes", () => {
 		const next = mergeLayout(
 			{ sectionOrder: ["insights_feed"], hiddenSections: ["insights_feed"] },
-			{ collapsedSections: { goals: true } },
+			{ collapsedSections: { balance_sheet: true } },
 		);
 
 		expect(next.sectionOrder).toEqual([]);
