@@ -16,6 +16,12 @@ Archant SHALL accept a deposit pledge against a goal and reconcile it to an elig
 - **WHEN** a synced inflow, a newly booked transfer or cash deposit into its account, or a snapshot raising a manual cash account falls between 5 days before the pledge and its expiry, within 0.50 currency units or 1% of its amount
 - **THEN** the oldest eligible pledge is matched once after the deposit commits. The same deposit cannot satisfy another pledge.
 
+#### Scenario: Pair two existing entries
+
+- **GIVEN** the inflow and outflow are already booked
+- **WHEN** the owner matches them manually or a transfer rule pairs them
+- **THEN** the pairing leaves pledge status unchanged. The deposit is reconciled when it is booked.
+
 #### Scenario: Leave a pledge open after an ineligible movement
 
 - **GIVEN** an open pledge on an investment account
