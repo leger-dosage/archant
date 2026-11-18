@@ -1,6 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link, redirect, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/hooks/useAuthActions";
-import { sessionQuery } from "@/lib/auth-client";
+import { passwordResetAvailability, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
@@ -24,6 +24,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 // came, since `oauthProviderClient` reads it from there on each step.
 const searchSchema = z.looseObject({
 	redirect: z.string().optional().catch(undefined),
+	passwordReset: z.literal(true).optional().catch(undefined),
 });
 
 /**
@@ -75,7 +76,10 @@ const CHALLENGE_ENDED = new Set([
 export const Route = createFileRoute("/sign-in")({
 	validateSearch: searchSchema,
 	beforeLoad: async ({ context, search }) => {
-		if ((await context.queryClient.ensureQueryData(sessionQuery)) !== null) {
+		if (
+			!search.passwordReset &&
+			(await context.queryClient.ensureQueryData(sessionQuery)) !== null
+		) {
 			throw redirect({ href: safeRedirect(search.redirect) });
 		}
 	},
@@ -88,6 +92,7 @@ function SignInPage() {
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const search = Route.useSearch();
+	const { data: recovery } = useQuery(passwordResetAvailability);
 	const [failure, setFailure] = useState<FormFailure | null>(null);
 	// Two-factor on: the password was right and a code is now expected. No
 	// session exists yet, only the plugin's challenge cookie.
@@ -163,6 +168,7 @@ function SignInPage() {
 	return (
 		<OutsideShell className="flex flex-col gap-6">
 			<h1 className="page-title">{t("signIn.title")}</h1>
+			{search.passwordReset && <p role="status">{t("passwordRecovery.success")}</p>}
 			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
 				<div className="flex flex-col gap-1.5">
 					<Label htmlFor="email">{t("signIn.email")}</Label>
@@ -177,7 +183,14 @@ function SignInPage() {
 					<FieldMessage id="email-error" error={errors.email} />
 				</div>
 				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="password">{t("signIn.password")}</Label>
+					<div className="flex items-center justify-between gap-2">
+						<Label htmlFor="password">{t("signIn.password")}</Label>
+						{recovery?.data.enabled && (
+							<Link to="/forgot-password" className="text-sm underline">
+								{t("passwordRecovery.forgotTitle")}
+							</Link>
+						)}
+					</div>
 					<Input
 						id="password"
 						type="password"

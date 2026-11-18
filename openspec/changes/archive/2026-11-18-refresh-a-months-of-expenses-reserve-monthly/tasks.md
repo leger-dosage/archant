@@ -6,4 +6,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers a target-setting edit, an unrelated edit, a catch-up refresh after downtime, repeated and concurrent requests, rollback and retry, an invalid refresh and the safe-integer bound. Playwright reads the hint and stored target.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.

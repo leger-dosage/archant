@@ -76,6 +76,7 @@ import {
 	knownDeviceNonce,
 	signDeviceCookie,
 } from "./services/device-cookie.ts";
+import { emailPasswordResetAvailable } from "./services/email-password-reset.ts";
 import { householdTimeZone } from "./services/settings.ts";
 import {
 	SIGN_IN_CEILING,
@@ -300,6 +301,11 @@ function createApi(deps: AppDeps) {
 		.route("/securities", securitiesRoutes(deps))
 		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
+		.get("/password-reset", async (c) => {
+			const { options } = await deps.auth.$context;
+
+			return c.json({ data: { enabled: emailPasswordResetAvailable(options) } }, 200);
+		})
 		.route("/version", versionRoutes(deps))
 		.route("/health", healthRoutes(deps));
 }
