@@ -6,7 +6,7 @@ A category Story 32.1 freed from its kind is budgeted too, as Sure.
 
 ## What changes
 
-- Give every category an envelope, copy stored allocations and carry choices, and apply the reserve rules when updating or moving an allocation.
+- Keep envelopes for every category. Copy stored allocations and carry choices and align child edits, parent edits and allocation moves with Sure.
 
 ## Capabilities
 

@@ -4,15 +4,16 @@ import type { BudgetRow } from "./categories.ts";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 
-import { movableOf, parentAfterChildSave, parentAfterOwnSave } from "./categories.ts";
+import { movableOf, parentAfterChildSave } from "./categories.ts";
 
 /** A category as a move or a copy places it: its id and its parent's. */
 export type BudgetedCategory = Pick<CashFlowCategory, "id" | "parentId">;
 
-/** Sure's `InvalidMove` reasons, as the field of a `VALIDATION_ERROR` each belongs to. */
+/** The `InvalidMove` reasons that depend on the month's envelopes. */
 type MoveRefusal =
-	| { path: "amount"; code: "insufficient_funds" }
-	| { path: "toCategoryId"; code: "same_category" | "parent_child" };
+	| "BUDGET_MOVE_SAME_CATEGORY"
+	| "BUDGET_MOVE_PARENT_CHILD"
+	| "BUDGET_MOVE_INSUFFICIENT_FUNDS";
 
 const zero = toMinorUnits(0);
 
@@ -45,11 +46,11 @@ export function moveAllocation(input: {
 		);
 
 	if (from.id === to.id) {
-		return { refusal: { path: "toCategoryId", code: "same_category" } };
+		return { refusal: "BUDGET_MOVE_SAME_CATEGORY" };
 	}
 
 	if (from.parentId === to.id || to.parentId === from.id) {
-		return { refusal: { path: "toCategoryId", code: "parent_child" } };
+		return { refusal: "BUDGET_MOVE_PARENT_CHILD" };
 	}
 
 	const movable = movableOf({
@@ -59,31 +60,25 @@ export function moveAllocation(input: {
 	});
 
 	if (amount > movable) {
-		return { refusal: { path: "amount", code: "insufficient_funds" } };
+		return { refusal: "BUDGET_MOVE_INSUFFICIENT_FUNDS" };
 	}
 
 	const save = (category: BudgetedCategory, next: MinorUnits) => {
-		if (category.parentId === null) {
-			changes.set(
-				category.id,
-				parentAfterOwnSave({ typed: next, children: childrenOf(category.id) }),
-			);
-
-			return;
-		}
-
 		const previousChild = amountOf(category.id);
 
 		changes.set(category.id, next);
-		changes.set(
-			category.parentId,
-			parentAfterChildSave({
-				parent: amountOf(category.parentId),
-				siblings: childrenOf(category.parentId, category.id),
-				previousChild,
-				child: next,
-			}),
-		);
+
+		if (category.parentId !== null) {
+			changes.set(
+				category.parentId,
+				parentAfterChildSave({
+					parent: amountOf(category.parentId),
+					siblings: childrenOf(category.parentId, category.id),
+					previousChild,
+					child: next,
+				}),
+			);
+		}
 	};
 
 	save(from, toMinorUnits(amountOf(from.id) - amount));
@@ -92,16 +87,9 @@ export function moveAllocation(input: {
 	return { changes };
 }
 
-/**
- * Sure's `Budget#copy_from!`, on the categories of today: each row of a
- * category that still exists, its amount beside its rollover switch, a
- * deleted one's being gone with it. What came in is never copied:
- * the chain computes it. A parent is then lifted to its children's amounts,
- * as its own save would be, so a child re-parented since cannot leave it
- * below them; a parent lifted without a row of its own has rollover off.
- */
+/** Sure copies the stored amount and rollover choice. The chain derives the carry again. */
 export function copiedRows(input: {
-	categories: readonly BudgetedCategory[];
+	categories: readonly Pick<BudgetedCategory, "id">[];
 	source: ReadonlyMap<string, BudgetRow>;
 }): Map<string, BudgetRow> {
 	const { categories } = input;
@@ -112,22 +100,6 @@ export function copiedRows(input: {
 
 		if (row !== undefined) {
 			copied.set(category.id, row);
-		}
-	}
-
-	for (const parent of categories.filter((category) => category.parentId === null)) {
-		const children = sumOf(
-			categories
-				.filter((category) => category.parentId === parent.id)
-				.map((category) => copied.get(category.id)?.budgetedSpending ?? zero),
-		);
-		const own = copied.get(parent.id);
-
-		if (own !== undefined || children > 0) {
-			copied.set(parent.id, {
-				budgetedSpending: parentAfterOwnSave({ typed: own?.budgetedSpending ?? zero, children }),
-				rolloverEnabled: own?.rolloverEnabled ?? false,
-			});
 		}
 	}
 

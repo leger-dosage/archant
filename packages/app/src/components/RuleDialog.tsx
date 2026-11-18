@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useCreateRule, useUpdateRule } from "@/hooks/useRules";
 import { ApiError } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
@@ -77,6 +78,7 @@ export function RuleDialog({
 	const { errors, isSubmitting } = form.formState;
 	const conditions = useFieldArray({ control: form.control, name: "conditions" });
 	const actions = useFieldArray({ control: form.control, name: "actions" });
+	const stopProcessing = useController({ control: form.control, name: "stopProcessing" });
 	const effectiveDate = useController({ control: form.control, name: "effectiveDate" });
 	const actionsError = errorAt(errors, "actions");
 	const actionTypes = useWatch({ control: form.control, name: "actions" }).map(
@@ -177,6 +179,22 @@ export function RuleDialog({
 								<FieldMessage id={errorId("effectiveDate")} error={dateError} />
 							)}
 						</div>
+					</div>
+
+					<div className="flex items-center justify-between gap-3">
+						<div className="space-y-1">
+							<Label htmlFor="rule-stop-processing">{t("rules.form.stopProcessing")}</Label>
+							<p id="rule-stop-description" className="text-xs text-muted-foreground">
+								{t("rules.form.stopProcessingHint")}
+							</p>
+						</div>
+						<Switch
+							id="rule-stop-processing"
+							className="shrink-0"
+							aria-describedby="rule-stop-description"
+							checked={stopProcessing.field.value ?? false}
+							onCheckedChange={stopProcessing.field.onChange}
+						/>
 					</div>
 
 					<section className="flex flex-col gap-3" aria-labelledby="rule-conditions">

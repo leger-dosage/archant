@@ -6,7 +6,7 @@ Each screen is laid out as Sure's while keeping Archant's look.
 
 ## What changes
 
-- Use drawers for editing snapshots and trades, persist drawer notes on blur and keep the loan overview grid on mobile.
+- Use responsive drawers for editing snapshots, trades and transactions. Keep creation in dialogs, save drawer notes independently on blur and fit the loan summary grid on a phone.
 
 ## Capabilities
 
