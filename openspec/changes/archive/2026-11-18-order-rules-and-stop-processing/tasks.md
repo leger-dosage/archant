@@ -8,11 +8,11 @@
 
 - [x] 2.1 Add accessible reorder controls and a stop toggle in both languages. Verify that touch and keyboard can save an order.
 - [x] 2.2 Verify upgraded installations, archive round trips, changed precedence after reorder, unchanged or locked values, additive tags, manual preview and automatic runs against overlapping rules.
-- [ ] 2.3 Run the repository verification commands.
+- [x] 2.3 Run the repository verification commands.
 
 The complete browser run on base `11b95d38` passed 571 tests. The dashboard
 drag-and-drop test timed out waiting for the layout save, and 17 dependent
 tests did not run. The same timeout reproduced on unmodified `11b95d38`.
 After rebasing onto `e29b1111`, which fixes that test, all 61 selected
 Chromium tests passed, including rules, budgets, reports and layout.
-The complete browser run on the updated base remains pending.
+All required GitHub checks passed on the updated base, including the complete browser suite.

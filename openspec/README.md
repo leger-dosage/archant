@@ -31,9 +31,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 35.10 | [Budgets and goals on a Plan page](changes/budgets-and-goals-on-a-plan-page/proposal.md)                                                        |                                                                      |
 | 35.11 | [Filter, search and summarise goals](changes/filter-search-and-summarise-goals/proposal.md)                                                     | [35.9]                                                               |
 | 35.12 | [Refresh a months-of-expenses reserve monthly](changes/refresh-a-months-of-expenses-reserve-monthly/proposal.md)                                |                                                                      |
-| 35.13 | [Sure's `create_goal` contract](changes/sures-create-goal-contract/proposal.md)                                                                 |                                                                      |
 | 35.14 | [Explain a goal's state on its page](changes/explain-a-goals-state-on-its-page/proposal.md)                                                     | [35.9]                                                               |
-| 36.1  | [Reset a forgotten password by e-mail](changes/reset-a-forgotten-password-by-e-mail/proposal.md)                                                |                                                                      |
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
@@ -47,4 +45,9 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - 36.6 [Household preferences](changes/archive/2026-11-18-household-preferences/proposal.md).
 - 37.3 [Cover both languages end to end](changes/archive/2026-11-18-cover-both-languages-end-to-end/proposal.md).
 
+- Story 35.13. [Sure's `create_goal` contract](changes/archive/2026-11-18-sures-create-goal-contract/proposal.md).
 - Story 36.5: [Two-factor backup codes as Sure's](changes/archive/2026-11-18-two-factor-backup-codes-as-sures/proposal.md).
+
+- Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
+
+- [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).
