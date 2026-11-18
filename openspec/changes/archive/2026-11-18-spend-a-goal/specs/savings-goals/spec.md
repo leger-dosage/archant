@@ -27,3 +27,15 @@ Archant SHALL record goal spending or match it to an eligible outflow and count 
 - **GIVEN** a goal with money spent
 - **WHEN** its card and ring show
 - **THEN** progress counts what was spent as found, `remaining_amount` and `progress_percent` adding `consumed_amount`, and both read « Dont %{amount} déjà utilisés », as Sure's.
+
+#### Scenario: Concurrent or refused claims
+
+- **WHEN** two requests claim the same outflow, or a claim fails a goal spending check
+- **THEN** only one successful claim may update the goal and its allocation
+- **AND** a refused request changes neither the allocation, the consumed amount nor the outflow stamp.
+
+#### Scenario: Restore a goal
+
+- **WHEN** an administrator reopens a completed goal or restores an archived one
+- **THEN** the new lifecycle of a previously completed goal starts with no consumed amount, and a goal archived without completing keeps its consumed amount
+- **AND** previously claimed outflows remain claimed.

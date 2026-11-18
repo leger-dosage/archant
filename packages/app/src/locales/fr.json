@@ -2435,6 +2435,29 @@
 		}
 	},
 	"goals": {
+		"includingUsed": "Dont {{amount}} déjà utilisés",
+		"spend": {
+			"open": "J'ai utilisé une partie de cet argent",
+			"title": "Enregistrer une dépense",
+			"amount": "Combien avez-vous utilisé ?",
+			"account": "Depuis quel compte ?",
+			"submit": "Enregistrer",
+			"success": "Dépense enregistrée.",
+			"outflows": "De l'argent est sorti de ces comptes",
+			"claim": "C'était ça",
+			"errors": {
+				"non_positive": "Indiquez un montant supérieur à zéro.",
+				"maintained": "Une réserve se ponctionne et se reconstitue. Ce qui lui manque apparaît déjà sur l'objectif.",
+				"not_active": "Cet objectif n'est plus actif : rien ne peut y être enregistré.",
+				"no_linked_account": "Cet objectif n'a plus de compte de financement.",
+				"account_required": "Cet objectif est financé par plusieurs comptes. Indiquez celui d'où vient l'argent.",
+				"account_not_linked": "Ce compte ne finance pas cet objectif.",
+				"exceeds_target": "C'est plus que ce que cet objectif visait à épargner.",
+				"exceeds_earmark": "C'est plus que ce que l'objectif a affecté sur ce compte.",
+				"transaction_already_claimed": "Cette sortie a déjà été attribuée.",
+				"transaction_not_found": "Cette sortie n'est plus disponible."
+			}
+		},
 		"pledge": {
 			"transfer": "Enregistrer un virement effectué",
 			"save": "Enregistrer l'argent mis de côté",
@@ -2449,7 +2472,6 @@
 			"extend": "Prolonger de 7 jours",
 			"badge": "Promesse en attente",
 			"matchedDate": "Dernier versement rapproché le {{date}}",
-			"catchUp": "{{amount}} de plus par mois pour combler le retard.",
 			"covered": "Les promesses en attente comblent le retard."
 		},
 		"title": "Objectifs",
@@ -2641,12 +2663,59 @@
 				"action": "Archiver l'objectif"
 			}
 		},
+		"header": {
+			"target": "Cible : {{amount}}",
+			"dated": "Objectif : {{amount}} d'ici le {{date}}",
+			"pastDue": "Objectif : {{amount}} · attendu le {{date}}",
+			"daysLeft_one": "{{count}} jour restant",
+			"daysLeft_other": "{{count}} jours restants",
+			"behind": "Épargnez {{amount}}/mois de plus pour rattraper le retard",
+			"onTrack": "Vous atteindrez votre objectif vers {{date}}.",
+			"noDate": "Définissez une date cible pour projeter une date de fin.",
+			"unknown": "Rythme inconnu. Vérifiez l'historique des comptes liés.",
+			"depleted": "Il manque {{amount}} pour ramener la réserve à son solde cible."
+		},
+		"panel": {
+			"behind": {
+				"body": "Votre épargne nette est de {{pace}} par mois. Il vous faut {{needed}} par mois pour suivre le rythme prévu."
+			},
+			"reached": {
+				"title": "Cible atteinte",
+				"body": "Vous avez atteint votre cible, à {{saved}} sur {{target}}. Cette somme reste affectée à l'objectif jusqu'à sa clôture."
+			},
+			"funded": {
+				"title": "Réserve constituée",
+				"body": "Vous avez mis de côté {{saved}} sur une cible de {{target}}. Cette somme reste affectée à la réserve."
+			},
+			"depleted": {
+				"title": "Réserve sous son solde cible",
+				"body": "Vous avez mis de côté {{saved}} sur une cible de {{target}}."
+			},
+			"noDate": {
+				"title": "Ajouter une date cible",
+				"body": "Une échéance permet de calculer le montant à épargner chaque mois."
+			},
+			"action": {
+				"adjust": "Ajuster l'objectif à la place",
+				"setDate": "Définir la date cible",
+				"complete": "Clôturer cet objectif"
+			}
+		},
+		"projection": {
+			"onTrack": "Au rythme actuel, vous atteindrez cet objectif vers {{date}}.",
+			"behind": "Insuffisant au rythme actuel.",
+			"zero": "Le rythme net est de zéro. Augmentez le solde des comptes liés pour commencer à progresser.",
+			"unknown": "Pour estimer le rythme, il faut des opérations éligibles des 90 derniers jours, ou un an d'historique de soldes avec une mise à jour dans l'année.",
+			"noDate": "Aucune date cible. Ajoutez une échéance pour projeter une date de fin.",
+			"reserve": "Une réserve maintient un solde cible dans la durée.",
+			"reached": "Vous avez atteint la cible.",
+			"paused": "Reprenez l'objectif pour afficher une projection."
+		},
 		"chart": {
 			"title": "Projection",
 			"summary": "Épargné : {{saved}}, {{change}} depuis le {{from}}. Montant visé : {{target}}.",
 			"projection": "À ce rythme, vous aurez épargné {{amount}} le {{date}}.",
 			"saved": "Épargné",
-			"paceUnknown": "L'historique des comptes liés ne suffit pas à calculer une projection.",
 			"projected": "Projection",
 			"target": "Montant visé"
 		}
@@ -4027,6 +4096,8 @@
 			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
 			"no_expenses": "Aucun mois ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",
+			"kind_locked_once_consumed": "Un objectif dont une partie a été utilisée ne peut plus devenir une réserve.",
+			"below_consumed": "Le montant visé doit couvrir les dépenses déjà enregistrées.",
 			"kind_locked": "Rouvrez ou restaurez cet objectif avant d'en changer le type.",
 			"invalid_quantity": "Quantité invalide : un nombre supérieur à zéro, 18 décimales au plus. Exemple : 12,5.",
 			"invalid_price": "Prix invalide : un nombre positif ou nul, 10 décimales au plus. Exemple : 612,40.",
@@ -4049,6 +4120,7 @@
 			"exchange_rate_unavailable": "Les virements entre deux devises ne sont pas encore pris en charge.",
 			"poor_contrast": "Mauvais contraste, choisissez une couleur plus foncée."
 		},
+		"GOAL_SPEND_REFUSED": "Cette dépense ne peut pas être enregistrée.",
 		"GOAL_STATE_INVALID": "Cet objectif a changé d'état entre-temps : cette action ne s'applique plus.",
 		"RECURRING_ALREADY_EXISTS": "Une récurrence suit déjà ce compte, ce marchand ou libellé et ce montant.",
 		"RECURRING_TRANSFER_ALREADY_EXISTS": "Un virement récurrent existe déjà pour cette paire de comptes.",

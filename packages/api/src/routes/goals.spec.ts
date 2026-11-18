@@ -61,6 +61,8 @@ const goal = z.object({
 	kind: z.string(),
 	completedAt: z.number().nullable(),
 	saved: z.number(),
+	consumedAmount: z.number(),
+	progressAmount: z.number(),
 	remaining: z.number(),
 	percent: z.number(),
 	monthlyNeeded: z.number().nullable(),
@@ -1502,6 +1504,8 @@ describe("a viewer", () => {
 			send("POST", "/api/goals", body("Travaux", [{ accountId, allocatedAmount: "1" }]), viewer()),
 			send("PUT", `/api/goals/${id}`, body("Voyage", [{ accountId }]), viewer()),
 			send("DELETE", `/api/goals/${id}`, undefined, viewer()),
+			send("GET", `/api/goals/${id}/outflows`, undefined, viewer()),
+			send("POST", `/api/goals/${id}/consume`, { amount: "100" }, viewer()),
 			send("POST", `/api/goals/${id}/pledges`, { accountId, amount: "50" }, viewer()),
 			send("POST", `/api/goals/${id}/pledges/pledge/extend`, undefined, viewer()),
 			send("DELETE", `/api/goals/${id}/pledges/pledge`, undefined, viewer()),
@@ -1510,7 +1514,7 @@ describe("a viewer", () => {
 			),
 		]);
 
-		expect(answers.map((answer) => answer.status)).toEqual(Array(12).fill(403));
+		expect(answers.map((answer) => answer.status)).toEqual(Array(14).fill(403));
 		expect(new Set(answers.map((answer) => errorBody.parse(answer.body).error.code))).toEqual(
 			new Set(["FORBIDDEN"]),
 		);
@@ -1525,5 +1529,223 @@ describe("a viewer", () => {
 		await expect(send("GET", "/api/goals/summary", undefined, viewer())).resolves.toMatchObject({
 			status: 200,
 		});
+	});
+});
+
+const consume = (id: string, input: unknown) => send("POST", `/api/goals/${id}/consume`, input);
+const outflows = (id: string) => send("GET", `/api/goals/${id}/outflows`);
+
+async function refused(id: string, input: unknown, reason: string) {
+	expect(await consume(id, input)).toMatchObject({
+		status: 409,
+		body: { error: { code: "GOAL_SPEND_REFUSED", params: { reason } } },
+	});
+}
+
+describe("goal consumption", () => {
+	it("suggests the three newest eligible debits and rechecks eligibility on claim", async () => {
+		const account = await savings("3 000");
+		const other = await savings("1 000");
+		const holiday = await create("Holiday", [{ accountId: account.id }]);
+		const debit = (date: string, amount: string, label: string) =>
+			postOwn(account.id, { date, amount, label });
+		const borderline = await debit("2026-06-23", "-100", "90 days old");
+		const first = await debit("2026-09-20", "-100", "Newest");
+		const second = await debit("2026-09-19", "-100", "Second");
+		const third = await debit("2026-09-18", "-100", "Third");
+		const old = await debit("2026-06-22", "-100", "Too old");
+		const small = await debit("2026-09-21", "-99,99", "Too small");
+		const positive = await debit("2026-09-21", "100", "Deposit");
+		const future = await debit("2026-09-22", "-100", "Future");
+		const pending = await debit("2026-09-21", "-110", "Pending");
+		const excluded = await debit("2026-09-21", "-120", "Excluded");
+		const unlinked = await postOwn(other.id, {
+			date: "2026-09-20",
+			amount: "-100",
+			label: "Other",
+		});
+		const { db } = await own();
+		await db.run(sql`update transactions set pending = 1 where entry_id = ${pending}`);
+		await send("PATCH", `/api/transactions/${excluded}`, { excluded: true });
+
+		expect(await outflows(holiday.id)).toMatchObject({
+			status: 200,
+			body: { data: [{ id: first }, { id: second }, { id: third }] },
+		});
+		await Promise.all(
+			[old, small, positive, future, pending, excluded, unlinked, "missing"].map(async (entryId) =>
+				refused(holiday.id, { entryId }, "transaction_not_found"),
+			),
+		);
+		expect(await consume(holiday.id, { entryId: first })).toMatchObject({ status: 200 });
+		expect(await outflows(holiday.id)).toMatchObject({
+			body: { data: [{ id: second }, { id: third }, { id: borderline }] },
+		});
+	});
+
+	it("refuses invalid spending and rolls back a claim when the earmark is too small", async () => {
+		const account = await savings("2 000");
+		const other = await savings("500");
+		const links = [{ accountId: account.id, allocatedAmount: "50" }, { accountId: other.id }];
+		const holiday = await create("Holiday", links);
+		const emergency = await create("Reserve", [{ accountId: account.id, allocatedAmount: "200" }], {
+			kind: "maintained",
+		});
+		const entryId = await postOwn(account.id, {
+			date: "2026-09-20",
+			amount: "-100",
+			label: "Train",
+		});
+
+		await refused(emergency.id, { amount: "10" }, "maintained");
+		expect(await outflows(emergency.id)).toMatchObject({ body: { data: [] } });
+		await refused(holiday.id, { amount: "0" }, "non_positive");
+		await refused(holiday.id, { amount: "garbage" }, "non_positive");
+		await refused(holiday.id, { amount: "10" }, "account_required");
+		await refused(holiday.id, { amount: "10", accountId: "other" }, "account_not_linked");
+		await refused(holiday.id, { amount: "1001", accountId: account.id }, "exceeds_target");
+		await refused(holiday.id, { amount: "600", accountId: other.id }, "exceeds_earmark");
+		await refused(holiday.id, { entryId }, "exceeds_earmark");
+		expect(await outflows(holiday.id)).toMatchObject({ body: { data: [{ id: entryId }] } });
+		expect(await send("GET", `/api/goals/${holiday.id}`)).toMatchObject({
+			body: {
+				data: {
+					consumedAmount: 0,
+					accounts: [{ allocatedAmount: 5_000 }, { allocatedAmount: null }],
+				},
+			},
+		});
+		expect(await consume(holiday.id, { entryId, amount: "1" })).toMatchObject({ status: 400 });
+		expect(await consume("missing", { amount: "1" })).toMatchObject({ status: 404 });
+		await fire(holiday.id, "pause");
+		await refused(holiday.id, { amount: "10", accountId: account.id }, "not_active");
+		expect(await outflows(holiday.id)).toMatchObject({ body: { data: [] } });
+
+		const orphanAccount = await savings("500");
+		const orphan = await create("Orphan", [{ accountId: orphanAccount.id }]);
+		expect(await send("DELETE", `/api/accounts/${orphanAccount.id}`)).toMatchObject({
+			status: 200,
+		});
+		await refused(orphan.id, { amount: "10" }, "no_linked_account");
+	});
+
+	it("keeps spending when restored from a direct archive and when the source debit is deleted", async () => {
+		const account = await savings("1 000");
+		const links = [{ accountId: account.id, allocatedAmount: "400" }];
+		const holiday = await create("Holiday", links);
+		const entryId = await postOwn(account.id, {
+			date: "2026-09-20",
+			amount: "-120",
+			label: "Train",
+		});
+
+		expect(await consume(holiday.id, { entryId })).toMatchObject({ status: 200 });
+		expect(await send("DELETE", `/api/transactions/${entryId}`)).toMatchObject({ status: 200 });
+		expect(await fire(holiday.id, "archive")).toMatchObject({ consumedAmount: 12_000 });
+		expect(await fire(holiday.id, "restore")).toMatchObject({
+			consumedAmount: 12_000,
+			progressAmount: 40_000,
+		});
+		expect(
+			await send(
+				"PUT",
+				`/api/goals/${holiday.id}`,
+				body("Holiday", links, { targetAmount: "100" }),
+			),
+		).toMatchObject({
+			status: 400,
+			body: { error: { fields: [{ path: "targetAmount", code: "below_consumed" }] } },
+		});
+		expect(
+			await send("PUT", `/api/goals/${holiday.id}`, body("Holiday", links, { kind: "maintained" })),
+		).toMatchObject({
+			status: 400,
+			body: { error: { fields: [{ path: "kind", code: "kind_locked_once_consumed" }] } },
+		});
+	});
+
+	it("counts spending on a whole balance through completion and starts a new lifecycle on reopening", async () => {
+		const account = await savings("1 000");
+		const holiday = await create("Holiday", [{ accountId: account.id }]);
+
+		expect(await consume(holiday.id, { amount: "200" })).toMatchObject({
+			status: 200,
+			body: {
+				data: {
+					saved: 80_000,
+					consumedAmount: 20_000,
+					progressAmount: 100_000,
+					remaining: 0,
+					percent: 100,
+					accounts: [{ allocatedAmount: 80_000 }],
+				},
+			},
+		});
+		expect(await fire(holiday.id, "complete")).toMatchObject({
+			saved: 80_000,
+			progressAmount: 100_000,
+		});
+		expect(await fire(holiday.id, "archive")).toMatchObject({ progressAmount: 100_000 });
+		expect(await fire(holiday.id, "restore")).toMatchObject({
+			progressAmount: 80_000,
+			consumedAmount: 0,
+		});
+	});
+
+	it("claims a debit from a deactivated funding account while retaining pace and scaled history", async () => {
+		const account = await savings("500", { openingDate: "2026-06-23" });
+		await postOwn(account.id, { date: "2026-09-10", amount: "300", label: "Deposit" });
+		const entryId = await postOwn(account.id, {
+			date: "2026-09-20",
+			amount: "-100",
+			label: "Train",
+		});
+		const holiday = await create("Holiday", [{ accountId: account.id, allocatedAmount: "500" }]);
+		await sendOwn("PATCH", `/api/accounts/${account.id}`, { active: false });
+		expect(await outflows(holiday.id)).toMatchObject({ body: { data: [{ id: entryId }] } });
+
+		expect(await consume(holiday.id, { entryId })).toMatchObject({
+			status: 200,
+			body: { data: { pace: holiday.pace, saved: 40_000, progressAmount: 50_000 } },
+		});
+		const { points } = await historyOf(holiday.id);
+		expect(points.at(0)).toEqual({ date: "2026-06-23", saved: 28_571 });
+		expect(points.at(-1)).toEqual({ date: "2026-09-21", saved: 40_000 });
+	});
+
+	it("claims one booked outflow only once across concurrent and repeated requests", async () => {
+		const account = await savings("2 000");
+		const link = { accountId: account.id, allocatedAmount: "500" };
+		const first = await create("Holiday", [link]);
+		const second = await create("Weekend", [link]);
+		const debit = await postOwn(account.id, { date: "2026-09-20", amount: "-100", label: "Train" });
+
+		expect(await outflows(first.id)).toMatchObject({
+			status: 200,
+			body: { data: [{ id: debit }] },
+		});
+		const responses = await Promise.all([
+			consume(first.id, { entryId: debit }),
+			consume(second.id, { entryId: debit }),
+		]);
+		expect(responses.map(({ status }) => status).toSorted((left, right) => left - right)).toEqual([
+			200, 409,
+		]);
+		const winner = responses[0]?.status === 200 ? first : second;
+		const loser = winner.id === first.id ? second : first;
+		expect(await consume(winner.id, { entryId: debit })).toMatchObject({
+			status: 409,
+			body: { error: { params: { reason: "transaction_already_claimed" } } },
+		});
+		expect(await send("GET", `/api/goals/${winner.id}`)).toMatchObject({
+			body: { data: { consumedAmount: 10_000, accounts: [{ allocatedAmount: 40_000 }] } },
+		});
+		expect(await send("GET", `/api/goals/${loser.id}`)).toMatchObject({
+			body: { data: { consumedAmount: 0, accounts: [{ allocatedAmount: 50_000 }] } },
+		});
+		expect(await outflows(loser.id)).toMatchObject({ status: 200, body: { data: [] } });
+		await fire(winner.id, "complete");
+		expect(await fire(winner.id, "reopen")).toMatchObject({ consumedAmount: 0 });
+		await refused(winner.id, { entryId: debit }, "transaction_already_claimed");
 	});
 });

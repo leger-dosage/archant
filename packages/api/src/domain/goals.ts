@@ -102,6 +102,8 @@ export type GoalStatus = keyof typeof STATUS_RANKS;
 
 export type GoalProgress = {
 	saved: MinorUnits;
+	consumedAmount: MinorUnits;
+	progressAmount: MinorUnits;
 	remaining: MinorUnits;
 	/** Floored, and 99 at most until nothing remains, so a ring never shows full too early. */
 	percent: number;
@@ -117,15 +119,17 @@ export function goalProgress(input: {
 	kind: GoalKind;
 	target: MinorUnits;
 	saved: MinorUnits;
+	consumedAmount: MinorUnits;
 	targetDate: IsoDate | null;
 	today: IsoDate;
 	accounts: readonly (AccountPace | undefined)[];
 	completed: boolean;
 }): GoalProgress {
-	const { target, saved, completed } = input;
-	const remaining = toMinorUnits(Math.max(target - saved, 0));
+	const { target, saved, consumedAmount, completed } = input;
+	const progressAmount = toMinorUnits(saved + consumedAmount);
+	const remaining = toMinorUnits(Math.max(target - progressAmount, 0));
 	const percent =
-		completed || remaining === 0 ? 100 : Math.min(Math.floor((saved * 100) / target), 99);
+		completed || remaining === 0 ? 100 : Math.min(Math.floor((progressAmount * 100) / target), 99);
 	const pace = monthlyPace(input.accounts);
 	const reserve = input.kind === "maintained";
 	const monthlyNeeded =
@@ -135,6 +139,8 @@ export function goalProgress(input: {
 
 	return {
 		saved,
+		consumedAmount,
+		progressAmount,
 		remaining,
 		percent,
 		monthlyNeeded,

@@ -54,6 +54,28 @@ Archant SHALL support reserves and estimating their targets from a number of mon
 - **WHEN** an administrator selects a number of months of expenses for a reserve
 - **THEN** Archant supplies a target based on household spending history.
 
+### Requirement: Explain a goal's state on its page
+
+Archant SHALL explain a goal's state and projection and show the relevant actions.
+
+#### Scenario: Read the goal status
+
+- **GIVEN** an active goal's page
+- **WHEN** it renders
+- **THEN** the header reads « Objectif : %{amount} d'ici le %{date} » with « N jours restants », « Objectif : %{amount} · attendu le %{date} » once the date has passed, or « Cible : %{amount} »; then one status line, Sure's `Goal#status_callout_context`: « atteindra l'objectif vers %{date} », « épargnez %{amount}/mois de plus pour rattraper le retard », « définissez une date cible pour projeter une date de fin », the unknown-pace guidance, or the depleted reserve's line.
+
+#### Scenario: See the action for the current state
+
+- **GIVEN** the state panel
+- **WHEN** the goal is behind, reached but not closed, a reserve whole or short, or without a date
+- **THEN** it shows Sure's `Goals::LifecyclePanelComponent` card: « Épargnez %{amount}/mois de plus pour rattraper le retard » with « Ajuster l'objectif à la place »; « Vous avez atteint votre cible, à %{saved} sur %{target}. » with « Clôturer cet objectif »; « Réserve constituée »; « Réserve sous son solde cible »; « Ajouter une date cible » with « Définir la date cible ».
+
+#### Scenario: Read the projection summary
+
+- **GIVEN** the « Projection » chart
+- **WHEN** its subtitle renders
+- **THEN** it reads Sure's `Goal#projection_summary`, « Au rythme actuel, vous atteindrez cet objectif vers le %{date}. », « Insuffisant au rythme actuel. » or the sentence for no date, zero measured pace, unknown pace, a reserve or a reached goal. Unknown pace explains what account history is needed instead of showing a shortfall.
+
 ### Requirement: Pledge a deposit toward a goal
 
 Archant SHALL accept a deposit pledge against a goal and reconcile it to an eligible deposit.
@@ -93,6 +115,46 @@ Archant SHALL accept a deposit pledge against a goal and reconcile it to an elig
 - **GIVEN** a goal behind its pace
 - **WHEN** pledges are open
 - **THEN** the catch-up amount subtracts them, as `Goal#catch_up_delta_money`, reading « les promesses en attente comblent le retard » once covered; cards show « Promesse en attente ».
+
+### Requirement: Spend a goal
+
+Archant SHALL record goal spending or match it to an eligible outflow and count consumed money toward progress.
+
+#### Scenario: Record spending
+
+- **GIVEN** an active one-off goal backed by money
+- **WHEN** the owner chooses « J'ai utilisé une partie de cet argent »
+- **THEN** « Enregistrer une dépense » asks « Combien avez-vous utilisé ? » and, with several links, « Depuis quel compte ? », then records it as Sure's `Goal#consume!`: `consumed_amount` grows, a fixed earmark shrinks by the amount, a whole-balance link becomes the smaller of what it backs and what the goal still needs.
+
+#### Scenario: Refuse ineligible spending
+
+- **GIVEN** a spend Sure refuses
+- **WHEN** it is submitted
+- **THEN** it answers Sure's `ConsumptionRefused` reason with Sure's text, such as « C'est plus que ce que cet objectif visait à épargner. »; a reserve, or a goal no longer active, records nothing.
+
+#### Scenario: Claim an outflow
+
+- **GIVEN** booked, non-excluded outflows of at least 100 € on an active one-off goal's accounts in the last 90 days
+- **WHEN** the goal page shows
+- **THEN** the three newest unclaimed ones are listed under « De l'argent est sorti de ces comptes », each with « C'était ça », which records it as spent and stamps it, as Sure's `Goal::WithdrawalDetector`.
+
+#### Scenario: Include consumed money in progress
+
+- **GIVEN** a goal with money spent
+- **WHEN** its card and ring show
+- **THEN** progress counts what was spent as found, `remaining_amount` and `progress_percent` adding `consumed_amount`, and both read « Dont %{amount} déjà utilisés », as Sure's.
+
+#### Scenario: Concurrent or refused claims
+
+- **WHEN** two requests claim the same outflow, or a claim fails a goal spending check
+- **THEN** only one successful claim may update the goal and its allocation
+- **AND** a refused request changes neither the allocation, the consumed amount nor the outflow stamp.
+
+#### Scenario: Restore a goal
+
+- **WHEN** an administrator reopens a completed goal or restores an archived one
+- **THEN** the new lifecycle of a previously completed goal starts with no consumed amount, and a goal archived without completing keeps its consumed amount
+- **AND** previously claimed outflows remain claimed.
 
 ### Requirement: Filter, search and summarise goals
 
