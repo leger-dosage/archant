@@ -13,7 +13,7 @@ import { z } from "zod";
 import { DEFAULT_CURRENCY, isCurrencyCode } from "@archant/data/money";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
-import { EmptyNote, EmptyState } from "@/components/EmptyState";
+import { EmptyState } from "@/components/EmptyState";
 import { GROUP_TABLE_INSET, InsetGroup } from "@/components/InsetGroup";
 import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
@@ -49,7 +49,6 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useMerchants } from "@/hooks/useMerchants";
 import {
 	useApplyRules,
@@ -87,10 +86,6 @@ export const Route = createFileRoute("/_authed/rules")({
 	validateSearch: searchSchema,
 	component: RulesPage,
 });
-
-// Below this width a condition row, its operator and its value do not fit
-// (EXPERIENCE.md): the page says so instead, as the import dialog does.
-const DESKTOP_QUERY = "(min-width: 768px)";
 
 /**
  * The dialog open, kept while it closes so its content does not vanish
@@ -417,7 +412,6 @@ function RulesPage() {
 		categoryId: presetCategory,
 	} = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const desktop = useMediaQuery(DESKTOP_QUERY);
 	const rules = useRules();
 	const accounts = useAccounts();
 	const categories = useCategories();
@@ -490,7 +484,7 @@ function RulesPage() {
 			return;
 		}
 
-		if (desktop && admin && failed === undefined) {
+		if (admin && failed === undefined) {
 			setOpened({ action: "add", preset: presetValues(presetName, presetCategory) });
 			setOpen(true);
 		}
@@ -498,7 +492,7 @@ function RulesPage() {
 			replace: true,
 			search: ({ name: _name, categoryId: _categoryId, ...rest }) => rest,
 		});
-	}, [presetName, presetCategory, ready, failed, desktop, admin, navigate]);
+	}, [presetName, presetCategory, ready, failed, admin, navigate]);
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("rules.title"), app: t("app.name") });
@@ -542,7 +536,7 @@ function RulesPage() {
 			title={t("rules.title")}
 			description={t("rules.description")}
 			actions={
-				desktop && admin ? (
+				admin ? (
 					<>
 						{/* As Sure's index, only once a rule exists: its page menu, then « Appliquer tout ». */}
 						{list.length > 0 && (
@@ -585,16 +579,14 @@ function RulesPage() {
 				) : undefined
 			}
 		>
-			{!desktop && <EmptyNote>{t("rules.mobile")}</EmptyNote>}
-
-			{desktop && !ready && failed === undefined && (
+			{!ready && failed === undefined && (
 				<div className="flex flex-col gap-2">
 					<Skeleton className="h-14 w-full" />
 					<Skeleton className="h-14 w-full" />
 				</div>
 			)}
 
-			{desktop && failed !== undefined && (
+			{failed !== undefined && (
 				<div role="alert" className="flex flex-col items-start gap-3 rounded-lg border bg-card p-4">
 					<p className="text-muted-foreground">{t(`errors.${errorCodeOf(failed.error)}`)}</p>
 					<Button
@@ -610,8 +602,7 @@ function RulesPage() {
 				</div>
 			)}
 
-			{desktop &&
-				ready &&
+			{ready &&
 				failed === undefined &&
 				(list.length === 0 ? (
 					<EmptyState
@@ -655,7 +646,7 @@ function RulesPage() {
 					</ListCard>
 				))}
 
-			{desktop && ready && (opened?.action === "add" || opened?.action === "edit") && (
+			{ready && (opened?.action === "add" || opened?.action === "edit") && (
 				<RuleDialog
 					open={open}
 					onOpenChange={setOpen}
@@ -666,7 +657,7 @@ function RulesPage() {
 					onSaved={opened.action === "add" ? (saved) => void askToApply(saved) : undefined}
 				/>
 			)}
-			{desktop && ready && failed === undefined && <RuleRuns page={runsPage} names={names} />}
+			{ready && failed === undefined && <RuleRuns page={runsPage} names={names} />}
 			{applying !== null && (
 				<ConfirmDialog
 					open={applyOpen}

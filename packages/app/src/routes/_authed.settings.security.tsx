@@ -355,7 +355,7 @@ type AuthFailure = { code?: string | undefined; status: number };
  */
 function TwoFactorSection() {
 	const { t } = useTranslation();
-	const { disableTwoFactor, enableTwoFactor, generateBackupCodes } = useAuthActions();
+	const { disableTwoFactor, enableTwoFactor } = useAuthActions();
 	const queryClient = useQueryClient();
 	const router = useRouter();
 	const enabled = Route.useRouteContext({
@@ -407,18 +407,6 @@ function TwoFactorSection() {
 		}
 	});
 
-	const regenerate = passwordForm.handleSubmit(async ({ password }) => {
-		const { data, error } = await generateBackupCodes(password);
-
-		if (error === null) {
-			passwordForm.reset({ password: "" });
-			setStep({ kind: "codes", backupCodes: data.backupCodes });
-			return;
-		}
-
-		await handleFailure(error);
-	});
-
 	const disable = passwordForm.handleSubmit(async ({ password }) => {
 		const { error } = await disableTwoFactor(password);
 
@@ -458,9 +446,7 @@ function TwoFactorSection() {
 						<form
 							noValidate
 							className="flex flex-col gap-4"
-							// On, Enter starts nothing: regenerating and turning off each
-							// need their own button, so a password typed for one never
-							// triggers the other.
+							// Enter in the password field must not disable two-factor.
 							onSubmit={(event) => {
 								if (enabled) {
 									event.preventDefault();
@@ -484,29 +470,15 @@ function TwoFactorSection() {
 								<FieldMessage id="twoFactorPassword-error" error={passwordErrors.password} />
 							</div>
 							{enabled ? (
-								<>
-									<Button
-										type="button"
-										className="self-start"
-										disabled={isSubmitting}
-										aria-describedby="regenerate-hint"
-										onClick={(event) => void regenerate(event)}
-									>
-										{t("twoFactor.regenerate")}
-									</Button>
-									<p id="regenerate-hint" className="text-xs text-muted-foreground">
-										{t("twoFactor.regenerateHint")}
-									</p>
-									<Button
-										type="button"
-										variant="outline"
-										className="self-start"
-										disabled={isSubmitting}
-										onClick={(event) => void disable(event)}
-									>
-										{t("twoFactor.disable")}
-									</Button>
-								</>
+								<Button
+									type="button"
+									variant="outline"
+									className="self-start"
+									disabled={isSubmitting}
+									onClick={(event) => void disable(event)}
+								>
+									{t("twoFactor.disable")}
+								</Button>
 							) : (
 								<Button type="submit" className="self-start" disabled={isSubmitting}>
 									{t("twoFactor.enable")}
@@ -614,7 +586,7 @@ function ScanStep({
 	);
 }
 
-/** The ten backup codes, shown once: the server keeps them encrypted and never sends them again. */
+/** Show the backup codes once so the member can save them before leaving. */
 function BackupCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
 	const { t } = useTranslation();
 
@@ -624,7 +596,10 @@ function BackupCodes({ codes, onDone }: { codes: string[]; onDone: () => void })
 				{t("twoFactor.backupCodesTitle")}
 			</h3>
 			<p className="text-sm text-muted-foreground">{t("twoFactor.backupCodesDescription")}</p>
-			<ul aria-labelledby="backupCodes-title" className="grid grid-cols-2 gap-2 font-mono text-sm">
+			<ul
+				aria-labelledby="backupCodes-title"
+				className="grid grid-cols-1 gap-2 font-mono text-sm sm:grid-cols-2"
+			>
 				{codes.map((code) => (
 					<li key={code}>{code}</li>
 				))}

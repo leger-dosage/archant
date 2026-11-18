@@ -132,7 +132,7 @@ export function RuleDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				showCloseButton={false}
-				className="max-h-[90vh] overflow-y-auto sm:max-w-[700px]"
+				className="max-h-[90dvh] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-[700px]"
 			>
 				<DialogHeader>
 					<DialogTitle>
@@ -206,7 +206,7 @@ export function RuleDialog({
 								/>
 							),
 						)}
-						<div className="flex gap-2">
+						<div className="flex flex-wrap gap-2">
 							<Button
 								type="button"
 								variant="outline"
