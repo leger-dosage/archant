@@ -12,6 +12,7 @@ CREATE TABLE `__new_goals` (
 	`kind` text DEFAULT 'one_off' NOT NULL,
 	`target_mode` text DEFAULT 'fixed' NOT NULL,
 	`target_months` integer,
+	`consumed_amount` integer DEFAULT 0 NOT NULL,
 	`completed_amount` integer,
 	`completed_at` integer,
 	`created_at` integer NOT NULL,
@@ -27,7 +28,7 @@ CREATE TABLE `__new_goals` (
 	CONSTRAINT "goals_completed_check" CHECK(("__new_goals"."completed_amount" is null) = ("__new_goals"."completed_at" is null))
 );
 --> statement-breakpoint
-INSERT INTO `__new_goals`("id", "name", "target_amount", "currency", "target_date", "color", "icon", "notes", "state", "kind", "target_mode", "target_months", "completed_amount", "completed_at", "created_at", "updated_at") SELECT "id", "name", "target_amount", "currency", "target_date", "color", "icon", "notes", "state", "kind", "target_mode", "target_months", "completed_amount", "completed_at", "created_at", "updated_at" FROM `goals`;--> statement-breakpoint
+INSERT INTO `__new_goals`("id", "name", "target_amount", "currency", "target_date", "color", "icon", "notes", "state", "kind", "target_mode", "target_months", "consumed_amount", "completed_amount", "completed_at", "created_at", "updated_at") SELECT "id", "name", "target_amount", "currency", "target_date", "color", "icon", "notes", "state", "kind", "target_mode", "target_months", "consumed_amount", "completed_amount", "completed_at", "created_at", "updated_at" FROM `goals`;--> statement-breakpoint
 DROP TABLE `goals`;--> statement-breakpoint
 ALTER TABLE `__new_goals` RENAME TO `goals`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;

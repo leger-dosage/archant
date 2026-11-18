@@ -3277,6 +3277,36 @@ const insertGoal = (
 	);
 
 describe("goals", () => {
+	it("keeps existing completion, funding and outflow rows when adding spending columns", async () => {
+		const before = await migratedBefore("0110_goal_consumption");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { state: "completed" });
+		await before.run(
+			sql`update goals set completed_amount = 40000, completed_at = 123 where id = 'g1'`,
+		);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 40000)`,
+		);
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`update entries set amount = -10000 where id = 'e1'`);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Train')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.get(
+				sql`select completed_amount, completed_at, consumed_amount from goals where id = 'g1'`,
+			),
+		).resolves.toEqual({ completed_amount: 40_000, completed_at: 123, consumed_amount: 0 });
+		await expect(
+			database.get(sql`select allocated_amount from goal_accounts where goal_id = 'g1'`),
+		).resolves.toEqual({ allocated_amount: 40_000 });
+		await expect(
+			database.get(sql`select consumed_goal_id from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ consumed_goal_id: null });
+	});
+
 	it("holds a positive target, Sure's states and kinds", async () => {
 		const database = await migrated();
 
@@ -3391,8 +3421,8 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
-	it("preserves reserves, linked accounts and pledges when widening the month bound", async () => {
-		const before = await migratedBefore("0110_goal_target_months_precision");
+	it("preserves reserves, linked accounts, pledges and attributed spending when widening the month bound", async () => {
+		const before = await migratedBefore("0111_goal_target_months_precision");
 		await insertAccount(before, "a1", "depository", "savings");
 		await insertGoal(before, "g1", { kind: "maintained" });
 		await before.run(
@@ -3402,6 +3432,12 @@ describe("goals", () => {
 			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
 		);
 		await insertGoal(before, "g2");
+		await before.run(sql`update goals set consumed_amount = 10000 where id = 'g2'`);
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`update entries set amount = -10000 where id = 'e1'`);
+		await before.run(
+			sql`insert into transactions (entry_id, label, consumed_goal_id) values ('e1', 'Train', 'g2')`,
+		);
 		await before.run(
 			sql`insert into goal_pledges (id, goal_id, account_id, amount, currency, created_at, expires_at) values ('p1', 'g2', 'a1', 25000, 'EUR', 0, 1000)`,
 		);
@@ -3418,6 +3454,12 @@ describe("goals", () => {
 		await expect(
 			database.all(sql`select id, goal_id, account_id, amount from goal_pledges`),
 		).resolves.toEqual([{ id: "p1", goal_id: "g2", account_id: "a1", amount: 25_000 }]);
+		await expect(
+			database.get(sql`select consumed_amount from goals where id = 'g2'`),
+		).resolves.toEqual({ consumed_amount: 10_000 });
+		await expect(
+			database.get(sql`select consumed_goal_id from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ consumed_goal_id: "g2" });
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 

@@ -21,7 +21,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | Story | Change                                                                                                                                          | Prerequisite                                                         |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
-| 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
@@ -38,6 +37,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 - Story 35.13. [Sure's `create_goal` contract](changes/archive/2026-11-18-sures-create-goal-contract/proposal.md).
 - Story 36.5: [Two-factor backup codes as Sure's](changes/archive/2026-11-18-two-factor-backup-codes-as-sures/proposal.md).
+
+- Story 35.7: [Spend a goal](changes/archive/2026-11-18-spend-a-goal/proposal.md).
 
 - Story 35.5: [Bills reserved inside each envelope](changes/archive/2026-11-18-bills-reserved-inside-each-envelope/proposal.md).
 

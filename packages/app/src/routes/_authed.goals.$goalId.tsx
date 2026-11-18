@@ -17,6 +17,7 @@ import { GoalDialog } from "@/components/GoalDialog";
 import { GoalMenu } from "@/components/GoalMenu";
 import { GoalPledgeDialog } from "@/components/GoalPledgeDialog";
 import { GoalPledges } from "@/components/GoalPledges";
+import { GoalSpending } from "@/components/GoalSpending";
 import { GoalStateBanner } from "@/components/GoalStateBanner";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
@@ -108,14 +109,21 @@ function Progress({ goal }: { goal: GoalData }) {
 							<span className="text-sm text-muted-foreground tabular-nums">
 								{t("goals.figures.reachedOn", {
 									date: formatShortDate(toIsoDate(new Date(goal.completedAt))),
-									amount: formatMoney({ amount: goal.saved, currency: goal.currency }),
+									amount: formatMoney({ amount: goal.progressAmount, currency: goal.currency }),
 								})}
 							</span>
 						)}
 					</div>
 					{months !== null && <p className="text-sm text-muted-foreground">{months}</p>}
+					{goal.consumedAmount > 0 && (
+						<p className="text-sm text-muted-foreground">
+							{t("goals.includingUsed", {
+								amount: formatMoney({ amount: goal.consumedAmount, currency: goal.currency }),
+							})}
+						</p>
+					)}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
-						<Figure label={t("goals.figures.saved")}>{money(goal.saved)}</Figure>
+						<Figure label={t("goals.figures.saved")}>{money(goal.progressAmount)}</Figure>
 						<Figure label={t("goals.figures.target")}>{money(goal.targetAmount)}</Figure>
 						{!completed && (
 							<Figure label={t(reserve ? "goals.figures.refill" : "goals.figures.remaining")}>
@@ -198,7 +206,7 @@ function completeDescription(goal: GoalData, t: TFunction): string {
 	return goal.percent < 100
 		? t("goals.completeDialog.short", {
 				percent: goal.percent,
-				saved: formatMoney({ amount: goal.saved, currency: goal.currency }),
+				saved: formatMoney({ amount: goal.progressAmount, currency: goal.currency }),
 				target: formatMoney({ amount: goal.targetAmount, currency: goal.currency }),
 			})
 		: t("goals.completeDialog.description");
@@ -422,6 +430,10 @@ function GoalPage() {
 						<Projection goal={data} history={history} summary={explanation?.projection ?? null} />
 						<Accounts goal={data} />
 					</div>
+					{admin &&
+						data.kind === "one_off" &&
+						data.state === "active" &&
+						data.accounts.length > 0 && <GoalSpending key={data.id} goal={data} />}
 					{data.notes !== null && (
 						<Section title={t("goals.notes")}>
 							<p className="p-4 whitespace-pre-line">{data.notes}</p>

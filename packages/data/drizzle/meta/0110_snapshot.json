@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "80b979d1-8d7d-4672-9660-4f9329e5c240",
+  "id": "0033e340-944e-467e-9a5f-6a284c147a73",
   "prevId": "ec8040b0-70f0-4b30-abc9-7822c6f31aa5",
   "tables": {
     "accounts": {
@@ -2383,6 +2383,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "consumed_amount": {
+          "name": "consumed_amount",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "completed_amount": {
           "name": "completed_amount",
           "type": "integer",
@@ -2439,7 +2447,7 @@
         },
         "goals_target_months_range_check": {
           "name": "goals_target_months_range_check",
-          "value": "typeof(\"goals\".\"target_months\") = 'integer' and \"goals\".\"target_months\" between 1 and 9007199254740991 or \"goals\".\"target_months\" is null"
+          "value": "\"goals\".\"target_months\" between 1 and 120"
         },
         "goals_target_mode_kind_check": {
           "name": "goals_target_mode_kind_check",
@@ -6222,6 +6230,13 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "consumed_goal_id": {
+          "name": "consumed_goal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "locked_fields": {
           "name": "locked_fields",
