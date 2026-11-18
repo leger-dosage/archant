@@ -31,6 +31,7 @@ import { toFieldErrors } from "../lib/zod-error.ts";
 import { recordAssistantCall } from "../services/assistant-calls.ts";
 import { ARCHANT_SCOPES, grantedScopes } from "../services/assistants.ts";
 import { mcpIssuer, mcpResource } from "../services/auth.ts";
+import { householdTimeZone } from "../services/settings.ts";
 import { getAccounts } from "./accounts.ts";
 import {
 	createBillTool,
@@ -516,7 +517,7 @@ function serverFor(deps: McpDeps, caller: Caller): McpServer {
 	return server;
 }
 
-const callers = new WeakMap<AuthInfo, Caller>();
+const callers = new WeakMap<AuthInfo, Caller & { timeZone: string }>();
 
 /**
  * The largest body `/api/mcp` reads: a statement's base64, a third larger
@@ -608,7 +609,7 @@ export function mcpHandler(deps: McpDeps): (request: Request) => Promise<Respons
 				throw new Error("An MCP server was asked for without an authenticated caller.");
 			}
 
-			return serverFor(deps, caller);
+			return serverFor({ ...deps, timeZone: caller.timeZone }, caller);
 		},
 		{
 			// `withinLimit` has refused anything larger by now.
@@ -651,7 +652,8 @@ export function mcpHandler(deps: McpDeps): (request: Request) => Promise<Respons
 		}
 
 		const authInfo: AuthInfo = { token: "", clientId: caller.clientId, scopes: caller.scopes };
-		callers.set(authInfo, caller);
+		const timeZone = await householdTimeZone(deps.db, deps.timeZone);
+		callers.set(authInfo, { ...caller, timeZone });
 
 		return handler.fetch(read, { authInfo });
 	};

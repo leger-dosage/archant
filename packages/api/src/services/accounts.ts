@@ -137,7 +137,7 @@ export async function listAccounts(
 	order: AccountOrder = DEFAULT_ACCOUNT_ORDER,
 ): Promise<AccountList> {
 	const date = today(deps.timeZone);
-	const reportingCurrency = getReportingCurrency();
+	const reportingCurrency = await getReportingCurrency(deps.db);
 	const rows = await deps.db.select().from(accounts);
 	const banks = await bankNames(deps);
 	const summaries = await Promise.all(

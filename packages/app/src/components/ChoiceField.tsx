@@ -42,7 +42,11 @@ export function ChoiceField<Value extends string>({
 					}
 				}}
 			>
-				<SelectTrigger id={id} className="w-full">
+				<SelectTrigger
+					id={id}
+					className="w-full"
+					aria-describedby={description === undefined ? undefined : `${id}-description`}
+				>
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>
@@ -53,7 +57,11 @@ export function ChoiceField<Value extends string>({
 					))}
 				</SelectContent>
 			</Select>
-			{description !== undefined && <p className="text-sm text-muted-foreground">{description}</p>}
+			{description !== undefined && (
+				<p id={`${id}-description`} className="text-sm text-muted-foreground">
+					{description}
+				</p>
+			)}
 		</div>
 	);
 }

@@ -469,6 +469,7 @@ function oldestDates(parsed: Parsed): Map<string, IsoDate> {
 }
 
 type Reader = {
+	baseCurrency: CurrencyCode;
 	parsed: Parsed;
 	findings: Findings;
 	timeZone: string;
@@ -509,7 +510,7 @@ function readAccounts(reader: Reader): PlanAccount[] {
 			return [];
 		}
 
-		const currency = data.currency ?? getReportingCurrency();
+		const currency = data.currency ?? reader.baseCurrency;
 
 		if (typeof currency !== "string" || !isCurrencyCode(currency)) {
 			findings.errors.push(invalid(record, "currency", currency));
@@ -1254,7 +1255,7 @@ function readRecurring(reader: Reader, merchantIds: ReadonlySet<string>): PlanRe
 		const merchant =
 			merchantSourceId !== null && merchantIds.has(merchantSourceId) ? merchantSourceId : null;
 		const name = textOf(data.name)?.trim() ?? null;
-		const currency = data.currency ?? account?.currency ?? getReportingCurrency();
+		const currency = data.currency ?? account?.currency ?? reader.baseCurrency;
 		const day = Number(data.expected_day_of_month);
 		const last = dateOf(data.last_occurrence_date);
 		const next = dateOf(data.next_expected_date);
@@ -1383,7 +1384,7 @@ function readRecurring(reader: Reader, merchantIds: ReadonlySet<string>): PlanRe
  * a line in another is skipped, with its categories.
  */
 function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudgetCategory[] } {
-	const currency = getReportingCurrency();
+	const currency = reader.baseCurrency;
 	const budgets = recordsOf(reader.parsed, "Budget").flatMap((record): PlanBudget[] => {
 		const { data } = record;
 		const sourceId = idOf(data.id);
@@ -1460,12 +1461,15 @@ function readBudgets(reader: Reader): { budgets: PlanBudget[]; lines: PlanBudget
 }
 
 /** Archant's refusals, each on its line, and the plan of what Archant keeps. */
-function readPlan(parsed: Parsed, findings: Findings, timeZone: string, locale: Locale): SurePlan {
+function readPlan(
+	parsed: Parsed,
+	findings: Findings,
+	preferences: Pick<Reader, "timeZone" | "locale" | "baseCurrency">,
+): SurePlan {
 	const reader: Reader = {
 		parsed,
 		findings,
-		timeZone,
-		locale,
+		...preferences,
 		accounts: new Map(),
 		securityCurrencies: new Map(),
 	};
@@ -1511,9 +1515,12 @@ export async function readSureArchive(
 	file: { name: string; bytes: Uint8Array },
 	limits: SureImportLimits,
 ): Promise<SureArchive> {
-	const locale = await householdLocale(deps.db);
+	const [locale, baseCurrency] = await Promise.all([
+		householdLocale(deps.db),
+		getReportingCurrency(deps.db),
+	]);
 	const { kept, ...preflight } = await runPreflight(deps, file, limits, (parsed, findings) =>
-		readPlan(parsed, findings, deps.timeZone, locale),
+		readPlan(parsed, findings, { timeZone: deps.timeZone, locale, baseCurrency }),
 	);
 
 	return { ...preflight, plan: kept };

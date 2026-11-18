@@ -144,7 +144,7 @@ export async function declareBill(
 ): Promise<RecurringRecord> {
 	const currency =
 		input.accountId === null
-			? currencyWithoutAccount(getReportingCurrency())
+			? currencyWithoutAccount(await getReportingCurrency(deps.db))
 			: await currencyOfAccount(deps.db, input.accountId);
 	const parsed = declareBillSchema(currency).safeParse(input);
 

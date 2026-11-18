@@ -17,6 +17,7 @@
 		"./dashboard-sections": "./dashboard-sections.ts",
 		"./decimals": "./decimals.ts",
 		"./goals": "./goals.ts",
+		"./household-preferences": "./household-preferences.ts",
 		"./locales": "./locales.ts",
 		"./micros": "./micros.ts",
 		"./migrate": "./migrate.ts",
