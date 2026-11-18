@@ -9,15 +9,22 @@ import { and, eq, inArray, isNull, ne, notInArray } from "drizzle-orm";
 
 import type { AccountType } from "@archant/data/account-types";
 import type { CategoryIcon } from "@archant/data/category-presets";
-import type { GoalEvent, GoalKind, GoalState, GoalTargetMode } from "@archant/data/goals";
+import type {
+	GoalEvent,
+	GoalKind,
+	GoalProgressBasis,
+	GoalState,
+	GoalTargetMode,
+} from "@archant/data/goals";
 import { RELEASED_GOAL_STATES, canBackGoal, goalTransition } from "@archant/data/goals";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, parseAmount, toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
 import { goalAccounts, goals } from "@archant/data/schema/goals";
 
-import { minDate, today } from "../domain/dates.ts";
+import { addDays, minDate, today } from "../domain/dates.ts";
 import {
+	GOAL_BALANCE_PACE_DAYS,
 	backingShares,
 	compareGoals,
 	goalHistoryStart,
@@ -32,6 +39,7 @@ import { goalSchema } from "../schemas/goals.ts";
 import { readGoalPledges } from "./goal-pledges.ts";
 import { monthlyExpenses } from "./goal-reserve-targets.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
+import { goalMarketGains } from "./ledger/goal-market.ts";
 import { claimGoalOutflow, listGoalOutflows } from "./ledger/goal-outflows.ts";
 import { accountPaces, goalContributionWindows } from "./ledger/goal-pace.ts";
 import { getReportingCurrency } from "./settings.ts";
@@ -54,6 +62,9 @@ type GoalAccountShare = {
 };
 
 export type GoalSummary = GoalProgress & {
+	progressBasis: GoalProgressBasis;
+	/** Live balance backing, shown alongside investment contributions. */
+	marketValue: MinorUnits | null;
 	id: string;
 	name: string;
 	/** The stored target, including for a reserve in months of expenses. */
@@ -134,7 +145,30 @@ async function loadGoals(deps: ServiceDeps) {
 	return { goalRows, linkRows, competing };
 }
 
-type LinkRow = { goalId: string; accountId: string; allocatedAmount: number | null };
+type LinkRow = {
+	goalId: string;
+	accountId: string;
+	allocatedAmount: number | null;
+	type: AccountType;
+};
+
+function investmentLinks(links: readonly LinkRow[]): string[] {
+	return [
+		...new Set(links.filter((link) => link.type === "investment").map((link) => link.accountId)),
+	];
+}
+
+function shareOn(
+	balance: MinorUnits,
+	row: LinkRow,
+	competing: GoalLink[],
+	marketGain?: MinorUnits,
+) {
+	return (
+		backingShares(toMinorUnits(balance - (marketGain ?? 0)), competing).get(row.goalId) ??
+		toMinorUnits(0)
+	);
+}
 
 function linkOf(row: LinkRow): GoalLink {
 	return {
@@ -166,11 +200,23 @@ export async function listGoals(
 			),
 		),
 	);
-	const paces = await accountPaces(deps, balances, date);
+	const contributions = new Set(
+		goalRows.filter((goal) => goal.progressBasis === "contributions").map((goal) => goal.id),
+	);
+	const [paces, marketGains] = await Promise.all([
+		accountPaces(deps, balances, date),
+		goalMarketGains(
+			deps,
+			investmentLinks(linkRows.filter((row) => contributions.has(row.goalId))),
+			date,
+			addDays(date, -GOAL_BALANCE_PACE_DAYS),
+		),
+	]);
 
 	return goalRows
 		.map((goal): GoalSummary => {
 			const links = linkRows.filter((row) => row.goalId === goal.id);
+			const countsContributions = goal.progressBasis === "contributions";
 			const shares = links.map((row): GoalAccountShare => {
 				const balance = balances.get(row.accountId) ?? toMinorUnits(0);
 
@@ -183,7 +229,12 @@ export async function listGoals(
 					active: row.active,
 					bankLinked: row.bankAccountId !== null,
 					allocatedAmount: linkOf(row).allocatedAmount,
-					share: backingShares(balance, competing(row)).get(goal.id) ?? toMinorUnits(0),
+					share: shareOn(
+						balance,
+						row,
+						competing(row),
+						countsContributions ? marketGains.get(row.accountId)?.total : undefined,
+					),
 				};
 			});
 			const targetAmount = toMinorUnits(goal.targetAmount);
@@ -197,7 +248,13 @@ export async function listGoals(
 				),
 				targetDate: goal.targetDate,
 				today: date,
-				accounts: links.map((row) => paces.get(row.accountId)),
+				accounts: links.map((row) => {
+					const pace = paces.get(row.accountId);
+					const gain = countsContributions ? marketGains.get(row.accountId)?.since : undefined;
+					return pace?.months === 12 && gain !== undefined
+						? { ...pace, change: toMinorUnits(pace.change - gain) }
+						: pace;
+				}),
 				completed: goal.state === "completed",
 			});
 
@@ -217,6 +274,18 @@ export async function listGoals(
 
 			return {
 				id: goal.id,
+				progressBasis: goal.progressBasis,
+				marketValue:
+					countsContributions && links.some((row) => row.type === "investment")
+						? toMinorUnits(
+								links.reduce(
+									(total, row) =>
+										total +
+										shareOn(balances.get(row.accountId) ?? toMinorUnits(0), row, competing(row)),
+									0,
+								),
+							)
+						: null,
 				pledges,
 				latestMatchedDepositDate: pledgeState?.latestMatchedDepositDate ?? null,
 				catchUpAmount,
@@ -321,15 +390,22 @@ export async function getGoalHistory(deps: ServiceDeps, id: string): Promise<Goa
 	);
 	const opened = starts.filter((start) => start !== null);
 	const from = goalHistoryStart(date, opened.length === 0 ? null : opened.reduce(minDate));
-	const accountsSeries = await Promise.all(
-		links.map(async (row) => balancesBetween(deps, row.accountId, from, date)),
-	);
+	const [accountsSeries, marketGains] = await Promise.all([
+		Promise.all(links.map((row) => balancesBetween(deps, row.accountId, from, date))),
+		goalMarketGains(
+			deps,
+			goal.progressBasis === "contributions" && goal.completedAmount === null
+				? investmentLinks(links)
+				: [],
+			date,
+		),
+	]);
 	const saved = toMinorUnits(
 		goal.completedAmount ??
 			links.reduce((total, row, index) => {
 				const balance = accountsSeries[index]?.at(-1)?.balance ?? toMinorUnits(0);
 
-				return total + (backingShares(balance, competing(row)).get(id) ?? 0);
+				return total + shareOn(balance, row, competing(row), marketGains.get(row.accountId)?.total);
 			}, 0),
 	);
 
@@ -611,6 +687,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 			await tx.insert(goals).values({
 				id,
 				name: goal.name,
+				progressBasis: goal.progressBasis ?? "balance",
 				...targetColumns(goal, targetAmount),
 				currency,
 				color: goal.color,
@@ -652,6 +729,12 @@ export async function updateGoal(
 				throw fieldError("kind", "kind_locked");
 			}
 
+			const progressBasis = goal.progressBasis ?? existing.progressBasis;
+
+			if (progressBasis !== existing.progressBasis && existing.completedAmount !== null) {
+				throw fieldError("progressBasis", "progress_basis_locked");
+			}
+
 			await assertFundable(tx, id, existing.currency, goal.accounts);
 			const unchanged =
 				existing.targetMode === "months_of_expenses" &&
@@ -672,6 +755,7 @@ export async function updateGoal(
 				.update(goals)
 				.set({
 					name: goal.name,
+					progressBasis,
 					...targetColumns(goal, targetAmount),
 					color: goal.color,
 					icon: goal.icon,
@@ -726,18 +810,26 @@ async function assertWholeAccountsFree(db: Db, goalId: string): Promise<void> {
 	}
 }
 
-/** Read just the linked balances under the write lock; pace is not part of the snapshot. */
-async function completionBacking(deps: ServiceDeps, id: string): Promise<MinorUnits> {
+/** Freeze the linked backing under the write lock, using the goal’s current basis. */
+async function completionBacking(
+	deps: ServiceDeps,
+	id: string,
+	basis: GoalProgressBasis,
+): Promise<MinorUnits> {
 	const { linkRows, competing } = await loadGoals(deps);
 	const date = today(deps.timeZone);
+	const links = linkRows.filter((row) => row.goalId === id);
+	const marketGains = await goalMarketGains(
+		deps,
+		basis === "contributions" ? investmentLinks(links) : [],
+		date,
+	);
 	const shares = await Promise.all(
-		linkRows
-			.filter((row) => row.goalId === id)
-			.map(async (row) => {
-				const balance = (await balanceOn(deps, row.accountId, date))?.amount ?? toMinorUnits(0);
+		links.map(async (row) => {
+			const balance = (await balanceOn(deps, row.accountId, date))?.amount ?? toMinorUnits(0);
 
-				return backingShares(balance, competing(row)).get(id) ?? 0;
-			}),
+			return shareOn(balance, row, competing(row), marketGains.get(row.accountId)?.total);
+		}),
 	);
 
 	return toMinorUnits(shares.reduce<number>((total, share) => total + share, 0));
@@ -757,7 +849,12 @@ export async function transitionGoal(
 	await deps.db.transaction(
 		async (tx) => {
 			const existing = await tx
-				.select({ state: goals.state, kind: goals.kind, completedAmount: goals.completedAmount })
+				.select({
+					state: goals.state,
+					kind: goals.kind,
+					completedAmount: goals.completedAmount,
+					progressBasis: goals.progressBasis,
+				})
 				.from(goals)
 				.where(eq(goals.id, id))
 				.get();
@@ -782,7 +879,10 @@ export async function transitionGoal(
 			}
 
 			// A spend committed before completion must be part of the frozen figures.
-			const frozen = next === "completed" ? await completionBacking({ ...deps, db: tx }, id) : null;
+			const frozen =
+				next === "completed"
+					? await completionBacking({ ...deps, db: tx }, id, existing.progressBasis)
+					: null;
 			const now = Date.now();
 
 			await tx

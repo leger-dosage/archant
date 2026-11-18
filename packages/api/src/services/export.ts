@@ -1415,6 +1415,7 @@ async function* goalsNdjson(deps: ServiceDeps, counts: Counts) {
 					notes: goal.notes,
 					state: goal.state,
 					kind: goal.kind,
+					progress_basis: goal.progressBasis,
 					target_mode: goal.targetMode,
 					target_months: goal.targetMonths,
 					consumed_amount: decimal(toMinorUnits(goal.consumedAmount), goal.currency),

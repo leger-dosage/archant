@@ -36,6 +36,10 @@ export const GOAL_TARGET_MODES = ["fixed", "months_of_expenses"] as const;
 
 export type GoalTargetMode = (typeof GOAL_TARGET_MODES)[number];
 
+export const GOAL_PROGRESS_BASES = ["balance", "contributions"] as const;
+
+export type GoalProgressBasis = (typeof GOAL_PROGRESS_BASES)[number];
+
 export const GOAL_TARGET_MONTHS_MAX = Number.MAX_SAFE_INTEGER;
 
 /**

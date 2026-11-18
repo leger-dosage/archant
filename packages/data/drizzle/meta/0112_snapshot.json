@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ba3323f1-c88c-4deb-986f-a6b4406018a6",
+  "id": "7c619a39-8d1a-4f44-819b-51a6db32e13b",
   "prevId": "6897fc35-649a-42a5-a178-79c21dc170e0",
   "tables": {
     "accounts": {
@@ -1514,20 +1514,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "start_date": {
-          "name": "start_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "currency": {
           "name": "currency",
           "type": "text",
@@ -1571,30 +1557,12 @@
             "month"
           ],
           "isUnique": true
-        },
-        "budgets_start_date_unique": {
-          "name": "budgets_start_date_unique",
-          "columns": [
-            "start_date"
-          ],
-          "isUnique": true
-        },
-        "budgets_end_date_unique": {
-          "name": "budgets_end_date_unique",
-          "columns": [
-            "end_date"
-          ],
-          "isUnique": true
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "budgets_dates_check": {
-          "name": "budgets_dates_check",
-          "value": "substr(\"budgets\".\"start_date\", 1, 7) = \"budgets\".\"month\" and \"budgets\".\"end_date\" >= \"budgets\".\"start_date\""
-        },
         "budgets_amounts_check": {
           "name": "budgets_amounts_check",
           "value": "\"budgets\".\"budgeted_spending\" >= 0 and \"budgets\".\"expected_income\" >= 0"
@@ -2400,6 +2368,14 @@
           "autoincrement": false,
           "default": "'one_off'"
         },
+        "progress_basis": {
+          "name": "progress_basis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'balance'"
+        },
         "target_mode": {
           "name": "target_mode",
           "type": "text",
@@ -2468,6 +2444,10 @@
         "goals_kind_check": {
           "name": "goals_kind_check",
           "value": "\"goals\".\"kind\" in ('one_off', 'maintained')"
+        },
+        "goals_progress_basis_check": {
+          "name": "goals_progress_basis_check",
+          "value": "\"goals\".\"progress_basis\" in ('balance', 'contributions')"
         },
         "goals_target_mode_check": {
           "name": "goals_target_mode_check",
