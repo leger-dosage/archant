@@ -200,3 +200,47 @@ test("a Windows-1252 CSV shows its accented labels intact", async ({ page, api }
 	await expect(tab(page, "À créer", 2)).toBeVisible();
 	await expect(dialog(page).getByRole("cell", { name: accented.label })).toHaveCount(2);
 });
+
+test.describe("CSV import on a phone", () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+	test("maps the columns, previews and confirms without widening the dialog", async ({
+		page,
+		api,
+	}) => {
+		const account = await api.openAccount();
+		const lines = threeLines();
+
+		await openImport(page, account.id, account.name);
+		await expect(step(page)).toHaveText(/Fichier/u);
+		await choose(page, csvFile(lines));
+		await expect(step(page)).toHaveText(/Colonnes/u);
+		await expect(
+			dialog(page).getByRole("button", { name: /^Importer \d+ opération/u }),
+		).toBeDisabled();
+		await mapColumns(page);
+
+		await expect(tab(page, "À créer", 3)).toHaveAttribute("aria-selected", "true");
+		await tab(page, "Rejetées", 0).click();
+		await expect(tab(page, "Rejetées", 0)).toHaveAttribute("aria-selected", "true");
+		await tab(page, "À créer", 3).click();
+		const confirm = dialog(page).getByRole("button", { name: "Importer 3 opérations" });
+		await expect(confirm).toBeInViewport({ ratio: 1 });
+		await expect
+			.poll(() => dialog(page).evaluate((element) => element.scrollWidth - element.clientWidth))
+			.toBe(0);
+		await confirm.click();
+
+		await expect(page.getByText("3 opérations importées.")).toBeVisible();
+		await expect(header(page, account.name)).toContainText(euros(100_000 - 4290 - 8712 + 215_000));
+
+		await openImport(page, account.id, account.name);
+		await choose(page, csvFile(threeLines()));
+		await expect(step(page)).toHaveText(/Aperçu/u);
+		await expect(
+			dialog(page).getByRole("button", { name: "Importer 3 opérations" }),
+		).toBeInViewport({
+			ratio: 1,
+		});
+	});
+});

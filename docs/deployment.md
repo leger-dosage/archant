@@ -411,7 +411,7 @@ The command asks for the new password twice without echoing it, never accepts it
 
 ### Two-factor sign-in
 
-Optional, turned on in « Réglages » › « Sécurité »: after the password, sign-in asks for a code from an authenticator app, or one of ten single-use backup codes shown once when it is turned on. Turning it off and regenerating the backup codes both ask for the password.
+Two-factor sign-in is optional. Turn it on in « Réglages » › « Sécurité ». After your password, sign-in asks for a code from your authenticator app or one of your backup codes. New enrolments give you eight single-use backup codes of 16 hexadecimal characters each. Archant shows them once. Unused codes from an earlier enrolment still work after an upgrade. To replace your codes, turn two-factor off with your current password, then turn it back on. This invalidates the previous codes.
 
 The authenticator secret and the backup codes are stored encrypted with `BETTER_AUTH_SECRET`. Losing or rotating that secret makes them unreadable, so no code is accepted any more: run `reset-password` above, which turns two-factor off, then turn it on again and scan the new QR code.
 

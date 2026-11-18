@@ -2,6 +2,7 @@ import type { SignedInTemplate, TestApp } from "../testing/auth.ts";
 import type { TempDatabase } from "../testing/temp-database.ts";
 import type { Auth } from "./auth.ts";
 
+import { symmetricEncrypt } from "better-auth/crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -185,12 +186,8 @@ type Enabled = { jar: Jar; secret: string; totpURI: string; backupCodes: string[
 const enabledSchema = z.object({ totpURI: z.string(), backupCodes: z.array(z.string()) });
 const enabledBody = (value: unknown) => enabledSchema.parse(value);
 
-const backupCodesSchema = z.object({ backupCodes: z.array(z.string()) });
-const backupCodesBody = (value: unknown) => backupCodesSchema.parse(value);
-
 /** Turns two-factor on for the administrator, as the security page does. */
-async function enable({ app, auth }: Server): Promise<Enabled> {
-	const jar = new Jar(template.cookie);
+async function enable({ app, auth }: Server, jar = new Jar(template.cookie)): Promise<Enabled> {
 	const started = await post(app, "/two-factor/enable", { password: ADMIN.password }, jar);
 	const { totpURI, backupCodes } = enabledBody(await started.json());
 	const secret = secretOf(totpURI);
@@ -221,8 +218,23 @@ async function passwordStep(app: TestApp, password: string = ADMIN.password) {
 	};
 }
 
+async function expectSingleUse(app: TestApp, code: string) {
+	const first = await passwordStep(app);
+	const accepted = await post(app, "/two-factor/verify-backup-code", { code }, first.jar);
+
+	expect(accepted.status).toBe(200);
+	expect(await isSignedIn(app, first.jar)).toBe(true);
+
+	const second = await passwordStep(app);
+	const refused = await post(app, "/two-factor/verify-backup-code", { code }, second.jar);
+
+	expect(refused.status).toBe(401);
+	await expect(refused.json()).resolves.toMatchObject({ code: "INVALID_BACKUP_CODE" });
+	expect(await isSignedIn(app, second.jar)).toBe(false);
+}
+
 describe("turning two-factor on", () => {
-	it("gives a URI and ten codes on the right password, and leaves it off until a code", async () => {
+	it("gives a URI and eight hexadecimal codes on the right password, and leaves it off until a code", async () => {
 		const { app } = startServer();
 		const jar = new Jar(template.cookie);
 
@@ -232,8 +244,8 @@ describe("turning two-factor on", () => {
 		const { totpURI, backupCodes } = enabledBody(await response.json());
 		expect(totpURI).toMatch(/^otpauth:\/\/totp\/Archant:admin%40example\.test\?/u);
 		expect(new URL(totpURI).searchParams.get("issuer")).toBe("Archant");
-		expect(backupCodes).toHaveLength(10);
-		expect(backupCodes.every((code) => /^[\dA-Za-z]{5}-[\dA-Za-z]{5}$/u.test(code))).toBe(true);
+		expect(backupCodes.length).toBe(8);
+		expect(backupCodes.every((code) => /^[0-9a-f]{16}$/u.test(code))).toBe(true);
 		await expect(twoFactorEnabled()).resolves.toBe(false);
 		// Abandoned here, the next sign-in still has one step.
 		const signIn = await passwordStep(app);
@@ -353,23 +365,26 @@ describe("signing in with two-factor on", () => {
 		expect(await isSignedIn(server.app, jar)).toBe(true);
 	});
 
-	it("signs in with a backup code once, and refuses the same code next time", async () => {
+	it.each(Array.from({ length: 8 }, (_, index) => index))(
+		"accepts backup code at index %i once",
+		async (index) => {
+			const server = startServer();
+			const { backupCodes } = await enable(server);
+
+			await expectSingleUse(server.app, backupCodes[index] ?? "");
+		},
+	);
+
+	it("accepts an unused backup code stored before the upgrade once", async () => {
 		const server = startServer();
-		const { backupCodes } = await enable(server);
-		const [code = ""] = backupCodes;
+		await enable(server);
+		const { secretConfig } = await server.auth.$context;
 
-		const first = await passwordStep(server.app);
-		const accepted = await post(server.app, "/two-factor/verify-backup-code", { code }, first.jar);
-
-		expect(accepted.status).toBe(200);
-		expect(await isSignedIn(server.app, first.jar)).toBe(true);
-
-		const second = await passwordStep(server.app);
-		const refused = await post(server.app, "/two-factor/verify-backup-code", { code }, second.jar);
-
-		expect(refused.status).toBe(401);
-		await expect(refused.json()).resolves.toMatchObject({ code: "INVALID_BACKUP_CODE" });
-		expect(await isSignedIn(server.app, second.jar)).toBe(false);
+		// The previous enrolment stored ten dashed codes as encrypted JSON.
+		const codes = Array.from({ length: 10 }, (_, index) => `aB2c${index}-De3fG`);
+		const backupCodes = await symmetricEncrypt({ key: secretConfig, data: JSON.stringify(codes) });
+		await temp.db.update(twoFactors).set({ backupCodes });
+		await expectSingleUse(server.app, codes[0] ?? "");
 	});
 
 	it("ends the challenge after five wrong codes: the sixth attempt must sign in again", async () => {
@@ -589,7 +604,7 @@ describe("a TOTP code works once", () => {
 describe("turning two-factor off", () => {
 	it("refuses a wrong password and stays on", async () => {
 		const server = startServer();
-		const { jar } = await enable(server);
+		const { jar, backupCodes } = await enable(server);
 
 		const response = await post(
 			server.app,
@@ -601,6 +616,7 @@ describe("turning two-factor off", () => {
 		expect(response.status).toBe(400);
 		await expect(response.json()).resolves.toMatchObject({ code: "INVALID_PASSWORD" });
 		await expect(twoFactorEnabled()).resolves.toBe(true);
+		await expectSingleUse(server.app, backupCodes[0] ?? "");
 	});
 
 	it("turns off on the password, and the next sign-in has one step", async () => {
@@ -623,31 +639,8 @@ describe("turning two-factor off", () => {
 	});
 });
 
-describe("regenerating backup codes", () => {
-	it("refuses a wrong password and keeps the old codes", async () => {
-		const server = startServer();
-		const { jar, backupCodes } = await enable(server);
-
-		const response = await post(
-			server.app,
-			"/two-factor/generate-backup-codes",
-			{ password: "pas le bon mot de passe" },
-			jar,
-		);
-
-		expect(response.status).toBe(400);
-		await expect(response.json()).resolves.toMatchObject({ code: "INVALID_PASSWORD" });
-		const signIn = await passwordStep(server.app);
-		const accepted = await post(
-			server.app,
-			"/two-factor/verify-backup-code",
-			{ code: backupCodes[0] },
-			signIn.jar,
-		);
-		expect(accepted.status).toBe(200);
-	});
-
-	it("replaces the ten codes: an old one is refused, a new one signs in", async () => {
+describe("replacing backup codes", () => {
+	it("refuses direct regeneration even with the current password and keeps the codes", async () => {
 		const server = startServer();
 		const { jar, backupCodes } = await enable(server);
 
@@ -658,10 +651,24 @@ describe("regenerating backup codes", () => {
 			jar,
 		);
 
-		expect(response.status).toBe(200);
-		const fresh = backupCodesBody(await response.json()).backupCodes;
-		expect(fresh).toHaveLength(10);
-		expect(fresh.filter((code) => backupCodes.includes(code))).toEqual([]);
+		expect(response.status).toBe(404);
+		await expectSingleUse(server.app, backupCodes[0] ?? "");
+	});
+
+	it("replaces the codes after disabling and enabling two-factor again", async () => {
+		const server = startServer();
+		const { jar, backupCodes } = await enable(server);
+
+		const disabled = await post(
+			server.app,
+			"/two-factor/disable",
+			{ password: ADMIN.password },
+			jar,
+		);
+		expect(disabled.status).toBe(200);
+		const { backupCodes: fresh } = await enable(server, jar);
+		expect(fresh.length).toBe(8);
+		expect(fresh.some((code) => backupCodes.includes(code))).toBe(false);
 
 		const old = await passwordStep(server.app);
 		const refused = await post(
@@ -671,15 +678,9 @@ describe("regenerating backup codes", () => {
 			old.jar,
 		);
 		expect(refused.status).toBe(401);
-
-		const renewed = await passwordStep(server.app);
-		const accepted = await post(
-			server.app,
-			"/two-factor/verify-backup-code",
-			{ code: fresh[0] },
-			renewed.jar,
-		);
-		expect(accepted.status).toBe(200);
+		await expect(refused.json()).resolves.toMatchObject({ code: "INVALID_BACKUP_CODE" });
+		expect(await isSignedIn(server.app, old.jar)).toBe(false);
+		await expectSingleUse(server.app, fresh[0] ?? "");
 	});
 });
 
@@ -724,19 +725,12 @@ describe("logs", () => {
 			{ code: backupCodes[1] },
 			challenge.jar,
 		);
-		const regenerated = await post(
-			server.app,
-			"/two-factor/generate-backup-codes",
-			{ password: ADMIN.password },
-			jar,
-		);
-		const fresh = backupCodesBody(await regenerated.json()).backupCodes;
 		await post(server.app, "/two-factor/disable", { password: ADMIN.password }, jar);
 
 		const logged = lines.join("\n");
 		const encodedSecret = new URL(totpURI).searchParams.get("secret") ?? "";
-		for (const leak of [secret, encodedSecret, totpURI, ...backupCodes, ...fresh]) {
-			expect(logged).not.toContain(leak);
+		for (const leak of [secret, encodedSecret, totpURI, ...backupCodes]) {
+			expect(logged.includes(leak)).toBe(false);
 		}
 
 		// Six digits alone, not inside a longer number such as a timestamp.
