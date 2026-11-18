@@ -122,7 +122,7 @@ export function LeafRow({
 
 	return (
 		<div className="flex flex-col gap-1">
-			<div className="flex items-start gap-2">
+			<div className="flex flex-wrap items-start gap-2 sm:flex-nowrap">
 				<Select
 					value={leafType}
 					onValueChange={(next) => {
@@ -136,7 +136,7 @@ export function LeafRow({
 					}}
 				>
 					<SelectTrigger
-						className="w-44 shrink-0"
+						className="w-full shrink-0 sm:w-44"
 						aria-label={t("rules.form.field", { index: label })}
 					>
 						<SelectValue />
@@ -162,7 +162,7 @@ export function LeafRow({
 					}}
 				>
 					<SelectTrigger
-						className="w-52 shrink-0"
+						className="w-full shrink-0 sm:w-52"
 						aria-label={t("rules.form.operator", { index: label })}
 						aria-invalid={operatorError !== undefined}
 					>
@@ -217,14 +217,14 @@ export function GroupRow({
 	const children = useFieldArray({ control, name: `conditions.${index}.conditions` });
 
 	return (
-		<fieldset className="flex flex-col gap-2 rounded-md border p-3">
+		<fieldset className="flex min-w-0 flex-col gap-2 rounded-md border p-3">
 			<legend className="px-1 text-sm font-medium">
 				{t("rules.form.group", { index: label })}
 			</legend>
 			<div className="flex items-center gap-2">
 				<Select value={operator.field.value} onValueChange={operator.field.onChange}>
 					<SelectTrigger
-						className="w-56"
+						className="w-56 min-w-0"
 						aria-label={t("rules.form.groupOperator", { index: label })}
 					>
 						<SelectValue />

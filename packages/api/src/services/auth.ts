@@ -8,6 +8,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError } from "better-auth/api";
 import { admin, jwt, twoFactor } from "better-auth/plugins";
+import { randomBytes } from "node:crypto";
 
 import type { Database } from "@archant/data/client";
 import {
@@ -224,12 +225,14 @@ export function createAuth({
 			// guest: every creation names its role, and a forgotten one fails
 			// closed (AD-21).
 			admin({ defaultRole: "guest" }),
-			// Every other option at its default: 6-digit, 30-second TOTP, ten
-			// backup codes stored encrypted, 5 attempts per challenge, a
-			// 15-minute lockout after 10 failures and 3 requests per 10 seconds
-			// per address on `/two-factor/*`. The issuer is what the
-			// authenticator app shows; without it, Better Auth names itself.
-			twoFactor({ issuer: "Archant" }),
+			// Change only generation so backup codes already stored by Better Auth still work.
+			twoFactor({
+				issuer: "Archant",
+				backupCodeOptions: {
+					customBackupCodesGenerate: () =>
+						Array.from({ length: 8 }, () => randomBytes(8).toString("hex")),
+				},
+			}),
 			// After `twoFactor`, whose model it adds a field to: a TOTP code
 			// works once.
 			oneTimeTotp(),
@@ -260,7 +263,12 @@ export function createAuth({
 				},
 			},
 		},
-		disabledPaths: [...ADMIN_PATHS, ...OAUTH_CLIENT_PATHS],
+		disabledPaths: [
+			...ADMIN_PATHS,
+			...OAUTH_CLIENT_PATHS,
+			// Replacing the set requires a fresh enrolment, as in Sure.
+			"/two-factor/generate-backup-codes",
+		],
 		// `x-forwarded-for` is rebuilt from the TCP peer before Better Auth sees
 		// it (lib/client-address.ts); this list is where its walk stops.
 		advanced: { ipAddress: { trustedProxies } },

@@ -20,7 +20,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite                                      |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| 34.8  | [Import files and edit rules on a phone](changes/import-files-and-edit-rules-on-a-phone/proposal.md)                                            |                                                   |
 | 34.10 | [Sure's layout under Archant's visual style](changes/sures-layout-under-archants-visual-style/proposal.md)                                      |                                                   |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/household-preferences/proposal.md) |
 | 35.2  | [Budget every category as Sure](changes/budget-every-category-as-sure/proposal.md)                                                              |                                                   |
@@ -38,7 +37,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 36.1  | [Reset a forgotten password by e-mail](changes/reset-a-forgotten-password-by-e-mail/proposal.md)                                                |                                                   |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2][story-36-2]                                |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2][story-36-2]                                |
-| 36.5  | [Two-factor backup codes as Sure's](changes/two-factor-backup-codes-as-sures/proposal.md)                                                       |                                                   |
 | 36.6  | [Household preferences](changes/household-preferences/proposal.md)                                                                              |                                                   |
 | 36.7  | [Sign in with a passkey](changes/sign-in-with-a-passkey/proposal.md)                                                                            |                                                   |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2][story-36-2]                                |
@@ -49,6 +47,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 - 37.3 [Cover both languages end to end](changes/archive/2026-11-18-cover-both-languages-end-to-end/proposal.md).
 
+- Story 36.5: [Two-factor backup codes as Sure's](changes/archive/2026-11-18-two-factor-backup-codes-as-sures/proposal.md).
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 
 [story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
