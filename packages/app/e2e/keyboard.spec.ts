@@ -3,12 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { daysAgo, expect, test, uniqueName } from "./fixtures.ts";
 
-// Story 11.13: no command palette and no single-key shortcuts. The interface
-// keeps what the browser and Radix give: `Tab`, `Enter` on a focused button,
-// `Esc` on a layer, and the sheet's `⌘Enter`. One exception is Sure's own:
-// « Rapports » clicks its period arrows on `←` and `→` (Story 34.7,
-// `reports.spec.ts`); Story 34.9 owns Sure's other keys. One database serves the whole
-// run, so lists are narrowed by a unique label prefix.
+// One database serves the whole run, so lists are narrowed by a unique label prefix.
 
 const rows = (page: Page) => page.getByRole("main").locator("button[data-transaction-id]");
 
@@ -123,7 +118,7 @@ test("Tab reaches the rail's links, then a row, and Enter opens its sheet", asyn
 	await expect(sheet(page).getByLabel("Libellé")).toHaveValue(`${prefix} 01`);
 });
 
-test("⌘Enter saves the sheet, and Esc closes another with focus back on its row", async ({
+test("the sheet saves explicitly, and Esc closes another sheet with focus back on its row", async ({
 	page,
 	api,
 }) => {
@@ -136,7 +131,12 @@ test("⌘Enter saves the sheet, and Esc closes another with focus back on its ro
 
 	await rows(page).nth(0).click();
 	await sheet(page).getByLabel("Libellé").fill(renamed);
-	await page.keyboard.press("ControlOrMeta+Enter");
+	await page.keyboard.press("Meta+Enter");
+	await expect(sheet(page)).toBeVisible();
+	await page.keyboard.press("Control+Enter");
+	await expect(sheet(page)).toBeVisible();
+	await expect(rows(page).filter({ hasText: renamed })).toHaveCount(0);
+	await sheet(page).getByRole("button", { name: "Enregistrer" }).click();
 
 	await expect(sheet(page)).toBeHidden();
 	await expect(page.getByRole("alertdialog")).toHaveCount(0);
@@ -150,4 +150,43 @@ test("⌘Enter saves the sheet, and Esc closes another with focus back on its ro
 
 	await expect(sheet(page)).toBeHidden();
 	await expect(rows(page).filter({ hasText: `${prefix} 02` })).toBeFocused();
+});
+
+test("Escape dismisses a settings dialog before returning to the previous page", async ({
+	page,
+}) => {
+	const previous = "/transactions?q=boulangerie";
+	await visit(page, previous);
+	await page
+		.getByRole("navigation", { name: "Navigation principale" })
+		.getByRole("link", { name: "Réglages" })
+		.click();
+	const settings = page.getByRole("navigation", { name: "Réglages" });
+	await settings.getByRole("link", { name: "Étiquettes" }).click();
+	const add = page.getByRole("button", { name: "Ajouter une étiquette", exact: true }).first();
+	await add.click();
+	const dialog = page.getByRole("dialog", { name: "Ajouter une étiquette" });
+	await expect(dialog).toBeVisible();
+	await page.keyboard.press("Escape");
+	await expect(dialog).toBeHidden();
+	await expect(page).toHaveURL("/settings/tags");
+
+	const back = settings.getByRole("link", { name: "Précédent" });
+	await expect(back).toHaveAttribute("href", previous);
+	await expect(back.locator("kbd")).toHaveText("esc");
+	await page.keyboard.press("Escape");
+	await expect(page).toHaveURL(previous);
+});
+
+test("opening settings directly gives the dashboard as the previous page", async ({ page }) => {
+	await visit(page, "/settings/tags");
+	await page
+		.getByRole("navigation", { name: "Réglages" })
+		.getByRole("link", { name: "Précédent" })
+		.click();
+	await expect(page).toHaveURL("/");
+
+	await visit(page, "/settings/tags");
+	await page.keyboard.press("Escape");
+	await expect(page).toHaveURL("/");
 });
