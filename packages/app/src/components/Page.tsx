@@ -5,7 +5,7 @@ import { PanelLeftIcon } from "lucide-react";
 import { Fragment } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ACCOUNTS_COLUMN_ID, useShell } from "@/components/AppShell";
+import { ACCOUNTS_COLUMN_ID, isPlanChild, useShell } from "@/components/AppShell";
 import { BankAlerts } from "@/components/BankAlerts";
 import { SETTINGS_SECTIONS } from "@/components/SettingsNav";
 import { Button } from "@/components/ui/button";
@@ -42,13 +42,13 @@ type PageProps = {
 
 type Crumb = {
 	label: ReactNode;
-	to?: "/" | "/accounts" | "/budgets" | "/goals" | "/settings" | "/transactions";
+	to?: "/" | "/accounts" | "/plan" | "/settings" | "/transactions";
 };
 
 /**
  * The page and its parents, from the URL alone so that no page has to pass
- * them: « Accueil / Opérations », « Comptes / Compte joint », « Budgets /
- * Budget d'octobre 2026 », « Objectifs / Vacances », « Opérations / Catégoriser »,
+ * them: « Accueil / Opérations », « Comptes / Compte joint », « Plan /
+ * Budget d'octobre 2026 », « Plan / Vacances », « Opérations / Catégoriser »,
  * « Réglages / Catégories ».
  */
 function useCrumbs(title: ReactNode): Crumb[] {
@@ -67,12 +67,8 @@ function useCrumbs(title: ReactNode): Crumb[] {
 		return [{ label: t("nav.operations"), to: "/transactions" }, { label: title }];
 	}
 
-	if (pathname.startsWith("/budgets/")) {
-		return [{ label: t("nav.budgets"), to: "/budgets" }, { label: title }];
-	}
-
-	if (pathname.startsWith("/goals/") && pathname !== "/goals/") {
-		return [{ label: t("nav.goals"), to: "/goals" }, { label: title }];
+	if (isPlanChild(pathname)) {
+		return [{ label: t("nav.plan"), to: "/plan" }, { label: title }];
 	}
 
 	if (pathname.startsWith("/settings")) {
