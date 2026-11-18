@@ -56,6 +56,7 @@ test("a section collapses and moves up by keyboard, and both stay after a reload
 		"net_worth",
 		"investment_performance",
 		"investment_flows",
+		"biggest_expenses",
 	]);
 
 	const netWorth = page.getByRole("region", { name: "Patrimoine net", exact: true });
@@ -79,6 +80,7 @@ test("a section collapses and moves up by keyboard, and both stay after a reload
 		"net_worth",
 		"investment_performance",
 		"investment_flows",
+		"biggest_expenses",
 	]);
 
 	await page.reload();
@@ -89,6 +91,7 @@ test("a section collapses and moves up by keyboard, and both stay after a reload
 		"net_worth",
 		"investment_performance",
 		"investment_flows",
+		"biggest_expenses",
 	]);
 	await expect(
 		page
@@ -121,7 +124,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 }) => {
 	const account = await api.openAccount({ openingDate: daysAgo(40) });
 	await api.addTransaction(account.id, { date: daysAgo(0), label: "Pain", amount: "-2,00" });
-	// Folded, the three sections fit on the screen with room below them.
+	// Folded, the sections fit on the screen with room below them.
 	const folded = await page.request.patch("/api/reports/layout", {
 		data: {
 			collapsedSections: {
@@ -130,6 +133,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 				transactions_breakdown: true,
 				investment_performance: true,
 				investment_flows: true,
+				biggest_expenses: true,
 			},
 		},
 	});
@@ -137,6 +141,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 
 	await page.goto("/reports");
 	await expect(section(page, "Patrimoine net")).toBeVisible();
+	await sections(page).scrollIntoViewIfNeeded();
 
 	const moved = layoutSaved(page);
 	// By hand rather than `dragTo`, as the dashboard's drag test explains.
@@ -145,7 +150,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 		.getByRole("button", { name: "Glisser pour réorganiser la section" });
 	await grip.hover();
 	const from = await grip.boundingBox();
-	const last = await section(page, "Flux d'investissement").boundingBox();
+	const last = await section(page, "Plus grosses dépenses").boundingBox();
 	expect(from).not.toBeNull();
 	expect(last).not.toBeNull();
 	await page.mouse.down();
@@ -165,6 +170,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 			"net_worth",
 			"investment_performance",
 			"investment_flows",
+			"biggest_expenses",
 			"trends_insights",
 		]);
 
@@ -175,6 +181,7 @@ test("a section dragged by its grip below the last one's middle lands last, kept
 		"net_worth",
 		"investment_performance",
 		"investment_flows",
+		"biggest_expenses",
 		"trends_insights",
 	]);
 });
@@ -240,5 +247,46 @@ test("investment sections retain their order and collapse through reload, hiding
 		print.getByRole("heading", { level: 2, name: "Investissements", exact: true }),
 	).toBeVisible();
 	await expect(print.getByText("Valeur du portefeuille")).toBeVisible();
+	await print.close();
+});
+
+test("the saved biggest-expense limit applies after reload and to print even when collapsed", async ({
+	page,
+	context,
+	api,
+}) => {
+	const date = "2020-09-15";
+	const account = await api.openAccount({ openingDate: "2020-09-01" });
+	await Array.from({ length: 12 }, (_, index) => index + 1).reduce(async (previous, index) => {
+		await previous;
+		await api.addTransaction(account.id, { date, label: "Dépense " + index, amount: "-" + index });
+	}, Promise.resolve());
+	await context.addInitScript(() => {
+		window.print = () => undefined;
+	});
+	await page.goto("/reports?periodType=custom&startDate=2020-09-01&endDate=2020-09-30");
+	const expenses = page.getByRole("region", { name: "Plus grosses dépenses", exact: true });
+	const rows = expenses.getByRole("table").getByRole("row");
+	await expect(rows).toHaveCount(11);
+	const expandedLimit = layoutSaved(page);
+	await expenses.getByRole("button", { name: "25", exact: true }).click();
+	await expandedLimit;
+	await expect(rows).toHaveCount(13);
+	const reducedLimit = layoutSaved(page);
+	await expenses.getByRole("button", { name: "5", exact: true }).click();
+	await reducedLimit;
+	await page.reload();
+	await expect(rows).toHaveCount(6);
+
+	const collapsed = layoutSaved(page);
+	await expenses.getByRole("button", { name: "Basculer la visibilité de la section" }).click();
+	await collapsed;
+	await expect(expenses.getByRole("table")).toBeHidden();
+	const opened = context.waitForEvent("page");
+	await page.getByRole("link", { name: "Imprimer le rapport" }).click();
+	const print = await opened;
+	const printed = print.getByRole("table", { name: "Plus grosses dépenses" });
+	await expect(printed.getByRole("row")).toHaveCount(6);
+	await expect(printed.getByRole("row").nth(1)).toContainText("Dépense 12");
 	await print.close();
 });
