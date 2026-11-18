@@ -50,7 +50,7 @@ import { deleteTransaction } from "./ledger/edits.ts";
 import * as recurringService from "./recurring/pipeline.ts";
 import { getNetWorth } from "./reports.ts";
 import * as ruleReader from "./rule-reader.ts";
-import { createRule, deleteRule, listRuleRuns } from "./rules.ts";
+import { createRule, deleteRule, listRuleRuns, reorderRules } from "./rules.ts";
 import {
 	startConnectionSync,
 	startDailySync,
@@ -663,7 +663,7 @@ describe("syncConnection", () => {
 		await expect(balanceOn(deps(), accountId, dayBefore)).resolves.toEqual(before);
 	});
 
-	it("runs every enabled rule over the history once the accounts are read, a line synced earlier included", async () => {
+	it("respects a rule’s saved priority and stop flag even for a line synced earlier", async () => {
 		mockProvider();
 		const connectionId = await newConnection();
 		const { accountId } = await linkedAccount(connectionId, FIXTURE_CHECKING_UID);
@@ -680,25 +680,37 @@ describe("syncConnection", () => {
 			createdAt: 0,
 			updatedAt: 0,
 		});
+		const conditions = [
+			{ conditionType: "transaction_name", operator: "=", value: old?.label ?? "" },
+		];
+		const later = await createRule(deps(), {
+			enabled: true,
+			conditions,
+			actions: [{ actionType: "exclude_transaction" }],
+		});
 		const rule = await createRule(deps(), {
 			enabled: true,
-			conditions: [{ conditionType: "transaction_name", operator: "=", value: old?.label ?? "" }],
+			stopProcessing: true,
+			conditions,
 			actions: [{ actionType: "set_transaction_category", value: categoryId }],
 		});
+		await reorderRules(deps(), [rule.id, later.id]);
 		vi.setSystemTime(NOW + DAY);
 
 		await syncConnection(deps(), connectionId);
 
 		await expect(
 			temp.db.all(
-				sql`select category_id as categoryId, category_origin as origin from transactions where entry_id = ${old?.id ?? ""}`,
+				sql`select category_id as categoryId, category_origin as origin, excluded from transactions where entry_id = ${old?.id ?? ""}`,
 			),
-		).resolves.toEqual([{ categoryId, origin: "rule" }]);
+		).resolves.toEqual([{ categoryId, origin: "rule", excluded: 0 }]);
 		const { items } = await listRuleRuns(deps(), { page: 1, pageSize: 10 });
-		expect(items.filter((run) => run.ruleId === rule.id)).toMatchObject([
-			{ executionType: "scheduled", status: "success", transactionsModified: 1 },
+		expect(items.filter((run) => run.ruleId === rule.id || run.ruleId === later.id)).toMatchObject([
+			{ ruleId: rule.id, executionType: "scheduled", status: "success", transactionsModified: 1 },
+			{ ruleId: later.id, executionType: "scheduled", status: "success", transactionsProcessed: 0 },
 		]);
 		await deleteRule(deps(), rule.id);
+		await deleteRule(deps(), later.id);
 	});
 
 	it("commits the accounts that sync and rolls back the one that fails", async () => {

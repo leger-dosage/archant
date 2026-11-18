@@ -754,8 +754,15 @@
     {
       "idx": 107,
       "version": "6",
-      "when": 1795024213172,
-      "tag": "0107_goal_target_months_precision",
+      "when": 1795024213141,
+      "tag": "0107_order_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "6",
+      "when": 1795028656804,
+      "tag": "0108_goal_target_months_precision",
       "breakpoints": true
     }
   ]
