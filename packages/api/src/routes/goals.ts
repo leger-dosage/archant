@@ -10,6 +10,7 @@ import {
 	getGoal,
 	getGoalHistory,
 	getGoalOutflows,
+	getGoalsOverview,
 	getGoalsSummary,
 	listGoals,
 	spendGoal,
@@ -22,8 +23,9 @@ export function goalsRoutes(deps: ServiceDeps) {
 	return (
 		new Hono()
 			.get("/", async (c) => c.json({ data: await listGoals(deps) }, 200))
-			// Before `/:id`, which would otherwise read « summary » as a goal's id.
+			// Before `/:id`, which would otherwise read these as a goal's id.
 			.get("/summary", async (c) => c.json({ data: await getGoalsSummary(deps) }, 200))
+			.get("/overview", async (c) => c.json({ data: await getGoalsOverview(deps) }, 200))
 			.get("/:id", async (c) => c.json({ data: await getGoal(deps, c.req.param("id")) }, 200))
 			.get("/:id/history", async (c) =>
 				c.json({ data: await getGoalHistory(deps, c.req.param("id")) }, 200),
