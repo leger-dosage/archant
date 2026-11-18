@@ -5,9 +5,11 @@ import type { EditableRow, TransactionDetail, TransactionPatch, UpdateResult } f
 import type { Origin, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, count, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
+import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 import { entryKeys } from "@archant/data/schema/entry-keys";
 import { rejectedTransfers } from "@archant/data/schema/rejected-transfers";
@@ -19,6 +21,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { minDate, today } from "../../domain/dates.ts";
 import { isTooFarAhead, rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
+import { manualReconciliationEnabled } from "../manual-reconciliation.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { correlatedTransferSide, filterCondition } from "./filter.ts";
@@ -281,6 +284,7 @@ export type BulkPatch = {
 	notes?: string | undefined;
 	categoryId?: string | undefined;
 	merchantId?: string | undefined;
+	reconciliationStatus?: ReconciliationStatus | undefined;
 	/** The whole set, replacing each row's; `[]` removes every tag. */
 	tagIds?: readonly string[] | undefined;
 };
@@ -300,9 +304,12 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 				categoryHidden: correlatedTransferSide.uncounted.mapWith(Boolean),
 				parentEntryId: entries.parentEntryId,
 				split: inSplit.mapWith(Boolean),
+				reconciliationStatus: entries.reconciliationStatus,
+				manualAccount: isNull(accounts.bankAccountId).mapWith(Boolean),
 			})
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
+			.innerJoin(accounts, eq(accounts.id, entries.accountId))
 			.where(and(eq(entries.kind, "transaction"), where));
 
 	if ("filter" in selection) {
@@ -352,7 +359,7 @@ export async function bulkUpdateTransactions(
 ): Promise<BulkUpdateResult> {
 	return deps.db.transaction(
 		async (tx) => {
-			const { date, label, notes, categoryId, merchantId } = patch;
+			const { date, label, notes, categoryId, merchantId, reconciliationStatus } = patch;
 			const tagIds = patch.tagIds === undefined ? undefined : [...new Set(patch.tagIds)];
 
 			if (date !== undefined && isTooFarAhead(date, today(deps.timeZone))) {
@@ -369,6 +376,10 @@ export async function bulkUpdateTransactions(
 
 			if (tagIds !== undefined && tagIds.length > 0 && !(await tagsExist(tx, tagIds))) {
 				throw invalidField("patch.tagIds");
+			}
+
+			if (reconciliationStatus !== undefined && !(await manualReconciliationEnabled(tx))) {
+				throw invalidField("patch.reconciliationStatus");
 			}
 
 			const selected = await selectedRows(tx, selection);
@@ -397,12 +408,21 @@ export async function bulkUpdateTransactions(
 			// fields are the same for all, only the locks already held differ.
 			const writes = new Map<string, { detail: TransactionDetail; ids: string[] }>();
 			const moved: string[] = [];
+			const reconciled: string[] = [];
 			const earliest = new Map<string, IsoDate>();
 			const retagged: string[] = [];
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 			let changed = 0;
 
-			for (const { id, categoryHidden, parentEntryId, split: _split, ...row } of rows) {
+			for (const {
+				id,
+				categoryHidden,
+				parentEntryId,
+				split: _split,
+				manualAccount,
+				reconciliationStatus: currentStatus,
+				...row
+			} of rows) {
 				const current: EditableRow = { ...row, tagIds: tagsOf.get(id) ?? [] };
 				const change = changeOf(
 					current,
@@ -422,11 +442,23 @@ export async function bulkUpdateTransactions(
 					options.origin,
 				);
 
+				const statusChanged =
+					reconciliationStatus !== undefined &&
+					manualAccount &&
+					currentStatus !== reconciliationStatus;
+
+				if (statusChanged) {
+					reconciled.push(id);
+				}
+
+				if (statusChanged || change.changed.length > 0) {
+					changed += 1;
+				}
+
 				if (change.changed.length === 0) {
 					continue;
 				}
 
-				changed += 1;
 				const detail = detailOf(change, options.origin, now);
 				const key = writeKeyOf(detail, change, options.origin);
 				const group = writes.get(key);
@@ -459,6 +491,10 @@ export async function bulkUpdateTransactions(
 
 			await oneByOne(statements, ({ detail, chunk }) =>
 				tx.update(transactions).set(detail).where(inArray(transactions.entryId, chunk)),
+			);
+
+			await inSequence(reconciled, ROWS_PER_INSERT, (chunk) =>
+				tx.update(entries).set({ reconciliationStatus }).where(inArray(entries.id, chunk)),
 			);
 
 			if (date !== undefined) {

@@ -16,6 +16,7 @@ import { ExcludedMarker } from "@/components/ExcludedMarker";
 import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { OneTimeMarker } from "@/components/OneTimeMarker";
+import { ReconciliationBadge } from "@/components/ReconciliationBadge";
 import { PostedMatchBadge, StatusBadge } from "@/components/StatusBadge";
 import { TagBadge } from "@/components/TagBadge";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -29,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
 import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
 import { useConfirmTransfer, useRejectTransfer } from "@/hooks/useTransfers";
@@ -363,7 +365,10 @@ const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: tru
 const ROW_DIVIDER = "border-b border-line last:border-b-0";
 
 /** What every row of one list reads, built once per render of the list. */
+const RECONCILIATION_SLOT = "flex w-9 shrink-0 justify-center xl:w-28";
+
 type RowContext = {
+	manualReconciliation: boolean;
 	onOpen: (transaction: TransactionData) => void;
 	showAccount: boolean;
 	selection: Selection | undefined;
@@ -607,6 +612,18 @@ function RowLine({
 					/>
 				)}
 			</div>
+			{context.manualReconciliation && (
+				<div className={RECONCILIATION_SLOT}>
+					{!parent && item.reconciliationStatus !== null && (
+						<ReconciliationBadge
+							id={item.id}
+							status={item.reconciliationStatus}
+							editable={context.admin}
+							compact
+						/>
+					)}
+				</div>
+			)}
 			{context.matchActions &&
 				(!parent && item.transfer?.status === "pending" ? (
 					<MatchActions transferId={item.transfer.id} />
@@ -635,6 +652,7 @@ export function TransactionList({
 	const { t } = useTranslation();
 	const categories = useCategories();
 	const admin = useIsAdmin();
+	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
 	const setCategory = useSetTransactionCategory();
 	const merchants = useMerchants();
 	const tags = useTags();
@@ -645,6 +663,7 @@ export function TransactionList({
 		showAccount,
 		selection,
 		admin,
+		manualReconciliation,
 		matchActions: admin && items.some((item) => item.transfer?.status === "pending"),
 		columns,
 		categories: categories.data,
@@ -682,6 +701,7 @@ export function TransactionList({
 							{t("transactions.columns.amount")}
 						</span>
 					</div>
+					{manualReconciliation && <span className={RECONCILIATION_SLOT} />}
 					{context.matchActions && <span className={MATCH_ACTIONS_SLOT} />}
 				</div>
 			</div>

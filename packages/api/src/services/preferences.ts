@@ -11,6 +11,7 @@ import { DEFAULT_PERIOD } from "@archant/data/periods";
 import { users } from "@archant/data/schema/auth";
 
 import { householdLocale, saveHouseholdLocale } from "./household-locale.ts";
+import { manualReconciliationEnabled, saveManualReconciliation } from "./manual-reconciliation.ts";
 
 /**
  * One user's preferences, Sure's `users` columns that « Préférences » edits,
@@ -49,6 +50,8 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 	};
 }
 
+type PreferencesPage = Preferences & { householdLocale: Locale; manualReconciliation: boolean };
+
 /**
  * Saves the user's preferences, as Sure's `PATCH /users/:id` from
  * « Préférences », not Better Auth's update endpoint, which should not take
@@ -59,7 +62,7 @@ export async function updatePreferences(
 	deps: ServiceDeps,
 	userId: string,
 	input: PreferencesInput,
-): Promise<Preferences & { householdLocale: Locale }> {
+): Promise<PreferencesPage> {
 	const changes = {
 		...(input.defaultAccountOrder !== undefined && {
 			defaultAccountOrder: input.defaultAccountOrder,
@@ -77,6 +80,10 @@ export async function updatePreferences(
 		await saveHouseholdLocale(deps.db, input.householdLocale);
 	}
 
+	if (input.manualReconciliation !== undefined) {
+		await saveManualReconciliation(deps.db, input.manualReconciliation);
+	}
+
 	return getPreferencesPage(deps, userId);
 }
 
@@ -88,9 +95,12 @@ export async function updatePreferences(
 export async function getPreferencesPage(
 	deps: ServiceDeps,
 	userId: string,
-): Promise<Preferences & { householdLocale: Locale }> {
-	return {
-		...(await getPreferences(deps, userId)),
-		householdLocale: await householdLocale(deps.db),
-	};
+): Promise<PreferencesPage> {
+	const [preferences, locale, manualReconciliation] = await Promise.all([
+		getPreferences(deps, userId),
+		householdLocale(deps.db),
+		manualReconciliationEnabled(deps.db),
+	]);
+
+	return { ...preferences, householdLocale: locale, manualReconciliation };
 }
