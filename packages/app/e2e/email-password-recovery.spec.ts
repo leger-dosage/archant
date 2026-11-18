@@ -66,7 +66,7 @@ test("a member can sign in again through the link delivered by email", async ({
 
 		await page.getByLabel("Adresse e-mail").fill(PASSWORD_RESET_EMAIL);
 		await page.getByLabel("Mot de passe", { exact: true }).fill(newPassword);
-		await page.getByRole("button", { name: "Se connecter" }).click();
+		await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 		await expect(page.getByRole("heading", { name: "Bonjour", exact: true })).toBeVisible();
 
 		await page.evaluate((href) => window.location.assign(href), link);

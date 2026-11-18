@@ -3794,6 +3794,25 @@
 		"submit": "Change password",
 		"changed": "Password changed."
 	},
+	"passkeys": {
+		"delete": "Delete",
+		"title": "Passkeys and security keys",
+		"name": "Key name",
+		"code": "Authenticator app code",
+		"add": "Add a key",
+		"signIn": "Sign in with a passkey",
+		"verify": "Use a security key",
+		"unnamed": "Security key",
+		"addedAt": "Added on {{date}}",
+		"lastUsedAt": "Last used: {{date}}",
+		"neverUsed": "never",
+		"removeTitle": "Delete “{{name}}”?",
+		"removeDescription": "This key will no longer sign in to Archant.",
+		"failed": "The key could not be verified.",
+		"invalidCode": "The code is incorrect.",
+		"usedCode": "This code has already been used. Enter the next one.",
+		"tooMany": "Too many attempts. Try again shortly."
+	},
 	"twoFactor": {
 		"title": "Two-factor authentication",
 		"descriptionOff": "Off. When on, every sign-in asks, after the password, for a code from an authenticator app on your phone.",
