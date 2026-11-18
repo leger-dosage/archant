@@ -30,7 +30,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
-import { accountPaces } from "./ledger/goal-pace.ts";
+import { accountPaces, goalContributionWindows } from "./ledger/goal-pace.ts";
 import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
@@ -158,8 +158,10 @@ async function monthlyExpenses(deps: ServiceDeps): Promise<MinorUnits | null> {
  * months of expenses reads its target from the median monthly expenses,
  * read only when such a reserve exists. Reads only.
  */
-export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
-	const date = today(deps.timeZone);
+export async function listGoals(
+	deps: ServiceDeps,
+	date = today(deps.timeZone),
+): Promise<GoalSummary[]> {
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
 	const expenses = {
 		currency: await getReportingCurrency(deps.db),
@@ -247,6 +249,51 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
 	return goalsSummary(await listGoals(deps), await getReportingCurrency(deps.db));
+}
+
+/** Sure's goals index figures. Currency limits apply to amounts, and pace counts every currency. */
+export async function getGoalsOverview(deps: ServiceDeps) {
+	const date = today(deps.timeZone);
+	const currency = await getReportingCurrency(deps.db);
+	const goalList = await listGoals(deps, date);
+	const linked = [
+		...new Map(
+			goalList.flatMap((goal) => goal.accounts.map((row) => [row.accountId, row] as const)),
+		).values(),
+	];
+	const included = linked.filter((account) => account.currency === currency);
+	const contributions = await goalContributionWindows(
+		deps.db,
+		included.map((row) => row.accountId),
+		date,
+	);
+	const active = goalList.filter((goal) => goal.state === "active");
+	const behind = active.filter((goal) => goal.status === "behind");
+	const onTrack = active.filter((goal) => goal.status === "on_track").length;
+
+	return {
+		goals: goalList,
+		indicators: {
+			currency,
+			...contributions,
+			contributionLeftOut: linked
+				.filter((account) => account.currency !== currency)
+				.map(({ name }) => ({ name })),
+			monthlyNeeded: toMinorUnits(
+				behind.reduce(
+					(total, goal) => total + (goal.currency === currency ? (goal.monthlyNeeded ?? 0) : 0),
+					0,
+				),
+			),
+			monthlyLeftOut: behind
+				.filter((goal) => goal.currency !== currency)
+				.map(({ name }) => ({ name })),
+			behind: behind.length,
+			onTrack,
+			tracked: behind.length + onTrack,
+			paceUnknown: active.filter((goal) => goal.status === "pace_unknown").length,
+		},
+	};
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };

@@ -3,6 +3,99 @@ import type { Page } from "@playwright/test";
 import { z } from "zod";
 
 import { daysAgo, euros, expect, test, typed, uniqueName } from "./fixtures.ts";
+import { WEB_URL } from "./settings.ts";
+
+test("filters and searches the goals grid while keeping the indicators and archive visible", async ({
+	page,
+	api,
+	request,
+}) => {
+	const account = await api.openAccount({
+		name: uniqueName("Épargne"),
+		kind: "savings",
+		openingBalance: "1 000",
+		openingDate: daysAgo(60),
+	});
+	await api.addTransaction(account.id, { date: daysAgo(40), label: "Épargne", amount: "100" });
+	await api.addTransaction(account.id, { date: daysAgo(10), label: "Épargne", amount: "150" });
+	const shared = {
+		targetAmount: "2 000",
+		accounts: [{ accountId: account.id, allocatedAmount: "100" }],
+	};
+	const name = uniqueName("Voyage");
+	const completed = await api.createGoal({ ...shared, name });
+	await api.goalEvent(completed.id, "complete");
+	const archived = await api.createGoal({ ...shared, name: uniqueName("Archive") });
+	await api.goalEvent(archived.id, "archive");
+	const open = await api.createGoal({ ...shared, name: `${name} en cours` });
+	const ids = [completed.id, archived.id, open.id];
+	await Array.from({ length: 4 }).reduce<Promise<void>>(async (previous) => {
+		await previous;
+		ids.push((await api.createGoal(shared)).id);
+	}, Promise.resolve());
+
+	await page.goto("/goals");
+	const filters = page.getByRole("group", { name: "Filtrer les objectifs par statut" });
+	await expect(filters.getByRole("button")).toHaveText([
+		"Tous",
+		"En retard",
+		"En bonne voie",
+		"Sans échéance",
+		"En pause",
+		"Terminé",
+	]);
+	const indicators = page.getByRole("list", { name: "Indicateurs des objectifs" });
+	const search = page.getByRole("searchbox", { name: "Rechercher des objectifs" });
+	await expect(search).toHaveCount(0);
+	const dated = await api.createGoal({ ...shared, targetDate: daysAgo(-30) });
+	ids.push(dated.id);
+	await page.reload();
+	await expect(indicators.getByRole("listitem").nth(0)).toContainText(euros(15_000));
+	await expect(indicators).toContainText(/↑ 50\s% vs 30 jours précédents/u);
+	await expect(indicators.getByRole("listitem").nth(1)).toContainText(euros(190_000));
+	await expect(indicators).toContainText("1 objectif en retard");
+	await expect(indicators.getByRole("listitem").nth(2)).toContainText("0 sur 1");
+	const figures = await indicators.innerText();
+	await expect(search).toHaveAttribute("placeholder", "Rechercher des objectifs…");
+	await page.getByRole("button", { name: /Afficher.*archivé/iu }).click();
+	const archive = page.getByRole("list", { name: "Archivés" });
+	await expect(archive.getByRole("link", { name: new RegExp(archived.name, "u") })).toBeVisible();
+
+	await filters.getByRole("button", { name: "En pause" }).click();
+	await expect(page.getByText("Aucun objectif ne correspond à ce filtre.")).toBeVisible();
+	await filters.getByRole("button", { name: "Terminé" }).click();
+	await expect(card(page, open.name)).toHaveCount(0);
+	await search.fill(name.toUpperCase());
+	await expect(card(page, name)).toHaveCount(1);
+	await expect(filters.getByRole("button", { name: "Terminé" })).toHaveAttribute(
+		"aria-pressed",
+		"true",
+	);
+	await search.fill("Mot introuvable");
+	await expect(
+		page.getByText('Aucun objectif ne correspond à "Mot introuvable" avec ce filtre.'),
+	).toBeVisible();
+	await filters.getByRole("button", { name: "Tous" }).click();
+	await expect(page.getByText('Aucun objectif ne correspond à "Mot introuvable".')).toBeVisible();
+	await expect(archive.getByRole("link", { name: new RegExp(archived.name, "u") })).toBeVisible();
+	await expect(indicators).toHaveText(figures, { useInnerText: true });
+
+	await api.addTransaction(account.id, { date: daysAgo(5), label: "Retrait", amount: "-50" });
+	await page.reload();
+	await expect(indicators).toContainText("Stable par rapport aux 30 jours précédents");
+	await api.addTransaction(account.id, { date: daysAgo(1), label: "Retrait", amount: "-150" });
+	await page.reload();
+	await expect(indicators.getByRole("listitem").nth(0)).toContainText(euros(-5_000));
+	await expect(indicators).toContainText(/↓ 150\s% vs 30 jours précédents/u);
+	await ids.reduce(async (previous, id) => {
+		await previous;
+		const response = await request.delete(`/api/goals/${id}`, { headers: { origin: WEB_URL } });
+		await expect(response).toBeOK();
+	}, Promise.resolve());
+	await expect(
+		await request.delete(`/api/accounts/${account.id}`, { headers: { origin: WEB_URL } }),
+	).toBeOK();
+});
 
 // Stories 21.1 to 21.3: save toward a goal, follow it to its end, and keep a
 // reserve. One database serves the whole run, so each test links accounts of
