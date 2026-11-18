@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "45986b24-a3e8-4c05-8110-06db909e1a78",
+  "id": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "prevId": "ac030b73-93e5-4815-82f6-2e29ff5e13b3",
   "tables": {
     "accounts": {
@@ -1530,6 +1530,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "reconciliation_status": {
+          "name": "reconciliation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unreconciled'"
+        },
         "date": {
           "name": "date",
           "type": "text",
@@ -1703,6 +1711,10 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
+        "entries_reconciliation_status_check": {
+          "name": "entries_reconciliation_status_check",
+          "value": "\"entries\".\"reconciliation_status\" in ('unreconciled', 'cleared', 'reconciled')"
+        },
         "entries_kind_check": {
           "name": "entries_kind_check",
           "value": "\"entries\".\"kind\" in ('transaction', 'valuation', 'trade')"
@@ -2079,7 +2091,7 @@
         },
         "goals_target_months_range_check": {
           "name": "goals_target_months_range_check",
-          "value": "typeof(\"goals\".\"target_months\") = 'integer' and \"goals\".\"target_months\" between 1 and 9007199254740991 or \"goals\".\"target_months\" is null"
+          "value": "\"goals\".\"target_months\" between 1 and 120"
         },
         "goals_target_mode_kind_check": {
           "name": "goals_target_mode_kind_check",
