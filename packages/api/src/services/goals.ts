@@ -168,7 +168,7 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 	const date = today(deps.timeZone);
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
 	const expenses = {
-		currency: getReportingCurrency(),
+		currency: await getReportingCurrency(deps.db),
 		median: goalRows.some((goal) => goal.targetMode === "months_of_expenses")
 			? await monthlyExpenses(deps)
 			: null,
@@ -254,7 +254,7 @@ export async function getGoal(deps: ServiceDeps, id: string): Promise<GoalSummar
  * reporting currency, as Sure's Plan card. Reads only.
  */
 export async function getGoalsSummary(deps: ServiceDeps) {
-	return goalsSummary(await listGoals(deps), getReportingCurrency());
+	return goalsSummary(await listGoals(deps), await getReportingCurrency(deps.db));
 }
 
 export type GoalHistory = { currency: string; from: IsoDate; to: IsoDate; points: SavedPoint[] };
@@ -349,12 +349,15 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 }
 
 /** A stored currency as the schema reads amounts in; the reporting one if it is no longer known. */
-function currencyCode(currency: string | undefined): CurrencyCode {
+async function currencyCode(
+	db: Pick<ServiceDeps["db"], "select">,
+	currency: string | undefined,
+): Promise<CurrencyCode> {
 	if (currency !== undefined && isCurrencyCode(currency)) {
 		return currency;
 	}
 
-	return getReportingCurrency();
+	return getReportingCurrency(db);
 }
 
 function parse(input: GoalInput, currency: CurrencyCode): GoalRequest {
@@ -483,7 +486,7 @@ async function storedTarget(
 		return target.amount;
 	}
 
-	const reported = currency === getReportingCurrency();
+	const reported = currency === (await getReportingCurrency(deps.db));
 	const amount = reported ? monthsOfExpenses(target.months, await monthlyExpenses(deps)) : null;
 
 	if (amount !== null) {
@@ -562,7 +565,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 
 	await deps.db.transaction(
 		async (tx) => {
-			const currency = currencyCode(await firstFundableCurrency(tx, input.accounts));
+			const currency = await currencyCode(tx, await firstFundableCurrency(tx, input.accounts));
 			const goal = parse(input, currency);
 			const now = Date.now();
 
@@ -606,7 +609,7 @@ export async function updateGoal(
 				throw notFound();
 			}
 
-			const goal = parse(input, currencyCode(existing.currency));
+			const goal = parse(input, await currencyCode(tx, existing.currency));
 
 			if (goal.kind !== existing.kind && RELEASED.includes(existing.state)) {
 				throw fieldError("kind", "kind_locked");
@@ -798,7 +801,7 @@ export async function getGoalOutflows(deps: ServiceDeps, id: string) {
 
 	return listGoalOutflows(deps.db, {
 		accountIds: links.map((link) => link.accountId),
-		currency: currencyCode(goal.currency),
+		currency: await currencyCode(deps.db, goal.currency),
 		date: today(deps.timeZone),
 	});
 }
@@ -822,7 +825,7 @@ export async function spendGoal(deps: ServiceDeps, id: string, input: GoalSpend)
 			}
 
 			const links = linkRows.filter((row) => row.goalId === id);
-			const currency = currencyCode(goal.currency);
+			const currency = await currencyCode(tx, goal.currency);
 			const date = today(deps.timeZone);
 
 			if (links.length === 0) {

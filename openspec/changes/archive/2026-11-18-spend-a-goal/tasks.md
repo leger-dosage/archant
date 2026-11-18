@@ -5,4 +5,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers both kinds of link, each refusal, an outflow claimed twice and the progress; Playwright records a spend and claims an outflow.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
