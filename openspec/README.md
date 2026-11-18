@@ -22,7 +22,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
 | 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
-| 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9]                                                               |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
 | 35.10 | [Budgets and goals on a Plan page](changes/budgets-and-goals-on-a-plan-page/proposal.md)                                                        |                                                                      |
@@ -50,6 +49,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 
 [story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
+
+- Story 35.6: [Pledge a deposit toward a goal](changes/archive/2026-11-18-pledge-a-deposit-toward-a-goal/proposal.md).
 
 - Story 34.10: [Sure's layout under Archant's visual style](changes/archive/2026-11-18-sures-layout-under-archants-visual-style/proposal.md).
 

@@ -15,6 +15,8 @@ import { EmptyState } from "@/components/EmptyState";
 import { goalBadge } from "@/components/GoalCard";
 import { GoalDialog } from "@/components/GoalDialog";
 import { GoalMenu } from "@/components/GoalMenu";
+import { GoalPledgeDialog } from "@/components/GoalPledgeDialog";
+import { GoalPledges } from "@/components/GoalPledges";
 import { GoalStateBanner } from "@/components/GoalStateBanner";
 import { Money } from "@/components/Money";
 import { Page } from "@/components/Page";
@@ -112,6 +114,15 @@ function Progress({ goal }: { goal: GoalData }) {
 						)}
 					</div>
 					{months !== null && <p className="text-sm text-muted-foreground">{months}</p>}
+					{goal.catchUpAmount !== null && (
+						<p className="text-sm text-muted-foreground">
+							{goal.catchUpAmount === 0
+								? t("goals.pledge.covered")
+								: t("goals.pledge.catchUp", {
+										amount: formatMoney({ amount: goal.catchUpAmount, currency: goal.currency }),
+									})}
+						</p>
+					)}
 					<dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3">
 						<Figure label={t("goals.figures.saved")}>{money(goal.saved)}</Figure>
 						<Figure label={t("goals.figures.target")}>{money(goal.targetAmount)}</Figure>
@@ -229,8 +240,7 @@ function Projection({ goal }: { goal: GoalData }) {
 
 /**
  * One goal, as Sure's page: a banner when it is not active, its progress,
- * its chart, the share each account backs and its notes; for an
- * administrator, « Modifier » and the « … » menu of its events and
+ * its chart, the share each account backs and its notes; for writers, « Modifier » and the « … » menu of its events and
  * « Supprimer ».
  */
 function GoalPage() {
@@ -296,6 +306,11 @@ function GoalPage() {
 	return (
 		<Page
 			title={title}
+			description={
+				data?.latestMatchedDepositDate === undefined || data.latestMatchedDepositDate === null
+					? undefined
+					: t("goals.pledge.matchedDate", { date: formatShortDate(data.latestMatchedDepositDate) })
+			}
 			{...(data === undefined
 				? {}
 				: {
@@ -309,6 +324,7 @@ function GoalPage() {
 			actions={
 				canWrite && data !== undefined ? (
 					<>
+						<GoalPledgeDialog key={data.id} goal={data} />
 						<Button
 							variant="outline"
 							onClick={() => setEdit(({ session }) => ({ open: true, session: session + 1 }))}
@@ -359,6 +375,7 @@ function GoalPage() {
 						pending={goalEvent.isPending}
 						onEvent={canWrite ? request : null}
 					/>
+					<GoalPledges goal={data} canWrite={canWrite} />
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
 						<Projection goal={data} />

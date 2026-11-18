@@ -1502,10 +1502,13 @@ describe("a guest", () => {
 			send("POST", "/api/goals", body("Travaux", [{ accountId, allocatedAmount: "1" }]), guest()),
 			send("PUT", `/api/goals/${id}`, body("Voyage", [{ accountId }]), guest()),
 			send("DELETE", `/api/goals/${id}`, undefined, guest()),
+			send("POST", `/api/goals/${id}/pledges`, { accountId, amount: "50" }, guest()),
+			send("POST", `/api/goals/${id}/pledges/pledge/extend`, undefined, guest()),
+			send("DELETE", `/api/goals/${id}/pledges/pledge`, undefined, guest()),
 			...events.map(async (event) => send("POST", `/api/goals/${id}/${event}`, undefined, guest())),
 		]);
 
-		expect(answers.map((answer) => answer.status)).toEqual(Array(9).fill(403));
+		expect(answers.map((answer) => answer.status)).toEqual(Array(12).fill(403));
 		expect(new Set(answers.map((answer) => errorBody.parse(answer.body).error.code))).toEqual(
 			new Set(["FORBIDDEN"]),
 		);

@@ -5,6 +5,7 @@ import type { Origin, Transaction } from "./shared.ts";
 
 import { and, count, desc, eq, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
 
+import { balanceTypeOf } from "@archant/data/account-types";
 import type { AccountType } from "@archant/data/account-types";
 import { classificationOf, transactionsMoveBalance } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
@@ -27,10 +28,12 @@ import { AppError } from "../../lib/errors.ts";
 import {
 	accountWithOpeningDate,
 	backwardAnchor,
+	balanceWithCashOn,
 	bookedMovements,
 	historyStartOf,
 	recomputeBalances,
 } from "./balances.ts";
+import { queueGoalSnapshot, reconcileGoalDeposits } from "./goal-deposits.ts";
 
 export type SnapshotInput = {
 	date: IsoDate;
@@ -95,7 +98,7 @@ export async function snapshotOn(
 /** The opening anchor, read as `snapshotOn` reads a snapshot. */
 async function openingAnchorRow(tx: Transaction, id: string) {
 	return tx
-		.select({ id: entries.id, notes: entries.notes })
+		.select({ id: entries.id, balance: entries.amount, notes: entries.notes })
 		.from(entries)
 		.where(eq(entries.id, id))
 		.get();
@@ -130,7 +133,7 @@ export async function recordSnapshot(
 	input: SnapshotInput,
 	options: { origin: Origin; afterToday?: boolean },
 ): Promise<RecordSnapshotResult> {
-	return deps.db.transaction(
+	const result = await deps.db.transaction(
 		async (tx): Promise<RecordSnapshotResult> => {
 			const account = await accountWithOpeningDate(tx, accountId);
 			const reason = snapshotRejection(account, input.date, deps.timeZone);
@@ -151,6 +154,10 @@ export async function recordSnapshot(
 				input.date === account.openingDate
 					? await openingAnchorRow(tx, account.openingId)
 					: await snapshotOn(tx, accountId, input.date);
+			const priorCash =
+				account.bankAccountId === null && balanceTypeOf(account.type) === "cash"
+					? (held?.balance ?? (await balanceWithCashOn(tx, accountId, input.date))?.cash ?? 0)
+					: undefined;
 			const existing = held?.id;
 			const id = existing ?? crypto.randomUUID();
 			const written = input.notes === undefined ? (held?.notes ?? null) : input.notes;
@@ -185,10 +192,19 @@ export async function recordSnapshot(
 
 			await recomputeBalances(tx, account, input.date, deps.timeZone);
 
+			if (priorCash !== undefined && input.balance > priorCash) {
+				await queueGoalSnapshot(tx, deps.timeZone, id, toMinorUnits(input.balance - priorCash));
+			}
+
 			return { status: "recorded", id, replaced: existing !== undefined };
 		},
 		{ behavior: "immediate" },
 	);
+
+	if (result.status === "recorded") {
+		await reconcileGoalDeposits(deps);
+	}
+	return result;
 }
 
 /**
@@ -202,7 +218,7 @@ export async function updateSnapshot(
 	patch: SnapshotPatch,
 	_options: { origin: Origin },
 ): Promise<SnapshotUpdateResult> {
-	return deps.db.transaction(
+	const result = await deps.db.transaction(
 		async (tx): Promise<SnapshotUpdateResult> => {
 			const current = await snapshotRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
@@ -240,10 +256,24 @@ export async function updateSnapshot(
 				.where(eq(entries.id, id));
 			await recomputeBalances(tx, account, minDate(current.date, date), deps.timeZone);
 
+			if (
+				account.bankAccountId === null &&
+				balanceTypeOf(account.type) === "cash" &&
+				balance > current.balance
+			) {
+				await queueGoalSnapshot(tx, deps.timeZone, id, toMinorUnits(balance - current.balance));
+			}
+
 			return { status: "updated" };
 		},
 		{ behavior: "immediate" },
 	);
+
+	if (result.status === "updated") {
+		await reconcileGoalDeposits(deps);
+	}
+
+	return result;
 }
 
 /** What a reconciliation would set, as Sure's `ReconciliationResult` on a dry run. */

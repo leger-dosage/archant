@@ -139,6 +139,10 @@ async function seed(administrator: APIRequestContext) {
 		targetAmount: "2 000",
 		accounts: [{ accountId: savings.id, allocatedAmount: "50" }],
 	});
+	const pledge = await administrator.post(`/api/goals/${goal.id}/pledges`, {
+		data: { accountId: savings.id, amount: "40" },
+	});
+	expect(pledge.status(), await pledge.text()).toBe(201);
 	// Paused, so its page shows a banner whose button a guest must not see.
 	await api.goalEvent(goal.id, "pause");
 	const rule = await api.createRule({
@@ -625,6 +629,9 @@ reader.describe("a guest", () => {
 			await expect(page.getByRole("region", { name: "Comptes liés" })).toContainText(savings.name);
 			await expect(page.getByRole("region", { name: "Cet objectif est en pause" })).toBeVisible();
 			await expect(page.getByRole("region", { name: "Projection" })).toBeVisible();
+			const pledges = page.getByRole("list", { name: "Promesses de versement" });
+			await expect(pledges).toContainText("40,00");
+			await expect(pledges.getByRole("button")).toHaveCount(0);
 			await expectNone(page, [
 				{ role: "button", name: "Modifier" },
 				{ role: "button", name: "Supprimer" },
