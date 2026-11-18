@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "2874e9fe-18e2-415e-941e-b02d2dd12d3a",
+  "id": "6897fc35-649a-42a5-a178-79c21dc170e0",
   "prevId": "0033e340-944e-467e-9a5f-6a284c147a73",
   "tables": {
     "accounts": {
@@ -953,7 +953,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"users\".\"role\" in ('admin', 'viewer')"
         },
         "users_default_account_order_check": {
           "name": "users_default_account_order_check",
@@ -2447,7 +2447,7 @@
         },
         "goals_target_months_range_check": {
           "name": "goals_target_months_range_check",
-          "value": "\"goals\".\"target_months\" between 1 and 120"
+          "value": "typeof(\"goals\".\"target_months\") = 'integer' and \"goals\".\"target_months\" between 1 and 9007199254740991 or \"goals\".\"target_months\" is null"
         },
         "goals_target_mode_kind_check": {
           "name": "goals_target_mode_kind_check",
@@ -2942,7 +2942,7 @@
       "checkConstraints": {
         "invitations_role_check": {
           "name": "invitations_role_check",
-          "value": "\"invitations\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"invitations\".\"role\" in ('admin', 'viewer')"
         }
       }
     },

@@ -2423,6 +2423,7 @@
 			"count_one": "{{count}} actif",
 			"count_other": "{{count}} actifs",
 			"ofTargets": "sur {{target}} tous objectifs confondus",
+			"targetOutOfRange": "Montant visé total trop élevé pour être affiché",
 			"behind_one": "{{count}} en retard",
 			"behind_other": "{{count}} en retard",
 			"paceUnknown": "{{count}} au rythme inconnu",
@@ -2532,8 +2533,8 @@
 			"perMonth": "{{amount}} par mois",
 			"noDate": "Aucune",
 			"reachedOn": "Atteint le {{date}} · {{amount}}",
-			"monthsOfExpenses": "{{count}} mois de dépenses, à {{median}} par mois : la médiane de vos dépenses mensuelles, comme le budget la suggère.",
-			"monthsStale": "{{count}} mois de dépenses. Faute de dépenses mensuelles comptées dans sa devise, le dernier montant calculé reste en vigueur."
+			"monthsOfExpenses": "{{count}} mois de dépenses, à {{median}} par mois : la médiane de vos dépenses mensuelles au dernier calcul.",
+			"monthsStale": "{{count}} mois de dépenses. Le dernier montant calculé reste en vigueur."
 		},
 		"accounts": {
 			"title": "Comptes liés",
@@ -2579,7 +2580,7 @@
 				"months_of_expenses": "Un nombre de mois de dépenses"
 			},
 			"targetMonths": "Mois de dépenses",
-			"targetMonthsHint": "Multiplie la médiane de vos dépenses mensuelles, recalculée à chaque affichage.",
+			"targetMonthsHint": "Recalculé le 1er de chaque mois à partir de vos dépenses mensuelles médianes.",
 			"date": "Échéance (facultative)",
 			"color": "Couleur",
 			"icon": "Icône",
@@ -4101,7 +4102,7 @@
 			"not_fundable": "Ce compte ne peut pas porter d'objectif : choisissez un compte courant, d'épargne ou d'investissement actif.",
 			"currency_mismatch": "Ce compte n'est pas dans la devise de l'objectif.",
 			"whole_balance_taken": "Un autre objectif prend déjà tout le solde de ce compte. Indiquez un montant.",
-			"invalid_months": "Indiquez un nombre entier de mois, de 1 à 120.",
+			"invalid_months": "Indiquez un nombre entier positif de mois qui donne un montant valide.",
 			"reserve_only": "Seule une réserve peut viser un nombre de mois de dépenses.",
 			"no_expenses": "Aucun mois ne compte encore de dépenses : choisissez un montant fixe.",
 			"not_reporting_currency": "Les dépenses se comptent dans une autre devise que ces comptes : choisissez un montant fixe.",

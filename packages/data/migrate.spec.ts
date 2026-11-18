@@ -291,7 +291,7 @@ describe("users and settings", () => {
 	});
 
 	it("upgrades viewers and invitations without losing authentication or invitation data", async () => {
-		const before = await migratedBefore("0111_household_roles");
+		const before = await migratedBefore("0112_household_roles");
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertUser(before, "u1", "admin");
 		await insertUser(before, "u2", "viewer");
@@ -3476,7 +3476,49 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
-	it("holds a fixed target, or a reserve's months of expenses between 1 and 120", async () => {
+	it("preserves reserves, linked accounts, pledges and attributed spending when widening the month bound", async () => {
+		const before = await migratedBefore("0111_goal_target_months_precision");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { kind: "maintained" });
+		await before.run(
+			sql`update goals set target_mode = 'months_of_expenses', target_months = 6 where id = 'g1'`,
+		);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
+		);
+		await insertGoal(before, "g2");
+		await before.run(sql`update goals set consumed_amount = 10000 where id = 'g2'`);
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`update entries set amount = -10000 where id = 'e1'`);
+		await before.run(
+			sql`insert into transactions (entry_id, label, consumed_goal_id) values ('e1', 'Train', 'g2')`,
+		);
+		await before.run(
+			sql`insert into goal_pledges (id, goal_id, account_id, amount, currency, created_at, expires_at) values ('p1', 'g2', 'a1', 25000, 'EUR', 0, 1000)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, target_mode, target_months from goals where id = 'g1'`),
+		).resolves.toEqual([{ id: "g1", target_mode: "months_of_expenses", target_months: 6 }]);
+		await expect(
+			database.all(sql`select goal_id, account_id, allocated_amount from goal_accounts`),
+		).resolves.toEqual([{ goal_id: "g1", account_id: "a1", allocated_amount: 30_000 }]);
+		await expect(
+			database.all(sql`select id, goal_id, account_id, amount from goal_pledges`),
+		).resolves.toEqual([{ id: "p1", goal_id: "g2", account_id: "a1", amount: 25_000 }]);
+		await expect(
+			database.get(sql`select consumed_amount from goals where id = 'g2'`),
+		).resolves.toEqual({ consumed_amount: 10_000 });
+		await expect(
+			database.get(sql`select consumed_goal_id from transactions where entry_id = 'e1'`),
+		).resolves.toEqual({ consumed_goal_id: "g2" });
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds a fixed target, or a reserve's months of expenses as a positive safe integer", async () => {
 		const database = await migrated();
 		await insertGoal(database, "g1");
 		await insertGoal(database, "g2", { kind: "maintained" });
@@ -3493,9 +3535,12 @@ describe("goals", () => {
 		]);
 		await expect(target("g2", "months_of_expenses", 6)).resolves.toBeDefined();
 		await expect(target("g2", "months_of_expenses", 1)).resolves.toBeDefined();
-		await expect(target("g2", "months_of_expenses", 120)).resolves.toBeDefined();
+		await expect(
+			target("g2", "months_of_expenses", Number.MAX_SAFE_INTEGER),
+		).resolves.toBeDefined();
 		await expect(target("g2", "months_of_expenses", 0)).rejects.toThrow();
-		await expect(target("g2", "months_of_expenses", 121)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", 1.5)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow();
 		await expect(target("g2", "months_of_expenses", null)).rejects.toThrow();
 		await expect(target("g2", "fixed", 6)).rejects.toThrow();
 		await expect(target("g2", "weekly", null)).rejects.toThrow();

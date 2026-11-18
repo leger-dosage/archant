@@ -22,7 +22,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
-| 35.12 | [Refresh a months-of-expenses reserve monthly](changes/refresh-a-months-of-expenses-reserve-monthly/proposal.md)                                |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2][story-36-2]                                                   |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2][story-36-2]                                                   |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2][story-36-2]                                                   |
@@ -48,6 +47,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 
 [story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
+
+- Story 35.12: [Refresh a months-of-expenses reserve monthly](changes/archive/2026-11-18-refresh-a-months-of-expenses-reserve-monthly/proposal.md).
 
 - Story 35.14: [Explain a goal's state on its page](changes/archive/2026-11-18-explain-a-goals-state-on-its-page/proposal.md).
 

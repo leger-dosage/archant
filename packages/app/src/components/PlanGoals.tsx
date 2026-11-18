@@ -31,9 +31,11 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 				<p className="flex flex-wrap items-baseline gap-x-2">
 					<Money amount={summary.saved} currency={summary.currency} className="amount-hero" />
 					<span className="text-sm text-muted-foreground">
-						{t("plan.goals.ofTargets", {
-							target: formatMoney({ amount: summary.target, currency: summary.currency }),
-						})}
+						{summary.target === null
+							? t("plan.goals.targetOutOfRange")
+							: t("plan.goals.ofTargets", {
+									target: formatMoney({ amount: summary.target, currency: summary.currency }),
+								})}
 					</span>
 				</p>
 				<p className="text-xs text-muted-foreground">
@@ -43,7 +45,9 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 						` · ${t("plan.goals.paceUnknown", { count: summary.paceUnknown })}`}
 					{summary.behind === 0 && summary.paceUnknown === 0 && ` · ${t("plan.goals.onPace")}`}
 				</p>
-				<PlanProgress percent={percentOf(summary.saved, summary.target)} />
+				{summary.target !== null && (
+					<PlanProgress percent={percentOf(summary.saved, summary.target)} />
+				)}
 				<LeftOutNotice accounts={summary.leftOut} />
 			</div>
 			<div className="flex flex-col gap-1">
