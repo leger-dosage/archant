@@ -23,7 +23,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 34.10 | [Sure's layout under Archant's visual style](changes/sures-layout-under-archants-visual-style/proposal.md)                                      |                                                                      |
 | 35.1  | [Start the month on the household's chosen day](changes/start-the-month-on-the-households-chosen-day/proposal.md)                               | [36.6](changes/archive/2026-11-18-household-preferences/proposal.md) |
 | 35.2  | [Budget every category as Sure](changes/budget-every-category-as-sure/proposal.md)                                                              |                                                                      |
-| 35.3  | [Sure's budget tools' inputs](changes/sures-budget-tools-inputs/proposal.md)                                                                    |                                                                      |
 | 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
 | 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9]                                                               |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
@@ -42,6 +41,7 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 ## Completed changes
 
+- 35.3 [Sure's budget tools' inputs](changes/archive/2026-11-18-sures-budget-tools-inputs/proposal.md).
 - 36.6 [Household preferences](changes/archive/2026-11-18-household-preferences/proposal.md).
 - 37.3 [Cover both languages end to end](changes/archive/2026-11-18-cover-both-languages-end-to-end/proposal.md).
 
