@@ -13,6 +13,7 @@ import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FieldMessage } from "@/components/FieldMessage";
 import { Page } from "@/components/Page";
+import { PasskeySection } from "@/components/PasskeySection";
 import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -122,6 +123,9 @@ function ProfileSection() {
 function SecurityPage() {
 	const { t } = useTranslation();
 	const isAdmin = useIsAdmin();
+	const twoFactorEnabled = Route.useRouteContext({
+		select: (context) => context.session.user.twoFactorEnabled === true,
+	});
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("security.title"), app: t("app.name") });
@@ -132,6 +136,7 @@ function SecurityPage() {
 			<ProfileSection />
 			<PasswordSection />
 			<TwoFactorSection />
+			<PasskeySection enabled={twoFactorEnabled} />
 			{isAdmin && <DangerZoneSection />}
 		</Page>
 	);

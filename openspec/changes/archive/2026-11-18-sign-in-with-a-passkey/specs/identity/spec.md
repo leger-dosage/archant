@@ -8,13 +8,18 @@ Archant SHALL allow members with two-factor authentication enabled to register p
 
 - **GIVEN** « Sécurité » with two-factor on
 - **WHEN** a member adds a key under « Clés d'accès et clés de sécurité »
-- **THEN** Better Auth's passkey plugin stores it with its name (« Nom de la clé »), date added and last use, as Sure's `webauthn_credentials`; without two-factor the control is refused, as `ensure_mfa_enabled`; « Supprimer » removes a key after a confirmation.
+- **THEN** the server requires a fresh two-factor code before saving the key, as Sure's `WebauthnCredentialsController` does. Registration consumes the code once on success. The member sees the key's name (« Nom de la clé »), date added and last use. « Supprimer » removes their key after confirmation. Without two-factor authentication the server refuses registration.
+
+#### Scenario: Disable two-factor authentication with a key enrolled
+
+- **WHEN** a member disables two-factor authentication or the administrator uses the terminal reset that disables it
+- **THEN** the member's passkeys are revoked and cannot be used after re-enrolment.
 
 #### Scenario: Use a passkey to sign in
 
 - **GIVEN** the sign-in page
 - **WHEN** a member chooses « Se connecter avec une clé d'accès »
-- **THEN** a discoverable passkey with user verification required signs them in without password or TOTP, as `passkey_sessions_controller.rb`, while `AUTH_PASSKEY_LOGIN_ENABLED` is true; set to false, a passkey serves only as the second factor at the code step.
+- **THEN** while `AUTH_PASSKEY_LOGIN_ENABLED` is true, a discoverable passkey with user verification signs them in without password or TOTP. While it is false, the server refuses standalone passkey verification and accepts a passkey only as the second factor for its owner's pending sign-in.
 
 #### Scenario: Label the controls
 

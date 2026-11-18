@@ -1,4 +1,5 @@
 import { oauthProviderClient } from "@better-auth/oauth-provider/client";
+import { passkeyClient } from "@better-auth/passkey/client";
 import { queryOptions } from "@tanstack/react-query";
 import { adminClient, twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
@@ -15,7 +16,7 @@ export const authClient = createAuthClient({
 	// `oauthProviderClient` adds the signed OAuth query of the page's address
 	// to every call but a GET, so a sign-in an assistant started continues
 	// its authorisation, and the consent page names the request it answers.
-	plugins: [adminClient(), twoFactorClient(), oauthProviderClient()],
+	plugins: [adminClient(), twoFactorClient(), passkeyClient(), oauthProviderClient()],
 });
 
 export const passwordResetAvailability = queryOptions({

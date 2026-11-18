@@ -174,6 +174,18 @@ An arrow means "may import". The app package imports only `app.ts` for the `AppT
 
 - **Password recovery:** With `SMTP_ADDRESS` set, `emailPasswordReset` enables Better Auth's reset request and redemption. The request allows three calls per client address per minute and answers the same way whether the account exists or has a local password. Nodemailer sends through the configured relay outside the response. The link uses the configured browser origin and carries its token in the fragment, which the interface removes from the address and sends only in a request body. The database keeps a hash of the token and expires it after fifteen minutes. Better Auth consumes the token and revokes sessions in the password update transaction. The consume hook checks for a local password and removes earlier links, trusted devices and pending second-factor challenges in that transaction. It keeps the second-factor enrolment. If OpenID Connect later disables local sign-in, the recovery feature must follow that policy as well. The terminal command remains the recovery path when mail or the second factor is unavailable.
 
+For passkeys, Better Auth manages the credential list and deletion, and SimpleWebAuthn performs
+the registration and assertion checks in `services/passkeys.ts`. The default Better Auth
+ceremony routes are disabled. Registration checks a fresh authenticator code before opening the
+browser prompt and consumes it in the same transaction that saves the key. The server limits
+code checks per account at both steps. A passkey belongs to
+one two-factor enrolment, so deleting the enrolment revokes its keys, including on terminal
+password reset. Authentication uses single-use challenges. Standalone sign-in requires a
+discoverable credential and user verification. Sign-in after a password binds the assertion to
+that exact pending attempt and consumes the attempt through Better Auth's verification store.
+Better Auth issues the session and its cookie. Archant records the credential counter and last
+use in the transaction that creates the session.
+
 ### AD-14 — Secrets and logs
 
 - **Binds:** Epic 10, all logging; NFR4, NFR5

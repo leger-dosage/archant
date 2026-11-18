@@ -109,6 +109,22 @@ client_max_body_size 11m;
 
 `docker compose down` keeps the data; `docker compose down --volumes` deletes the volume, and with it the database.
 
+### Passkeys
+
+Open Archant over HTTPS or on `http://localhost` to register a key. In **Settings → Security**,
+enable two-factor authentication and enter a fresh code from the authenticator app when adding
+the key. Keep the password and backup codes available for recovery.
+
+By default the browser's configured origin, `BETTER_AUTH_URL`, supplies the relying party hostname
+and the allowed origin. Set `WEBAUTHN_RP_ID` to an explicit hostname if needed. Set
+`WEBAUTHN_ALLOWED_ORIGINS` to a comma-separated list of exact origins if you need to pin the origins
+used to verify Web Authentication responses. Include `BETTER_AUTH_URL`'s origin. Archant still
+accepts authentication requests only at its configured application origin. Changing the relying
+party hostname requires registering the keys again.
+
+Set `AUTH_PASSKEY_LOGIN_ENABLED=false` to require a password before a passkey. Turning off
+two-factor authentication or resetting the user's password from the terminal revokes their keys.
+
 ## Upgrading
 
 Pin the release you run with `ARCHANT_VERSION` in the `.env` next to `docker-compose.yml`, so that an upgrade is a decision rather than whatever `latest` points at. Set it there rather than with `export`: a new shell forgets an exported variable, and the next `up` from it would return to `latest`. To upgrade, change the line in `.env` to the new release:
