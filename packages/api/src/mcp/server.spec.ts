@@ -2174,6 +2174,9 @@ describe("writing rules", () => {
 				{ tool: "apply_rules", outcome: "OK", changedRows: 2 },
 			]),
 		);
+
+		// Leave later preview tests without this enabled predecessor.
+		await callTool(bare, token, "set_rule_enabled", { rule_id: ruleId, enabled: false });
 	});
 
 	it("names the draft's field at fault under rule, and refuses a rule id beside a draft", async () => {
@@ -3353,8 +3356,8 @@ describe("reading a budget", () => {
 		expect(august?.is_current).toBe(false);
 	});
 
-	it("get_budget drops the months before the first one a budget covers, and shows a month not set up at zero", async () => {
-		const { app, reader } = await budgetHousehold();
+	it("get_budget counts missing in-bounds prior months and computes the target without writing", async () => {
+		const { db, app, reader } = await budgetHousehold();
 
 		const { months, months_unavailable: unavailable } = budgetResult.parse(
 			(await callTool(app, reader, "get_budget", { month: "Nov-2024", prior_months: 11 }))
@@ -3365,8 +3368,8 @@ describe("reading a budget", () => {
 		);
 
 		// The clock is 2026-09-21: budgets reach back to 2024-09.
-		expect(months.map((item) => item.month)).toEqual(["sep-2024", "oct-2024", "nov-2024"]);
-		expect(unavailable).toBe(9);
+		expect(months.map((item) => item.month)).toEqual(["nov-2024"]);
+		expect(unavailable).toBe(2);
 		expect(current.months.map((item) => item.month)).toEqual(["sep-2026"]);
 		expect(current.months[0]).toMatchObject({
 			initialized: false,
@@ -3379,23 +3382,36 @@ describe("reading a budget", () => {
 		});
 		expect(current.months_unavailable).toBeUndefined();
 		expect(current.months[0]).toMatchObject(await budgetFromRoute("2026-09"));
+		await expect(budgetRowCount(db)).resolves.toBe(0);
 	});
 
-	it("get_budget answers a month out of bounds with NOT_FOUND, and refuses more than eleven earlier months", async () => {
+	it("get_budget includes stored partial months before an out-of-bounds target", async () => {
+		const { db, app, reader, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		const saved = await callTool(app, author, "update_budget", {
+			month: "2028-08",
+			categories: [{ category: groceries, amount: 100 }],
+		});
+		expect(saved.isError).toBeUndefined();
+
+		const prior = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "2028-10", prior_months: 2 }))
+				.structuredContent,
+		);
+		expect(prior.months.map((item) => item.month)).toEqual(["aug-2028"]);
+		expect(prior.months[0]?.initialized).toBe(false);
+		expect(lineOf(prior.months[0], "Courses")?.budgeted).toBe(eur(10_000));
+		expect(prior.months_unavailable).toBe(1);
+		await expect(budgetRowCount(db)).resolves.toBe(1);
+	});
+
+	it("get_budget answers an out-of-bounds month with an empty list and refuses more than eleven prior months", async () => {
 		const { app, reader } = await budgetHousehold();
 
 		const ahead = await callTool(app, reader, "get_budget", { month: "2029-09" });
 		const tooMany = await callTool(app, reader, "get_budget", { prior_months: 12 });
 
-		expect(ahead).toEqual({
-			isError: true,
-			content: [
-				{
-					type: "text",
-					text: '{"success":false,"error":"not_found","message":"No budget can be set for this month."}',
-				},
-			],
-		});
+		expect(ahead.structuredContent).toEqual({ currency: "EUR", months: [] });
 		expect(tooMany.content[0]?.text).toContain("prior_months too_big");
 	});
 });
@@ -3494,6 +3510,91 @@ describe("setting a budget", () => {
 		]);
 	});
 
+	it("update_budget creates a record for each kind of partial update", async () => {
+		const { db, app, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		const update = async (month: string, args: Record<string, unknown>) =>
+			updatedBudget.parse(
+				(await callTool(app, author, "update_budget", { month, ...args })).structuredContent,
+			);
+
+		await setBudget("2026-07", "1 000,00", "2 000,00");
+		await sendOwn("PUT", `/api/budgets/2026-07/categories/${groceries}/rollover`, {
+			rolloverEnabled: true,
+		});
+		await update("2026-08", { categories: [{ category: groceries, amount: 100 }] });
+		await update("2026-09", { expected_income: 2000 });
+		await update("2026-10", { budgeted_spending: 1000 });
+		const { rows } = await db.$client.execute(
+			"select month, budgeted_spending, expected_income from budgets where month > '2026-07' order by month",
+		);
+
+		expect(rows).toMatchObject([
+			{ month: "2026-08", budgeted_spending: null, expected_income: null },
+			{ month: "2026-09", budgeted_spending: null, expected_income: 200_000 },
+			{ month: "2026-10", budgeted_spending: 100_000, expected_income: 0 },
+		]);
+		await expect(update("2026-08", { budgeted_spending: 1000 })).resolves.toMatchObject({
+			totals: { allocated_spending: eur(10_000) },
+		});
+		await expect(update("2026-09", { budgeted_spending: 1000 })).resolves.toMatchObject({
+			totals: { budgeted_spending: eur(100_000), expected_income: eur(200_000) },
+		});
+	});
+
+	it("lets the budget page copy over a partial plan saved by update_budget", async () => {
+		const { app, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		const home = await ownCategory("Maison");
+		await setBudget("2026-08", "1 000,00", "2 000,00");
+		await setAmount("2026-08", groceries, "50,00");
+
+		const partial = await callTool(app, author, "update_budget", {
+			month: "2026-09",
+			categories: [
+				{ category: groceries, amount: 100 },
+				{ category: home, amount: 25 },
+			],
+		});
+		expect(partial.isError).toBeUndefined();
+
+		await sendOwn("POST", "/api/budgets/2026-09/copy");
+		const copied = budgetResult.parse(
+			(await callTool(app, author, "get_budget", { month: "2026-09" })).structuredContent,
+		).months[0];
+		expect(copied?.initialized).toBe(true);
+		expect(lineOf(copied, "Courses")?.budgeted).toBe(eur(5_000));
+		expect(lineOf(copied, "Maison")?.budgeted).toBe(eur(0));
+	});
+
+	it("update_budget reports each repeated write in order, subcategories before parents", async () => {
+		const { app, author } = await budgetHousehold();
+		const home = await ownCategory("Maison");
+		const garden = await ownCategory("Jardin", { parentId: home });
+		const result = await callTool(app, author, "update_budget", {
+			categories: [
+				{ category: home, amount: 500 },
+				{ category: "Jardin", amount: 100 },
+				{ category: "Maison", amount: 600 },
+				{ category: garden, amount: 200 },
+			],
+		});
+
+		expect(updatedBudget.parse(result.structuredContent)).toMatchObject({
+			totals: { allocated_spending: eur(60_000) },
+			updated_categories: [
+				{ category: "Jardin", budgeted_spending: eur(10_000) },
+				{ category: "Jardin", budgeted_spending: eur(20_000) },
+				{ category: "Maison", budgeted_spending: eur(50_000) },
+				{ category: "Maison", budgeted_spending: eur(60_000) },
+			],
+		});
+		const after = budgetResult.parse((await callTool(app, author, "get_budget")).structuredContent)
+			.months[0];
+		expect(lineOf(after, "Maison")?.budgeted).toBe(eur(60_000));
+		expect(lineOf(after, "Jardin")?.budgeted).toBe(eur(20_000));
+	});
+
 	it("update_budget reads a JSON number through its decimal text", async () => {
 		const { db, app, author } = await budgetHousehold();
 		await setBudget("2026-10", "1 000,00", "2 000,00");
@@ -3518,7 +3619,7 @@ describe("setting a budget", () => {
 		});
 	});
 
-	it("update_budget refuses in Sure's order and words, and Archant's own refusals as validation_failed, writing nothing", async () => {
+	it("update_budget refuses invalid inputs in Sure's order and writes nothing", async () => {
 		const { db, app, author } = await budgetHousehold();
 		const groceries = await ownCategory("Courses");
 		const call = async (args: Record<string, unknown>) => {
@@ -3573,12 +3674,12 @@ describe("setting a budget", () => {
 		);
 		await expect(
 			Promise.all(
-				["non catégorisé", "UNCATEGORIZED", "Sans catégorie"].map(async (name) =>
+				["non catégorisé", "UNCATEGORIZED", "Sans catégorie", "Non classé"].map(async (name) =>
 					call({ ...setUp, categories: [{ category: name, amount: 5 }] }),
 				),
 			),
 		).resolves.toEqual(
-			["non catégorisé", "UNCATEGORIZED", "Sans catégorie"].map((name) =>
+			["non catégorisé", "UNCATEGORIZED", "Sans catégorie", "Non classé"].map((name) =>
 				refusal(
 					"invalid_params",
 					`'${name}' is the unallocated remainder of budgeted_spending and cannot be set directly. Adjust budgeted_spending or category amounts instead.`,
@@ -3598,26 +3699,27 @@ describe("setting a budget", () => {
 		).resolves.toEqual(
 			refusal("invalid_params", "amount for 'Courses' must be a non-negative number."),
 		);
-		// Archant's own: half a set-up, a category before it, a category twice, a third decimal.
-		await expect(call({ budgeted_spending: 1000 })).resolves.toEqual(
-			refusal("validation_failed", "The request is invalid; expected_income required"),
-		);
-		await expect(call({ categories: [{ category: groceries, amount: 100 }] })).resolves.toEqual(
-			refusal("validation_failed", "Set this month's budget before its categories."),
+		await expect(
+			call({ budgeted_spending: "12.345", categories: [{ category: "Absente", amount: 5 }] }),
+		).resolves.toEqual(
+			refusal(
+				"invalid_params",
+				"budgeted_spending must be a non-negative number with at most 2 decimal places.",
+			),
 		);
 		await expect(
 			call({
 				...setUp,
 				categories: [
-					{ category: groceries, amount: 100 },
-					{ category: "Courses", amount: 200 },
+					{ category: groceries, amount: "12.345" },
+					{ category: "Absente", amount: 5 },
 				],
 			}),
 		).resolves.toEqual(
-			refusal("validation_failed", "The request is invalid; categories.1.category duplicate"),
-		);
-		await expect(call({ ...setUp, budgeted_spending: "12.345" })).resolves.toEqual(
-			refusal("validation_failed", "The request is invalid; budgeted_spending invalid_amount"),
+			refusal(
+				"invalid_params",
+				"amount for 'Courses' must be a non-negative number with at most 2 decimal places.",
+			),
 		);
 		await expect(budgetRowCount(db)).resolves.toBe(0);
 		expect(outcomes(await callsRecorded(db)).map((entry) => entry.outcome)).toEqual([
@@ -3638,8 +3740,45 @@ describe("setting a budget", () => {
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
 			"VALIDATION_ERROR",
-			"VALIDATION_ERROR",
 		]);
+	});
+
+	it("update_budget reports a refused saved row and rolls back the whole update", async () => {
+		const { db, app, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		await ownCategory("Maison");
+		await setBudget("2026-09", "1 000,00", "2 000,00");
+		await setAmount("2026-09", groceries, "25,00");
+		await db.$client.execute(`
+			create trigger refuse_budget_category before insert on budget_categories
+			when new.budgeted_spending = 20000
+			begin
+				select raise(abort, 'Budget category refused');
+			end
+		`);
+
+		const refusedSave = async (month: string) => {
+			const result = await callTool(app, author, "update_budget", {
+				month,
+				budgeted_spending: 1500,
+				categories: [
+					{ category: groceries, amount: 100 },
+					{ category: "Maison", amount: 200 },
+				],
+			});
+			expect(result.isError).toBe(true);
+			expect(JSON.parse(result.content[0]?.text ?? "")).toMatchObject({
+				success: false,
+				error: "validation_failed",
+			});
+		};
+		await refusedSave("2026-09");
+		await refusedSave("2026-10");
+
+		await expect(budgetRowCount(db)).resolves.toBe(1);
+		await expect(budgetFromRoute("2026-09")).resolves.toMatchObject({
+			totals: { budgeted_spending: eur(100_000), allocated_spending: eur(2_500) },
+		});
 	});
 
 	it("update_budget stores the carry again when it changes an earlier month's amount", async () => {

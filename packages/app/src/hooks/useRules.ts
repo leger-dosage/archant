@@ -30,6 +30,15 @@ function useInvalidateRules() {
 	return () => queryClient.invalidateQueries({ queryKey: queryKeys.rules.all });
 }
 
+export function useReorderRules() {
+	const invalidate = useInvalidateRules();
+
+	return useMutation({
+		mutationFn: async (ids: string[]) => unwrap(api.rules.order.$put({ json: { ids } })),
+		onSettled: invalidate,
+	});
+}
+
 export function useCreateRule() {
 	const invalidate = useInvalidateRules();
 

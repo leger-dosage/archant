@@ -41,13 +41,11 @@ export async function readRules(
 				? undefined
 				: eq(rules.enabled, only.enabled)
 			: eq(rules.id, only.id);
-	// Creation order, as in Sure; the id breaks a tie between two rules saved
-	// in the same millisecond.
 	const rows = await db
 		.select()
 		.from(rules)
 		.where(filter)
-		.orderBy(asc(rules.createdAt), asc(rules.id));
+		.orderBy(asc(rules.position), asc(rules.createdAt), asc(rules.id));
 	const ids = rows.map((row) => row.id);
 
 	if (ids.length === 0) {
@@ -267,6 +265,7 @@ export async function knownReferences(db: Pick<Db, "select">): Promise<Known> {
 export function toRule({ row, conditions, actions }: ReadRule, known: Known): Rule {
 	return {
 		id: row.id,
+		stopProcessing: row.stopProcessing,
 		effectiveDate: row.effectiveDate,
 		conditions: conditions
 			.filter((condition) => condition.parentId === null)

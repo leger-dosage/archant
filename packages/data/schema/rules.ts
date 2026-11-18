@@ -23,7 +23,7 @@ import { inList } from "./check.ts";
 
 /**
  * Sure's `Rule`. Enabled rules run over the history after each sync or
- * import, in creation order; a rule reaches transactions dated on or after
+ * import, in saved order; a rule reaches transactions dated on or after
  * `effective_date`, every date when it is null.
  */
 export const rules = sqliteTable("rules", {
@@ -32,6 +32,8 @@ export const rules = sqliteTable("rules", {
 	name: text("name"),
 	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 	effectiveDate: text("effective_date"),
+	position: integer("position").notNull().default(0),
+	stopProcessing: integer("stop_processing", { mode: "boolean" }).notNull().default(false),
 	createdAt: integer("created_at").notNull(),
 	updatedAt: integer("updated_at").notNull(),
 });

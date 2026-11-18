@@ -20,4 +20,4 @@ Archant SHALL filter and search goals and show contribution and progress indicat
 
 - **GIVEN** the indicator strip
 - **WHEN** it renders
-- **THEN** it shows « Contribué · 30 derniers jours », the net inflow into goal-linked accounts with « ↑ N % vs 30 jours précédents » or its down and flat forms; « Requis ce mois-ci », the monthly amounts of the goals behind their pace, with « N objectifs en retard »; « Objectifs en bonne voie » as « %{on_track} sur %{total} », paused goals, reserves, reached and open-ended goals out of the total, as Sure's `GoalsController#kpi_payload`.
+- **THEN** it shows « Contribué · 30 derniers jours », the net inflow into goal-linked accounts with « ↑ N % vs 30 jours précédents » or its down and flat forms; « Requis ce mois-ci », the monthly amounts of the goals behind their pace, with « N objectifs en retard »; « Objectifs en bonne voie » as « %{on_track} sur %{total} », paused goals, reserves, reached goals, open-ended goals and goals with unknown pace out of the total. The indicator reports the number of active goals with unknown pace separately.
