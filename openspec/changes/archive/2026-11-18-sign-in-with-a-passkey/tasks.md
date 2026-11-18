@@ -7,4 +7,4 @@
 
 - [x] 2.1 AD-13 changes with this story; `.env.example` lists `WEBAUTHN_RP_ID`, `WEBAUTHN_ALLOWED_ORIGINS` and `AUTH_PASSKEY_LOGIN_ENABLED`; `docs/sure-parity.md` reads Parity for passkeys.
 - [x] 2.2 Verify successful enrolment, incorrect or reused two-factor proof, revocation, both sign-in modes and a credential presented for a different pending sign-in. Use Playwright with a virtual authenticator.
-- [ ] 2.3 Run the repository verification commands.
+- [x] 2.3 Run the repository verification commands.
