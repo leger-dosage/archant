@@ -28,7 +28,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 35.14 | [Explain a goal's state on its page](changes/explain-a-goals-state-on-its-page/proposal.md)                                                     | [35.9]                                                               |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2][story-36-2]                                                   |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2][story-36-2]                                                   |
-| 36.7  | [Sign in with a passkey](changes/sign-in-with-a-passkey/proposal.md)                                                                            |                                                                      |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2][story-36-2]                                                   |
 
 [35.9]: changes/archive/2026-11-18-a-goals-pace-and-history-as-sure/proposal.md
@@ -48,6 +47,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - [36.2. A member who writes, and a guest as Sure's][story-36-2]
 
 [story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
+
+- Story 36.7: [Sign in with a passkey](changes/archive/2026-11-18-sign-in-with-a-passkey/proposal.md).
 
 - Story 35.6: [Pledge a deposit toward a goal](changes/archive/2026-11-18-pledge-a-deposit-toward-a-goal/proposal.md).
 

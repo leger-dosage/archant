@@ -48,7 +48,7 @@ const section = (page: Page) => page.getByRole("region", { name: "Double authent
 async function passwordStep(page: Page) {
 	await page.getByLabel("Adresse e-mail").fill(ADMIN.email);
 	await page.getByLabel("Mot de passe").fill(NEW_PASSWORD);
-	await page.getByRole("button", { name: "Se connecter" }).click();
+	await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 }
 
 /** Turns two-factor on through the security page and returns the secret. */

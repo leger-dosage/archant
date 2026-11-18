@@ -291,7 +291,7 @@ describe("users and settings", () => {
 	});
 
 	it("upgrades viewers and invitations without losing authentication or invitation data", async () => {
-		const before = await migratedBefore("0106");
+		const before = await migratedBefore("0110_household_roles");
 		await insertAccount(before, "a1", "depository", "checking");
 		await insertUser(before, "u1", "admin");
 		await insertUser(before, "u2", "viewer");
@@ -308,6 +308,10 @@ describe("users and settings", () => {
 			sql`insert into two_factors (id, secret, backup_codes, user_id) values ('f1', 'secret', 'codes', 'u2')`,
 		);
 		await before.run(
+			sql`insert into passkeys (id, name, public_key, user_id, factor_id, user_handle, credential_id, counter, device_type, backed_up)
+				values ('p1', 'Test key', 'public-key', 'u2', 'f1', 'handle', 'credential-id', 1, 'singleDevice', 0)`,
+		);
+		await before.run(
 			sql`insert into invitations (id, email, role, token_hash, inviter_id, expires_at, accepted_at, created_at) values
 				('i1', 'pending@example.test', 'viewer', 'pending-hash', 'u1', 10, null, 1),
 				('i2', 'u2@example.test', 'viewer', 'used-hash', 'u1', 11, 2, 1),
@@ -320,6 +324,7 @@ describe("users and settings", () => {
 		const authRows = sql`select sessions.token, auth_accounts.password, two_factors.secret
 			from sessions join auth_accounts using (user_id) join two_factors using (user_id)`;
 		const oldAuth = await before.all(authRows);
+		const oldPasskeys = await before.all(sql`select * from passkeys`);
 		before.$client.close();
 
 		const database = await migrated();
@@ -331,6 +336,7 @@ describe("users and settings", () => {
 			oldInvitations.map((row) => (row.role === "viewer" ? { ...row, role: "guest" } : row)),
 		);
 		await expect(database.all(authRows)).resolves.toEqual(oldAuth);
+		await expect(database.all(sql`select * from passkeys`)).resolves.toEqual(oldPasskeys);
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 		await expect(
 			database.run(sql`update invitations set role = 'viewer' where id = 'i1'`),

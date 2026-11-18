@@ -69,6 +69,8 @@ const api = spawn(process.execPath, [entrypoint], {
 		// The origin the browser sends: Better Auth and the upload origin check
 		// refuse any other.
 		BETTER_AUTH_URL: WEB_URL,
+		WEBAUTHN_RP_ID: "",
+		WEBAUTHN_ALLOWED_ORIGINS: "",
 		// All mail stays on loopback. Shell credentials must never reach the fake.
 		SMTP_ADDRESS: "127.0.0.1",
 		SMTP_PORT: String(smtp.port),

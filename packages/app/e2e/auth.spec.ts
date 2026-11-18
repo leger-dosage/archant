@@ -10,7 +10,7 @@ test.use({ storageState: { cookies: [], origins: [] } });
 async function signIn(page: Page, password: string) {
 	await page.getByLabel("Adresse e-mail").fill(ADMIN.email);
 	await page.getByLabel("Mot de passe").fill(password);
-	await page.getByRole("button", { name: "Se connecter" }).click();
+	await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 }
 
 test("once a user exists, setup leads to sign-in", async ({ page }) => {

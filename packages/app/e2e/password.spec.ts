@@ -83,7 +83,7 @@ test("the new password signs in, and the user menu signs out", async ({ page }) 
 	await page.goto("/accounts");
 	await page.getByLabel("Adresse e-mail").fill(ADMIN.email);
 	await page.getByLabel("Mot de passe").fill(NEW_PASSWORD);
-	await page.getByRole("button", { name: "Se connecter" }).click();
+	await page.getByRole("button", { name: "Se connecter", exact: true }).click();
 	await expect(page.getByRole("heading", { level: 1, name: "Comptes" })).toBeVisible();
 
 	await page.getByRole("button", { name: ADMIN.email }).click();
