@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
+import { GOAL_KINDS } from "@archant/data/goals";
 
 import { requiredLoose, sureAmount } from "./fields.ts";
 
@@ -54,6 +54,6 @@ export const createGoalInput = z.strictObject({
 		.int()
 		.optional()
 		.describe(
-			`Archant's own, a reserve only: its target is that many months of the household's median monthly expenses, 1 to ${GOAL_TARGET_MONTHS_MAX}, followed as they move, instead of target_amount, and only for accounts in the reporting currency.`,
+			`Archant's own, a reserve only: its target is that many months of the household's median monthly expenses, refreshed monthly and limited by the largest safe amount in minor units, instead of target_amount, and only for accounts in the reporting currency.`,
 		),
 });

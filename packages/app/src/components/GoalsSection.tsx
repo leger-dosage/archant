@@ -44,9 +44,11 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 						className="text-3xl font-medium"
 					/>
 					<span className="text-sm text-muted-foreground">
-						{t("dashboard.goals.ofTargets", {
-							target: formatMoney({ amount: summary.target, currency: summary.currency }),
-						})}
+						{summary.target === null
+							? t("dashboard.goals.targetOutOfRange")
+							: t("dashboard.goals.ofTargets", {
+									target: formatMoney({ amount: summary.target, currency: summary.currency }),
+								})}
 					</span>
 				</p>
 				<p className="text-xs text-muted-foreground">
@@ -56,7 +58,7 @@ function Goals({ summary }: { summary: GoalsSummaryData }) {
 						` · ${t("dashboard.goals.paceUnknown", { count: summary.paceUnknown })}`}
 					{summary.behind === 0 && summary.paceUnknown === 0 && ` · ${t("dashboard.goals.onPace")}`}
 				</p>
-				<Bar part={summary.saved} whole={summary.target} size="md" />
+				{summary.target !== null && <Bar part={summary.saved} whole={summary.target} size="md" />}
 				<LeftOutNotice accounts={summary.leftOut} />
 			</div>
 			<div className="flex flex-col gap-1">

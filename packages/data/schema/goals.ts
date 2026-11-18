@@ -14,8 +14,7 @@ import { inList } from "./check.ts";
  * what is saved, the monthly amount and the status are computed when read.
  * Amounts are minor units of `currency`, the first linked account's on
  * creation, which never changes after. A reserve sized in months of expenses
- * reads its target from the median monthly expenses when it can, and falls
- * back on `target_amount`, the product last computed when it was saved.
+ * stores the product last computed on save or by the monthly refresh.
  */
 export const goals = sqliteTable(
 	"goals",
@@ -58,10 +57,10 @@ export const goals = sqliteTable(
 			"goals_target_months_check",
 			sql`(${table.targetMode} = 'months_of_expenses') = (${table.targetMonths} is not null)`,
 		),
-		// A null count passes: a comparison with null is not false.
+		// SQLite integer affinity still accepts fractional values without this check.
 		check(
 			"goals_target_months_range_check",
-			sql`${table.targetMonths} between 1 and ${sql.raw(String(GOAL_TARGET_MONTHS_MAX))}`,
+			sql`typeof(${table.targetMonths}) = 'integer' and ${table.targetMonths} between 1 and ${sql.raw(String(GOAL_TARGET_MONTHS_MAX))} or ${table.targetMonths} is null`,
 		),
 		// Sure's `months_requires_maintained`.
 		check(

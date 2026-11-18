@@ -815,7 +815,7 @@ export function statisticsOf(rows: readonly MonthlyCashFlowRow[]): CashFlowStati
 /**
  * The statistics over `cashFlowAccounts`' accounts, as Sure's
  * `IncomeStatement#median_expense`, `avg_expense` and `median_income`: what
- * the goals' reserve reads.
+ * a reserve uses to set its target.
  */
 export async function getCashFlowStatistics(deps: ServiceDeps): Promise<CashFlowStatistics> {
 	return statisticsOf(await getCashFlowMonths(deps));

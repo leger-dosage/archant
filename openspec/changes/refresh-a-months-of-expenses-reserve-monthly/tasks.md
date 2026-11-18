@@ -1,8 +1,9 @@
 ## 1. Implementation
 
-- [ ] 1.1 Implement the savings-goals delta (save an expense-based target, refresh at the start of a month, bound the input by monetary precision).
+- [x] 1.1 Store the expense-based target when its inputs change and retire the target recalculation in `listGoals`. Replace the fixed month cap with a bound that keeps the target a safe integer.
+- [x] 1.2 Refresh eligible stored targets once per calendar month in the signed-in daily work, including after downtime. Keep the previous target when the median is missing or the product is invalid.
 
 ## 2. Verification
 
-- [ ] 2.1 Vitest covers the save, a refresh on a new month, a refresh without a median and the bound; Playwright reads the hint and the stored target.
+- [x] 2.1 Vitest covers a target-setting edit, an unrelated edit, a catch-up refresh after downtime, repeated and concurrent requests, rollback and retry, an invalid refresh and the safe-integer bound. Playwright reads the hint and stored target.
 - [ ] 2.2 Run the repository verification commands.

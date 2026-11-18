@@ -76,6 +76,14 @@ describe("loanDomain", () => {
 });
 
 describe("goalDomain", () => {
+	it("keeps the headroom within safe minor units for the largest reserve", () => {
+		const target = toMinorUnits(Number.MAX_SAFE_INTEGER);
+		const domain = goalDomain({ target, projections: [], saved: minor([0]) }, "EUR");
+
+		expect(domain).toEqual([0, target]);
+		expect(axisTicks(domain, "EUR", [target]).every(Number.isSafeInteger)).toBe(true);
+	});
+
 	it("leaves 5 % above the target", () => {
 		expect(
 			goalDomain(

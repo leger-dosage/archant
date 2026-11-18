@@ -11,7 +11,6 @@ import {
 	goalsSummary,
 	monthsOfExpenses,
 	goalHistoryStart,
-	targetAsRead,
 } from "./goals.ts";
 
 const fixed = (goalId: string, amount: number) => ({
@@ -291,51 +290,22 @@ describe("monthsOfExpenses", () => {
 		expect(monthsOfExpenses(6, toMinorUnits(200_000))).toBe(1_200_000);
 	});
 
+	it("accepts the largest safe product and refuses overflow", () => {
+		expect(monthsOfExpenses(Number.MAX_SAFE_INTEGER, toMinorUnits(1))).toBe(
+			Number.MAX_SAFE_INTEGER,
+		);
+		expect(monthsOfExpenses(Number.MAX_SAFE_INTEGER, toMinorUnits(2))).toBeNull();
+	});
+
+	it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])("refuses %s months", (months) => {
+		expect(monthsOfExpenses(months, toMinorUnits(2))).toBeNull();
+	});
+
 	it.each([
 		["no median", null],
 		["a median of zero", 0],
 	])("has no target with %s", (_label, median) => {
 		expect(monthsOfExpenses(6, median === null ? null : toMinorUnits(median))).toBeNull();
-	});
-});
-
-const reserve = {
-	targetMode: "months_of_expenses" as const,
-	targetMonths: 6,
-	targetAmount: toMinorUnits(900_000),
-	currency: "EUR",
-};
-
-describe("targetAsRead", () => {
-	it("follows the median monthly expenses for a reserve in months, in the reporting currency", () => {
-		expect(targetAsRead(reserve, { currency: "EUR", median: toMinorUnits(200_000) })).toEqual({
-			targetAmount: 1_200_000,
-			monthlyExpenses: 200_000,
-		});
-	});
-
-	it("keeps the stored target without a median, or in another currency", () => {
-		const stored = { targetAmount: 900_000, monthlyExpenses: null };
-
-		expect(targetAsRead(reserve, { currency: "EUR", median: null })).toEqual(stored);
-		expect(targetAsRead(reserve, { currency: "USD", median: toMinorUnits(200_000) })).toEqual(
-			stored,
-		);
-		expect(
-			targetAsRead(
-				{ ...reserve, targetMonths: null },
-				{ currency: "EUR", median: toMinorUnits(200_000) },
-			),
-		).toEqual(stored);
-	});
-
-	it("reads a fixed target as stored", () => {
-		expect(
-			targetAsRead(
-				{ ...reserve, targetMode: "fixed", targetMonths: null },
-				{ currency: "EUR", median: toMinorUnits(200_000) },
-			),
-		).toEqual({ targetAmount: 900_000, monthlyExpenses: null });
 	});
 });
 
@@ -403,6 +373,12 @@ const goal = (
 });
 
 describe("goalsSummary", () => {
+	it("keeps both goals when their combined target cannot be represented", () => {
+		expect(
+			goalsSummary([goal("Réserve", 0, Number.MAX_SAFE_INTEGER), goal("Vélo", 0, 1)], "EUR"),
+		).toMatchObject({ count: 2, target: null });
+	});
+
 	it("sums the goals holding their money in the reporting currency, and names the others", () => {
 		const summary = goalsSummary(
 			[

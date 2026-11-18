@@ -55,7 +55,7 @@ export type GoalTarget =
 type FieldIssue = { path: string; message: string };
 
 /** A whole number of months, written without sign or decimals. */
-const MONTHS_PATTERN = /^\d{1,3}$/u;
+const MONTHS_PATTERN = /^\d+$/u;
 
 /**
  * The target the mode asks for, or the issues of the field it reads: the

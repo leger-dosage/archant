@@ -36,8 +36,7 @@ export const GOAL_TARGET_MODES = ["fixed", "months_of_expenses"] as const;
 
 export type GoalTargetMode = (typeof GOAL_TARGET_MODES)[number];
 
-/** Ten years of expenses: more is a typo, not a reserve. */
-export const GOAL_TARGET_MONTHS_MAX = 120;
+export const GOAL_TARGET_MONTHS_MAX = Number.MAX_SAFE_INTEGER;
 
 /**
  * Sure's `RELEASED_STATES`: a goal in one of these has let go of its money,

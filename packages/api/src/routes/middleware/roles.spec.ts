@@ -4,10 +4,11 @@ import type { SessionEnv } from "./auth.ts";
 
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { twoFactors, users } from "@archant/data/schema/auth";
+import { settings } from "@archant/data/schema/settings";
 
 import { AppError } from "../../lib/errors.ts";
 import { createLogger } from "../../lib/logger.ts";
@@ -271,9 +272,17 @@ describe("a viewer's reads", () => {
 				),
 			);
 
-		// The day's first read claims the day's occurrences: a write of the day,
-		// which no later read repeats, as the day's sync and prices.
+		// Let the first read's maintenance settle before checking subsequent reads.
 		await answer(viewer(), "GET", "/api/accounts");
+		await vi.waitFor(async () => {
+			const month = await temp.db
+				.select({ value: settings.value })
+				.from(settings)
+				.where(eq(settings.key, "goal_targets_refreshed_month"))
+				.get();
+
+			expect(month?.value).toBe("2026-09");
+		});
 		const before = await rows();
 		const viewerStatuses = await statuses(viewer);
 

@@ -515,6 +515,9 @@ test("a reserve in months of expenses aims for the budget's suggested spending t
 	await expect(dialog.getByRole("radio", { name: "Un montant fixe" })).toBeChecked();
 	await dialog.getByRole("radio", { name: "Un nombre de mois de dépenses" }).check();
 	await expect(dialog.getByLabel("Montant visé", { exact: true })).toHaveCount(0);
+	await expect(dialog.getByLabel("Mois de dépenses", { exact: true })).toHaveAccessibleDescription(
+		"Recalculé le 1er de chaque mois à partir de vos dépenses mensuelles médianes.",
+	);
 	await dialog.getByLabel("Mois de dépenses", { exact: true }).fill("6");
 	await dialog.getByRole("checkbox", { name: savings.name }).check();
 	await dialog.getByRole("button", { name: "Créer l'objectif" }).click();
@@ -525,6 +528,9 @@ test("a reserve in months of expenses aims for the budget's suggested spending t
 	await expect(reserveCard).toContainText("Entamée");
 	await expect(reserveCard).toContainText("6 mois de dépenses");
 	await expect(reserveCard).not.toContainText("par mois");
+
+	await page.reload();
+	await expect(reserveCard).toContainText(`${euros(0)} sur ${euros(target)}`);
 
 	await reserveCard.click();
 	const progress = page.getByRole("region", { name: "Progression" });

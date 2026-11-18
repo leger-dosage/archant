@@ -3369,7 +3369,30 @@ describe("goals", () => {
 		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
 	});
 
-	it("holds a fixed target, or a reserve's months of expenses between 1 and 120", async () => {
+	it("preserves an expense-based reserve and its account link when widening the month bound", async () => {
+		const before = await migratedBefore("0106");
+		await insertAccount(before, "a1", "depository", "savings");
+		await insertGoal(before, "g1", { kind: "maintained" });
+		await before.run(
+			sql`update goals set target_mode = 'months_of_expenses', target_months = 6 where id = 'g1'`,
+		);
+		await before.run(
+			sql`insert into goal_accounts (goal_id, account_id, allocated_amount) values ('g1', 'a1', 30000)`,
+		);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select id, target_mode, target_months from goals`),
+		).resolves.toEqual([{ id: "g1", target_mode: "months_of_expenses", target_months: 6 }]);
+		await expect(
+			database.all(sql`select goal_id, account_id, allocated_amount from goal_accounts`),
+		).resolves.toEqual([{ goal_id: "g1", account_id: "a1", allocated_amount: 30_000 }]);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+	});
+
+	it("holds a fixed target, or a reserve's months of expenses as a positive safe integer", async () => {
 		const database = await migrated();
 		await insertGoal(database, "g1");
 		await insertGoal(database, "g2", { kind: "maintained" });
@@ -3386,9 +3409,12 @@ describe("goals", () => {
 		]);
 		await expect(target("g2", "months_of_expenses", 6)).resolves.toBeDefined();
 		await expect(target("g2", "months_of_expenses", 1)).resolves.toBeDefined();
-		await expect(target("g2", "months_of_expenses", 120)).resolves.toBeDefined();
+		await expect(
+			target("g2", "months_of_expenses", Number.MAX_SAFE_INTEGER),
+		).resolves.toBeDefined();
 		await expect(target("g2", "months_of_expenses", 0)).rejects.toThrow();
-		await expect(target("g2", "months_of_expenses", 121)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", 1.5)).rejects.toThrow();
+		await expect(target("g2", "months_of_expenses", Number.MAX_SAFE_INTEGER + 1)).rejects.toThrow();
 		await expect(target("g2", "months_of_expenses", null)).rejects.toThrow();
 		await expect(target("g2", "fixed", 6)).rejects.toThrow();
 		await expect(target("g2", "weekly", null)).rejects.toThrow();

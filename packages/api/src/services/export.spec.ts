@@ -25,6 +25,7 @@ import { insertSecurity } from "../testing/prices.ts";
 import { surePreflight } from "../testing/sure-preflight.ts";
 import { DEFAULT_CATEGORIES } from "./default-categories.ts";
 import { EXPORT_IDLE_MS, archiveName, exportArchive } from "./export.ts";
+import { refreshReserveTargets } from "./goal-reserve-targets.ts";
 import { linkBankAccount } from "./ledger/bank-link.ts";
 import { seedDefaults } from "./seed.ts";
 
@@ -2281,13 +2282,14 @@ describe("exportArchive", () => {
 			targetAmount: "",
 			accounts: [{ accountId: ids.checking, allocatedAmount: "" }],
 		});
-		// The median as read moves; the archive keeps the target stored.
+		// Later spending in the same month leaves both the goal and its export as stored.
+		await refreshReserveTargets({ db: database(), timeZone: "Europe/Paris" });
 		await postOwn(ids.checking, { date: "2026-07-10", label: "Courses", amount: "-1 000" });
 		const read = z
 			.object({ data: z.object({ targetAmount: z.number() }) })
 			.parse(await sendOwn("GET", `/api/goals/${reserve}`));
 
-		expect(read.data.targetAmount).not.toBe(283_410);
+		expect(read.data.targetAmount).toBe(283_410);
 
 		const archive = await exported();
 		const goals = (archive.text["goals.ndjson"] ?? "")

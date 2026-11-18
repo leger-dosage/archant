@@ -4,7 +4,7 @@ import type { GoalAccountChoice, GoalSummary } from "../services/goals.ts";
 import { z } from "zod";
 
 import { sampleCategoryColor } from "@archant/data/category-presets";
-import { GOAL_KINDS, GOAL_TARGET_MONTHS_MAX } from "@archant/data/goals";
+import { GOAL_KINDS } from "@archant/data/goals";
 import type { MinorUnits } from "@archant/data/money";
 
 import { AppError } from "../lib/errors.ts";
@@ -173,7 +173,8 @@ const GOAL_MESSAGES: Readonly<Record<string, string>> = {
 	"targetAmount not_positive": "Target amount must be greater than 0",
 	"targetMode reserve_only":
 		"Only a reserve you maintain can have a target set in months of expenses.",
-	"targetMonths invalid_months": `Target months must be a whole number from 1 to ${GOAL_TARGET_MONTHS_MAX}`,
+	"targetMonths invalid_months":
+		"Target months must be a positive whole number that keeps the target in range",
 	"targetMonths no_expenses":
 		"Target months need monthly expenses to count from, and the household has none yet",
 	"targetMonths not_reporting_currency":

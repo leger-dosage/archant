@@ -29,14 +29,13 @@ import {
 	goalSeries,
 	goalsSummary,
 	monthsOfExpenses,
-	targetAsRead,
 } from "../domain/goals.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
+import { monthlyExpenses } from "./goal-reserve-targets.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { accountPaces } from "./ledger/goal-pace.ts";
-import { getCashFlowStatistics } from "./reports.ts";
 import { getReportingCurrency } from "./settings.ts";
 
 /** One linked account as a goal shows it. */
@@ -58,16 +57,12 @@ type GoalAccountShare = {
 export type GoalSummary = GoalProgress & {
 	id: string;
 	name: string;
-	/** The target as read: for a reserve in months, the months times `monthlyExpenses`. */
+	/** The stored target, including for a reserve in months of expenses. */
 	targetAmount: MinorUnits;
 	targetMode: GoalTargetMode;
 	/** How many months of expenses a reserve holds; `null` for a fixed target. */
 	targetMonths: number | null;
-	/**
-	 * The median monthly expenses the target multiplies, in the reporting
-	 * currency; `null` for a fixed target, and when the target last computed
-	 * stands because there is no median to multiply.
-	 */
+	/** The median used for the stored target, or `null` for a fixed target. */
 	monthlyExpenses: MinorUnits | null;
 	/** The currency of every amount here, its accounts'. */
 	currency: string;
@@ -146,32 +141,15 @@ function linkOf(row: LinkRow): GoalLink {
 }
 
 /**
- * The household's median monthly expenses, as Sure's `median_expense` and
- * the budget's suggested spending: `FamilyStats`' expense side over the
- * whole history, the current month included, in the reporting currency
- * (AD-9). Reads only.
- */
-async function monthlyExpenses(deps: ServiceDeps): Promise<MinorUnits | null> {
-	return (await getCashFlowStatistics(deps)).family.expense.median;
-}
-
-/**
  * Every goal with its figures, as Sure's `Goal.prepared_for`, sorted as its
  * list: active goals behind first, then paused, completed and archived ones.
  * Each goal reads its share of every account it links; a goal with a frozen
- * amount reads that instead, as Sure's `current_balance`. A reserve in
- * months of expenses reads its target from the median monthly expenses,
- * read only when such a reserve exists. Reads only.
+ * amount reads that instead, as Sure's `current_balance`. Every target is
+ * read as stored. Reads only.
  */
 export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 	const date = today(deps.timeZone);
 	const { goalRows, linkRows, competing } = await loadGoals(deps);
-	const expenses = {
-		currency: getReportingCurrency(),
-		median: goalRows.some((goal) => goal.targetMode === "months_of_expenses")
-			? await monthlyExpenses(deps)
-			: null,
-	};
 	const accountIds = [...new Set(linkRows.map((row) => row.accountId))];
 	const balances = new Map(
 		await Promise.all(
@@ -199,10 +177,8 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 					share: backingShares(balance, competing(row)).get(goal.id) ?? toMinorUnits(0),
 				};
 			});
-			const { targetAmount, monthlyExpenses: median } = targetAsRead(
-				{ ...goal, targetAmount: toMinorUnits(goal.targetAmount) },
-				expenses,
-			);
+			const targetAmount = toMinorUnits(goal.targetAmount);
+			const median = goal.targetMonths === null ? null : targetAmount / goal.targetMonths;
 			const progress = goalProgress({
 				kind: goal.kind,
 				target: targetAmount,
@@ -221,7 +197,8 @@ export async function listGoals(deps: ServiceDeps): Promise<GoalSummary[]> {
 				targetAmount,
 				targetMode: goal.targetMode,
 				targetMonths: goal.targetMonths,
-				monthlyExpenses: median,
+				monthlyExpenses:
+					median !== null && Number.isSafeInteger(median) ? toMinorUnits(median) : null,
 				currency: goal.currency,
 				targetDate: goal.targetDate,
 				color: goal.color,
@@ -461,38 +438,33 @@ async function assertFundable(
 	}
 }
 
-/**
- * What a goal stores as its target: the amount typed, or, for a reserve in
- * months of expenses, the months times the median monthly expenses now, the
- * figure its read falls back on, as Sure's `apply_months_of_expenses_target`
- * stores it on save. Without a median, or for a goal in a currency other
- * than the reporting one, in which the median is counted (AD-6), `kept` stands
- * when given: the target of a reserve saved with the same months, so a rename
- * never fails on a median gone since. Refused otherwise. Reads through the
- * caller's transaction.
- */
+/** Derives a new target in the goal's currency through the caller's transaction. */
 async function storedTarget(
 	deps: ServiceDeps,
 	currency: string,
 	target: GoalTarget,
-	kept: MinorUnits | null,
 ): Promise<MinorUnits> {
 	if (target.mode === "fixed") {
 		return target.amount;
 	}
 
-	const reported = currency === getReportingCurrency();
-	const amount = reported ? monthsOfExpenses(target.months, await monthlyExpenses(deps)) : null;
-
-	if (amount !== null) {
-		return amount;
+	if (currency !== getReportingCurrency()) {
+		throw fieldError("targetMonths", "not_reporting_currency");
 	}
 
-	if (kept !== null) {
-		return kept;
+	const median = await monthlyExpenses(deps);
+
+	if (median === null || median <= 0) {
+		throw fieldError("targetMonths", "no_expenses");
 	}
 
-	throw fieldError("targetMonths", reported ? "no_expenses" : "not_reporting_currency");
+	const amount = monthsOfExpenses(target.months, median);
+
+	if (amount === null) {
+		throw fieldError("targetMonths", "invalid_months");
+	}
+
+	return amount;
 }
 
 /** One refused field, as the schema reports one. */
@@ -565,7 +537,7 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 			const now = Date.now();
 
 			await assertFundable(tx, null, currency, goal.accounts);
-			const targetAmount = await storedTarget({ ...deps, db: tx }, currency, goal.target, null);
+			const targetAmount = await storedTarget({ ...deps, db: tx }, currency, goal.target);
 			await tx.insert(goals).values({
 				id,
 				name: goal.name,
@@ -615,12 +587,9 @@ export async function updateGoal(
 				existing.targetMode === "months_of_expenses" &&
 				goal.target.mode === "months_of_expenses" &&
 				existing.targetMonths === goal.target.months;
-			const targetAmount = await storedTarget(
-				{ ...deps, db: tx },
-				existing.currency,
-				goal.target,
-				unchanged ? toMinorUnits(existing.targetAmount) : null,
-			);
+			const targetAmount = unchanged
+				? toMinorUnits(existing.targetAmount)
+				: await storedTarget({ ...deps, db: tx }, existing.currency, goal.target);
 			await tx
 				.update(goals)
 				.set({
