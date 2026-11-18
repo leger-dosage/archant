@@ -449,6 +449,8 @@ function sureRule(rule: Rule, operands: Operands) {
 		name: rule.name,
 		resource_type: "transaction",
 		active: rule.enabled,
+		position: rule.position,
+		stop_processing: rule.stopProcessing,
 		effective_date: rule.effectiveDate,
 		conditions: rule.conditions
 			.filter((condition) => condition.parentId === null)

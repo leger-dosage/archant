@@ -2174,6 +2174,9 @@ describe("writing rules", () => {
 				{ tool: "apply_rules", outcome: "OK", changedRows: 2 },
 			]),
 		);
+
+		// Leave later preview tests without this enabled predecessor.
+		await callTool(bare, token, "set_rule_enabled", { rule_id: ruleId, enabled: false });
 	});
 
 	it("names the draft's field at fault under rule, and refuses a rule id beside a draft", async () => {

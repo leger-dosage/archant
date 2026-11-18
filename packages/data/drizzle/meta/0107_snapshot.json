@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c75e77d2-660f-4f8b-b4d2-e19550f66dfb",
+  "id": "09cf1f9a-4363-4db5-b3d5-12c3e3ebf071",
   "prevId": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "tables": {
     "accounts": {
@@ -1356,20 +1356,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "start_date": {
-          "name": "start_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "currency": {
           "name": "currency",
           "type": "text",
@@ -1413,30 +1399,12 @@
             "month"
           ],
           "isUnique": true
-        },
-        "budgets_start_date_unique": {
-          "name": "budgets_start_date_unique",
-          "columns": [
-            "start_date"
-          ],
-          "isUnique": true
-        },
-        "budgets_end_date_unique": {
-          "name": "budgets_end_date_unique",
-          "columns": [
-            "end_date"
-          ],
-          "isUnique": true
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "budgets_dates_check": {
-          "name": "budgets_dates_check",
-          "value": "substr(\"budgets\".\"start_date\", 1, 7) = \"budgets\".\"month\" and \"budgets\".\"end_date\" >= \"budgets\".\"start_date\""
-        },
         "budgets_amounts_check": {
           "name": "budgets_amounts_check",
           "value": "\"budgets\".\"budgeted_spending\" >= 0 and \"budgets\".\"expected_income\" >= 0"
@@ -5237,6 +5205,22 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "stop_processing": {
+          "name": "stop_processing",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "created_at": {
           "name": "created_at",
