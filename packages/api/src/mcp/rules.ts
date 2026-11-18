@@ -401,7 +401,7 @@ function merged(a: NameBook, b: NameBook): NameBook {
 export const previewRule = defineTool({
 	name: "preview_rule",
 	title: "Preview a rule",
-	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id, a draft in create_rule's shape as rule, or every rule, disabled ones included, when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each as get_transactions lists it with each changed field's current and new value, by name. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
+	description: `What applying rules to existing transactions would do, writing nothing: a saved rule by rule_id with its enabled predecessors, a draft in create_rule's shape as rule, or every rule, disabled ones included, when neither is given. Answers how many transactions match, how many would change, which apply_rules takes as expected_changed, and up to 20 of those, most recent first, each as get_transactions lists it with each changed field's current and new value, by name. A field the owner set by hand, or a value already there, does not change. Show the owner the counts and samples before saving or applying. ${BANK_TEXT}`,
 	scope: "archant:read",
 	annotations: READ_ONLY,
 	input: previewRuleInput,
@@ -551,7 +551,7 @@ export const deleteRuleTool = defineTool({
 export const applyRulesTool = defineTool({
 	name: "apply_rules",
 	title: "Apply rules to existing transactions",
-	description: `Applies a rule to existing transactions and enables it, as « Confirmer les modifications » does in Archant, or every rule in order, disabled ones included and none enabled, as « Confirmer et appliquer tout », and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change. ${BANK_TEXT}`,
+	description: `Applies the selected rule and its enabled predecessors to existing transactions, and enables the selected rule, as « Confirmer les modifications » does in Archant, or every rule in order, disabled ones included and none enabled, as « Confirmer et appliquer tout », and records each run. Takes the changed count preview_rule gave for the same rule_id: when the transactions to change now number otherwise, it writes nothing and answers rule_preview_stale with the count now; preview again and show the owner. Fields the owner set by hand never change. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: DESTROYS,
 	input: applyRulesInput,

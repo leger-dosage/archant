@@ -19,6 +19,7 @@ import { ListCard } from "@/components/ListCard";
 import { Page } from "@/components/Page";
 import { Pagination } from "@/components/Pagination";
 import { RuleDialog } from "@/components/RuleDialog";
+import { RuleOrderDialog } from "@/components/RuleOrderDialog";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
@@ -106,7 +107,7 @@ type Applying = {
 	ruleId: string | null;
 	name: string | null;
 	matched: number;
-	/** How many rules « Appliquer tout » runs, disabled ones included. */
+	/** Number of rules in the application. */
 	ruleCount: number;
 };
 
@@ -147,12 +148,16 @@ function RunStatus({ run }: { run: RuleRunData }) {
 /** A rule as a viewer reads it: no switch and no menu, « Désactivée » when it is. */
 function RuleLine({ rule, summary }: { rule: RuleData; summary: string }) {
 	const title = rule.name ?? summary;
+	const { t } = useTranslation();
 
 	return (
 		<div className="flex min-h-14 items-center gap-3 px-4 py-2">
 			<div className="flex min-w-0 flex-1 flex-col">
 				<span className="truncate font-medium">{title}</span>
 				{rule.name !== null && <span className="truncate text-muted-foreground">{summary}</span>}
+				{rule.stopProcessing && (
+					<span className="text-xs text-muted-foreground">{t("rules.form.stopProcessing")}</span>
+				)}
 			</div>
 			{!rule.enabled && <StatusBadge status="ruleDisabled" />}
 		</div>
@@ -184,6 +189,9 @@ function RuleRow({
 			<div className="flex min-w-0 flex-1 flex-col">
 				<span className="truncate font-medium">{title}</span>
 				{rule.name !== null && <span className="truncate text-muted-foreground">{summary}</span>}
+				{rule.stopProcessing && (
+					<span className="text-xs text-muted-foreground">{t("rules.form.stopProcessing")}</span>
+				)}
 			</div>
 			<Switch
 				checked={rule.enabled}
@@ -397,7 +405,7 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
 /**
  * The rules, sorted as the user picks, each with its switch and its menu.
  * After each sync or import the enabled ones run over every transaction, in
- * creation order, as Sure's post-sync; an application the user confirms runs
+ * saved order, as Sure's post-sync; an application the user confirms runs
  * them at once, which a new rule offers once saved and which enables it, as
  * Sure's `rules#confirm`. A viewer reads the rules and their runs, and changes none.
  */
@@ -520,7 +528,11 @@ function RulesPage() {
 				ruleId: item?.id ?? null,
 				name: item?.name ?? null,
 				matched,
-				ruleCount: list.length,
+				ruleCount:
+					item === null
+						? list.length
+						: 1 +
+							list.filter(({ enabled, position }) => enabled && position < item.position).length,
 			});
 			setApplyOpen(true);
 		} catch (error) {
@@ -624,6 +636,11 @@ function RulesPage() {
 							count={list.length}
 							total={<RuleSortControls sortBy={sortBy} direction={direction} />}
 						>
+							{admin && list.length > 1 && (
+								<div className="px-4 pb-2">
+									<RuleOrderDialog rules={list} labelOf={(item) => item.name ?? summaryOf(item)} />
+								</div>
+							)}
 							<ul aria-label={t("rules.title")} className="divide-y divide-line">
 								{sorted.map((item) => (
 									<li key={item.id}>
@@ -680,7 +697,11 @@ function RulesPage() {
 									count: applying.ruleCount,
 									rows: t("rules.apply.uniqueRows", { count: applying.matched }),
 								})
-							: t("rules.apply.description", { count: applying.matched })
+							: applying.ruleCount > 1
+								? t("rules.apply.withPredecessors", {
+										rows: t("rules.apply.uniqueRows", { count: applying.matched }),
+									})
+								: t("rules.apply.description", { count: applying.matched })
 					}
 					confirmLabel={
 						applying.ruleId === null ? t("rules.apply.allConfirm") : t("rules.apply.confirm")
