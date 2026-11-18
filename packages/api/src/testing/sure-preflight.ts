@@ -589,6 +589,8 @@ const SCHEMAS = {
 		name: z.string().min(1).nullable(),
 		resource_type: z.literal("transaction"),
 		active: z.boolean(),
+		position: z.number().int().optional(),
+		stop_processing: z.boolean().optional(),
 		effective_date: date.nullable(),
 		conditions: z
 			.array(condition)

@@ -51,3 +51,5 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
 
 - Story 35.6: [Pledge a deposit toward a goal](changes/archive/2026-11-18-pledge-a-deposit-toward-a-goal/proposal.md).
+
+- [Order rules and stop processing](changes/archive/2026-11-18-order-rules-and-stop-processing/proposal.md).
