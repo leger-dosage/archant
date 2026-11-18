@@ -1299,7 +1299,8 @@ test.describe("rules on a phone", () => {
 		await expect(runRow(page, label)).toContainText("Réussi");
 		const modified = runRow(page, label).getByRole("cell", { name: "1", exact: true }).last();
 		await modified.scrollIntoViewIfNeeded();
-		await expect(modified).toBeInViewport({ ratio: 1 });
+		// A scroll container can round its boundary by a fraction of a pixel.
+		await expect(modified).toBeInViewport({ ratio: 0.99 });
 
 		await row.getByRole("button", { name: /^Actions pour /u }).click();
 		await page.getByRole("menuitem", { name: "Modifier" }).click();
