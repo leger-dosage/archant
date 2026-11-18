@@ -16,11 +16,11 @@
 	},
 	"devDependencies": {
 		"@fission-ai/openspec": "^1.11.0",
-		"@shadcn/lint": "^0.2.0",
-		"knip": "^6.39.0",
-		"oxfmt": "^0.70.0",
-		"oxlint": "^1.85.0",
-		"oxlint-tsgolint": "^7.0.2003",
+		"@shadcn/lint": "^0.2.5",
+		"knip": "^6.45.1",
+		"oxfmt": "^0.78.0",
+		"oxlint": "^1.93.0",
+		"oxlint-tsgolint": "^7.0.2007",
 		"typescript": "^7.0.2"
 	},
 	"engines": {
