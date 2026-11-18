@@ -235,6 +235,24 @@ describe("possible duplicates", () => {
 			);
 		});
 
+		it("keeps an absorbed goal claim on the surviving transaction", async () => {
+			const { fileLine, flagged } = await bankTie();
+			await temp.db
+				.update(transactions)
+				.set({ consumedGoalId: "goal" })
+				.where(eq(transactions.entryId, flagged));
+
+			await mergeDuplicate(deps(), flagged, fileLine);
+
+			expect(
+				await temp.db
+					.select({ goalId: transactions.consumedGoalId })
+					.from(transactions)
+					.where(eq(transactions.entryId, fileLine))
+					.get(),
+			).toEqual({ goalId: "goal" });
+		});
+
 		it("lands the merged line in `present` on the survivor when the bank sends it again", async () => {
 			const { account, bank, fileLine, flagged, bankLine } = await bankTie();
 			await mergeDuplicate(deps(), flagged, fileLine);

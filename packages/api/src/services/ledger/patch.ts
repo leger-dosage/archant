@@ -80,6 +80,7 @@ export type UpdateResult = { status: "updated" } | { status: "rejected"; reason:
 
 // What a row edit reads: the entry's date and amount beside the detail row.
 export const editableColumns = {
+	consumedGoalId: transactions.consumedGoalId,
 	accountId: entries.accountId,
 	date: entries.date,
 	amount: entries.amount,

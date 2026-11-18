@@ -771,6 +771,13 @@
       "when": 1795032852934,
       "tag": "0109_passkeys",
       "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "6",
+      "when": 1795035090262,
+      "tag": "0110_goal_consumption",
+      "breakpoints": true
     }
   ]
 }

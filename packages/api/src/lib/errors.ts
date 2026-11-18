@@ -178,6 +178,7 @@ export const ERROR_STATUSES = {
 	 * active goal or completing an archived one or a reserve. Nothing is written.
 	 */
 	GOAL_STATE_INVALID: 409,
+	GOAL_SPEND_REFUSED: 409,
 	/**
 	 * A restore or a reopening of a goal whose whole-balance account another
 	 * goal has taken whole since, as Sure's `restore_must_not_recreate_whole_account_conflict`;
