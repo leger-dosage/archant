@@ -2,6 +2,7 @@ import type { TFunction } from "i18next";
 
 import { z } from "zod";
 
+import { tagFilterSchema } from "@archant/api/schemas/transactions";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import type { ReportPeriodLabel } from "@archant/data/report-periods";
@@ -21,6 +22,7 @@ export const reportsSearchSchema = z.object({
 	periodType: z.enum(REPORT_PERIOD_TYPES).optional().catch(undefined),
 	startDate: isoDate.optional().catch(undefined),
 	endDate: isoDate.optional().catch(undefined),
+	tag: tagFilterSchema.catch(undefined),
 });
 
 export type ReportsSearchParams = z.output<typeof reportsSearchSchema>;
@@ -31,6 +33,7 @@ export function settledSearch(search: ReportsSearchParams) {
 		periodType: search.periodType ?? DEFAULT_REPORT_PERIOD_TYPE,
 		startDate: search.startDate,
 		endDate: search.endDate,
+		tag: search.tag,
 	};
 }
 

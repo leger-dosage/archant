@@ -2,7 +2,9 @@ import { z } from "zod";
 
 import { DEFAULT_REPORT_PERIOD_TYPE, REPORT_PERIOD_TYPES } from "@archant/data/report-periods";
 import type { ReportsLayoutPatch } from "@archant/data/reports-layout";
-import { REPORTS_SECTIONS } from "@archant/data/reports-sections";
+import { BIGGEST_EXPENSES_LIMITS, REPORTS_SECTIONS } from "@archant/data/reports-sections";
+
+import { tagFilterSchema } from "./transactions.ts";
 
 /** A calendar month, `YYYY-MM`. Shared with the dashboard's and the budgets' month params. */
 export const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/u);
@@ -38,12 +40,12 @@ const reportDate = z.iso
 /**
  * Sure's `setup_report_data` params: an unknown type is `monthly`, and a date
  * that does not parse is the type's default, as `parse_date_param` drops it.
- * No `filter_*` param: Sure's page offers no control for them.
  */
 export const reportsPageQuerySchema = z.object({
 	periodType: z.enum(REPORT_PERIOD_TYPES).catch(DEFAULT_REPORT_PERIOD_TYPE),
 	startDate: reportDate,
 	endDate: reportDate,
+	tag: tagFilterSchema,
 });
 
 export type ReportsPageQuery = z.infer<typeof reportsPageQuerySchema>;
@@ -51,9 +53,7 @@ export type ReportsPageQuery = z.infer<typeof reportsPageQuerySchema>;
 const reportsSection = z.enum(REPORTS_SECTIONS);
 
 /**
- * One change to the reports page, as Sure's `preferences_params`: an order,
- * or sections collapsed. A key Archant has no section for is refused rather
- * than stored.
+ * Sure's report preferences. Reject unknown section keys before storing a layout.
  */
 export const reportsLayoutSchema = z.strictObject({
 	sectionOrder: z
@@ -61,6 +61,7 @@ export const reportsLayoutSchema = z.strictObject({
 		.refine((keys) => new Set(keys).size === keys.length, "duplicate_section")
 		.optional(),
 	collapsedSections: z.partialRecord(reportsSection, z.boolean()).optional(),
+	biggestExpensesLimit: z.literal(BIGGEST_EXPENSES_LIMITS).optional(),
 }) satisfies z.ZodType<ReportsLayoutPatch>;
 
 export type ReportsLayoutInput = z.infer<typeof reportsLayoutSchema>;

@@ -193,30 +193,36 @@ test("a widget dragged by its grip lands before the one it is dropped on, kept a
 	api,
 }) => {
 	await api.openAccount({ openingDate: daysAgo(40) });
+	// Keep both widgets in view so dragging does not need to scroll the page.
+	await page.setViewportSize({ width: 1440, height: 1600 });
 
 	await page.goto("/");
 	await expect(region(page, "Bilan")).toBeVisible();
 	const before = await shownKeys(page);
 	expect(before.indexOf("balance_sheet")).toBe(before.indexOf("net_worth_chart") + 1);
 
-	const moved = layoutSaved(page);
-	// By hand rather than `dragTo`, which scrolled the target into view under
-	// a pointer already down, and Chromium then dropped nowhere.
 	const grip = region(page, "Bilan").getByRole("button", {
 		name: "Glisser pour réorganiser la section",
 	});
 	await grip.hover();
-	const from = await grip.boundingBox();
-	const to = await widget(page, "Patrimoine net").boundingBox();
-	expect(from).not.toBeNull();
-	expect(to).not.toBeNull();
-	await page.mouse.down();
-	await page.mouse.move((from?.x ?? 0) + 20, (from?.y ?? 0) + 20, { steps: 5 });
-	await page.mouse.move((to?.x ?? 0) + (to?.width ?? 0) / 2, (to?.y ?? 0) + (to?.height ?? 0) / 2, {
-		steps: 10,
+	const target = widget(page, "Patrimoine net");
+	await expect(grip).toBeInViewport();
+	await expect(target).toBeInViewport();
+	await expect(grip).toHaveAttribute("draggable", "true");
+	const dataTransfer = await page.evaluateHandle(() => new DataTransfer());
+	const point = await target.evaluate((element) => {
+		const { x, y, width, height } = element.getBoundingClientRect();
+
+		return { clientX: x + width / 2, clientY: y + height / 2 };
 	});
-	await page.mouse.up();
-	await moved;
+
+	// Chromium's drag interception can stall before it delivers the drop.
+	await grip.dispatchEvent("dragstart", { dataTransfer });
+	await expect(widget(page, "Bilan")).toHaveAttribute("aria-grabbed", "true");
+	await target.dispatchEvent("dragover", { dataTransfer, ...point });
+	await Promise.all([layoutSaved(page), target.dispatchEvent("drop", { dataTransfer, ...point })]);
+	await grip.dispatchEvent("dragend", { dataTransfer });
+	await dataTransfer.dispose();
 
 	await expect.poll(async () => bilanFirst(page)).toBe(true);
 

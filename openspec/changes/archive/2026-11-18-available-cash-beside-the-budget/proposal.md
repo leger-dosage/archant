@@ -2,7 +2,7 @@
 
 ## Why
 
-I see what I have beside what I plan, as Sure.
+Household members can see cash on hand, the amount reserved for goals and what remains free beside their budget.
 
 ## What changes
 

@@ -65,6 +65,7 @@ function CategoryRow({
 	sideTotal,
 	sub,
 	period,
+	tag,
 	currency,
 	side,
 }: {
@@ -74,6 +75,7 @@ function CategoryRow({
 	sideTotal: MinorUnits;
 	sub: boolean;
 	period: ReportsPageData["period"];
+	tag: ReportsPageData["tag"];
 	currency: string;
 	side: Side;
 }) {
@@ -95,6 +97,7 @@ function CategoryRow({
 							to="/transactions"
 							search={{
 								category: filter,
+								tag,
 								from: period.from,
 								to: period.to,
 							}}
@@ -131,6 +134,7 @@ function SideTable({
 	sort,
 	onSort,
 	period,
+	tag,
 	currency,
 }: {
 	side: Side;
@@ -138,6 +142,7 @@ function SideTable({
 	sort: Sort | null;
 	onSort: () => void;
 	period: ReportsPageData["period"];
+	tag: ReportsPageData["tag"];
 	currency: string;
 }) {
 	const { t } = useTranslation();
@@ -215,6 +220,7 @@ function SideTable({
 										sideTotal={total}
 										sub={false}
 										period={period}
+										tag={tag}
 										currency={currency}
 										side={side}
 									/>,
@@ -228,6 +234,7 @@ function SideTable({
 												sideTotal={total}
 												sub
 												period={period}
+												tag={tag}
 												currency={currency}
 												side={side}
 											/>
@@ -249,12 +256,12 @@ export function ActivityBreakdown({
 	data,
 	csvHref,
 }: {
-	data: Pick<ReportsPageData, "breakdown" | "period" | "currency">;
+	data: Pick<ReportsPageData, "breakdown" | "period" | "currency" | "tag">;
 	csvHref: string;
 }) {
 	const { t } = useTranslation();
 	const [sort, setSort] = useState<Sort | null>(null);
-	const { breakdown, period, currency } = data;
+	const { breakdown, period, currency, tag } = data;
 	const groups = [...breakdown.income, ...breakdown.expense];
 	const count = groups.reduce((sum, group) => sum + group.count, 0);
 	const toggleSort = () => setSort(sort === "desc" ? "asc" : "desc");
@@ -278,6 +285,7 @@ export function ActivityBreakdown({
 										sort={sort}
 										onSort={toggleSort}
 										period={period}
+										tag={tag}
 										currency={currency}
 									/>
 								),
