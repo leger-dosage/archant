@@ -54,6 +54,7 @@ const keyOf = (envelope: Envelope) =>
  */
 function BudgetCard({
 	envelope,
+	reservation,
 	name,
 	currency,
 	section,
@@ -61,6 +62,7 @@ function BudgetCard({
 	onOpen,
 }: {
 	envelope: Envelope;
+	reservation: BudgetData["billReservations"][string];
 	name: string;
 	currency: string;
 	section: CardSection;
@@ -135,6 +137,20 @@ function BudgetCard({
 						<span className="text-xs whitespace-nowrap text-muted-foreground tabular-nums">
 							{t("budgets.rollover.card", {
 								amount: formatMoney({ amount: rolledOver, currency }),
+							})}
+						</span>
+					)}
+					{reservation !== undefined && reservation.amount > 0 && (
+						<span className="text-xs text-muted-foreground tabular-nums">
+							{t("budgets.categories.billsReserved", {
+								amount: formatMoney({ amount: reservation.amount, currency }),
+							})}
+						</span>
+					)}
+					{reservation !== undefined && reservation.unconvertibleCount > 0 && (
+						<span className="text-xs text-warning">
+							{t("budgets.categories.billsUnconvertible", {
+								count: reservation.unconvertibleCount,
 							})}
 						</span>
 					)}
@@ -219,6 +235,11 @@ export function BudgetCategories({
 						<BudgetCard
 							key={keyOf(envelope)}
 							envelope={envelope}
+							reservation={
+								envelope.kind === "category"
+									? budget.billReservations[envelope.line.categoryId]
+									: undefined
+							}
 							name={nameOf(envelope)}
 							currency={budget.currency}
 							section={section}

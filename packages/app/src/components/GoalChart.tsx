@@ -111,9 +111,6 @@ function Summary({ goal, history }: { goal: GoalData; history: GoalHistoryData }
 					date: formatShortDate(ahead.date),
 					amount: money(ahead.amount),
 				})}`}
-			{goal.status === "pace_unknown" &&
-				goal.state === "active" &&
-				` ${t("goals.chart.paceUnknown")}`}
 		</p>
 	);
 }
