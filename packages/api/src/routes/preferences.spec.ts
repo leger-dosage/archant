@@ -349,6 +349,21 @@ describe("PATCH /api/preferences", () => {
 
 		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
 
+		it("reads household preferences but cannot write them", async () => {
+			const app = viewer();
+			const read = await app.request("/api/preferences/household");
+			const refused = await app.request("/api/preferences/household", {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ timeZone: "UTC", monthStartDay: 28 }),
+			});
+
+			expect(read.status).toBe(200);
+			await expect(read.json()).resolves.toMatchObject({ data: { timeZone: "Europe/Paris" } });
+			expect(refused.status).toBe(403);
+			expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");
+		});
+
 		it("is refused FORBIDDEN on hiding the rule prompt", async () => {
 			const refused = await viewer().request("/api/preferences/rule-prompt", {
 				method: "PATCH",
@@ -384,5 +399,50 @@ describe("PATCH /api/preferences", () => {
 				},
 			});
 		});
+	});
+});
+
+describe("household preferences", () => {
+	const path = "/api/preferences/household";
+
+	it.each([
+		{ monthStartDay: 0 },
+		{ monthStartDay: 29 },
+		{ monthStartDay: 1.5 },
+		{ timeZone: "Mars/Olympus" },
+		{ country: "XX" },
+		{ dateFormat: "DD/YYYY/MM" },
+		{ baseCurrency: "USD" },
+	])("refuses an invalid patch %j without saving any field", async (input) => {
+		await ownDatabase();
+		const original = await ownRequest("GET", path);
+
+		const refused = await ownRequest("PATCH", path, { timeZone: "UTC", ...input });
+
+		expect(refused.status).toBe(400);
+		await expect(ownRequest("GET", path)).resolves.toEqual(original);
+	});
+
+	it("saves the editable fields without changing the currency", async () => {
+		await ownDatabase();
+		const saved = await ownRequest("PATCH", path, {
+			timeZone: "UTC",
+			country: "CH",
+			dateFormat: "DD.MM.YYYY",
+			monthStartDay: 28,
+		});
+		expect(saved).toEqual({
+			status: 200,
+			body: {
+				data: {
+					timeZone: "UTC",
+					country: "CH",
+					dateFormat: "DD.MM.YYYY",
+					monthStartDay: 28,
+					baseCurrency: "EUR",
+				},
+			},
+		});
+		await expect(ownRequest("GET", path)).resolves.toEqual(saved);
 	});
 });

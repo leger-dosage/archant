@@ -149,7 +149,7 @@ export async function listHoldings(
 	deps: ServiceDeps,
 	filter: HoldingsFilter,
 ): Promise<HoldingsAcrossAccounts> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	const day = today(deps.timeZone);
 	const named = await idsNamed(deps, "accounts", filter.accountNames);
 	const ids = [filter.accountIds, named].filter((list) => list !== undefined);

@@ -69,7 +69,7 @@ async function insertGoals(
  * demo's bills appear as Sure's sync finds them.
  */
 export async function resetWithSampleData(deps: SureImportDeps): Promise<void> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	// Built before the write lock is taken: the plan depends on no row.
 	const generated = samplePlan({ seed: SAMPLE_DATA_SEED, today: today(deps.timeZone), currency });
 	// The household's language decides the names, never the rows.
