@@ -26,15 +26,14 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 35.2  | [Budget every category as Sure](changes/budget-every-category-as-sure/proposal.md)                                                              |                                                                      |
 | 35.4  | [Available cash beside the budget](changes/available-cash-beside-the-budget/proposal.md)                                                        |                                                                      |
 | 35.5  | [Bills reserved inside each envelope](changes/bills-reserved-inside-each-envelope/proposal.md)                                                  |                                                                      |
-| 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9](changes/a-goals-pace-and-history-as-sure/proposal.md)         |
+| 35.6  | [Pledge a deposit toward a goal](changes/pledge-a-deposit-toward-a-goal/proposal.md)                                                            | [35.9]                                                               |
 | 35.7  | [Spend a goal](changes/spend-a-goal/proposal.md)                                                                                                |                                                                      |
 | 35.8  | [Count contributions on an investment-backed goal](changes/count-contributions-on-an-investment-backed-goal/proposal.md)                        |                                                                      |
-| 35.9  | [A goal's pace and history as Sure](changes/a-goals-pace-and-history-as-sure/proposal.md)                                                       |                                                                      |
 | 35.10 | [Budgets and goals on a Plan page](changes/budgets-and-goals-on-a-plan-page/proposal.md)                                                        |                                                                      |
-| 35.11 | [Filter, search and summarise goals](changes/filter-search-and-summarise-goals/proposal.md)                                                     | [35.9](changes/a-goals-pace-and-history-as-sure/proposal.md)         |
+| 35.11 | [Filter, search and summarise goals](changes/filter-search-and-summarise-goals/proposal.md)                                                     | [35.9]                                                               |
 | 35.12 | [Refresh a months-of-expenses reserve monthly](changes/refresh-a-months-of-expenses-reserve-monthly/proposal.md)                                |                                                                      |
 | 35.13 | [Sure's `create_goal` contract](changes/sures-create-goal-contract/proposal.md)                                                                 |                                                                      |
-| 35.14 | [Explain a goal's state on its page](changes/explain-a-goals-state-on-its-page/proposal.md)                                                     | [35.9](changes/a-goals-pace-and-history-as-sure/proposal.md)         |
+| 35.14 | [Explain a goal's state on its page](changes/explain-a-goals-state-on-its-page/proposal.md)                                                     | [35.9]                                                               |
 | 36.1  | [Reset a forgotten password by e-mail](changes/reset-a-forgotten-password-by-e-mail/proposal.md)                                                |                                                                      |
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
@@ -43,6 +42,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 36.6  | [Household preferences](changes/household-preferences/proposal.md)                                                                              |                                                                      |
 | 36.7  | [Sign in with a passkey](changes/sign-in-with-a-passkey/proposal.md)                                                                            |                                                                      |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
+
+[35.9]: changes/archive/2026-11-18-a-goals-pace-and-history-as-sure/proposal.md
 
 ## Completed changes
 

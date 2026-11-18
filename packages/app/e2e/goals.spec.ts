@@ -82,7 +82,7 @@ test("a goal created from the dialog shows its card, its page and each account's
 	await expect(page.getByText(`Objectif « ${name} » créé.`)).toBeVisible();
 	const goalCard = card(page, name);
 	await expect(goalCard).toContainText(`${euros(120_000)} sur ${euros(200_000)}`);
-	await expect(goalCard).toContainText("En retard");
+	await expect(goalCard).toContainText("Rythme inconnu");
 	await expect(goalCard).toContainText(`${euros(40_000)} par mois`);
 	await expect(
 		goalCard.getByRole("img", { name: /^60\s%\sde l'objectif atteint$/u }),
@@ -113,9 +113,15 @@ test("a goal created from the dialog shows its card, its page and each account's
 		`${euros(20_000)} affectés sur ${euros(50_000)}`,
 	);
 
+	await api.deactivateAccount(savings.id);
+	await page.reload();
+	await expect(accounts.getByRole("listitem").filter({ hasText: savings.name })).toContainText(
+		euros(100_000),
+	);
 	await page.getByRole("button", { name: "Modifier" }).click();
 	const edit = page.getByRole("dialog", { name: "Modifier l'objectif" });
 	await expect(edit.getByLabel("Nom")).toHaveValue(name);
+	await expect(edit.getByRole("checkbox", { name: savings.name })).toBeChecked();
 	await expect(edit.getByLabel(`Montant affecté depuis ${other.name}`)).toHaveValue("200,00");
 	await edit.getByLabel("Montant visé").fill("1 200");
 	await edit.getByRole("button", { name: "Enregistrer" }).click();
@@ -198,6 +204,39 @@ test("a goal the linked accounts' 90-day pace covers is on track", async ({ page
 	const progress = page.getByRole("region", { name: "Progression" });
 	await expect(progress).toContainText("En bonne voie");
 	await expect(progress).toContainText(`${euros(100_000)} par mois`);
+	const projection = page.getByRole("region", { name: "Projection" });
+	await expect(projection).toContainText(
+		`À ce rythme, vous aurez épargné ${euros(1_285_545)} le ${shortDate(daysAgo(-300))}.`,
+	);
+	await expect(projection.locator(".recharts-line-curve")).toBeVisible();
+});
+
+test("a goal without enough account history has an unknown pace and no projection line", async ({
+	page,
+	api,
+}) => {
+	const savings = await api.openAccount({
+		name: uniqueName("Livret A"),
+		kind: "savings",
+		openingBalance: "450",
+		openingDate: daysAgo(30),
+	});
+	const { id } = await api.createGoal({
+		name: uniqueName("Vélo"),
+		targetAmount: "1 000",
+		targetDate: daysAgo(-60),
+		accounts: [{ accountId: savings.id }],
+	});
+
+	await page.goto(`/goals/${id}`);
+	const progress = page.getByRole("region", { name: "Progression" });
+	const projection = page.getByRole("region", { name: "Projection" });
+	await expect(projection.getByRole("button", { name: "Voir le tableau" })).toBeVisible();
+	await expect(progress.getByText("Rythme inconnu", { exact: true })).toBeVisible();
+	await expect(projection).toContainText(
+		"L'historique des comptes liés ne suffit pas à calculer une projection.",
+	);
+	await expect(projection.locator(".recharts-line-curve")).toHaveCount(0);
 });
 
 test("a goal is paused, completed, archived and restored from its menu and its banners, its chart read as a table", async ({
@@ -220,13 +259,13 @@ test("a goal is paused, completed, archived and restored from its menu and its b
 	await page.goto(`/goals/${id}`);
 	await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
 
-	// The chart says in words what it draws: the 550 left over 60 days is 275 a month.
+	// The chart shows the balance history even when it has no projection.
 	const projection = page.getByRole("region", { name: "Projection" });
 	await expect(projection).toContainText(
 		`Épargné : ${euros(45_000)}, ${euros(0)} depuis le ${shortDate(daysAgo(30))}. Montant visé : ${euros(100_000)}.`,
 	);
 	await expect(projection).toContainText(
-		`Pour l'atteindre le ${shortDate(daysAgo(-60))}, il faut épargner ${euros(27_500)} par mois.`,
+		"L'historique des comptes liés ne suffit pas à calculer une projection.",
 	);
 	await projection.getByRole("button", { name: "Voir le tableau" }).click();
 	const rows = projection.getByRole("table").getByRole("row");
@@ -276,7 +315,7 @@ test("a goal is paused, completed, archived and restored from its menu and its b
 	await page.getByRole("menuitem", { name: "Rouvrir" }).click();
 	await expect(page.getByText(`Objectif « ${name} » rouvert.`)).toBeVisible();
 	await expect(reached).toBeHidden();
-	await expect(progress).toContainText("En retard");
+	await expect(progress).toContainText("Rythme inconnu");
 	await expect(progress).not.toContainText("Atteint le");
 	await expect(projection).toBeVisible();
 
@@ -318,7 +357,7 @@ test("a goal is paused, completed, archived and restored from its menu and its b
 	await expect(page.getByText(`Objectif « ${name} » restauré.`)).toBeVisible();
 	await expect(archived).toBeHidden();
 	await expect(progress).not.toContainText("Atteint le");
-	await expect(progress).toContainText("En retard");
+	await expect(progress).toContainText("Rythme inconnu");
 	await expect(projection).toBeVisible();
 });
 
@@ -360,6 +399,7 @@ test("the dashboard's « Objectifs » card sums the goals holding their money, a
 
 	// Fixed figures, whatever the run's database holds.
 	let behind = 1;
+	let paceUnknown = 0;
 	await page.route("**/api/goals/summary", (route) =>
 		route.fulfill({
 			json: {
@@ -369,6 +409,7 @@ test("the dashboard's « Objectifs » card sums the goals holding their money, a
 					saved: 50_000,
 					target: 150_000,
 					behind,
+					paceUnknown,
 					leftOut: [{ id: "g3", name: "Voyage" }],
 					goals: [
 						{ id: "g1", name: "Vacances", state: "active", status: "behind", saved: 20_000 },
@@ -401,6 +442,11 @@ test("the dashboard's « Objectifs » card sums the goals holding their money, a
 	);
 
 	behind = 0;
+	paceUnknown = 1;
+	await page.reload();
+	await expect(goals).toContainText("3 actifs · 1 au rythme inconnu");
+
+	paceUnknown = 0;
 	await page.reload();
 	await expect(goals).toContainText("3 actifs · Tout est dans les temps");
 
@@ -416,6 +462,7 @@ test("the dashboard's « Objectifs » card sums the goals holding their money, a
 							saved: 0,
 							target: 0,
 							behind: 0,
+							paceUnknown: 0,
 							leftOut: [],
 							goals: [],
 						},
