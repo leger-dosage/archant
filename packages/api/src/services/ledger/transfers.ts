@@ -42,6 +42,7 @@ import {
 } from "../default-categories.ts";
 import { householdLocale } from "../household-locale.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
+import { queueGoalInflows, reconcileGoalDeposits } from "./goal-deposits.ts";
 import { categoryOriginOf, tagsExist } from "./patch.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -340,11 +341,12 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
  * written, so the result depends neither on line order nor on which account
  * synced first. No balance, lock or tag moves; a contribution's outflow
  * without a category takes « Contributions aux investissements », as Sure's.
+ * Returns the inflow ids so ingestion can identify deposits booked in this write.
  */
 export async function matchTransfers(
 	tx: Pick<Transaction, "select" | "insert" | "update">,
 	now: number,
-): Promise<void> {
+): Promise<string[]> {
 	const rows = accepted(await proposalCandidateQuery(tx), PROPOSAL);
 	// Each line with what it sees of the other side of each of its pairs.
 	const lines = new Map<string, { side: ExpectingSide; candidates: ExpectingSide[] }>();
@@ -381,6 +383,7 @@ export async function matchTransfers(
 	await inSequence(links, ROWS_PER_INSERT, (chunk) => tx.insert(transfers).values(chunk));
 	await clearOneTime(tx, links.flatMap(sidesOf));
 	await categoriseContributions(tx, links, "rule", now);
+	return links.map((link) => link.inflowTransactionId);
 }
 
 /**
@@ -794,7 +797,7 @@ export async function createTransferBetween(
 	input: TransferBetween,
 	options: { origin: Origin },
 ): Promise<CreatedTransfer> {
-	return deps.db.transaction(
+	const result = await deps.db.transaction(
 		async (tx): Promise<CreatedTransfer> => {
 			if (input.idempotencyKey !== undefined) {
 				const existing = await transferOfKey(tx, input.idempotencyKey);
@@ -920,6 +923,7 @@ export async function createTransferBetween(
 				.values(legs.map((leg) => ({ entryId: leg.id, label: leg.label, lockedFields: legLocks })));
 			await tx.insert(transfers).values(transfer);
 			await categoriseContributions(tx, [transfer], categoryOriginOf(options.origin), now);
+			await queueGoalInflows(tx, deps.timeZone, [transfer.inflowTransactionId]);
 			if (input.tagIds.length > 0) {
 				await tx
 					.insert(taggings)
@@ -958,4 +962,7 @@ export async function createTransferBetween(
 		},
 		{ behavior: "immediate" },
 	);
+
+	await reconcileGoalDeposits(deps);
+	return result;
 }

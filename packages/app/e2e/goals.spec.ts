@@ -701,3 +701,46 @@ test("a covered reserve is « Constituée », one below its target « Entamée �
 	await expect(menu.getByRole("menuitem", { name: "Archiver" })).toBeVisible();
 	await expect(menu.getByRole("menuitem", { name: "Marquer comme terminé" })).toHaveCount(0);
 });
+
+test("records, extends and cancels a deposit pledge", async ({ page, api }) => {
+	const savings = await api.openAccount({
+		name: uniqueName("Livret jardin"),
+		kind: "savings",
+		openingBalance: "500",
+		openingDate: daysAgo(40),
+	});
+	await api.addTransaction(savings.id, {
+		date: daysAgo(10),
+		label: "Versement fictif",
+		amount: "10",
+	});
+	const goal = await api.createGoal({
+		name: uniqueName("Abri de jardin"),
+		targetAmount: "1 000",
+		targetDate: daysAgo(-30),
+		accounts: [{ accountId: savings.id }],
+	});
+
+	await page.goto(`/goals/${goal.id}`);
+	await expect(page.getByRole("heading", { level: 1, name: goal.name })).toBeVisible();
+	const record = page.getByRole("button", { name: "Enregistrer l'argent mis de côté" });
+	await expect(record).toBeVisible();
+	await record.click();
+	const dialog = page.getByRole("dialog", { name: "Enregistrer l'argent mis de côté" });
+	await expect(dialog.getByLabel("Sur le compte")).toHaveValue(savings.id);
+	await dialog.getByLabel("Montant").fill("500");
+	await expect(dialog.getByText(/Atteindra 100\s*%/u)).toBeVisible();
+	await dialog.getByRole("button", { name: "Enregistrer la promesse" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(page.getByText(/7 jours restants/u)).toBeVisible();
+	await expect(page.getByText(/Les promesses en attente comblent le retard/u)).toBeVisible();
+
+	await page.getByRole("button", { name: "Prolonger de 7 jours" }).click();
+	await expect(page.getByText(/14 jours restants/u)).toBeVisible();
+	await page.goto("/goals");
+	await expect(card(page, goal.name)).toContainText("Promesse en attente");
+	await card(page, goal.name).click();
+	await page.getByRole("button", { name: "Annuler", exact: true }).click();
+	await expect(page.getByText(/14 jours restants/u)).toHaveCount(0);
+	await expect(page.getByText(/Les promesses en attente comblent le retard/u)).toHaveCount(0);
+});

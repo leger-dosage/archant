@@ -2417,6 +2417,23 @@
 		}
 	},
 	"goals": {
+		"pledge": {
+			"transfer": "Enregistrer un virement effectué",
+			"save": "Enregistrer l'argent mis de côté",
+			"amount": "Montant",
+			"account": "Sur le compte",
+			"preview": "Atteindra {{percent}}, {{newTotal}} sur {{target}}.",
+			"record": "Enregistrer la promesse",
+			"list": "Promesses de versement",
+			"pending_one": "En attente : {{amount}} vers {{account}} · {{count}} jour restant",
+			"pending_other": "En attente : {{amount}} vers {{account}} · {{count}} jours restants",
+			"expired": "Promesse expirée : {{amount}} vers {{account}}",
+			"extend": "Prolonger de 7 jours",
+			"badge": "Promesse en attente",
+			"matchedDate": "Dernier versement rapproché le {{date}}",
+			"catchUp": "{{amount}} de plus par mois pour combler le retard.",
+			"covered": "Les promesses en attente comblent le retard."
+		},
 		"title": "Objectifs",
 		"description": "Un objectif se remplit avec le solde des comptes qui portent l'argent : ce qui est mis de côté, ce qui reste, et ce qu'il faut épargner chaque mois.",
 		"add": "Nouvel objectif",
@@ -3912,6 +3929,9 @@
 		"PRICE_PROVIDER_ERROR": "Yahoo Finance n'a pas répondu correctement. Réessayez plus tard.",
 		"PRICE_UNAVAILABLE": "Yahoo Finance n'a pas de cours pour au moins un titre. Après cinq échecs de suite, un titre n'est plus mis à jour que par ce bouton.",
 		"fields": {
+			"duplicate_open_pledge": "Une promesse du même montant est déjà en attente sur ce compte.",
+			"pledge_goal_inactive": "Seul un objectif actif peut recevoir une promesse.",
+			"pledge_not_open": "Cette promesse n'est plus en attente.",
 			"too_small": "Ce champ est obligatoire.",
 			"too_big": "Ce texte est trop long.",
 			"split_sum_mismatch": "Les lignes doivent totaliser le montant de l'opération.",

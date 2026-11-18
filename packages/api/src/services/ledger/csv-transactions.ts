@@ -54,7 +54,7 @@ export async function ingestCsvStatements(
 			accountId,
 			{ transactions: lines, balance: null, rejected: [] },
 			{ importId },
-			{ origin: "sync", stateless: true, updateMatched: true },
+			{ origin: "sync", stateless: true, updateMatched: true, deferGoalReconciliation: true },
 		);
 
 		created += result.created.length;

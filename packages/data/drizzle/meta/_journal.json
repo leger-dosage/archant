@@ -761,8 +761,15 @@
     {
       "idx": 108,
       "version": "6",
-      "when": 1795028656867,
-      "tag": "0108_budget_period_dates",
+      "when": 1795028656837,
+      "tag": "0108_add_goal_pledges",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "6",
+      "when": 1795032852942,
+      "tag": "0109_budget_period_dates",
       "breakpoints": true
     }
   ]
