@@ -2,6 +2,8 @@ import { z } from "zod";
 
 import { LOCALES } from "@archant/data/locales";
 
+import { householdSetupFields } from "./household-preferences.ts";
+
 /** Better Auth's default bounds, restated so the form reports them per field (NFR6). */
 export const PASSWORD_MIN_LENGTH = 8;
 export const PASSWORD_MAX_LENGTH = 128;
@@ -31,7 +33,7 @@ export const passwordSchema = z
 
 // Shared with the setup form, whose resolver runs this same schema. Custom
 // issues carry their field code as their message (lib/zod-error.ts).
-export const setupSchema = z.object({
+export const setupSchema = householdSetupFields.extend({
 	// No minimum: an empty token reaches the check and answers
 	// `SETUP_TOKEN_INVALID`, like a wrong one. The form requires one itself.
 	token: z.string().trim().max(200),

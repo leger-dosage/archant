@@ -1,10 +1,12 @@
 import type { Auth } from "../services/auth.ts";
 
 import { sql } from "drizzle-orm";
+import { testClient } from "hono/testing";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
+import { saveHouseholdPreferences } from "../services/settings.ts";
 import {
 	buildApp,
 	car,
@@ -18,6 +20,7 @@ import {
 	openOwn,
 	own,
 	ownRequest,
+	ownDatabase,
 	ownCard,
 	ownCategory,
 	pea,
@@ -169,6 +172,19 @@ describe("GET /api/reports/net-worth", () => {
 		expect(data.points.at(-1)?.balance).toBe(100000);
 	});
 
+	it("counts accounts in the saved base currency and names the other accounts", async () => {
+		const { db } = await ownDatabase();
+		await saveHouseholdPreferences(db, { baseCurrency: "USD" });
+		const euros = await openOwn({ name: "Compte en euros", openingBalance: "1 000,00" });
+		await openOwn({ name: "Épargne US", currency: "USD", openingBalance: "10.00" });
+
+		await expect(netWorthOf()).resolves.toMatchObject({
+			currency: "USD",
+			netWorth: 1000,
+			leftOut: [{ id: euros.id, name: euros.name, currency: "EUR" }],
+		});
+	});
+
 	it("adds nothing for a counted account opening after today", async () => {
 		await openOwn({ openingBalance: "1 000,00" });
 		await openOwn({ name: "Livret A", subtype: "savings", openingDate: "2026-09-30" });
@@ -280,15 +296,29 @@ describe("GET /api/reports/net-worth", () => {
 		});
 	});
 
-	it("starts current_month on the first day in APP_TIMEZONE, at a month's boundary", async () => {
+	it("uses a newly saved zone at the month boundary on the same running app", async () => {
 		await openOwn({ openingDate: "2026-07-01", openingBalance: "1 000,00" });
+		const { api } = testClient(buildApp(own?.db));
+		const netWorth = async () => {
+			const response = await api.reports["net-worth"].$get({ query: { period: "current_month" } });
+
+			expect(response.status).toBe(200);
+			return (await response.json()).data;
+		};
+
 		// 00:30 on 1 October in Paris, still 30 September in UTC.
 		vi.setSystemTime(new Date("2026-09-30T22:30:00Z"));
-
-		await expect(netWorthOf("current_month")).resolves.toMatchObject({
+		await expect(netWorth()).resolves.toMatchObject({
 			period: "current_month",
 			from: "2026-10-01",
 			to: "2026-10-01",
+		});
+
+		const updated = await api.preferences.household.$patch({ json: { timeZone: "UTC" } });
+		expect(updated.status).toBe(200);
+		await expect(netWorth()).resolves.toMatchObject({
+			from: "2026-09-01",
+			to: "2026-09-30",
 		});
 	});
 });
