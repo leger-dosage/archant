@@ -5,4 +5,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers each status line and panel; Playwright reads them for a goal behind, one with unknown pace and a reached one.
-- [ ] 2.2 Run the repository verification commands. The full Playwright suite is pending in GitHub Actions.
+- [x] 2.2 Run the repository verification commands. All required GitHub checks passed, including the full Playwright suite.
