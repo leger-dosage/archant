@@ -3692,8 +3692,6 @@
 		"backupCodesTitle": "Backup codes",
 		"backupCodesDescription": "Each code allows one sign-in without your phone. Keep them somewhere safe: they will not be shown again.",
 		"backupCodesDone": "I have saved these codes",
-		"regenerate": "Regenerate backup codes",
-		"regenerateHint": "The old backup codes stop working.",
 		"disable": "Disable two-factor authentication",
 		"disabled": "Two-factor authentication disabled."
 	},

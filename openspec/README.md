@@ -41,8 +41,11 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 | 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
 | 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
-| 36.5  | [Two-factor backup codes as Sure's](changes/two-factor-backup-codes-as-sures/proposal.md)                                                       |                                                                      |
 | 36.6  | [Household preferences](changes/household-preferences/proposal.md)                                                                              |                                                                      |
 | 36.7  | [Sign in with a passkey](changes/sign-in-with-a-passkey/proposal.md)                                                                            |                                                                      |
 | 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
 | 37.3  | [Cover both languages end to end](changes/cover-both-languages-end-to-end/proposal.md)                                                          |                                                                      |
+
+## Completed changes
+
+- Story 36.5: [Two-factor backup codes as Sure's](changes/archive/2026-11-18-two-factor-backup-codes-as-sures/proposal.md).
