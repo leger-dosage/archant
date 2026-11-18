@@ -4,11 +4,16 @@
 
 Archant SHALL give every category an envelope, copy stored allocations and carry choices, and apply the reserve rules when updating or moving an allocation.
 
+#### Scenario: Show every category
+
+- **WHEN** a month is set up, copied or shown
+- **THEN** every category continues to have an envelope, regardless of past income or expense use.
+
 #### Scenario: Copy category allocations
 
-- **GIVEN** the categories of Story 32.1, without a kind
-- **WHEN** a month is set up, copied or shown
-- **THEN** every category has an envelope, as Sure's `Budget#sync_budget_categories`; « Copier depuis %{source_name} » copies each category's stored amount and its « Report » choice as stored, as `Budget#copy_from!`, and no longer lifts a parent to the subcategories re-parented under it since.
+- **GIVEN** a previous budget with saved category amounts and carry choices
+- **WHEN** the administrator copies it into an unset month
+- **THEN** Archant uses the latest earlier budget that is set up and copies each stored amount and carry choice. A subcategory re-parented since that budget does not increase its new parent's copied amount.
 
 #### Scenario: Show the saved subcategory amount
 

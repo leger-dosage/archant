@@ -767,6 +767,7 @@ describe("reading trades", () => {
 				mic: "XPAR",
 				isin: "FR0000121014",
 			},
+			notes: null,
 			convertedFrom: null,
 		});
 		const last = await listTrades(deps(), account.id, { page: 2, pageSize: 2 });
