@@ -6,7 +6,7 @@ A goal I feed stops reading behind, as Sure.
 
 ## What changes
 
-- Accept a deposit pledge against a goal and reconcile it to an eligible deposit.
+- Accept a deposit pledge against a goal and reconcile it to eligible deposits booked by a bank sync or in the application.
 
 ## Capabilities
 
