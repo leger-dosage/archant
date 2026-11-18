@@ -2397,6 +2397,31 @@
 		"description": "Un objectif se remplit avec le solde des comptes qui portent l'argent : ce qui est mis de côté, ce qui reste, et ce qu'il faut épargner chaque mois.",
 		"add": "Nouvel objectif",
 		"list": "Objectifs",
+		"filters": {
+			"label": "Filtrer les objectifs par statut",
+			"all": "Tous",
+			"search": "Rechercher des objectifs",
+			"placeholder": "Rechercher des objectifs…",
+			"emptyFilter": "Aucun objectif ne correspond à ce filtre.",
+			"emptySearch": "Aucun objectif ne correspond à \"{{query}}\".",
+			"emptyBoth": "Aucun objectif ne correspond à \"{{query}}\" avec ce filtre."
+		},
+		"indicators": {
+			"label": "Indicateurs des objectifs",
+			"contributed": "Contribué · 30 derniers jours",
+			"firstWindow": "Premiers 30 jours d'activité",
+			"flat": "Stable par rapport aux 30 jours précédents",
+			"up": "↑ {{percent}} vs 30 jours précédents",
+			"down": "↓ {{percent}} vs 30 jours précédents",
+			"needed": "Requis ce mois-ci",
+			"behind_zero": "Aucun objectif en retard",
+			"behind_one": "{{count}} objectif en retard",
+			"behind_other": "{{count}} objectifs en retard",
+			"onTrack": "Objectifs en bonne voie",
+			"fraction": "{{onTrack}} sur {{total}}",
+			"paceUnknown_one": "{{count}} objectif au rythme inconnu",
+			"paceUnknown_other": "{{count}} objectifs au rythme inconnu"
+		},
 		"empty": {
 			"title": "Aucun objectif pour l'instant",
 			"description": "Fixez un montant à atteindre, des vacances ou une réserve, et liez les comptes d'épargne qui le portent."
