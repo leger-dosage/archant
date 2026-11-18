@@ -1003,6 +1003,8 @@ test("the runs table pages to older runs", async ({ page, api }) => {
 		actions: [categoryAction(category.id)],
 	});
 	await api.applyRule(olderRule);
+	// Keep the run, and remove its rule so it does not run as a predecessor.
+	await api.deleteRules();
 	const newerRule = await api.createRule({
 		name: newer,
 		conditions: [labelLike(newer)],
@@ -1328,5 +1330,115 @@ test.describe("rules on a phone", () => {
 			dialog(page).getByRole("button", { name: "Catégorie", exact: true }),
 		).toContainText(category.name);
 		await expect(page).toHaveURL(/\/rules$/u);
+	});
+});
+
+test("saves the execution order using the keyboard", async ({ page, api }) => {
+	const category = await api.createCategory();
+	const create = (name: string) =>
+		api.createRule({
+			name,
+			conditions: [labelLike("Marché fictif clavier")],
+			actions: [categoryAction(category.id)],
+		});
+	await create("Achat clavier");
+	await create("Marché clavier");
+	await visit(page);
+
+	const open = page.getByRole("button", { name: "Ordre d’exécution" });
+	await open.focus();
+	await page.keyboard.press("Enter");
+	const order = page.getByRole("dialog", { name: "Ordre d’exécution" });
+	await order.getByRole("button", { name: "Monter Marché clavier" }).focus();
+	await page.keyboard.press("Enter");
+	await expect(order.getByRole("listitem").first()).toContainText("Marché clavier");
+	await order.getByRole("button", { name: "Enregistrer l’ordre" }).focus();
+	await page.keyboard.press("Enter");
+	await expect(order).toBeHidden();
+	await expect(open).toBeFocused();
+
+	await page.reload();
+	await open.click();
+	await expect(order.getByRole("listitem").first()).toContainText("Marché clavier");
+});
+
+test.describe("rule precedence on a phone", () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+	test("saves order and stop by touch and applies them to the next import", async ({
+		page,
+		api,
+	}, testInfo) => {
+		const account = await api.openAccount();
+		const category = await api.createCategory();
+		const preferred = await api.createCategory();
+		const tag = await api.createTag(uniqueName("Étiquette fictive"));
+		const marker = uniqueName("MARCHÉ FICTIF");
+		await api.createRule({
+			name: "Marché général",
+			conditions: [labelLike(marker)],
+			actions: [categoryAction(category.id), { actionType: "set_transaction_tags", value: tag.id }],
+		});
+		await api.createRule({
+			name: "Marché prioritaire",
+			conditions: [labelLike(`${marker} priorité`)],
+			actions: [categoryAction(preferred.id)],
+		});
+		await visit(page);
+
+		const open = page.getByRole("button", { name: "Ordre d’exécution" });
+		await open.tap();
+		const order = page.getByRole("dialog", { name: "Ordre d’exécution" });
+		await expect(order.getByRole("listitem").first()).toContainText("Marché général");
+		await page.screenshot({ path: testInfo.outputPath("ordre-avant.png"), animations: "disabled" });
+		await order.getByRole("button", { name: "Monter Marché prioritaire" }).tap();
+		await expect(order.getByRole("listitem").first()).toContainText("Marché prioritaire");
+		await expect
+			.poll(() => order.evaluate((element) => element.scrollWidth - element.clientWidth))
+			.toBe(0);
+		await page.screenshot({
+			path: testInfo.outputPath("ordre-mobile.png"),
+			animations: "disabled",
+		});
+		await order.getByRole("button", { name: "Enregistrer l’ordre" }).tap();
+		await expect(order).toBeHidden();
+
+		const actions = ruleRow(page, "Marché prioritaire").getByRole("button", {
+			name: /^Actions pour /u,
+		});
+		await actions.tap();
+		await page.getByRole("menuitem", { name: "Modifier" }).tap();
+		const stop = dialog(page).getByRole("switch", { name: "Arrêter le traitement" });
+		await expect(stop).not.toBeChecked();
+		await stop.tap();
+		await expect(stop).toBeChecked();
+		await page.screenshot({
+			path: testInfo.outputPath("arret-mobile.png"),
+			animations: "disabled",
+		});
+		await dialog(page).getByRole("button", { name: "Enregistrer" }).tap();
+		await expect(dialog(page)).toBeHidden();
+
+		await page.reload();
+		await expect(ruleRow(page, "Marché prioritaire")).toContainText("Arrêter le traitement");
+		await open.tap();
+		await expect(order.getByRole("listitem").first()).toContainText("Marché prioritaire");
+		await order.getByRole("button", { name: "Annuler" }).tap();
+
+		const stopped = `${marker} priorité`;
+		const other = `${marker} autre`;
+		await api.importFile(
+			account.id,
+			sgml([
+				{ daysAgo: 2, amount: "-5,00", label: stopped, fitid: "market-priority" },
+				{ daysAgo: 1, amount: "-6,00", label: other, fitid: "market-other" },
+			]),
+			"marche.ofx",
+		);
+		await expectCategory(page, stopped, preferred.name);
+		await expect(
+			page.getByRole("main").getByRole("listitem").filter({ hasText: stopped }),
+		).not.toContainText(tag.name);
+		await expectCategory(page, other, category.name);
 	});
 });

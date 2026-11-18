@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "a805bd86-45e2-4760-9f60-b19ea199dad9",
+  "id": "09cf1f9a-4363-4db5-b3d5-12c3e3ebf071",
   "prevId": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "tables": {
     "accounts": {
@@ -2034,14 +2034,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "consumed_amount": {
-          "name": "consumed_amount",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
         },
         "completed_amount": {
           "name": "completed_amount",
@@ -5214,6 +5206,22 @@
           "notNull": false,
           "autoincrement": false
         },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "stop_processing": {
+          "name": "stop_processing",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -5866,13 +5874,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
-        },
-        "consumed_goal_id": {
-          "name": "consumed_goal_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         },
         "locked_fields": {
           "name": "locked_fields",

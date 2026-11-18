@@ -104,6 +104,7 @@ export const ERROR_STATUSES = {
 	 * one its preview gave; `params.changed` is the count now. Nothing is written.
 	 */
 	RULE_PREVIEW_STALE: 409,
+	RULE_ORDER_STALE: 409,
 	/**
 	 * A bulk edit by filter whose count of selected rows differs from the one
 	 * an assistant read and the owner agreed to; `params.count` is the count

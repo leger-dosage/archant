@@ -12,7 +12,7 @@ import type {
 import type { ServiceDeps } from "./deps.ts";
 import type { ReadRule, Reference } from "./rule-reader.ts";
 
-import { and, asc, count, desc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, max } from "drizzle-orm";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
@@ -30,12 +30,13 @@ import type {
 	RuleCondition as RuleConditionRow,
 } from "@archant/data/types";
 
-import { planActions, plannedRow } from "../domain/rules/matching.ts";
+import { planActions, plannedRow, planRuleRow } from "../domain/rules/matching.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import { applyRulePlan, ruleCandidates } from "./ledger/rule-plans.ts";
+import { oneByOne } from "./ledger/shared.ts";
 import { matchTransfers } from "./ledger/transfers.ts";
 import {
 	CONDITION_REFERENCES,
@@ -53,6 +54,8 @@ import {
 export type RuleData = RuleSnapshot & {
 	id: string;
 	enabled: boolean;
+	position: number;
+	stopProcessing: boolean;
 	effectiveDate: string | null;
 	/** Epoch milliseconds of the last save or switch, which the list sorts by as Sure's `updated_at`. */
 	updatedAt: number;
@@ -82,6 +85,8 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 		id: row.id,
 		name: row.name,
 		enabled: row.enabled,
+		position: row.position,
+		stopProcessing: row.stopProcessing,
 		effectiveDate: row.effectiveDate,
 		updatedAt: row.updatedAt,
 		conditions: conditionTree(conditions, null),
@@ -96,7 +101,7 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 	};
 }
 
-/** Every rule, in the order they apply, their creation order. */
+/** Every rule, in application order. */
 export async function listRules(deps: ServiceDeps): Promise<RuleData[]> {
 	return (await readRules(deps.db)).map(toData);
 }
@@ -266,11 +271,17 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 		async (tx) => {
 			await assertReferencesExist(tx, rule);
 			const now = Date.now();
+			const last = await tx
+				.select({ position: max(rules.position) })
+				.from(rules)
+				.get();
 
 			await tx.insert(rules).values({
 				id,
 				name: rule.name,
 				enabled: input.enabled ?? false,
+				position: (last?.position ?? -1) + 1,
+				stopProcessing: input.stopProcessing ?? false,
 				effectiveDate: rule.effectiveDate,
 				createdAt: now,
 				updatedAt: now,
@@ -281,6 +292,28 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 	);
 
 	return getRule(deps.db, id);
+}
+
+/** Saves a full permutation so a concurrent create or delete cannot be lost. */
+export async function reorderRules(deps: ServiceDeps, ids: string[]): Promise<RuleData[]> {
+	return deps.db.transaction(
+		async (tx) => {
+			const existingIds = new Set(
+				(await tx.select({ id: rules.id }).from(rules)).map(({ id }) => id),
+			);
+
+			if (ids.length !== existingIds.size || !ids.every((id) => existingIds.delete(id))) {
+				throw new AppError("RULE_ORDER_STALE", "Reload the rules before reordering them.");
+			}
+
+			await oneByOne([...ids.entries()], ([position, id]) =>
+				tx.update(rules).set({ position }).where(eq(rules.id, id)),
+			);
+
+			return (await readRules(tx)).map(toData);
+		},
+		{ behavior: "immediate" },
+	);
 }
 
 async function assertExists(db: Pick<Db, "select">, id: string): Promise<void> {
@@ -313,6 +346,7 @@ export async function updateRule(
 					name: rule.name,
 					effectiveDate: rule.effectiveDate,
 					...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+					...(input.stopProcessing === undefined ? {} : { stopProcessing: input.stopProcessing }),
 					updatedAt: Date.now(),
 				})
 				.where(eq(rules.id, id));
@@ -393,19 +427,24 @@ async function appliedOf(db: Pick<Db, "select">, found: readonly ReadRule[]): Pr
 	});
 }
 
-/**
- * The rules an application runs: the one `id` names, enabled or not, or every
- * rule, disabled ones included, in application order, as Sure's
- * `ApplyAllRulesJob` runs `family.rules`. Throws `NOT_FOUND` for an unknown id.
- */
+/** All rules for apply-all, or the selected rule and its enabled predecessors. */
 async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
-	const found = await readRules(db, id === undefined ? {} : { id });
+	const found = await readRules(db);
 
-	if (id !== undefined && found.length === 0) {
+	if (id === undefined) {
+		return appliedOf(db, found);
+	}
+
+	const position = found.findIndex(({ row }) => row.id === id);
+
+	if (position === -1) {
 		throw notFound();
 	}
 
-	return appliedOf(db, found);
+	return appliedOf(
+		db,
+		found.slice(0, position + 1).filter(({ row }) => row.enabled || row.id === id),
+	);
 }
 
 /**
@@ -421,6 +460,8 @@ async function draftToApply(db: Pick<Db, "select">, input: RuleInput): Promise<A
 		id,
 		name: rule.name,
 		enabled: true,
+		position: 0,
+		stopProcessing: input.stopProcessing ?? false,
 		effectiveDate: rule.effectiveDate,
 		createdAt: now,
 		updatedAt: now,
@@ -557,8 +598,8 @@ function samplesOf(
 }
 
 /**
- * What applying rules to existing transactions would do: the saved rule an
- * id names, a draft in the form's shape, checked as a save checks it, or
+ * What applying rules to existing transactions would do: the saved rule
+ * and its enabled predecessors, a draft checked as a save checks it, or
  * every rule when `target` is absent. Counts the rows any rule
  * matches and those it would change: a locked field or a value already there
  * is no change, and a row several rules change counts once. Gives a sample of
@@ -626,6 +667,7 @@ async function runInTurn(
 	const changed = new Set<string>();
 	const runs: RuleRunData[] = [];
 	let rows = candidates;
+	const precedence: Parameters<typeof planRuleRow>[2] = new Map();
 
 	await applied.reduce<Promise<void>>(async (previous, { rule, snapshot }, position) => {
 		await previous;
@@ -641,8 +683,20 @@ async function runInTurn(
 		let queued = 0;
 
 		try {
-			const { plan, perRule } = planActions([rule], rows, MAX_TAGS_PER_TRANSACTION);
-			queued = perRule[0]?.matched ?? 0;
+			const plan = new Map<string, RowPlan>();
+
+			for (const row of rows) {
+				const step = planRuleRow(rule, row, precedence, MAX_TAGS_PER_TRANSACTION);
+
+				if (step !== null) {
+					queued += 1;
+
+					if (Object.keys(step.plan).length > 0) {
+						plan.set(row.id, step.plan);
+					}
+				}
+			}
+
 			const written = await tx.transaction(
 				async (savepoint) => (await applyRulePlan(savepoint, plan, { origin: "rule" })).changed,
 			);
@@ -683,8 +737,9 @@ async function runInTurn(
 }
 
 /**
- * Applies the rule `id`, enabling it as Sure's `rules#apply` does, or every
- * rule in application order, enabling none, as Sure's `ApplyAllRulesJob`, to
+ * Applies the rule `id` with its enabled predecessors and enables that rule,
+ * as Sure's `rules#apply` does. With no id, applies every rule in order and
+ * enables none, as Sure's `ApplyAllRulesJob`. Applies the rules to
  * existing transactions, as `previewRules` counted them, and records each
  * run as `manual`. Runs in one immediate transaction, rule after rule
  * (`runInTurn`). Answers how many rows it changed, a row several rules change
@@ -716,8 +771,17 @@ export async function applyRules(
 				return { changed: 0, runs: [] };
 			}
 
-			const { plan, candidates } = await planOver(tx, applied);
-			assertExpected(expectedChanged, plan.size);
+			const evaluated = applied.map(({ rule }) => rule);
+			const candidates = await ruleCandidates(tx, earliestStart(evaluated), {
+				activeAccountsOnly: true,
+			});
+
+			if (expectedChanged !== undefined) {
+				assertExpected(
+					expectedChanged,
+					planActions(evaluated, candidates, MAX_TAGS_PER_TRANSACTION).plan.size,
+				);
+			}
 
 			return runInTurn(tx, applied, candidates, "manual");
 		},
@@ -727,7 +791,7 @@ export async function applyRules(
 
 /**
  * Sure's `Family::Syncer#perform_post_sync`, once a sync or an import has
- * committed and matched transfers: every enabled rule, in creation order,
+ * committed and matched transfers: every enabled rule, in saved order,
  * over every transaction from its effective date, respecting locks, each
  * run recorded as `scheduled`. Never throws: the sync or import stands, and
  * a failure, a rule's or the whole run's, is logged by its code only.

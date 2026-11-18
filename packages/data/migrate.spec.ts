@@ -3278,7 +3278,7 @@ const insertGoal = (
 
 describe("goals", () => {
 	it("keeps existing completion, funding and outflow rows when adding spending columns", async () => {
-		const before = await migratedBefore("0107_goal_consumption");
+		const before = await migratedBefore("0108_goal_consumption");
 		await insertAccount(before, "a1", "depository", "savings");
 		await insertGoal(before, "g1", { state: "completed" });
 		await before.run(
@@ -4217,4 +4217,26 @@ describe("loan terms", () => {
 			{ id: "a4", details: null },
 		]);
 	});
+});
+
+it("preserves existing rule order by creation date and id on upgrade", async () => {
+	await migrateBefore(url, "0107_order_rules");
+	const previous = await createDb(url);
+
+	try {
+		await previous.run(
+			sql`insert into rules (id, created_at, updated_at) values ('b', 1, 0), ('c', 0, 2), ('a', 1, 1)`,
+		);
+	} finally {
+		previous.$client.close();
+	}
+
+	const database = await migrated();
+	await expect(
+		database.all(sql`select id, position, stop_processing from rules order by position`),
+	).resolves.toEqual([
+		{ id: "c", position: 0, stop_processing: 0 },
+		{ id: "a", position: 1, stop_processing: 0 },
+		{ id: "b", position: 2, stop_processing: 0 },
+	]);
 });

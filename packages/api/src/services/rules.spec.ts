@@ -26,6 +26,7 @@ import {
 	listRuleRuns,
 	listRules,
 	previewRules,
+	reorderRules,
 	runRulesAfterSync,
 	setRuleEnabled,
 	updateRule,
@@ -99,6 +100,8 @@ describe("createRule", () => {
 			id: rule.id,
 			name: "Courses du samedi",
 			enabled: false,
+			position: 0,
+			stopProcessing: false,
 			effectiveDate: "2026-09-01",
 			updatedAt: rule.updatedAt,
 			conditions: [
@@ -271,7 +274,7 @@ describe("createRule with Story 8.2's conditions and actions", () => {
 });
 
 describe("listRules", () => {
-	it("lists the rules in creation order", async () => {
+	it("appends new rules and saves only complete permutations", async () => {
 		const first = await createRule(deps(), { name: "B", conditions: [], actions: [action()] });
 		const second = await createRule(deps(), { name: "A", conditions: [], actions: [action()] });
 		await temp.db.update(rules).set({ createdAt: 1 }).where(eq(rules.id, first.id));
@@ -280,6 +283,23 @@ describe("listRules", () => {
 		const list = await listRules(deps());
 
 		expect(list.map((rule) => rule.name)).toEqual(["B", "A"]);
+		await expect(reorderRules(deps(), [first.id])).rejects.toMatchObject({
+			code: "RULE_ORDER_STALE",
+		});
+		await expect(reorderRules(deps(), [first.id, first.id])).rejects.toMatchObject({
+			code: "RULE_ORDER_STALE",
+		});
+		await expect(reorderRules(deps(), [second.id, first.id])).resolves.toMatchObject([
+			{ id: second.id, position: 0 },
+			{ id: first.id, position: 1 },
+		]);
+		const next = await createRule(deps(), { name: "C", conditions: [], actions: [action()] });
+		expect(next.position).toBe(2);
+		await expect(listRules(deps())).resolves.toMatchObject([
+			{ id: second.id },
+			{ id: first.id },
+			{ id: next.id },
+		]);
 	});
 });
 
@@ -296,6 +316,8 @@ describe("updateRule", () => {
 			id: rule.id,
 			name: null,
 			enabled: true,
+			position: 0,
+			stopProcessing: false,
 			effectiveDate: null,
 			updatedAt: updated.updatedAt,
 			conditions: [
@@ -359,6 +381,7 @@ describe("readRules and toRule", () => {
 		await expect(loadEnabledRules(temp.db)).resolves.toEqual([
 			{
 				id: rule.id,
+				stopProcessing: false,
 				effectiveDate: "2026-09-01",
 				conditions: [
 					{ type: "transaction_account", operator: "=", id: "a1" },
@@ -436,6 +459,7 @@ describe("readRules and toRule", () => {
 		await expect(loadEnabledRules(temp.db)).resolves.toEqual([
 			{
 				id: rule.id,
+				stopProcessing: false,
 				effectiveDate: null,
 				conditions: [
 					{ type: "transaction_merchant", operator: "=", id: "amazon" },
@@ -804,6 +828,60 @@ describe("previewRules and applyRules", () => {
 		]);
 	});
 
+	it("previews and runs a selected rule with enabled predecessors and without successors", async () => {
+		const [id = ""] = await rowsOf(["PREC-28 original"]);
+		const ignored = await createRule(deps(), {
+			conditions: [labelHas("PREC-28")],
+			actions: [action()],
+			stopProcessing: true,
+		});
+		const rename = await createRule(deps(), {
+			enabled: true,
+			conditions: [labelHas("PREC-28")],
+			actions: [
+				{ actionType: "set_transaction_name", value: "PREC-28 renamed" },
+				action("loisirs"),
+			],
+		});
+		const selected = await createRule(deps(), {
+			conditions: [{ conditionType: "transaction_name", operator: "=", value: "PREC-28 renamed" }],
+			actions: [action(), { actionType: "set_transaction_tags", value: "achats" }],
+		});
+		const successor = await createRule(deps(), {
+			enabled: true,
+			conditions: [labelHas("PREC-28")],
+			actions: [{ actionType: "exclude_transaction" }],
+		});
+
+		const preview = await previewRules(deps(), selected.id);
+		expect(preview).toMatchObject({
+			matched: 1,
+			changed: 1,
+			samples: [
+				{
+					id,
+					changes: {
+						label: { to: "PREC-28 renamed" },
+						category: { to: "loisirs" },
+						tags: { to: ["achats"] },
+					},
+				},
+			],
+		});
+		expect(preview.samples[0]?.changes.excluded).toBeUndefined();
+		const result = await applyRules(deps(), selected.id, preview.changed);
+		expect(result.runs.map(({ ruleId }) => ruleId)).toEqual([rename.id, selected.id]);
+		await expect(candidatesOf([id])).resolves.toMatchObject([
+			{ label: "PREC-28 renamed", categoryId: "loisirs", tagIds: ["achats"], excluded: false },
+		]);
+
+		await reorderRules(deps(), [selected.id, ignored.id, rename.id, successor.id]);
+		await afterSync();
+		await expect(candidatesOf([id])).resolves.toMatchObject([
+			{ categoryId: "courses", excluded: true },
+		]);
+	});
+
 	it("reach only rows dated on or after the earliest start date", async () => {
 		const [may = ""] = await rowsOf(["COMPTE4 MAI"], "2026-05-20");
 		const [june = ""] = await rowsOf(["COMPTE4 JUIN"], "2026-06-10");
@@ -1134,7 +1212,7 @@ describe("runRulesAfterSync", () => {
 		const next = await laterRule({
 			enabled: true,
 			conditions: [labelHas("compte21")],
-			actions: [{ actionType: "set_transaction_merchant", value: "amazon" }],
+			actions: [action(), { actionType: "set_transaction_merchant", value: "amazon" }],
 		});
 		// The database refuses the first rule's rename, as an unexpected failure would.
 		await temp.db.run(
