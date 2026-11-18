@@ -87,6 +87,64 @@ async function save(month: string, budgetedSpending: string, expectedIncome: str
 	return ownRequest("PUT", `/api/budgets/${month}`, { budgetedSpending, expectedIncome });
 }
 
+async function cashGoal(name: string, accountId: string, allocatedAmount = "") {
+	const { status, body } = await ownRequest("POST", "/api/goals", {
+		name,
+		targetAmount: "1 000",
+		targetDate: null,
+		color: "#27a644",
+		icon: null,
+		notes: null,
+		accounts: [{ accountId, allocatedAmount }],
+	});
+
+	expect(status, JSON.stringify(body)).toBe(201);
+
+	return z.object({ data: z.object({ id: z.string() }) }).parse(body).data.id;
+}
+
+describe("available budget cash", () => {
+	it("counts only current reporting cash and deducts the goals still holding it", async () => {
+		const checking = await openOwn({ openingBalance: "1 000" });
+		const savings = await openOwn({ subtype: "savings", openingBalance: "500" });
+		const dollars = await openOwn({ currency: "USD", openingBalance: "2 000" });
+		const investment = await openOwn({
+			type: "investment",
+			subtype: "pea",
+			openingBalance: "3 000",
+		});
+		const excluded = await openOwn({ excludedFromReports: true, openingBalance: "4 000" });
+		const inactive = await openOwn({ openingBalance: "5 000" });
+		await cashGoal("Course", checking.id, "200");
+		await cashGoal("Voyage", checking.id);
+		const paused = await cashGoal("Travaux", savings.id, "100");
+		const finished = await cashGoal("Meubles", savings.id, "125");
+		await cashGoal("Dollars", dollars.id);
+		await cashGoal("Titres", investment.id);
+		await cashGoal("Réserve hors rapports", excluded.id);
+		await cashGoal("Réserve désactivée", inactive.id);
+		await sendOwn("POST", `/api/goals/${paused}/pause`);
+		await sendOwn("POST", `/api/goals/${finished}/complete`);
+		await sendOwn("PATCH", `/api/accounts/${inactive.id}`, { active: false });
+
+		await expect(ownRequest("GET", "/api/budgets/available-cash")).resolves.toEqual({
+			status: 200,
+			body: { data: { currency: "EUR", available: 150_000, earmarked: 110_000, free: 40_000 } },
+		});
+	});
+
+	it("floors free cash at zero when a negative balance reduces what the household holds", async () => {
+		await openOwn({ openingBalance: "-200" });
+		const savings = await openOwn({ subtype: "savings", openingBalance: "500" });
+		await cashGoal("Réserve", savings.id);
+
+		await expect(ownRequest("GET", "/api/budgets/available-cash")).resolves.toEqual({
+			status: 200,
+			body: { data: { currency: "EUR", available: 30_000, earmarked: 50_000, free: 0 } },
+		});
+	});
+});
+
 async function budgetRows() {
 	return own?.db.all(
 		sql`select month, currency, budgeted_spending as budgetedSpending, expected_income as expectedIncome from budgets`,

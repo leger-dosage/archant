@@ -49,6 +49,50 @@ const suggestedBody = z.object({
 const typedSuggestion = (amount: number | null) =>
 	amount === null ? "" : amountToText(toMinorUnits(amount), "EUR");
 
+test("the budget shows available cash, earmarks and what remains even without a plan", async ({
+	page,
+	request,
+	api,
+}) => {
+	const account = await api.openAccount({ openingBalance: "1 000" });
+	const goal = await api.createGoal({
+		targetAmount: "500",
+		accounts: [{ accountId: account.id, allocatedAmount: "200" }],
+	});
+
+	try {
+		const current = daysAgo(0).slice(0, 7);
+		await page.goto(`/budgets/${shiftMonth(current, 24)}`);
+		const panel = page.getByRole("region", { name: "Trésorerie disponible" });
+		await expect(panel).toBeVisible();
+		await expect(panel).toContainText("À côté du plan ci-dessus, pas dedans.");
+
+		const response = await request.get("/api/budgets/available-cash");
+		expect(response.ok()).toBe(true);
+		const { data } = z
+			.object({
+				data: z.object({ available: z.number(), earmarked: z.number(), free: z.number() }),
+			})
+			.parse(await response.json());
+		await expect(panel.locator("dt")).toHaveText([
+			"Disponible en cash",
+			"Déjà fléché vers des objectifs",
+			"Réellement libre",
+		]);
+		await expect(panel.locator("dd")).toHaveText([
+			euros(data.available),
+			`−${euros(data.earmarked)}`,
+			euros(data.free),
+		]);
+		await panel.getByRole("link", { name: "Voir les objectifs" }).click();
+		await expect(page).toHaveURL("/goals");
+	} finally {
+		const headers = { origin: WEB_URL };
+		expect((await request.delete(`/api/goals/${goal.id}`, { headers })).ok()).toBe(true);
+		expect((await request.delete(`/api/accounts/${account.id}`, { headers })).ok()).toBe(true);
+	}
+});
+
 test("/budgets opens this month, and the arrows and the picker stop at the bounds", async ({
 	page,
 	request,
@@ -183,6 +227,11 @@ test("a month is set up with « Suggérer », then shows its donut and its summa
 	await page.getByRole("button", { name: "Valider" }).click();
 	await expect(page).toHaveURL("/budgets/2023-11");
 	await expect(heading(page, "2023-11")).toBeVisible();
+	await expect(
+		page.getByRole("heading", { level: 2 }).filter({
+			hasText: /^(Résumé|Trésorerie disponible|Catégories)$/u,
+		}),
+	).toHaveText(["Résumé", "Trésorerie disponible", "Catégories"]);
 	await expect(donut(page).getByRole("img")).toHaveAccessibleName(
 		`Dépenses de novembre 2023 : ${euros(160_000)} sur ${euros(25_000)}, réparties sur 2 catégories.`,
 	);

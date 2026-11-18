@@ -29,6 +29,7 @@ import { csv, textCell } from "./export.ts";
 import {
 	activityByCategory,
 	activityTrades,
+	biggestExpenses,
 	cashFlowByDay,
 	hasAnyTransaction,
 	transactionsByCategoryMonth,
@@ -105,6 +106,10 @@ export type ReportsPage = {
 	today: IsoDate;
 	period: ReportPeriod;
 	navigation: ReportNavigation | null;
+	tag?: string[] | undefined;
+	biggestExpenses: (Awaited<ReturnType<typeof biggestExpenses>>[number] & {
+		categoryName: string | null;
+	})[];
 	/** Sure's `Current.family.transactions.any?`: the page's empty state otherwise. */
 	hasTransactions: boolean;
 	/** Sure's `@has_accounts`: the sortable sections show only then. */
@@ -165,18 +170,18 @@ async function cashFlowFigures(
 	deps: ServiceDeps,
 	period: ReportPeriod,
 	asOf: IsoDate,
+	scope: { accountIds: readonly string[]; tagIds: readonly string[] | undefined },
+	allCategories: readonly CashFlowCategory[],
 ): Promise<Pick<ReportsPage, "summary" | "trends">> {
 	const trendsFrom = monthRange(period.from.slice(0, 7)).from;
-	const [{ counted }, allCategories, budget] = await Promise.all([
-		cashFlowAccounts(deps),
-		breakdownCategories(deps),
+	const [rows, budget] = await Promise.all([
+		cashFlowByDay(deps, {
+			...scope,
+			from: minDate(period.previous.from, trendsFrom),
+			to: period.to,
+		}),
 		budgetPercent(deps, period, asOf),
 	]);
-	const rows = await cashFlowByDay(deps, {
-		from: minDate(period.previous.from, trendsFrom),
-		to: period.to,
-		accountIds: counted.map((row) => row.id),
-	});
 	const totalsOf = (range: DateRange) => {
 		const { income, expenses } = grossCashFlow(
 			rows.filter((row) => row.date >= range.from && row.date <= range.to),
@@ -385,26 +390,33 @@ export async function getReportsPage(
 ): Promise<ReportsPage> {
 	const asOf = today(deps.timeZone);
 	const period = reportPeriod(query.periodType, query.startDate, query.endDate, asOf);
-	const [{ currency, counted }, allCategories, figures, netWorth, flags, investments] =
-		await Promise.all([
-			cashFlowAccounts(deps),
-			breakdownCategories(deps),
-			cashFlowFigures(deps, period, asOf),
-			netWorthOf(deps, period, asOf),
-			hasAny(deps),
-			getReportInvestments(deps, period),
-		]);
-	const range = { from: period.from, to: period.to, accountIds: counted.map((row) => row.id) };
-	const [rows, trades] = await Promise.all([
-		activityByCategory(deps, range),
-		activityTrades(deps, range),
+	const [{ currency, counted }, allCategories, netWorth, flags, investments] = await Promise.all([
+		cashFlowAccounts(deps),
+		breakdownCategories(deps),
+		netWorthOf(deps, period, asOf),
+		hasAny(deps),
+		getReportInvestments(deps, period),
 	]);
+	const scope = { accountIds: counted.map((row) => row.id), tagIds: query.tag };
+	const range = { ...scope, from: period.from, to: period.to };
+	const [rows, trades, expenses, figures] = await Promise.all([
+		activityByCategory(deps, range),
+		query.tag === undefined ? activityTrades(deps, range) : [],
+		biggestExpenses(deps, { ...range, currency }),
+		cashFlowFigures(deps, period, asOf, scope, allCategories),
+	]);
+	const names = new Map(allCategories.map((category) => [category.id, category.name]));
 
 	return {
 		currency,
 		today: asOf,
 		period,
 		navigation: reportNavigation(period, asOf),
+		tag: query.tag,
+		biggestExpenses: expenses.map((expense) => ({
+			...expense,
+			categoryName: names.get(expense.categoryId ?? "") ?? null,
+		})),
 		...flags,
 		...figures,
 		...investments,
@@ -479,6 +491,7 @@ export async function getReportsCsv(
 		from: period.from,
 		to: period.to,
 		accountIds: counted.map((row) => row.id),
+		tagIds: query.tag,
 	});
 	const names = new Map(allCategories.map((category) => [category.id, category.name]));
 	const sides = { income: new Map<string, CsvLine>(), expense: new Map<string, CsvLine>() };

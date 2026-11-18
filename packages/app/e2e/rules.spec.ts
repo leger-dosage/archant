@@ -344,18 +344,6 @@ test("the form points at an empty value or a missing action, and saves nothing",
 	await expect(page.getByRole("heading", { name: "Aucune règle pour l'instant" })).toBeVisible();
 });
 
-test("a narrow screen says the page needs a computer", async ({ page }) => {
-	await page.setViewportSize({ width: 375, height: 800 });
-	await page.goto(PAGE);
-
-	// Story 14.4: a card holding its sentence, as DESIGN.md's empty note.
-	const note = page.locator('[data-slot="empty-note"]', { hasText: "Disponible sur ordinateur" });
-	await expect(note).toBeVisible();
-	await expect(note).toHaveCSS("border-radius", "12px");
-	await expect(note).toHaveCSS("border-top-style", "solid");
-	await expect(page.getByRole("button", { name: "Ajouter une règle" })).toHaveCount(0);
-});
-
 // Story 8.2: the other conditions and actions.
 
 /** Picks `option` in the select named `name` inside the rule form. */
@@ -1291,3 +1279,47 @@ for (const refused of [
 		await expect(button).toHaveText(refused.placeholder);
 	});
 }
+
+test.describe("rules on a phone", () => {
+	test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+	test("creates and edits a rule, reads its run and opens a preset", async ({ page, api }) => {
+		const account = await api.openAccount();
+		const label = uniqueName("Boulangerie fictive");
+		await api.addTransaction(account.id, { label, amount: "-5,00", date: daysAgo(2) });
+		await page.goto(`/accounts/${account.id}`);
+		await page.getByRole("button", { name: "Plus", exact: true }).click();
+		await page.getByRole("menuitem", { name: "Règles", exact: true }).click();
+		await expect(page).toHaveURL(/\/rules$/u);
+		await saveCoursesRule(page, label);
+		await applyDialog(page).getByRole("button", { name: "Confirmer les modifications" }).click();
+
+		const row = ruleRow(page, label);
+		await expect(row.getByRole("switch")).toBeChecked();
+		await expect(runRow(page, label)).toContainText("Réussi");
+		const modified = runRow(page, label).getByRole("cell", { name: "1", exact: true }).last();
+		await modified.scrollIntoViewIfNeeded();
+		// A scroll container can round its boundary by a fraction of a pixel.
+		await expect(modified).toBeInViewport({ ratio: 0.99 });
+
+		await row.getByRole("button", { name: /^Actions pour /u }).click();
+		await page.getByRole("menuitem", { name: "Modifier" }).click();
+		const value = dialog(page).getByLabel("Valeur de la condition 1");
+		await expect(value).toHaveValue(label);
+		await expect
+			.poll(() => dialog(page).evaluate((element) => element.scrollWidth - element.clientWidth))
+			.toBe(0);
+		const edited = uniqueName("Marché fictif");
+		await value.fill(edited);
+		await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+		await expect(rulesList(page)).toContainText(edited);
+
+		const category = await api.createCategory();
+		await page.goto(`/rules?${new URLSearchParams({ name: label, categoryId: category.id })}`);
+		await expect(dialog(page).getByRole("textbox", { name: "Nom" })).toHaveValue(label);
+		await expect(
+			dialog(page).getByRole("button", { name: "Catégorie", exact: true }),
+		).toContainText(category.name);
+		await expect(page).toHaveURL(/\/rules$/u);
+	});
+});
