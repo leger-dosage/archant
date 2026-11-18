@@ -445,7 +445,7 @@ export async function saveBudget(
 	month: IsoMonth,
 	input: BudgetInput,
 ): Promise<BudgetMonth> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	// Parsed before the write lock: checking text needs no database.
 	const parsed = budgetSchema(currency).safeParse(input);
 
@@ -547,7 +547,7 @@ export async function saveCategoryBudget(
 	categoryId: string,
 	input: BudgetCategoryInput,
 ): Promise<BudgetMonth> {
-	const parsed = budgetCategorySchema(getReportingCurrency()).safeParse(input);
+	const parsed = budgetCategorySchema(await getReportingCurrency(deps.db)).safeParse(input);
 
 	if (!parsed.success) {
 		throw validationError(parsed.error);
@@ -664,7 +664,7 @@ export async function updateBudget(
 	month: IsoMonth,
 	input: BudgetUpdateInput,
 ): Promise<BudgetMonth> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 	const parsed = budgetUpdateSchema(currency).safeParse(input);
 
 	if (!parsed.success) {
@@ -761,7 +761,7 @@ export async function copyBudget(
 	deps: ServiceDeps,
 	month: IsoMonth,
 ): Promise<BudgetMonth & { copiedFrom: IsoMonth }> {
-	const currency = getReportingCurrency();
+	const currency = await getReportingCurrency(deps.db);
 
 	const copiedFrom = await deps.db.transaction(
 		async (tx) => {
@@ -839,7 +839,7 @@ export async function moveCategoryBudget(
 	month: IsoMonth,
 	input: BudgetMoveInput,
 ): Promise<BudgetMonth> {
-	const parsed = budgetMoveSchema(getReportingCurrency()).safeParse(input);
+	const parsed = budgetMoveSchema(await getReportingCurrency(deps.db)).safeParse(input);
 
 	if (!parsed.success) {
 		throw validationError(parsed.error);

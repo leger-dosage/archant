@@ -263,7 +263,7 @@ async function snapshotOf(db: Database) {
 			sql`select a.name, b.date, b.balance from balances b join accounts a on a.id = b.account_id order by a.name, b.date`,
 		),
 		transactions: await rows(sql`
-			select a.name as account, e.date, e.amount, t.label, t.notes, t.excluded, t.one_time as oneTime, t.pending,
+			select a.name as account, e.date, e.amount, t.label, t.notes, t.excluded, t.one_time as oneTime, t.pending, e.reconciliation_status as reconciliationStatus,
 				t.reference, t.possible_duplicate as possibleDuplicate, t.category_origin as categoryOrigin,
 				t.locked_fields as lockedFields, t.investment_activity_label as activityLabel,
 				c.name as category, m.name as merchant, p.date as parentDate,
@@ -376,6 +376,10 @@ async function disposed<Value>(target: TempDatabase, read: () => Promise<Value>)
 describe("importSureArchive", () => {
 	it("imports an Archant export into a new database: the same accounts, balances and transactions", async () => {
 		await household();
+		await source().run(sql`update entries set reconciliation_status = 'reconciled'
+			where id in (select entry_id from transactions where label = 'SALAIRE')`);
+		await source().run(sql`update entries set reconciliation_status = 'cleared'
+			where parent_entry_id is not null`);
 		const bytes = await allNdjson();
 		const before = await snapshotOf(source());
 		const { target, result } = await intoNewDatabase(bytes);
@@ -391,12 +395,21 @@ describe("importSureArchive", () => {
 				expect.arrayContaining([
 					expect.objectContaining({
 						label: "SALAIRE",
+						reconciliationStatus: "reconciled",
 						reference: "CHQ 1234567",
 						possibleDuplicate: 1,
 						categoryOrigin: "rule",
 						lockedFields: '{"label":1790000000000,"notes":null}',
 					}),
-					expect.objectContaining({ label: "CB EN COURS", pending: 1 }),
+					expect.objectContaining({
+						label: "CB EN COURS",
+						pending: 1,
+						reconciliationStatus: "unreconciled",
+					}),
+					expect.objectContaining({
+						reconciliationStatus: "cleared",
+						parentDate: "2026-09-12",
+					}),
 					expect.objectContaining({ label: "COUPON", activityLabel: "Dividend" }),
 				]),
 			);
@@ -678,9 +691,10 @@ describe("importSureArchive", () => {
 
 		expect(
 			await source().all(
-				sql`select m.name as merchant from transactions t join merchants m on m.id = t.merchant_id`,
+				sql`select m.name as merchant, e.reconciliation_status as reconciliationStatus
+					from transactions t join merchants m on m.id = t.merchant_id join entries e on e.id = t.entry_id`,
 			),
-		).toEqual([{ merchant: "Netflix" }]);
+		).toEqual([{ merchant: "Netflix", reconciliationStatus: "unreconciled" }]);
 		expect(await source().all(sql`select execution_type as type, status from rule_runs`)).toEqual([
 			{ type: "scheduled", status: "success" },
 		]);

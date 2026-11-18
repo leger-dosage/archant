@@ -100,6 +100,7 @@ describe("ingest", () => {
 			excluded: false,
 			oneTime: false,
 			pending: false,
+			reconciliationStatus: "unreconciled",
 			categoryId: null,
 			merchantId: null,
 			investmentActivityLabel: null,

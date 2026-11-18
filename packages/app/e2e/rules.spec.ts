@@ -1071,12 +1071,14 @@ test("a bank sync runs every enabled rule over the history and lists its run as 
 		await expect(toast(page, "Synchronisation terminée.")).toBeVisible();
 		await visit(page);
 
-		// The connection's first sync can finish applying rules just before the explicit
-		// sync starts. The second run then matches the same rows without changing them.
-		const changedRun = runRow(page, name).filter({
-			has: page.locator("td:last-child").filter({ hasText: /^[1-9]\d*$/u }),
+		// Another sync can record a no-op run for the same rule.
+		const changingRun = runRow(page, name).filter({
+			has: page
+				.getByRole("cell")
+				.last()
+				.filter({ hasText: /^[1-9]\d*$/u }),
 		});
-		await expect(changedRun.getByRole("cell")).toHaveText([
+		await expect(changingRun.first().getByRole("cell")).toHaveText([
 			/\S/u,
 			"Planifié",
 			"Réussi",

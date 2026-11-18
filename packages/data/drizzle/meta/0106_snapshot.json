@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ecb96dae-7e29-4cb8-a0da-576805ea86d7",
+  "id": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "prevId": "ac030b73-93e5-4815-82f6-2e29ff5e13b3",
   "tables": {
     "accounts": {
@@ -1530,6 +1530,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "reconciliation_status": {
+          "name": "reconciliation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unreconciled'"
+        },
         "date": {
           "name": "date",
           "type": "text",
@@ -1703,6 +1711,10 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
+        "entries_reconciliation_status_check": {
+          "name": "entries_reconciliation_status_check",
+          "value": "\"entries\".\"reconciliation_status\" in ('unreconciled', 'cleared', 'reconciled')"
+        },
         "entries_kind_check": {
           "name": "entries_kind_check",
           "value": "\"entries\".\"kind\" in ('transaction', 'valuation', 'trade')"
@@ -5193,22 +5205,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "position": {
-          "name": "position",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 0
-        },
-        "stop_processing": {
-          "name": "stop_processing",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "created_at": {
           "name": "created_at",
