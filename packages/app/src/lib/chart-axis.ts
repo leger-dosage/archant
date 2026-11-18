@@ -90,7 +90,11 @@ export function goalDomain(
 
 	return [
 		0,
-		Math.min(Math.max(goalBand, highestSaved * HEADROOM), goalBand * SAVED_HEADROOM_FACTOR),
+		Math.min(
+			Math.max(goalBand, highestSaved * HEADROOM),
+			goalBand * SAVED_HEADROOM_FACTOR,
+			Number.MAX_SAFE_INTEGER,
+		),
 	];
 }
 
