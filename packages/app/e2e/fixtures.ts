@@ -133,7 +133,7 @@ export const periodPicker = (scope: Page | Locator) =>
 /**
  * Opens the period menu inside `scope` and picks `label`, as « 90J ». An
  * administrator's pick is saved: it waits for that save's answer, so a test
- * restoring the saved period afterwards is never overtaken by it. A viewer's
+ * restoring the saved period afterwards is never overtaken by it. A guest's
  * sends nothing, so `saved` is false.
  */
 export async function pickPeriod(
@@ -503,7 +503,7 @@ export function apiHelpers(request: APIRequestContext) {
 		},
 
 		/** Invites `email` as the administrator would, and answers the link, shown once. */
-		async invite(email: string, role: UserRole = "viewer"): Promise<{ id: string; url: string }> {
+		async invite(email: string, role: UserRole = "guest"): Promise<{ id: string; url: string }> {
 			const response = await request.post("/api/invitations", { data: { email, role } });
 
 			expect(response.status(), `${response.url()} answered ${await response.text()}`).toBe(201);

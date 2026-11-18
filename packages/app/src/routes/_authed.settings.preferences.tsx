@@ -15,7 +15,7 @@ import { Section } from "@/components/Section";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { usePreferences, useUpdatePreferences } from "@/hooks/usePreferences";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";

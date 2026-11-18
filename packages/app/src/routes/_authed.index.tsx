@@ -40,7 +40,7 @@ import { useChartPeriod } from "@/hooks/useChartPeriod";
 import { useDashboardCashFlow } from "@/hooks/useDashboardCashFlow";
 import { useDashboardLayout, useUpdateDashboardLayout } from "@/hooks/useDashboardLayout";
 import { useDashboardMasonry } from "@/hooks/useDashboardMasonry";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoMonth } from "@/lib/dates";
 
@@ -67,7 +67,7 @@ const searchSchema = z.object({
 });
 
 /**
- * Sure's default layout, what a viewer sees and what shows when the saved
+ * Sure's default layout, what a guest sees and what shows when the saved
  * one cannot be read.
  */
 const DEFAULT_LAYOUT: DashboardLayoutData = resolveLayout(null);
@@ -92,17 +92,17 @@ function DashboardPage() {
 	const chartPeriod = useChartPeriod({ period, startDate, endDate });
 	const cashFlow = useDashboardCashFlow(chartPeriod.chart, chartPeriod.ready);
 	const navigate = Route.useNavigate();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
 	const name = Route.useRouteContext({ select: (context) => context.session.user.name.trim() });
 	const customizing = customize === true;
-	const savedLayout = useDashboardLayout({ enabled: admin });
+	const savedLayout = useDashboardLayout({ enabled: canWrite });
 	const updateLayout = useUpdateDashboardLayout();
-	// A viewer arranges nothing and sees Sure's default (AD-21).
-	const layout = (admin ? savedLayout.data : undefined) ?? DEFAULT_LAYOUT;
+	// A guest arranges nothing and sees Sure's default (AD-21).
+	const layout = (canWrite ? savedLayout.data : undefined) ?? DEFAULT_LAYOUT;
 	// An administrator's widgets wait for their order, so they never jump into it.
-	const layoutReady = !admin || !savedLayout.isPending;
+	const layoutReady = !canWrite || !savedLayout.isPending;
 	// Sure's `autofocus`: hiding a widget keeps the focus on its button in the
 	// hidden card, adding it back on the widget.
 	const [focusKey, setFocusKey] = useState<{
@@ -110,7 +110,7 @@ function DashboardPage() {
 		on: "hidden" | "shown";
 	} | null>(null);
 	const saveLayout = (change: Parameters<typeof updateLayout.mutate>[0]) => {
-		if (admin) {
+		if (canWrite) {
 			updateLayout.mutate(change);
 		}
 	};
@@ -139,7 +139,7 @@ function DashboardPage() {
 		document.title = t("app.pageTitle", { page: t("dashboard.title"), app: t("app.name") });
 	}, [t]);
 
-	// Always in the address, so Back and Reload keep a viewer's pick too.
+	// Always in the address, so Back and Reload keep a guest's pick too.
 	const pickPeriod = (next: SurePeriod) => {
 		void navigate({
 			search: (previous) => ({
@@ -221,7 +221,7 @@ function DashboardPage() {
 			// Sure's dashboard has these two actions; importing and adding a
 			// transaction need an account, and live on its page.
 			actions={
-				hasAccounts && admin ? (
+				hasAccounts && canWrite ? (
 					<>
 						{/* Sure's « Personnaliser », then « Terminé » while customising. */}
 						<Button variant="outline" asChild>
@@ -268,7 +268,7 @@ function DashboardPage() {
 							<div className="flex items-center justify-end">
 								<PeriodPicker selected={chartPeriod.chart} onPick={pickPeriod} />
 							</div>
-							{customizing && admin && (
+							{customizing && canWrite && (
 								<HiddenWidgets
 									layout={layout}
 									offered={(key) => key !== "investment_summary" || holdsInvestments}
@@ -287,7 +287,7 @@ function DashboardPage() {
 									title={t("dashboard.customize.allHiddenTitle")}
 									description={t("dashboard.customize.allHiddenDescription")}
 									action={
-										admin ? (
+										canWrite ? (
 											<Button variant="outline" asChild>
 												<Link to="/" search={(previous) => ({ ...previous, customize: true })}>
 													<LayoutGridIcon aria-hidden="true" />
@@ -327,7 +327,7 @@ function DashboardPage() {
 											key={key}
 											sectionKey={key}
 											layout={layout}
-											editable={admin}
+											editable={canWrite}
 											customizing={customizing}
 											sortable={sortable}
 											onChange={(change) => {
@@ -344,11 +344,11 @@ function DashboardPage() {
 							</div>
 						</div>
 					) : (
-						<DashboardEmpty onAddAccount={admin ? () => setCreatingAccount(true) : null} />
+						<DashboardEmpty onAddAccount={canWrite ? () => setCreatingAccount(true) : null} />
 					)}
 				</>
 			)}
-			{admin && (
+			{canWrite && (
 				<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 			)}
 		</Page>

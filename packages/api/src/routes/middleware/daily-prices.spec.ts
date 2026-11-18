@@ -6,7 +6,7 @@ import { securityPrices } from "@archant/data/schema/securities";
 
 import { createLogger } from "../../lib/logger.ts";
 import { buildApp, ownDatabase, template, useSignedInApp } from "../../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../../testing/auth.ts";
 import { insertSecurity } from "../../testing/prices.ts";
 import { mockYahoo } from "../../testing/yahoo.ts";
 
@@ -58,14 +58,14 @@ describe("the first visit of the day", () => {
 		expect(requests).toHaveLength(1);
 	});
 
-	it("starts on a viewer's first read, as the day's bank sync does", async () => {
+	it("starts on a guest's first read, as the day's bank sync does", async () => {
 		const { db, securityId, requests } = await pricedApp();
 		const silent = createLogger("silent");
 		const auth = createTestAuth(db);
-		const cookie = await addViewer(buildTestApp(db, silent, auth), auth);
-		const viewer = withSession(buildTestApp(db, silent, auth), cookie);
+		const cookie = await addTestUser(buildTestApp(db, silent, auth), auth);
+		const guest = withSession(buildTestApp(db, silent, auth), cookie);
 
-		const response = await viewer.request("/api/accounts");
+		const response = await guest.request("/api/accounts");
 
 		expect(response.status).toBe(200);
 		await vi.waitFor(

@@ -12,7 +12,7 @@ import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFundableAccounts, useGoals } from "@/hooks/useGoals";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -70,11 +70,11 @@ function Archived({ goals }: { goals: GoalData[] }) {
 /**
  * Sure's goals page: a card per goal, active ones behind first, then paused
  * and completed ones, archived ones in a collapsed section below, and
- * « Nouvel objectif ». A viewer reads the cards without the button.
+ * « Nouvel objectif ». A guest reads the cards without the button.
  */
 function GoalsPage() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const goals = useGoals();
 	const fundable = useFundableAccounts();
 	// A fresh dialog per opening, so it starts from blank fields.
@@ -83,7 +83,7 @@ function GoalsPage() {
 	const shown = list.filter((goal) => goal.state !== "archived");
 	const archived = list.filter((goal) => goal.state === "archived");
 	const openDialog = () => setDialog(({ session }) => ({ open: true, session: session + 1 }));
-	const addButton = admin ? <Button onClick={openDialog}>{t("goals.add")}</Button> : null;
+	const addButton = canWrite ? <Button onClick={openDialog}>{t("goals.add")}</Button> : null;
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("goals.title"), app: t("app.name") });
@@ -137,7 +137,7 @@ function GoalsPage() {
 					</>
 				))}
 
-			{admin && fundable.data !== undefined && dialog.session > 0 && (
+			{canWrite && fundable.data !== undefined && dialog.session > 0 && (
 				<GoalDialog
 					key={dialog.session}
 					open={dialog.open}

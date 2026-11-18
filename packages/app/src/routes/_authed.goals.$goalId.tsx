@@ -31,7 +31,7 @@ import {
 	useGoalEvent,
 	useGoalHistory,
 } from "@/hooks/useGoals";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
@@ -237,7 +237,7 @@ function Projection({ goal }: { goal: GoalData }) {
 function GoalPage() {
 	const { t } = useTranslation();
 	const { goalId } = Route.useParams();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const goal = useGoal(goalId);
 	const fundable = useFundableAccounts();
 	const deleteGoal = useDeleteGoal(goalId);
@@ -308,7 +308,7 @@ function GoalPage() {
 						),
 					})}
 			actions={
-				admin && data !== undefined ? (
+				canWrite && data !== undefined ? (
 					<>
 						<Button
 							variant="outline"
@@ -358,7 +358,7 @@ function GoalPage() {
 					<GoalStateBanner
 						goal={data}
 						pending={goalEvent.isPending}
-						onEvent={admin ? request : null}
+						onEvent={canWrite ? request : null}
 					/>
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
@@ -373,7 +373,7 @@ function GoalPage() {
 				</>
 			)}
 
-			{admin && data !== undefined && fundable.data !== undefined && edit.session > 0 && (
+			{canWrite && data !== undefined && fundable.data !== undefined && edit.session > 0 && (
 				<GoalDialog
 					key={edit.session}
 					open={edit.open}
@@ -383,7 +383,7 @@ function GoalPage() {
 					reportingCurrency={fundable.data.reportingCurrency}
 				/>
 			)}
-			{admin && data !== undefined && (
+			{canWrite && data !== undefined && (
 				<>
 					<ConfirmDialog
 						open={confirming === "delete"}

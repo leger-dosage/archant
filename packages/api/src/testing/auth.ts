@@ -19,7 +19,7 @@ export const TEST_SECRET = "archant-test-secret-of-at-least-32-characters";
 
 export const ADMIN = { email: "admin@example.test", password: "correct horse battery" } as const;
 
-export const VIEWER = { email: "viewer@example.test", password: "staple battery horse" } as const;
+export const GUEST = { email: "guest@example.test", password: "staple battery horse" } as const;
 
 /** The setup token every test app is given, as `index.ts` would log it. */
 export const TEST_SETUP_TOKEN = "archant-test-setup-token";
@@ -193,18 +193,23 @@ export async function setUpAndSignIn(app: TestApp): Promise<string> {
 }
 
 /**
- * Creates a viewer through `auth.api.createUser`, as invitations will, then
+ * Creates a guest or member through `auth.api.createUser`, as invitations will, then
  * signs them in on `app`, whose Better Auth `auth` must be, and returns their
  * session cookie. One sign-in more for the spec's rate limit.
  */
-export async function addViewer(app: TestApp, auth: Auth): Promise<string> {
+export async function addTestUser(
+	app: TestApp,
+	auth: Auth,
+	role: "guest" | "member" = "guest",
+): Promise<string> {
+	const credentials = role === "guest" ? GUEST : { ...GUEST, email: "member@example.test" };
 	// Through `data`: without access-control roles, Better Auth types `role`
 	// as its own `admin` or `user`, while it stores any string it is given.
-	await auth.api.createUser({ body: { ...VIEWER, name: "", data: { role: "viewer" } } });
-	const response = await signIn(app, VIEWER);
+	await auth.api.createUser({ body: { ...credentials, name: "", data: { role } } });
+	const response = await signIn(app, credentials);
 
 	if (response.status !== 200) {
-		throw new Error(`Viewer sign-in failed with ${response.status}: ${await response.text()}`);
+		throw new Error(`Test user sign-in failed with ${response.status}: ${await response.text()}`);
 	}
 
 	return cookieOf(response);

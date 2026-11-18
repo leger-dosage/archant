@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useRevertImport } from "@/hooks/useImports";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { toIsoDate } from "@/lib/dates";
@@ -90,7 +90,7 @@ type ImportHistoryProps = {
  */
 export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const revertImport = useRevertImport(accountId);
 	const [target, setTarget] = useState<ImportHistoryItemData | null>(null);
 	// Kept while the dialog closes, so its text does not blank out mid-animation.
@@ -168,7 +168,7 @@ export function ImportHistory({ accountId, items }: ImportHistoryProps) {
 								<TableCell className="text-right tabular-nums">{item.counts.present}</TableCell>
 								<TableCell className="text-right tabular-nums">{item.counts.rejected}</TableCell>
 								<TableCell className="text-right">
-									{item.revertedAt === null && admin && (
+									{item.revertedAt === null && canWrite && (
 										// Sure's icon, in its destructive colour: a labelled button
 										// made the table wider than the tab at 1,280 pixels.
 										<Tooltip>

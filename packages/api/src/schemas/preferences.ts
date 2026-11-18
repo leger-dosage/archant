@@ -12,13 +12,12 @@ import { SURE_PERIODS } from "@archant/data/periods";
  */
 export const preferencesSchema = z.object({
 	defaultAccountOrder: z.enum(ACCOUNT_ORDERS).optional(),
-	// The chart period an administrator last picked, Sure's `default_period`.
+	// The chart period the user last picked, Sure's `default_period`.
 	defaultPeriod: z.enum(SURE_PERIODS).optional(),
 	showSplitGrouped: z.boolean().optional(),
 	// Null goes back to the browser's language, Sure's blank `locale`.
 	locale: z.enum(LOCALES).nullable().optional(),
-	// The household's, Sure's `families.locale`: an administrator's write, which
-	// `viewerReadOnly` already keeps from a viewer.
+	// The household's, Sure's `families.locale`. The route keeps it to administrators.
 	householdLocale: z.enum(LOCALES).optional(),
 });
 

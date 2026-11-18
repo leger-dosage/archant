@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * The dashboard of a household without accounts: one way forward, « Ajouter
- * un compte ». A viewer, who adds none, reads that the administrator does.
+ * un compte ». Guests can see when the household has no accounts.
  */
 export function DashboardEmpty({ onAddAccount }: { onAddAccount: (() => void) | null }) {
 	const { t } = useTranslation();
@@ -20,7 +20,7 @@ export function DashboardEmpty({ onAddAccount }: { onAddAccount: (() => void) | 
 			icon={{ kind: "transfer", icon: LandmarkIcon }}
 			title={t("dashboard.empty.title")}
 			description={t(
-				onAddAccount === null ? "dashboard.empty.viewerDescription" : "dashboard.empty.description",
+				onAddAccount === null ? "dashboard.empty.guestDescription" : "dashboard.empty.description",
 			)}
 			action={
 				onAddAccount === null ? null : <Button onClick={onAddAccount}>{t("accounts.add")}</Button>

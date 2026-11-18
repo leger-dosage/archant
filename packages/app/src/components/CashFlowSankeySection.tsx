@@ -13,7 +13,7 @@ import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { accountChoiceOf } from "@/lib/account-choice";
 import { errorCodeOf } from "@/lib/api";
 import { formatMoney } from "@/lib/format-money";
@@ -63,7 +63,7 @@ export function CashFlowSankeySection({
 	accounts: AccountListData;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [expanded, setExpanded] = useState(false);
 	const [adding, setAdding] = useState(false);
 	// Mounted on the first click and kept, so the sheet can animate closed.
@@ -120,7 +120,7 @@ export function CashFlowSankeySection({
 						title={t("dashboard.cashflowSankey.noDataTitle")}
 						description={t("dashboard.cashflowSankey.noDataDescription")}
 						action={
-							admin ? (
+							canWrite ? (
 								<Button
 									variant="outline"
 									onClick={() => {
@@ -149,7 +149,7 @@ export function CashFlowSankeySection({
 				</Dialog>
 			)}
 
-			{admin && sheetMounted && (
+			{canWrite && sheetMounted && (
 				<Suspense fallback={null}>
 					<TransactionSheet
 						account={choice}

@@ -129,7 +129,7 @@ export function MethodChoices({
 }: {
 	type: AccountType;
 	onManual: () => void;
-	onLink: () => void;
+	onLink: (() => void) | null;
 }) {
 	const { t } = useTranslation();
 
@@ -144,7 +144,7 @@ export function MethodChoices({
 				label={t("accounts.new.method.manualEntry")}
 				onSelect={onManual}
 			/>
-			{linksBank(type) && (
+			{onLink !== null && linksBank(type) && (
 				<ChoiceRow
 					icon={
 						<MethodIcon>

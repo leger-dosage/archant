@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useUnlockTransaction } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { longDate } from "@/lib/dates";
@@ -27,7 +27,7 @@ export function ProtectionBlock({
 	onUnlocked: () => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const unlock = useUnlockTransaction();
 	const [confirming, setConfirming] = useState(false);
 	const locks = listedLocks(transaction.lockedFields);
@@ -72,7 +72,7 @@ export function ProtectionBlock({
 						))}
 					</ul>
 				</div>
-				{admin && (
+				{canWrite && (
 					<>
 						<Button
 							type="button"

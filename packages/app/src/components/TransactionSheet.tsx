@@ -16,7 +16,7 @@ import {
 	SheetHeader,
 	SheetTitle,
 } from "@/components/ui/sheet";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { formatShortDate } from "@/lib/balance-change";
 
 /** A row's button in the page, found again after a refetch remounted it. */
@@ -35,7 +35,7 @@ type TransactionSheetProps = {
 /**
  * Adds or edits one transaction. Saves on `⌘Enter` or Enregistrer; `Esc`,
  * Annuler and the close button ask before throwing away unsaved changes, and
- * only then (EXPERIENCE.md). Focus goes back to what opened it. A viewer
+ * only then (EXPERIENCE.md). Focus goes back to what opened it. A guest
  * reads it as « Opération », every field disabled: the sheet is the only
  * place a transaction's notes, tags and receipts show. A transfer row opens
  * the transfer's own drawer instead, as Sure's `open_path`.
@@ -47,7 +47,7 @@ export function TransactionSheet({
 	onOpenChange,
 }: TransactionSheetProps) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
 	const [wasOpen, setWasOpen] = useState(open);
@@ -135,7 +135,7 @@ export function TransactionSheet({
 									? "transfers.form.title"
 									: transaction === null
 										? "transactions.form.addTitle"
-										: admin
+										: canWrite
 											? "transactions.form.editTitle"
 											: "transactions.form.viewTitle",
 							)}
@@ -178,7 +178,7 @@ export function TransactionSheet({
 						key={session}
 						account={account}
 						transaction={transaction}
-						onTypeChange={admin && transaction === null ? setType : undefined}
+						onTypeChange={canWrite && transaction === null ? setType : undefined}
 						initialNature={type === "income" ? "income" : "expense"}
 						onClose={close}
 						onCloseFocusing={(rowId) => {

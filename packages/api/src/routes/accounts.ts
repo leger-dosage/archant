@@ -42,7 +42,7 @@ import { getPreferences } from "../services/preferences.ts";
 import { createSnapshot, dryRunSnapshot, listAccountSnapshots } from "../services/snapshots.ts";
 import { createTrade, listAccountTrades } from "../services/trades.ts";
 import { createTransaction, listAccountTransactions } from "../services/transactions.ts";
-import { signedInUser } from "./middleware/roles.ts";
+import { assertRole, requireRole, signedInUser } from "./middleware/roles.ts";
 
 /**
  * The list in the signed-in user's order, Sure's
@@ -66,13 +66,20 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 			c.json({ data: await createAccount(deps, c.req.valid("json")) }, 201),
 		)
 		.get("/:id", async (c) => c.json({ data: await getAccount(deps, c.req.param("id")) }, 200))
-		.patch("/:id", validated("json", updateAccountSchema), async (c) =>
-			c.json({ data: await updateAccount(deps, c.req.param("id"), c.req.valid("json")) }, 200),
-		)
+		.patch("/:id", validated("json", updateAccountSchema), async (c) => {
+			const input = c.req.valid("json");
+
+			// This field changes how the bank feed is interpreted and starts a sync.
+			if (input.treatBalanceAsAvailableCredit !== undefined) {
+				assertRole(c, "admin");
+			}
+
+			return c.json({ data: await updateAccount(deps, c.req.param("id"), input) }, 200);
+		})
 		.delete("/:id", async (c) =>
 			c.json({ data: await deleteAccount(deps, c.req.param("id")) }, 200),
 		)
-		.delete("/:id/unlink", async (c) =>
+		.delete("/:id/unlink", requireRole("admin"), async (c) =>
 			c.json({ data: await unlinkAccount(deps, c.req.param("id")) }, 200),
 		)
 		.put("/:id/default", async (c) =>

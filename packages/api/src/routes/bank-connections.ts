@@ -32,7 +32,7 @@ import {
 } from "../services/bank-credentials.ts";
 import { bankSyncSettings, saveBankSyncSettings } from "../services/bank-settings.ts";
 import { syncConnection } from "../services/sync.ts";
-import { requireRole } from "./middleware/roles.ts";
+import { requireRole, requireRoleForWrite } from "./middleware/roles.ts";
 
 type BankRouteDeps = BankConnectionDeps & {
 	/** `TRUSTED_PROXIES`, as the sign-in limit reads them. */
@@ -55,6 +55,7 @@ export function bankConnectionsRoutes(deps: BankRouteDeps) {
 
 	return (
 		new Hono()
+			.use(requireRoleForWrite("admin"))
 			// Always answers an administrator: the page reads it to name what is
 			// missing. Nobody else: it says which credentials are stored.
 			.get("/setup", requireRole("admin"), async (c) =>

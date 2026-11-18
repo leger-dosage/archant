@@ -25,8 +25,8 @@ import { signedInUser } from "./middleware/roles.ts";
 
 /**
  * The dashboard's reports, and Sure's « Rapports » page: its one read, its
- * CSV, and the signed-in user's section layout. A viewer reads every one of
- * them, the CSV included, and cannot change the layout: `viewerReadOnly`
+ * CSV, and the signed-in user's section layout. A guest reads every one of
+ * them, the CSV included, and cannot change the layout: `guestReadOnly`
  * refuses the `PATCH` (AD-21).
  */
 export function reportsRoutes(deps: ServiceDeps) {

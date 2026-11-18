@@ -19,7 +19,7 @@ import { formatPrice, formatQuantity } from "@/lib/trade-format";
 
 type TradeListProps = {
 	items: readonly TradeData[];
-	/** `null` for a viewer: a row opens the form that edits it, which they cannot use. */
+	/** `null` for a guest: a row opens the form that edits it, which they cannot use. */
 	onOpen: ((trade: TradeData) => void) | null;
 };
 

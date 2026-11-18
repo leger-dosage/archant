@@ -50,7 +50,7 @@ import { requireSession } from "./routes/middleware/auth.ts";
 import { dailyPrices } from "./routes/middleware/daily-prices.ts";
 import { dailyRecurring } from "./routes/middleware/daily-recurring.ts";
 import { dailySync } from "./routes/middleware/daily-sync.ts";
-import { requireRole, viewerReadOnly } from "./routes/middleware/roles.ts";
+import { requireRole, guestReadOnly } from "./routes/middleware/roles.ts";
 import { sameOrigin } from "./routes/middleware/same-origin.ts";
 import { preferencesRoutes } from "./routes/preferences.ts";
 import { pricesRoutes } from "./routes/prices.ts";
@@ -352,7 +352,7 @@ function serveInterface(app: Hono<SessionEnv>, root: string) {
  * The assembly point: the API under `/api`, the built interface under `/`
  * when there is one, and the error envelope for all of it. Order matters: the
  * origin check and Better Auth's handler come before the session guard, which
- * comes before the viewer's refusal of writes, the first-visit sync and price
+ * comes before the guest's refusal of writes, the first-visit sync and price
  * fetch, and every route it protects; `/api` has its own JSON 404 before the
  * interface's fallback, which would otherwise answer an unknown API route with
  * the page.
@@ -474,9 +474,9 @@ export function createApp(deps: AppDeps) {
 		.use("/api/mcp", sameOrigin(deps, { strict: true }))
 		.all("/api/mcp", async (c) => (mcp === null ? notFound(c) : mcp(c.req.raw)))
 		.use("/api/*", requireSession(deps.auth))
-		// Before the day's sync and every route: a viewer's write is refused
+		// Before the day's sync and every route: a guest's write is refused
 		// before anything reads it, and their reads still start the sync.
-		.use("/api/*", viewerReadOnly())
+		.use("/api/*", guestReadOnly())
 		.use("/api/*", dailySync(deps))
 		.use("/api/*", dailyPrices(deps))
 		.use("/api/*", dailyRecurring(deps))

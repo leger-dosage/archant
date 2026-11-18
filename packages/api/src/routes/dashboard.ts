@@ -10,8 +10,8 @@ import { signedInUser } from "./middleware/roles.ts";
 
 /**
  * The signed-in user's dashboard layout, Sure's `PATCH /dashboard/preferences`
- * and `/dashboard/sections/:key/hidden`. A viewer reads Sure's default and
- * cannot change it: `viewerReadOnly` refuses the `PATCH` (AD-21).
+ * and `/dashboard/sections/:key/hidden`. A guest reads Sure's default and
+ * cannot change it: `guestReadOnly` refuses the `PATCH` (AD-21).
  */
 export function dashboardRoutes(deps: ServiceDeps) {
 	return new Hono<SessionEnv>()

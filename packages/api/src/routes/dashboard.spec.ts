@@ -8,7 +8,7 @@ import { DEFAULT_DASHBOARD_ORDER } from "@archant/data/dashboard-sections";
 
 import { createLogger } from "../lib/logger.ts";
 import { buildApp, errorBody, ownDatabase, temp, useSignedInApp } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -151,22 +151,22 @@ describe("PATCH /api/dashboard/layout", () => {
 		expect(await stored(db)).toEqual([null]);
 	});
 
-	describe("as a viewer", () => {
+	describe("as a guest", () => {
 		const silent = createLogger("silent");
 		let auth: Auth;
-		let viewerCookie: string;
+		let guestCookie: string;
 
-		// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+		// One guest sign-in for the block: Better Auth allows three per ten seconds.
 		beforeAll(async () => {
 			auth = createTestAuth(temp.db, silent);
-			viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+			guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 		});
 
-		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = () => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
 		it("reads the default, and is refused FORBIDDEN on a save, nothing written", async () => {
-			const refused = await send(viewer(), "PATCH", { hiddenSections: { goals: true } });
-			const read = await send(viewer(), "GET");
+			const refused = await send(guest(), "PATCH", { hiddenSections: { goals: true } });
+			const read = await send(guest(), "GET");
 
 			expect(refused.status).toBe(403);
 			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");
@@ -178,7 +178,7 @@ describe("PATCH /api/dashboard/layout", () => {
 
 		it("keeps another user's layout apart from the administrator's", async () => {
 			const saved = await send(buildApp(), "PATCH", { collapsedSections: { goals: true } });
-			const read = await send(viewer(), "GET");
+			const read = await send(guest(), "GET");
 
 			expect(saved.status).toBe(200);
 			expect(layoutBody.parse(read.body).data.collapsedSections["goals"]).toBe(false);

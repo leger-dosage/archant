@@ -38,8 +38,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserMenu } from "@/components/UserMenu";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useStoredFlag } from "@/hooks/useStoredFlag";
 import { ACCOUNT_TABS, accountTypeGroups, isAccountTab } from "@/lib/account-group-totals";
@@ -302,12 +302,12 @@ function AccountList() {
  */
 function AccountsColumn({ id }: { id?: string }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [creating, setCreating] = useState(false);
 
 	return (
 		<aside id={id} aria-label={t("accountsColumn.label")} className="flex flex-col gap-3 p-3">
-			{admin && (
+			{canWrite && (
 				<>
 					<Button variant="outline" className="w-full" onClick={() => setCreating(true)}>
 						<PlusIcon aria-hidden="true" />

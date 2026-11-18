@@ -65,9 +65,9 @@ import { useChartPeriod } from "@/hooks/useChartPeriod";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
 import { useAccountHoldings } from "@/hooks/useHoldings";
 import { useAccountImports } from "@/hooks/useImports";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useLoanPayoffChart } from "@/hooks/useLoanPayoffChart";
 import { useLoanSchedule } from "@/hooks/useLoanSchedule";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useAccountSnapshots } from "@/hooks/useSnapshots";
 import { useAccountTrades } from "@/hooks/useTrades";
 import { useAccountTransactions } from "@/hooks/useTransactions";
@@ -164,7 +164,7 @@ type TransactionsPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	/** `null` for a viewer, who adds nothing: the empty state keeps its text alone. */
+	/** `null` for a guest, who adds nothing: the empty state keeps its text alone. */
 	onAdd: (() => void) | null;
 	onOpen: (transaction: TransactionData) => void;
 };
@@ -228,7 +228,7 @@ type SnapshotsPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	/** Both `null` for a viewer: no « Ajouter un solde », and rows that open nothing. */
+	/** Both `null` for a guest: no « Ajouter un solde », and rows that open nothing. */
 	onAdd: (() => void) | null;
 	onOpen: ((snapshot: SnapshotData) => void) | null;
 	/** `null` until the account loads. */
@@ -299,7 +299,7 @@ type TradesPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	/** Both `null` for a viewer: no « Ajouter un ordre », and rows that open nothing. */
+	/** Both `null` for a guest: no « Ajouter un ordre », and rows that open nothing. */
 	onAdd: (() => void) | null;
 	onOpen: ((trade: TradeData) => void) | null;
 };
@@ -481,7 +481,7 @@ function AccountPage() {
 		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	const [snapshotDialog, setSnapshotDialog] = useState<SnapshotDialogState>({
 		open: false,
@@ -615,7 +615,7 @@ function AccountPage() {
 	const openNew = () => setSheet({ open: true, transaction: null });
 	const openNewSnapshot = () => setSnapshotDialog({ open: true, snapshot: null });
 	const openNewTrade = () => setTradeDialog({ open: true, trade: null });
-	// Always in the address, so Back and Reload keep a viewer's pick too.
+	// Always in the address, so Back and Reload keep a guest's pick too.
 	const pickPeriod = (next: SurePeriod) => {
 		void navigate({
 			search: (previous) => ({
@@ -657,7 +657,7 @@ function AccountPage() {
 			}
 			title={account.data?.name ?? t("accountDetail.title")}
 			actions={
-				account.data !== undefined && admin ? (
+				account.data !== undefined && canWrite ? (
 					<>
 						<Tooltip>
 							<TooltipTrigger asChild>
@@ -774,7 +774,7 @@ function AccountPage() {
 						accountId={accountId}
 						page={page}
 						canAdd={canAddTransaction}
-						onAdd={admin ? openNew : null}
+						onAdd={canWrite ? openNew : null}
 						onOpen={(transaction) => setSheet({ open: true, transaction })}
 					/>
 				</TabsContent>
@@ -783,10 +783,10 @@ function AccountPage() {
 						accountId={accountId}
 						page={snapshotsPage}
 						canAdd={canAddDated}
-						onAdd={admin ? openNewSnapshot : null}
-						onOpen={admin ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
+						onAdd={canWrite ? openNewSnapshot : null}
+						onOpen={canWrite ? (snapshot) => setSnapshotDialog({ open: true, snapshot }) : null}
 						opening={opening}
-						onOpenOpening={admin ? () => setEditingOpening(true) : null}
+						onOpenOpening={canWrite ? () => setEditingOpening(true) : null}
 					/>
 				</TabsContent>
 				{overviewed && account.data !== undefined && (
@@ -794,7 +794,7 @@ function AccountPage() {
 						<OverviewPanel
 							account={account.data}
 							overview={overview}
-							onEdit={admin ? () => setEditingDetails(true) : null}
+							onEdit={canWrite ? () => setEditingDetails(true) : null}
 						/>
 					</TabsContent>
 				)}
@@ -819,8 +819,8 @@ function AccountPage() {
 							accountId={accountId}
 							page={tradesPage}
 							canAdd={canAddDated}
-							onAdd={admin && tradable ? openNewTrade : null}
-							onOpen={admin ? (trade) => setTradeDialog({ open: true, trade }) : null}
+							onAdd={canWrite && tradable ? openNewTrade : null}
+							onOpen={canWrite ? (trade) => setTradeDialog({ open: true, trade }) : null}
 						/>
 					</TabsContent>
 				)}
@@ -829,7 +829,7 @@ function AccountPage() {
 				</TabsContent>
 			</Tabs>
 
-			{account.data !== undefined && overviewed && admin && (
+			{account.data !== undefined && overviewed && canWrite && (
 				<EditAccountDialog
 					account={account.data}
 					open={editingDetails}
@@ -844,7 +844,7 @@ function AccountPage() {
 							account={writable}
 							position={openPosition}
 							open={positionSheet.open && openPosition !== null}
-							canWrite={admin}
+							canWrite={canWrite}
 							onOpenChange={(open) => setPositionSheet((current) => ({ ...current, open }))}
 						/>
 					)}
@@ -854,7 +854,7 @@ function AccountPage() {
 						transaction={sheet.transaction}
 						onOpenChange={(open) => setSheet((current) => ({ ...current, open }))}
 					/>
-					{admin && (
+					{canWrite && (
 						<>
 							<SnapshotDialog
 								account={writable}

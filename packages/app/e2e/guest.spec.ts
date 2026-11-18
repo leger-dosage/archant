@@ -18,9 +18,9 @@ import {
 } from "./fixtures.ts";
 import { ADMIN_STATE, WEB_URL } from "./settings.ts";
 
-// Story 20.3: a viewer reads every page and is shown no control that writes.
+// Story 20.3: a guest reads every page and is shown no control that writes.
 // The administrator prepares the household once, then every page signs in as
-// the viewer that its invitation created.
+// the guest that its invitation created.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 const FORBIDDEN = "Cette action n'est pas autorisée.";
@@ -76,7 +76,7 @@ async function seed(administrator: APIRequestContext) {
 	await api.categorise([bakery], category.id);
 	await api.attachFile(bakery, { name: "ticket.png", mimeType: "image/png", buffer: PNG });
 	await api.addRecurring(bakery);
-	// A suggestion, whose two buttons a viewer never sees.
+	// A suggestion, whose two buttons a guest never sees.
 	await Promise.all(
 		[0, 1, 2].map((monthsBack) =>
 			api.addTransaction(account.id, {
@@ -94,7 +94,7 @@ async function seed(administrator: APIRequestContext) {
 		accountId: account.id,
 		firstDueOn: daysAgo(-2),
 	});
-	// A transfer, linked on creation, and a split, each with actions a viewer never sees.
+	// A transfer, linked on creation, and a split, each with actions a guest never sees.
 	const savings = await api.openAccount({ name: `${prefix} épargne`, openingDate: "2022-02-01" });
 	const transfer = await api.addTransaction(account.id, {
 		date: `${MONTH}-12`,
@@ -139,7 +139,7 @@ async function seed(administrator: APIRequestContext) {
 		targetAmount: "2 000",
 		accounts: [{ accountId: savings.id, allocatedAmount: "50" }],
 	});
-	// Paused, so its page shows a banner whose button a viewer must not see.
+	// Paused, so its page shows a banner whose button a guest must not see.
 	await api.goalEvent(goal.id, "pause");
 	const rule = await api.createRule({
 		name: `${prefix} règle`,
@@ -148,7 +148,7 @@ async function seed(administrator: APIRequestContext) {
 	});
 	const disabled = await administrator.patch(`/api/rules/${rule}`, { data: { enabled: false } });
 	expect(disabled.ok(), await disabled.text()).toBe(true);
-	// A PEA with a trade, whose « Ordres » a viewer reads without a button.
+	// A PEA with a trade, whose « Ordres » a guest reads without a button.
 	const pea = await api.openAccount({
 		name: `${prefix} PEA`,
 		kind: "pea",
@@ -166,7 +166,7 @@ async function seed(administrator: APIRequestContext) {
 		label: `${prefix} achat courtier`,
 		amount: "-51,37",
 	});
-	// A loan with its terms, which a viewer reads without « Modifier ».
+	// A loan with its terms, which a guest reads without « Modifier ».
 	const loan = await api.openAccount({
 		name: `${prefix} prêt`,
 		kind: "mortgage",
@@ -180,7 +180,7 @@ async function seed(administrator: APIRequestContext) {
 			interestRate: "1,82",
 		},
 	});
-	// A property with its details, whose « Aperçu » a viewer reads without « Modifier ».
+	// A property with its details, whose « Aperçu » a guest reads without « Modifier ».
 	const home = await api.openAccount({
 		name: `${prefix} maison`,
 		kind: "condominium",
@@ -212,15 +212,15 @@ type Cookies = Awaited<ReturnType<APIRequestContext["storageState"]>>["cookies"]
 
 let administrator: APIRequestContext;
 let household: Household;
-let viewerCookies: Cookies = [];
+let guestCookies: Cookies = [];
 
 // One test per page, so that each page has Playwright's 30 seconds to itself
 // and a failure names it. As a single walk, the test ran out of time on slow
 // CI runners at whichever page it had reached (#219, #220, #225, #230, #231,
 // #232), while every page passed on a rerun.
-const reader = test.extend<{ viewer: Page }>({
-	viewer: async ({ page }, use) => {
-		// No page sends a read the server refuses a viewer, the bank setup included.
+const reader = test.extend<{ guest: Page }>({
+	guest: async ({ page }, use) => {
+		// No page sends a read the server refuses a guest, the bank setup included.
 		const refused: string[] = [];
 		page.on("response", (response) => {
 			if (response.status() === 403) {
@@ -233,7 +233,7 @@ const reader = test.extend<{ viewer: Page }>({
 	},
 });
 
-reader.describe("a viewer", () => {
+reader.describe("a guest", () => {
 	reader.beforeAll(async ({ playwright }) => {
 		administrator = await playwright.request.newContext({
 			baseURL: WEB_URL,
@@ -242,17 +242,17 @@ reader.describe("a viewer", () => {
 		household = await seed(administrator);
 		// Signed in once through the invitation, then handed to every test's
 		// page: Better Auth allows three sign-ins per ten seconds.
-		const viewer = await playwright.request.newContext({ baseURL: WEB_URL });
-		await acceptInvitation(viewer, household.url, {
+		const guest = await playwright.request.newContext({ baseURL: WEB_URL });
+		await acceptInvitation(guest, household.url, {
 			name: household.name,
 			password: "mot de passe du lecteur",
 		});
-		({ cookies: viewerCookies } = await viewer.storageState());
-		await viewer.dispose();
+		({ cookies: guestCookies } = await guest.storageState());
+		await guest.dispose();
 	});
 
 	reader.beforeEach(async ({ context }) => {
-		await context.addCookies(viewerCookies);
+		await context.addCookies(guestCookies);
 	});
 
 	reader.afterAll(async () => {
@@ -260,7 +260,7 @@ reader.describe("a viewer", () => {
 		await administrator.dispose();
 	});
 
-	reader("the dashboard and the accounts offer no new account", async ({ viewer: page }) => {
+	reader("the dashboard and the accounts offer no new account", async ({ guest: page }) => {
 		const { name, account } = household;
 
 		await page.goto("/");
@@ -276,7 +276,7 @@ reader.describe("a viewer", () => {
 			{ role: "link", name: "Personnaliser" },
 		]);
 
-		// An empty period: the Sankey says so, and offers a viewer nothing to add.
+		// An empty period: the Sankey says so, and offers a guest nothing to add.
 		await page.goto("/?startDate=2000-01-01&endDate=2000-01-31");
 		const flows = page.getByRole("region", { name: "Flux de trésorerie" });
 		await expect(
@@ -295,7 +295,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"« Rapports » shows no chevron and no grip, and still exports and prints",
-		async ({ viewer: page, context }) => {
+		async ({ guest: page, context }) => {
 			await context.addInitScript(() => {
 				window.print = () => undefined;
 			});
@@ -332,29 +332,26 @@ reader.describe("a viewer", () => {
 		},
 	);
 
-	reader(
-		"a period pick changes the address and saves nothing (AD-21)",
-		async ({ viewer: page }) => {
-			const writes: string[] = [];
-			page.on("request", (request) => {
-				if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
-					writes.push(`${request.method()} ${request.url()}`);
-				}
-			});
+	reader("a period pick changes the address and saves nothing (AD-21)", async ({ guest: page }) => {
+		const writes: string[] = [];
+		page.on("request", (request) => {
+			if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
+				writes.push(`${request.method()} ${request.url()}`);
+			}
+		});
 
-			await page.goto("/");
-			await expect(periodPicker(page)).toHaveText("30J");
-			await pickPeriod(page, page, "AC", { saved: false });
+		await page.goto("/");
+		await expect(periodPicker(page)).toHaveText("30J");
+		await pickPeriod(page, page, "AC", { saved: false });
 
-			await expect(page).toHaveURL(/[?&]period=current_year(&|$)/u);
-			await expect(periodPicker(page)).toHaveText("AC");
-			expect(writes).toEqual([]);
-		},
-	);
+		await expect(page).toHaveURL(/[?&]period=current_year(&|$)/u);
+		await expect(periodPicker(page)).toHaveText("AC");
+		expect(writes).toEqual([]);
+	});
 
 	reader(
 		"an account shows its rows, snapshots and imports, and nothing to change them",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { prefix, account } = household;
 
 			await page.goto(`/accounts/${account.id}`);
@@ -382,7 +379,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"a loan shows its chart, terms and schedule, and nothing to edit them",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { loan } = household;
 
 			await page.goto(`/accounts/${loan.id}`);
@@ -407,7 +404,7 @@ reader.describe("a viewer", () => {
 		},
 	);
 
-	reader("a property shows its details, and nothing to edit them", async ({ viewer: page }) => {
+	reader("a property shows its details, and nothing to edit them", async ({ guest: page }) => {
 		const { home } = household;
 
 		await page.goto(`/accounts/${home.id}?tab=overview`);
@@ -420,7 +417,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"an investment account shows its lines, trades and positions, and nothing to change them",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { prefix, pea } = household;
 
 			await page.goto(`/accounts/${pea.id}`);
@@ -432,7 +429,7 @@ reader.describe("a viewer", () => {
 			const line = page.getByRole("dialog", { name: "Opération" });
 			await expect(line.getByLabel("Libellé")).toHaveValue(`${prefix} achat courtier`);
 			await expectNone(line, [{ role: "button", name: "Convertir en ordre" }]);
-			// Sure's « Type d'activité » select writes, so a viewer has none.
+			// Sure's « Type d'activité » select writes, so a guest has none.
 			await expect(line.getByRole("combobox", { name: "Type d'activité" })).toHaveCount(0);
 			await line.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(line).toBeHidden();
@@ -463,7 +460,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"operations: no selection, plain category pills, and a sheet to read",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { prefix, bakery, category, transfer, savings, food } = household;
 
 			await page.goto(`/transactions?q=${encodeURIComponent(prefix)}`);
@@ -497,7 +494,7 @@ reader.describe("a viewer", () => {
 			await expect(sheet.getByText("Champs verrouillés :")).toBeVisible();
 			await expect(sheet.getByText("Cette opération fait partie de la récurrence")).toBeVisible();
 			await expect(sheet.getByRole("link", { name: "Ouvrir « ticket.png »" })).toBeVisible();
-			// A download is a read: the viewer saves the file, the sheet stays open.
+			// A download is a read: the guest saves the file, the sheet stays open.
 			const downloading = page.waitForEvent("download");
 			const save = sheet.getByRole("link", { name: "Télécharger « ticket.png »" });
 			await expect(save).toHaveAttribute("href", /\?disposition=attachment$/u);
@@ -554,7 +551,7 @@ reader.describe("a viewer", () => {
 			await drawer.getByRole("button", { name: "Fermer", exact: true }).first().click();
 			await expect(drawer).toBeHidden();
 
-			// A transaction no series holds: a viewer reads so, and creates none.
+			// A transaction no series holds: a guest reads so, and creates none.
 			await page
 				.locator("button[data-transaction-id]")
 				.filter({ hasText: `${prefix} import` })
@@ -584,7 +581,7 @@ reader.describe("a viewer", () => {
 		},
 	);
 
-	reader("budgets: no form, and its pages lead back to the month", async ({ viewer: page }) => {
+	reader("budgets: no form, and its pages lead back to the month", async ({ guest: page }) => {
 		await page.goto(`/budgets/${MONTH}`);
 		await expect(
 			page.getByRole("heading", { level: 1, name: "Budget de mars 2022" }),
@@ -613,7 +610,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"goals: cards and a page to read, nothing to create, edit, delete, pause or resume",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { savings, goal } = household;
 
 			await page.goto("/goals");
@@ -639,7 +636,7 @@ reader.describe("a viewer", () => {
 
 	reader(
 		"every bill, a bill's drawer and « À venir »: read, with no action and no write",
-		async ({ viewer: page }) => {
+		async ({ guest: page }) => {
 			const { prefix } = household;
 
 			const writes: string[] = [];
@@ -656,7 +653,7 @@ reader.describe("a viewer", () => {
 			await expect(
 				table.getByRole("row").filter({ hasText: `${prefix} boulangerie` }),
 			).toBeVisible();
-			// No column for a menu a viewer never has.
+			// No column for a menu a guest never has.
 			await expect(table.getByRole("columnheader")).toHaveCount(6);
 			await expectNone(page, [
 				{ role: "button", name: "Ajouter une facture" },
@@ -689,7 +686,7 @@ reader.describe("a viewer", () => {
 		},
 	);
 
-	reader("recurring and rules: read, never changed", async ({ viewer: page }) => {
+	reader("recurring and rules: read, never changed", async ({ guest: page }) => {
 		const { prefix } = household;
 
 		// Story 23.4: the bills page and an occurrence's sheet, without any action.
@@ -752,7 +749,7 @@ reader.describe("a viewer", () => {
 		]);
 	});
 
-	reader("settings show « Sécurité » alone", async ({ viewer: page }) => {
+	reader("settings show « Sécurité » alone", async ({ guest: page }) => {
 		await page.goto("/settings");
 		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
 		// Their own password, not an administrator's.
@@ -793,7 +790,7 @@ reader.describe("a viewer", () => {
 	});
 
 	reader("the server refuses a write the interface would never send", async ({ page }) => {
-		// `page`, not `viewer`: the 403s this test provokes are its point.
+		// `page`, not `guest`: the 403s this test provokes are its point.
 		const { account, loan, pea } = household;
 
 		await page.goto("/settings");

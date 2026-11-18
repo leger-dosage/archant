@@ -52,6 +52,7 @@ import {
 	recurringSettings,
 	saveRecurringSettings,
 } from "../services/recurring/switch.ts";
+import { requireRole } from "./middleware/roles.ts";
 
 // `GET /:id` comes last: registered before them, it would answer `/bills`
 // and `/upcoming`.
@@ -60,8 +61,8 @@ export function recurringRoutes(deps: ServiceDeps) {
 	// the switch is off. The series list, a transaction's « Marquer comme
 	// récurrent », deleting a series, detection and cleanup keep their reach, as Sure's
 	// `RecurringTransactionsController` and `TransactionsController` keep it.
-	// Every member reads `/settings`, as the navigation follows it;
-	// `viewerReadOnly` keeps its write to an administrator.
+	// Every member reads `/settings`, as the navigation follows it.
+	// Only an administrator changes the household switch.
 	const guarded = createMiddleware(async (_c, next) => {
 		await ensureRecurringEnabled(deps);
 		await next();
@@ -77,7 +78,7 @@ export function recurringRoutes(deps: ServiceDeps) {
 		.use("/payments/*", guarded)
 		.get("/", async (c) => c.json({ data: await listRecurring(deps) }, 200))
 		.get("/settings", async (c) => c.json({ data: await recurringSettings(deps) }, 200))
-		.put("/settings", validated("json", recurringSettingsSchema), async (c) =>
+		.put("/settings", requireRole("admin"), validated("json", recurringSettingsSchema), async (c) =>
 			c.json({ data: await saveRecurringSettings(deps, c.req.valid("json")) }, 200),
 		)
 		.post("/", validated("json", addRecurringSchema), async (c) =>

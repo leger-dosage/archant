@@ -8,13 +8,13 @@ import { priceStatus, setPricesEnabled, updatePrices } from "../services/prices.
 import { requireRole } from "./middleware/roles.ts";
 
 /**
- * « Réglages › Placements ». Its status is the administrator's alone, as the
- * page is (AD-21); a viewer's write is refused before it, by `viewerReadOnly`.
+ * « Réglages › Placements ». Only an administrator manages price fetching (AD-21).
  */
 export function pricesRoutes(deps: PriceDeps) {
 	return (
 		new Hono()
-			.get("/", requireRole("admin"), async (c) => c.json({ data: await priceStatus(deps) }, 200))
+			.use(requireRole("admin"))
+			.get("/", async (c) => c.json({ data: await priceStatus(deps) }, 200))
 			.put("/settings", validated("json", priceSettingsSchema), async (c) =>
 				c.json({ data: await setPricesEnabled(deps, c.req.valid("json").enabled) }, 200),
 			)

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { apiHelpers, expect, test } from "./fixtures.ts";
 import { ADMIN_STATE, WEB_URL } from "./settings.ts";
 
-// Story 20.1: only an administrator connects an assistant. The viewer comes
+// Story 20.1: only an administrator connects an assistant. The guest comes
 // through an invitation, accepted beside the page, which then starts signed
 // out, as a browser an assistant opens.
 test.use({ storageState: { cookies: [], origins: [] } });
@@ -30,7 +30,7 @@ function authorizeUrl(clientId: string): string {
 	return `/api/auth/oauth2/authorize?${query.toString()}`;
 }
 
-test("the consent page tells a viewer only an administrator connects an assistant, and offers no answer", async ({
+test("the consent page tells a guest only an administrator connects an assistant, and offers no answer", async ({
 	page,
 	playwright,
 }) => {
@@ -45,7 +45,7 @@ test("the consent page tells a viewer only an administrator connects an assistan
 		data: { token: url.split("/").at(-1), password: PASSWORD },
 	});
 	expect(accepted.status()).toBe(201);
-	// The acceptance signed the viewer in; the assistant's browser starts signed out.
+	// The acceptance signed the guest in; the assistant's browser starts signed out.
 	await page.context().clearCookies();
 	const registered = await page.request.post("/api/auth/oauth2/register", {
 		data: {

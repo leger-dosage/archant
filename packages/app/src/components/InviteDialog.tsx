@@ -30,11 +30,10 @@ import { applyFieldErrors } from "@/lib/form-errors";
 
 const FIELD_NAMES = ["email", "role"] as const;
 
-const EMPTY: CreateInvitationInput = { email: "", role: "viewer" };
+const EMPTY: CreateInvitationInput = { email: "", role: "guest" };
 
 /**
- * Invites an email as a viewer, by default, or as an administrator, then
- * shows the link once: only its hash is stored, so nothing can show it
+ * Defaults to guest and shows the invitation link once: only its hash is stored, so nothing can show it
  * again. Archant sends no email, as self-hosted Sure: the owner sends the
  * link themselves.
  */

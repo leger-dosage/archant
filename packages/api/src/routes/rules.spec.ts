@@ -23,7 +23,7 @@ import {
 	uploaded,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -1055,28 +1055,28 @@ describe("rules", () => {
 	});
 });
 
-describe("a viewer and every rule", () => {
-	let viewerCookie: string;
+describe("a guest and every rule", () => {
+	let guestCookie: string;
 	let auth: Auth;
 	const silent = createLogger("silent");
 
 	beforeAll(async () => {
 		auth = createTestAuth(temp.db, silent);
-		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 	});
 
 	afterEach(async () => {
 		await temp.db.run(sql`delete from rules`);
 	});
 
-	it("is refused FORBIDDEN by `viewerReadOnly`, every rule kept", async () => {
+	it("is refused FORBIDDEN by `guestReadOnly`, every rule kept", async () => {
 		const groceries = await createCategory(uniqueCategory("Courses"));
 		expect((await request("POST", "/api/rules", labelRule("carrefour", groceries.id))).status).toBe(
 			201,
 		);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const response = await viewer.request("/api/rules", { method: "DELETE" });
+		const response = await guest.request("/api/rules", { method: "DELETE" });
 
 		expect(response.status).toBe(403);
 		expect(errorBody.parse(await response.json()).error.code).toBe("FORBIDDEN");

@@ -19,7 +19,7 @@ import {
 	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -362,15 +362,15 @@ describe("GET /api/transactions/:id/attachments/:attachmentId", () => {
 		expect(errorBody.parse(await response.json()).error.code).toBe("NOT_FOUND");
 	});
 
-	it("lets a viewer download a file, a read", async () => {
+	it("lets a guest download a file, a read", async () => {
 		const silent = createLogger("silent");
 		const auth: Auth = createTestAuth(temp.db, silent);
-		const cookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		const cookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 		const id = await transaction();
 		const { id: attachmentId } = await uploaded(id);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), cookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), cookie);
 
-		const response = await viewer.request(
+		const response = await guest.request(
 			`/api/transactions/${id}/attachments/${attachmentId}?disposition=attachment`,
 		);
 

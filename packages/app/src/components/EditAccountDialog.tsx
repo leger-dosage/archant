@@ -44,6 +44,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useUpdateAccount } from "@/hooks/useAccounts";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { ACCOUNT_KINDS } from "@/lib/account-kinds";
 import { ApiError } from "@/lib/api";
 import {
@@ -207,7 +208,8 @@ export function EditAccountDialog({
 	const isProperty = account.type === "property";
 	const isVehicle = account.type === "vehicle";
 	const isCrypto = account.type === "crypto";
-	const linkedCard = isCard && account.bankConnection !== null;
+	const admin = useIsAdmin();
+	const canEditBankSettings = admin && isCard && account.bankConnection !== null;
 	const values: AccountSettingsFormInput = {
 		name: account.name,
 		subtype: account.subtype,
@@ -231,7 +233,7 @@ export function EditAccountDialog({
 		...(isProperty ? { details: propertyDetailsToInput(propertyDetailsOf(account)) } : {}),
 		...(isVehicle ? { details: vehicleDetailsToInput(vehicleDetailsOf(account)) } : {}),
 		...(isCrypto ? { details: cryptoDetailsToInput(cryptoDetailsOf(account)) } : {}),
-		...(linkedCard
+		...(canEditBankSettings
 			? { treatBalanceAsAvailableCredit: account.treatBalanceAsAvailableCredit ?? false }
 			: {}),
 	};
@@ -279,7 +281,7 @@ export function EditAccountDialog({
 				...(isProperty ? { details: completePropertyInput(details) } : {}),
 				...(isVehicle ? { details: completeVehicleInput(details) } : {}),
 				...(isCrypto ? { details: completeCryptoInput(details) } : {}),
-				...(linkedCard ? { treatBalanceAsAvailableCredit } : {}),
+				...(canEditBankSettings ? { treatBalanceAsAvailableCredit } : {}),
 			});
 			toast.success(t("accountActions.form.saved", { name: saved.name }));
 			onOpenChange(false);
@@ -356,7 +358,7 @@ export function EditAccountDialog({
 
 					{isCrypto && <CryptoFields form={form} />}
 
-					{linkedCard && <AvailableCreditToggle form={form} />}
+					{canEditBankSettings && <AvailableCreditToggle form={form} />}
 
 					<AccountAdditionalDetails
 						idPrefix="account-"

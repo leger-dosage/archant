@@ -11,12 +11,11 @@ import { requireRole } from "./middleware/roles.ts";
 /**
  * The provider's search for Story 22.2's trade form, and « Saisir un cours »
  * for a security no provider prices. The search's role is checked before the
- * query is read, so a viewer gets its refusal, never a 400; the write is a
- * viewer's to be refused by `viewerReadOnly` (AD-21).
+ * query is read, since only someone who can edit a trade needs the lookup.
  */
 export function securitiesRoutes(deps: PriceDeps) {
 	return new Hono()
-		.get("/", requireRole("admin"), validated("query", securitySearchSchema), async (c) =>
+		.get("/", requireRole("admin", "member"), validated("query", securitySearchSchema), async (c) =>
 			c.json({ data: await searchSecurities(deps, c.req.valid("query").q) }, 200),
 		)
 		.post("/:id/prices", validated("json", typedPriceBodySchema), async (c) =>

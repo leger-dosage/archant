@@ -81,7 +81,7 @@ Success is `{ "data": ... }`, failure is `{ "error": { "code": "...", "message":
 
 Error messages returned by the API are in English. The interface translates them from the code.
 
-A route never checks a role to refuse a write: `viewerReadOnly` in `packages/api/src/routes/middleware/roles.ts` refuses every method but `GET` and `HEAD` from a viewer before any route runs, so a route that writes uses a mutating method, and a `GET` never writes. A read only an administrator may see calls `requireRole("admin")` from the same file (AD-21). The interface shows a control that writes only when `useIsAdmin()` from `packages/app/src/hooks/useIsAdmin.ts` is true, and never mounts a component that sends a read kept to administrators for a viewer; it decides nothing the server does not.
+`guestReadOnly` in `packages/api/src/routes/middleware/roles.ts` allows only `GET` and `HEAD` from a guest on session-protected routes. A write uses a mutating method. Reserve administration to `requireRole("admin")`, or use `assertRole` when a validated field determines the permission (AD-21). In the interface, `useCanWrite()` controls ledger writes and `useIsAdmin()` controls administration, including reads reserved for administrators. The server enforces both permissions.
 
 ## Security
 

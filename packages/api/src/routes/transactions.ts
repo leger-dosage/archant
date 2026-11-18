@@ -145,8 +145,8 @@ export function transactionsRoutes(deps: ServiceDeps) {
 				c.json({ data: await dismissPostedMatch(deps, c.req.param("id")) }, 200),
 			)
 			// Sure's rule prompt, asked once the interface set a category by hand.
-			// Only an administrator writes rules: a viewer is never offered one.
-			.get("/:id/rule-prompt", requireRole("admin"), async (c) =>
+			// A rule suggestion is only useful to someone who can create a rule.
+			.get("/:id/rule-prompt", requireRole("admin", "member"), async (c) =>
 				c.json(
 					{
 						data: {

@@ -53,6 +53,7 @@ import {
 } from "@/components/ui/select";
 import { VehicleDetailsFields } from "@/components/VehicleDetailsFields";
 import { useCreateAccount } from "@/hooks/useAccounts";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import {
 	PROPERTY_STEPS,
 	PROPERTY_STEP_FIELDS,
@@ -207,6 +208,7 @@ type CreateAccountDialogProps = { open: boolean; onOpenChange: (open: boolean) =
  */
 export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogProps) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const navigate = useNavigate();
 	const createAccount = useCreateAccount();
 	const [step, setStep] = useState<CreationStep>({ kind: "types" });
@@ -526,7 +528,7 @@ export function CreateAccountDialog({ open, onOpenChange }: CreateAccountDialogP
 					<MethodChoices
 						type={step.type}
 						onManual={() => setStep({ kind: "form", type: step.type })}
-						onLink={linkBank}
+						onLink={admin ? linkBank : null}
 					/>
 				);
 			case "form":

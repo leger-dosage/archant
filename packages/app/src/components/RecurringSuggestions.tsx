@@ -58,15 +58,15 @@ function RecurringAmount({ item }: { item: RecurringData }) {
 
 /**
  * Sure's « Nouvelles factures possibles »: what detection found and the owner
- * has not settled, each with how often it was seen. A viewer reads it without
+ * has not settled, each with how often it was seen. A guest reads it without
  * its two buttons.
  */
 export function RecurringSuggestions({
 	items,
-	admin,
+	canWrite,
 }: {
 	items: readonly RecurringData[];
-	admin: boolean;
+	canWrite: boolean;
 }) {
 	const { t } = useTranslation();
 	const setStatus = useSetRecurringStatus();
@@ -95,7 +95,7 @@ export function RecurringSuggestions({
 							<TableHead scope="col" className="type-overline text-right text-muted-foreground">
 								{t("recurring.columns.amount")}
 							</TableHead>
-							{admin && (
+							{canWrite && (
 								<TableHead scope="col">
 									<span className="sr-only">{t("recurring.columns.actions")}</span>
 								</TableHead>
@@ -121,7 +121,7 @@ export function RecurringSuggestions({
 								<TableCell className="text-right">
 									<RecurringAmount item={item} />
 								</TableCell>
-								{admin && (
+								{canWrite && (
 									<TableCell className="text-right">
 										<span className="flex justify-end gap-2">
 											<Button

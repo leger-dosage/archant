@@ -418,7 +418,7 @@ type PositionSheetProps = {
 	position: PositionData | null;
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	/** `false` for a viewer: the figures and trades are theirs, the forms are not. */
+	/** `false` for a guest: the figures and trades are theirs, the forms are not. */
 	canWrite: boolean;
 };
 

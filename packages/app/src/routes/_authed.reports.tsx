@@ -23,13 +23,13 @@ import { ReportsSummary } from "@/components/reports/ReportsSummary";
 import { TrendsSection } from "@/components/reports/TrendsSection";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useReportsLayout, useUpdateReportsLayout } from "@/hooks/useReportsLayout";
 import { useReportsPage } from "@/hooks/useReportsPage";
 import { errorCodeOf } from "@/lib/api";
 import { reportsSearchSchema, settledSearch } from "@/lib/reports";
 
-/** Sure's default order with nothing collapsed: what a viewer sees (AD-21). */
+/** Sure's default order with nothing collapsed: what a guest sees (AD-21). */
 const DEFAULT_LAYOUT: ReportsLayoutData = resolveReportsLayout(null);
 
 export const Route = createFileRoute("/_authed/reports")({
@@ -47,15 +47,15 @@ function ReportsPage() {
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const report = useReportsPage(settledSearch(search));
-	const admin = useIsAdmin();
-	const savedLayout = useReportsLayout({ enabled: admin });
+	const canWrite = useCanWrite();
+	const savedLayout = useReportsLayout({ enabled: canWrite });
 	const updateLayout = useUpdateReportsLayout();
-	const layout = (admin ? savedLayout.data : undefined) ?? DEFAULT_LAYOUT;
-	const layoutReady = !admin || !savedLayout.isPending;
+	const layout = (canWrite ? savedLayout.data : undefined) ?? DEFAULT_LAYOUT;
+	const layoutReady = !canWrite || !savedLayout.isPending;
 	const { order, sortable } = useDashboardSortable<ReportsSectionKey>(
 		layout.sectionOrder,
 		(sectionOrder) => {
-			if (admin) {
+			if (canWrite) {
 				updateLayout.mutate({ sectionOrder });
 			}
 		},
@@ -165,7 +165,7 @@ function ReportsPage() {
 												key={key}
 												sectionKey={key}
 												collapsed={layout.collapsedSections[key]}
-												editable={admin}
+												editable={canWrite}
 												sortable={sortable}
 												onToggle={() =>
 													updateLayout.mutate({

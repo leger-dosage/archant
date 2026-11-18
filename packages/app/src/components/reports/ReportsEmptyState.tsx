@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { Button } from "@/components/ui/button";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { accountChoiceOf } from "@/lib/account-choice";
 
 const TransactionSheet = lazy(async () => ({
@@ -17,11 +17,11 @@ const TransactionSheet = lazy(async () => ({
  * Sure's `_empty_state`, while the household holds no transaction: « Ajouter
  * une transaction » opens the sheet the operations list opens, once an
  * account can take it, and « Ajouter un compte » the account dialog. A
- * viewer, who adds neither, reads the sentence alone.
+ * guest, who adds neither, reads the sentence alone.
  */
 export function ReportsEmptyState() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const accounts = useAccounts();
 	const [adding, setAdding] = useState(false);
 	const [sheetMounted, setSheetMounted] = useState(false);
@@ -41,7 +41,7 @@ export function ReportsEmptyState() {
 				title={t("reports.emptyState.title")}
 				description={t("reports.emptyState.description")}
 				action={
-					admin ? (
+					canWrite ? (
 						<div className="flex flex-wrap justify-center gap-3">
 							{canAddTransaction && (
 								<Button
@@ -60,7 +60,7 @@ export function ReportsEmptyState() {
 					) : null
 				}
 			/>
-			{admin && sheetMounted && choice !== null && (
+			{canWrite && sheetMounted && choice !== null && (
 				<Suspense fallback={null}>
 					<TransactionSheet
 						account={choice}
@@ -70,7 +70,7 @@ export function ReportsEmptyState() {
 					/>
 				</Suspense>
 			)}
-			{admin && (
+			{canWrite && (
 				<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 			)}
 		</>

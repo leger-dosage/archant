@@ -24,7 +24,7 @@ For a behaviour change, read the relevant [OpenSpec specification](openspec/spec
 
 A new dependency needs a reason in the pull request description: dependencies stay few and popular.
 
-A route that writes uses `POST`, `PUT`, `PATCH` or `DELETE`, never `GET`: the server refuses those methods to a read-only member before any route runs, so a new route needs no permission check of its own. A read only an administrator may see calls `requireRole("admin")`. In the interface, a control that writes is shown only when `useIsAdmin()` is true, so a viewer never meets a refusal; the server's refusal stays the authority.
+Use a mutating method for writes. `guestReadOnly` blocks guest writes before routes run. Use `requireRole("admin")` for household administration, including reads that only an administrator may see. When only part of a request is reserved to administrators, validate the request and call `assertRole` before any writes. The interface uses `useCanWrite()` for ledger and personal preference controls and `useIsAdmin()` for administration. The server enforces both permissions.
 
 ## Translations
 

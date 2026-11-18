@@ -19,7 +19,7 @@ import {
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -28,12 +28,12 @@ useSignedInApp();
 const silent = createLogger("silent");
 
 let auth: Auth;
-let viewerCookie: string;
+let guestCookie: string;
 
-// One Better Auth and one viewer sign-in for the file: the limit allows three per ten seconds.
+// One Better Auth and one guest sign-in for the file: the limit allows three per ten seconds.
 beforeAll(async () => {
 	auth = createTestAuth(temp.db, silent);
-	viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 });
 
 const share = z.object({
@@ -1263,14 +1263,14 @@ describe("the goals' summary", () => {
 });
 
 const admin = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), template.cookie);
-const viewer = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+const guest = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
 /** Every goal and link of the shared database, side by side. */
 async function sharedGoalRows() {
 	return temp.db.all(sql`select * from goals left join goal_accounts on goal_id = id`);
 }
 
-describe("a viewer", () => {
+describe("a guest", () => {
 	it("reads goals, and is refused FORBIDDEN on every write, nothing written", async () => {
 		const opened = await send(
 			"POST",
@@ -1292,12 +1292,10 @@ describe("a viewer", () => {
 
 		const events = ["pause", "resume", "complete", "archive", "restore", "reopen"];
 		const answers = await Promise.all([
-			send("POST", "/api/goals", body("Travaux", [{ accountId, allocatedAmount: "1" }]), viewer()),
-			send("PUT", `/api/goals/${id}`, body("Voyage", [{ accountId }]), viewer()),
-			send("DELETE", `/api/goals/${id}`, undefined, viewer()),
-			...events.map(async (event) =>
-				send("POST", `/api/goals/${id}/${event}`, undefined, viewer()),
-			),
+			send("POST", "/api/goals", body("Travaux", [{ accountId, allocatedAmount: "1" }]), guest()),
+			send("PUT", `/api/goals/${id}`, body("Voyage", [{ accountId }]), guest()),
+			send("DELETE", `/api/goals/${id}`, undefined, guest()),
+			...events.map(async (event) => send("POST", `/api/goals/${id}/${event}`, undefined, guest())),
 		]);
 
 		expect(answers.map((answer) => answer.status)).toEqual(Array(9).fill(403));
@@ -1305,14 +1303,14 @@ describe("a viewer", () => {
 			new Set(["FORBIDDEN"]),
 		);
 		await expect(sharedGoalRows()).resolves.toEqual(before);
-		await expect(send("GET", `/api/goals/${id}`, undefined, viewer())).resolves.toMatchObject({
+		await expect(send("GET", `/api/goals/${id}`, undefined, guest())).resolves.toMatchObject({
 			status: 200,
 			body: { data: { id, saved: 100_000 } },
 		});
 		await expect(
-			send("GET", `/api/goals/${id}/history`, undefined, viewer()),
+			send("GET", `/api/goals/${id}/history`, undefined, guest()),
 		).resolves.toMatchObject({ status: 200 });
-		await expect(send("GET", "/api/goals/summary", undefined, viewer())).resolves.toMatchObject({
+		await expect(send("GET", "/api/goals/summary", undefined, guest())).resolves.toMatchObject({
 			status: 200,
 		});
 	});

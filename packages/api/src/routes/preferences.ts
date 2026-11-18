@@ -7,25 +7,24 @@ import { validated } from "../lib/validated.ts";
 import { preferencesSchema, rulePromptDismissalSchema } from "../schemas/preferences.ts";
 import { getPreferencesPage, updatePreferences } from "../services/preferences.ts";
 import { dismissRulePrompts } from "../services/rule-prompt.ts";
-import { signedInUser } from "./middleware/roles.ts";
+import { assertRole, signedInUser } from "./middleware/roles.ts";
 
-/**
- * « Réglages › Préférences », the signed-in user's own. A viewer reads their
- * order but cannot change it: `viewerReadOnly` refuses the `PATCH` (AD-21),
- * until Sure's roles let every member save their own.
- */
+/** « Réglages › Préférences ». Only an administrator changes the household language. */
 export function preferencesRoutes(deps: ServiceDeps) {
 	return (
 		new Hono<SessionEnv>()
 			.get("/", async (c) =>
 				c.json({ data: await getPreferencesPage(deps, signedInUser(c).id) }, 200),
 			)
-			.patch("/", validated("json", preferencesSchema), async (c) =>
-				c.json(
-					{ data: await updatePreferences(deps, signedInUser(c).id, c.req.valid("json")) },
-					200,
-				),
-			)
+			.patch("/", validated("json", preferencesSchema), async (c) => {
+				const input = c.req.valid("json");
+
+				if (input.householdLocale !== undefined) {
+					assertRole(c, "admin");
+				}
+
+				return c.json({ data: await updatePreferences(deps, signedInUser(c).id, input) }, 200);
+			})
 			// Sure's `PATCH /users/:id/rule_prompt_settings`, from « Masquer pour aujourd'hui ».
 			.patch("/rule-prompt", validated("json", rulePromptDismissalSchema), async (c) =>
 				c.json(

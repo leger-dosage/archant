@@ -13,17 +13,19 @@ import { AppError } from "../../lib/errors.ts";
 import { createLogger } from "../../lib/logger.ts";
 import {
 	expense,
+	freshDatabase,
 	openAccount,
 	postTransaction,
 	temp,
 	template,
 	useSignedInApp,
+	valid,
 } from "../../testing/app.ts";
 import {
-	addViewer,
+	addTestUser,
 	buildTestApp,
 	createTestAuth,
-	VIEWER,
+	GUEST,
 	withSession,
 } from "../../testing/auth.ts";
 import { isPublicPath, requireSession } from "./auth.ts";
@@ -34,16 +36,19 @@ useSignedInApp();
 const silent = createLogger("silent");
 
 let auth: Auth;
-let viewerCookie: string;
+let guestCookie: string;
+let memberCookie: string;
 
-// One Better Auth and one viewer sign-in for the file: the limit allows three per ten seconds.
+// One Better Auth and one sign-in per role for the file: the limit allows three per ten seconds.
 beforeAll(async () => {
 	auth = createTestAuth(temp.db);
-	viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
+	memberCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth, "member");
 });
 
 const admin = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), template.cookie);
-const viewer = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+const guest = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
+const member = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), memberCookie);
 
 const WRITING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -56,12 +61,30 @@ const ADMIN_READS = [
 	"/api/members",
 	"/api/export",
 	"/api/prices",
-	"/api/securities",
-	"/api/transactions/x/rule-prompt",
 ];
 
-/** The query an administrator's read of these paths needs to answer 200. */
-const ADMIN_READ_QUERIES: Record<string, string> = { "/api/securities": "?q=MC" };
+const WRITER_READS = {
+	"/api/securities": "?q=MC",
+	"/api/transactions/x/rule-prompt": "",
+};
+
+const ADMIN_WRITE_GROUPS = [
+	"/api/bank-connections",
+	"/api/assistants",
+	"/api/invitations",
+	"/api/members",
+	"/api/prices",
+];
+const ADMIN_WRITES = new Set([
+	"DELETE /api/financial-data",
+	"DELETE /api/accounts/x/unlink",
+	"PUT /api/recurring/settings",
+]);
+
+const refused = {
+	status: 403,
+	body: { error: { code: "FORBIDDEN", message: "Your role does not allow this." } },
+};
 
 /**
  * Every route of the running app under `/api` behind the session guard, its
@@ -111,9 +134,9 @@ function guarded(sessionGuard: boolean) {
 	return app;
 }
 
-/** One of Better Auth's own endpoints, as the viewer's security page would call it. */
+/** One of Better Auth's own endpoints, as the guest's security page would call it. */
 async function viewerPost(path: string, body: unknown) {
-	return viewer().request(`/api/auth${path}`, {
+	return guest().request(`/api/auth${path}`, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
 		body: JSON.stringify(body),
@@ -129,9 +152,9 @@ describe("requireRole", () => {
 		expect(response.status).toBe(200);
 	});
 
-	it("refuses a viewer with FORBIDDEN", async () => {
+	it("refuses a guest with FORBIDDEN", async () => {
 		const response = await guarded(true).request("/api/guarded", {
-			headers: { cookie: viewerCookie },
+			headers: { cookie: guestCookie },
 		});
 
 		expect(response.status).toBe(403);
@@ -149,7 +172,7 @@ describe("requireRole", () => {
 	});
 });
 
-describe("a viewer's writes", () => {
+describe("a guest's writes", () => {
 	it("are each refused FORBIDDEN before the route reads its input, never a 400", async () => {
 		const routes = guardedRoutes((method) => WRITING_METHODS.has(method));
 		const walked = routes.map(({ method, path }) => `${method} ${path}`);
@@ -199,12 +222,8 @@ describe("a viewer's writes", () => {
 		);
 
 		const answers = await Promise.all(
-			routes.map(async ({ method, path }) => answer(viewer(), method, path)),
+			routes.map(async ({ method, path }) => answer(guest(), method, path)),
 		);
-		const refused = {
-			status: 403,
-			body: { error: { code: "FORBIDDEN", message: "Your role does not allow this." } },
-		};
 
 		expect(
 			answers.filter(
@@ -215,7 +234,7 @@ describe("a viewer's writes", () => {
 	});
 
 	it("are refused for a method that is neither a read nor one of the four writes", async () => {
-		const response = await viewer().request("/api/accounts", { method: "OPTIONS" });
+		const response = await guest().request("/api/accounts", { method: "OPTIONS" });
 
 		expect(response.status).toBe(403);
 	});
@@ -224,6 +243,126 @@ describe("a viewer's writes", () => {
 		const { status } = await answer(admin(), "POST", "/api/categories");
 
 		expect(status).toBe(400);
+	});
+});
+
+describe("member and administrator writes", () => {
+	it("opens every ordinary write to a member and reserves administration", async () => {
+		const routes = guardedRoutes((method) => WRITING_METHODS.has(method));
+		const adminDb = await freshDatabase();
+		const memberDb = await freshDatabase();
+
+		try {
+			const adminApp = withSession(buildTestApp(adminDb.db, silent), template.cookie);
+			const matrixAuth = createTestAuth(memberDb.db);
+			const app = buildTestApp(memberDb.db, silent, matrixAuth);
+			const memberApp = withSession(app, await addTestUser(app, matrixAuth, "member"));
+
+			// An empty request tests dispatch and authorization. Some routes can
+			// write without a body, so each role gets a disposable database.
+			const checkRoute = async ({ method, path }: (typeof routes)[number]) => {
+				const [adminResponse, memberResponse] = await Promise.all([
+					answer(adminApp, method, path),
+					answer(memberApp, method, path),
+				]);
+				const adminOnly =
+					ADMIN_WRITES.has(adminResponse.route) ||
+					ADMIN_WRITE_GROUPS.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+
+				if (adminResponse.status === 503 && path.startsWith("/api/bank-connections")) {
+					expect(adminResponse.body).toMatchObject({
+						error: { code: "BANK_CONNECTOR_UNAVAILABLE" },
+					});
+				} else {
+					expect(adminResponse.status, adminResponse.route).toBeLessThan(500);
+				}
+				expect(adminResponse.status, adminResponse.route).not.toBe(403);
+
+				if (adminOnly) {
+					expect(memberResponse, memberResponse.route).toMatchObject(refused);
+				} else {
+					expect(memberResponse.status, memberResponse.route).toBe(adminResponse.status);
+				}
+			};
+
+			let checked = Promise.resolve();
+			for (const route of routes) {
+				checked = checked.then(() => checkRoute(route));
+			}
+			await checked;
+		} finally {
+			await adminDb.dispose();
+			await memberDb.dispose();
+		}
+	});
+
+	it("lets members change the ledger, rules, budgets and personal preferences", async () => {
+		const app = member();
+		const send = (path: string, method: string, body: unknown) =>
+			app.request(path, {
+				method,
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify(body),
+			});
+
+		const account = await send("/api/accounts", "POST", valid);
+		expect(account.status).toBe(201);
+		const { id } = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse(await account.json()).data;
+		expect((await send(`/api/accounts/${id}/transactions`, "POST", expense)).status).toBe(201);
+
+		const accountPath = `/api/accounts/${id}`;
+		const bankSetting = await send(accountPath, "PATCH", {
+			name: "Refusé",
+			treatBalanceAsAvailableCredit: true,
+		});
+		expect(bankSetting.status).toBe(403);
+		await expect((await app.request(accountPath)).json()).resolves.toMatchObject({
+			data: { name: valid.name },
+		});
+
+		const category = await send("/api/categories", "POST", {
+			name: "Courses partagées",
+			icon: "tag",
+			parentId: null,
+		});
+		expect(category.status).toBe(201);
+		const { id: categoryId } = z
+			.object({ data: z.object({ id: z.string() }) })
+			.parse(await category.json()).data;
+		expect(
+			(
+				await send("/api/rules", "POST", {
+					conditions: [{ conditionType: "transaction_name", operator: "like", value: "Courses" }],
+					actions: [{ actionType: "set_transaction_category", value: categoryId }],
+				})
+			).status,
+		).toBe(201);
+		expect(
+			(
+				await send("/api/budgets/2026-10", "PUT", {
+					budgetedSpending: "100",
+					expectedIncome: "120",
+				})
+			).status,
+		).toBe(200);
+
+		const forbidden = await send("/api/preferences", "PATCH", {
+			householdLocale: "en",
+			locale: "en",
+		});
+		expect(forbidden.status).toBe(403);
+		await expect(forbidden.json()).resolves.toEqual(refused.body);
+		const preferences = async (): Promise<unknown> =>
+			(await app.request("/api/preferences")).json();
+		await expect(preferences()).resolves.toMatchObject({
+			data: { locale: null, householdLocale: "fr" },
+		});
+		expect((await send("/api/preferences", "PATCH", { locale: "en" })).status).toBe(200);
+		await expect(preferences()).resolves.toMatchObject({
+			data: { locale: "en", householdLocale: "fr" },
+		});
 	});
 });
 
@@ -248,7 +387,7 @@ async function rows(): Promise<Record<string, unknown[]>> {
 	return Object.fromEntries(kept.map(({ name }, index) => [name, contents[index] ?? []]));
 }
 
-describe("a viewer's reads", () => {
+describe("a guest's reads", () => {
 	it("each answer as the administrator's do, and write nothing", async () => {
 		const account = await openAccount();
 		const { body } = await postTransaction(account.id, expense);
@@ -260,7 +399,10 @@ describe("a viewer's reads", () => {
 					.replace(/^\/api\/accounts\/:id/u, `/api/accounts/${account.id}`)
 					.replace(/^\/api\/transactions\/:id/u, `/api/transactions/${transactionId}`)
 					.replace(":month", "2026-09"),
-		).filter(({ path }) => !ADMIN_READS.includes(path.replace(transactionId, "x")));
+		).filter(
+			({ path }) =>
+				!ADMIN_READS.includes(path) && !(path.replace(transactionId, "x") in WRITER_READS),
+		);
 
 		expect(routes.length).toBeGreaterThanOrEqual(34);
 
@@ -273,12 +415,12 @@ describe("a viewer's reads", () => {
 
 		// The day's first read claims the day's occurrences: a write of the day,
 		// which no later read repeats, as the day's sync and prices.
-		await answer(viewer(), "GET", "/api/accounts");
+		await answer(guest(), "GET", "/api/accounts");
 		const before = await rows();
-		const viewerStatuses = await statuses(viewer);
+		const guestStatuses = await statuses(guest);
 
 		await expect(rows()).resolves.toEqual(before);
-		expect(viewerStatuses).toEqual(
+		expect(guestStatuses).toEqual(
 			expect.arrayContaining([
 				`/api/accounts/${account.id} 200`,
 				`/api/transactions/${transactionId}/attachments 200`,
@@ -291,46 +433,57 @@ describe("a viewer's reads", () => {
 				"/api/recurring/x 404",
 			]),
 		);
-		expect(viewerStatuses).toEqual(await statuses(admin));
+		expect(guestStatuses).toEqual(await statuses(admin));
 	});
 
 	it("include HEAD", async () => {
-		const response = await viewer().request("/api/accounts", { method: "HEAD" });
+		const response = await guest().request("/api/accounts", { method: "HEAD" });
 
 		expect(response.status).toBe(200);
 	});
 
 	it.each(ADMIN_READS)("leave %s to an administrator", async (path) => {
-		const url = `${path}${ADMIN_READ_QUERIES[path] ?? ""}`;
-		const refused = await viewer().request(url);
-		const allowed = await admin().request(url);
+		const responses = await Promise.all([guest().request(path), member().request(path)]);
+		const allowed = await admin().request(path);
 		await allowed.arrayBuffer();
 
-		expect(refused.status).toBe(403);
-		await expect(refused.json()).resolves.toMatchObject({ error: { code: "FORBIDDEN" } });
+		expect(responses.map(({ status }) => status)).toEqual([403, 403]);
+		await expect(Promise.all(responses.map((response) => response.json()))).resolves.toEqual([
+			refused.body,
+			refused.body,
+		]);
 		expect(allowed.status).toBe(200);
 	});
+	it.each(Object.entries(WRITER_READS))(
+		"allows a member to read %s for editing",
+		async (path, query) => {
+			const url = `${path}${query}`;
+			expect((await admin().request(url)).status).toBe(200);
+			expect((await member().request(url)).status).toBe(200);
+			expect(await answer(guest(), "GET", url)).toMatchObject(refused);
+		},
+	);
 });
 
-describe("a viewer's own account", () => {
+describe("a guest's own account", () => {
 	it("changes their name, turns two-factor on and changes their password through Better Auth", async () => {
 		const name = await viewerPost("/update-user", { name: "Camille" });
-		const twoFactor = await viewerPost("/two-factor/enable", { password: VIEWER.password });
+		const twoFactor = await viewerPost("/two-factor/enable", { password: GUEST.password });
 		const password = await viewerPost("/change-password", {
-			currentPassword: VIEWER.password,
+			currentPassword: GUEST.password,
 			newPassword: "a new long enough password",
 		});
 
 		expect([name.status, twoFactor.status, password.status]).toEqual([200, 200, 200]);
 		await expect(
-			temp.db.select({ name: users.name }).from(users).where(eq(users.email, VIEWER.email)),
+			temp.db.select({ name: users.name }).from(users).where(eq(users.email, GUEST.email)),
 		).resolves.toEqual([{ name: "Camille" }]);
 		await expect(
 			temp.db
 				.select({ id: twoFactors.id })
 				.from(twoFactors)
 				.innerJoin(users, eq(users.id, twoFactors.userId))
-				.where(eq(users.email, VIEWER.email)),
+				.where(eq(users.email, GUEST.email)),
 		).resolves.toHaveLength(1);
 	});
 });

@@ -26,15 +26,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget, useSaveBudget } from "@/hooks/useBudget";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
-import { isAdmin } from "@/lib/auth-client";
+import { canWrite } from "@/lib/auth-client";
 import { ofMonth, toIsoMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/edit")({
-	// A viewer reads the month: its form writes, and the server would refuse the save.
+	// A guest reads the month: its form writes, and the server would refuse the save.
 	beforeLoad: ({ context, params }) => {
-		if (!isAdmin(context.session)) {
+		if (!canWrite(context.session.user.role)) {
 			throw redirect({ to: "/budgets/$month", params: { month: params.month } });
 		}
 	},

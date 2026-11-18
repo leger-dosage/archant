@@ -24,7 +24,7 @@ type AssetOverviewProps = {
 	property: PropertyDetails | null;
 	/** The vehicle's details, null for one saved before it had any or for a property. */
 	vehicle: VehicleDetails | null;
-	/** `null` for a viewer, who changes nothing: the button is left out. */
+	/** `null` for a guest, who changes nothing: the button is left out. */
 	onEdit: (() => void) | null;
 };
 
