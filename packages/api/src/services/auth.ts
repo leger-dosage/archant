@@ -13,6 +13,7 @@ import { randomBytes } from "node:crypto";
 import type { Database } from "@archant/data/client";
 import {
 	authAccounts,
+	passkeys,
 	rateLimits,
 	sessions,
 	twoFactors,
@@ -32,6 +33,7 @@ import {
 
 import { firstNameSchema } from "../schemas/setup.ts";
 import { oneTimeTotp } from "./one-time-totp.ts";
+import { passkeyCeremonies, passkeyConfiguration, passkeyManagement } from "./passkeys.ts";
 
 export type AuthOptions = {
 	db: Database;
@@ -42,6 +44,9 @@ export type AuthOptions = {
 	/** `TRUSTED_PROXIES`: the proxies Better Auth walks past in `x-forwarded-for`. */
 	trustedProxies: string[];
 	logger: Logger;
+	passkeyLoginEnabled?: boolean;
+	webauthnRpId?: string | undefined;
+	webauthnAllowedOrigins?: string[] | undefined;
 	/**
 	 * How a Client ID Metadata Document is fetched: `@better-auth/cimd/node`'s,
 	 * which resolves the name once, refuses every non-public address and
@@ -186,6 +191,7 @@ export const AUTH_SCHEMA = {
 	verifications,
 	rateLimits,
 	twoFactors,
+	passkeys,
 	jwkss: jwks,
 	oauthClients,
 	oauthResources,
@@ -207,14 +213,24 @@ export function createAuth({
 	baseURL,
 	trustedProxies,
 	logger,
+	passkeyLoginEnabled = true,
+	webauthnRpId,
+	webauthnAllowedOrigins,
 	fetchClientMetadataResource: fetchMetadata = fetchClientMetadataResource,
 }: AuthOptions) {
+	const passkeysConfig = passkeyConfiguration(
+		baseURL,
+		passkeyLoginEnabled,
+		webauthnRpId,
+		webauthnAllowedOrigins,
+	);
 	const auth = betterAuth({
 		baseURL,
 		secret,
 		database: drizzleAdapter(db, {
 			provider: "sqlite",
 			usePlural: true,
+			transaction: true,
 			schema: AUTH_SCHEMA,
 		}),
 		account: { modelName: "auth_accounts" },
@@ -236,6 +252,8 @@ export function createAuth({
 			// After `twoFactor`, whose model it adds a field to: a TOTP code
 			// works once.
 			oneTimeTotp(),
+			passkeyManagement(),
+			passkeyCeremonies(passkeysConfig),
 			...(assistantsAvailable(baseURL) ? assistantPlugins(baseURL, fetchMetadata) : []),
 		],
 		databaseHooks: {

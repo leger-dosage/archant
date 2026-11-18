@@ -51,6 +51,9 @@ services:
       # origin are refused, so set it to the public URL behind a reverse proxy.
       BETTER_AUTH_URL: ${ARCHANT_URL:-http://localhost:8787}
       # Empty values fall back to the defaults in packages/api/src/env.ts.
+      AUTH_PASSKEY_LOGIN_ENABLED: ${AUTH_PASSKEY_LOGIN_ENABLED:-}
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_ALLOWED_ORIGINS: ${WEBAUTHN_ALLOWED_ORIGINS:-}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-}
       LOG_LEVEL: ${LOG_LEVEL:-}

@@ -109,6 +109,25 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 
 					return url.pathname === "/" && url.search === "" && url.hash === "";
 				}),
+			AUTH_PASSKEY_LOGIN_ENABLED: z
+				.enum(["true", "false"])
+				.default("true")
+				.transform((value) => value === "true"),
+			WEBAUTHN_RP_ID: z.hostname().toLowerCase().optional(),
+			WEBAUTHN_ALLOWED_ORIGINS: z
+				.string()
+				.optional()
+				.transform((value) => value?.split(",").map((origin) => origin.trim()))
+				.pipe(
+					z
+						.array(
+							z.url({ protocol: /^https?$/u }).refine((origin) => {
+								const url = new URL(origin);
+								return isHttpsOrLoopback(origin) && url.origin === origin;
+							}),
+						)
+						.optional(),
+				),
 			// The reverse proxies whose `x-forwarded-for` is believed. Empty, the
 			// client address is the TCP peer and no header can forge it.
 			TRUSTED_PROXIES: z

@@ -196,6 +196,35 @@ export const twoFactors = sqliteTable(
 	(table) => [index("two_factors_user_id").on(table.userId)],
 );
 
+export const passkeys = sqliteTable(
+	"passkeys",
+	{
+		id: text("id").primaryKey(),
+		name: text("name"),
+		publicKey: text("public_key").notNull(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		// Both ways to disable two-factor already delete the enrolment.
+		factorId: text("factor_id")
+			.notNull()
+			.references(() => twoFactors.id, { onDelete: "cascade" }),
+		userHandle: text("user_handle").notNull(),
+		credentialID: text("credential_id").notNull().unique(),
+		counter: integer("counter").notNull(),
+		deviceType: text("device_type").notNull(),
+		backedUp: integer("backed_up", { mode: "boolean" }).notNull(),
+		transports: text("transports"),
+		createdAt: createdAt(),
+		lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+		aaguid: text("aaguid"),
+	},
+	(table) => [
+		index("passkeys_user_id").on(table.userId),
+		index("passkeys_factor_id").on(table.factorId),
+	],
+);
+
 /**
  * Better Auth's per-address rate limit, in the database so a restart does not
  * hand a guesser a fresh allowance. `key` is the address and the path;

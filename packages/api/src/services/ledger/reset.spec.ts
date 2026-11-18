@@ -96,6 +96,7 @@ const KEPT = [
 	"oauth_consents",
 	"oauth_refresh_tokens",
 	"oauth_resources",
+	"passkeys",
 	"rate_limits",
 	"securities",
 	"security_prices",

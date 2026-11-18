@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/hooks/useAuthActions";
 import { sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
+import { passkeyConfigQuery, signInWithPasskey } from "@/lib/passkey-client";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
 
@@ -88,6 +89,7 @@ function SignInPage() {
 	const router = useRouter();
 	const queryClient = useQueryClient();
 	const search = Route.useSearch();
+	const { data: passkeyConfig } = useQuery(passkeyConfigQuery);
 	const [failure, setFailure] = useState<FormFailure | null>(null);
 	// Two-factor on: the password was right and a code is now expected. No
 	// session exists yet, only the plugin's challenge cookie.
@@ -151,6 +153,7 @@ function SignInPage() {
 		return (
 			<CodeStep
 				onSignedIn={completeSignIn}
+				passkeyAvailable={passkeyConfig?.available === true}
 				onChallengeEnded={() => {
 					form.resetField("password");
 					setFailure("challengeExpired");
@@ -197,6 +200,9 @@ function SignInPage() {
 					</p>
 				)}
 			</form>
+			{passkeyConfig?.standalone === true && (
+				<PasskeyButton mode="standalone" disabled={isSubmitting} onSignedIn={completeSignIn} />
+			)}
 		</OutsideShell>
 	);
 }
@@ -208,9 +214,11 @@ function SignInPage() {
 function CodeStep({
 	onSignedIn,
 	onChallengeEnded,
+	passkeyAvailable,
 }: {
 	onSignedIn: (answer: unknown) => Promise<void>;
 	onChallengeEnded: () => void;
+	passkeyAvailable: boolean;
 }) {
 	const { t } = useTranslation();
 	const { verifyBackupCode, verifyTotp } = useAuthActions();
@@ -273,6 +281,71 @@ function CodeStep({
 					</p>
 				)}
 			</form>
+			{passkeyAvailable && (
+				<PasskeyButton
+					mode="second-factor"
+					disabled={isSubmitting}
+					onSignedIn={onSignedIn}
+					onChallengeEnded={onChallengeEnded}
+				/>
+			)}
 		</OutsideShell>
+	);
+}
+
+function PasskeyButton({
+	mode,
+	disabled,
+	onSignedIn,
+	onChallengeEnded,
+}: {
+	mode: "standalone" | "second-factor";
+	disabled: boolean;
+	onSignedIn: (answer: unknown) => Promise<void>;
+	onChallengeEnded?: () => void;
+}) {
+	const { t } = useTranslation();
+	const [pending, setPending] = useState(false);
+	const [failure, setFailure] = useState<"failed" | "tooMany" | null>(null);
+
+	const signIn = async () => {
+		setPending(true);
+		setFailure(null);
+		try {
+			const { data, error } = await signInWithPasskey(mode);
+			if (!error) {
+				await onSignedIn(data);
+			} else if (
+				"code" in error &&
+				typeof error.code === "string" &&
+				CHALLENGE_ENDED.has(error.code)
+			) {
+				onChallengeEnded?.();
+			} else {
+				setFailure(error.status === 429 ? "tooMany" : "failed");
+			}
+		} catch {
+			setFailure("failed");
+		} finally {
+			setPending(false);
+		}
+	};
+
+	return (
+		<div className="flex flex-col gap-2">
+			<Button
+				type="button"
+				variant="outline"
+				disabled={disabled || pending}
+				onClick={() => void signIn()}
+			>
+				{t(mode === "standalone" ? "passkeys.signIn" : "passkeys.verify")}
+			</Button>
+			{failure !== null && (
+				<p role="alert" className="text-sm text-destructive">
+					{t(`passkeys.${failure}`)}
+				</p>
+			)}
+		</div>
 	);
 }

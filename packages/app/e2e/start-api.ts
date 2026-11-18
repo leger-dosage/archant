@@ -66,6 +66,8 @@ const api = spawn(process.execPath, [entrypoint], {
 		// The origin the browser sends: Better Auth and the upload origin check
 		// refuse any other.
 		BETTER_AUTH_URL: WEB_URL,
+		WEBAUTHN_RP_ID: "",
+		WEBAUTHN_ALLOWED_ORIGINS: "",
 		// A release build, as the image runs: « Réglages » then links its notes.
 		// version.spec.ts answers `/api/version` itself for a development build.
 		APP_VERSION: "1.2.3",
