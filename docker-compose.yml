@@ -54,6 +54,14 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
       APP_TIMEZONE: ${APP_TIMEZONE:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
+      # Optional password recovery by email; see docs/deployment.md.
+      SMTP_ADDRESS: ${SMTP_ADDRESS:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_TLS_ENABLED: ${SMTP_TLS_ENABLED:-}
+      SMTP_TLS_SKIP_VERIFY: ${SMTP_TLS_SKIP_VERIFY:-}
+      EMAIL_SENDER: ${EMAIL_SENDER:-}
       # Bank connection, optional; see docs/deployment.md. Without
       # ENCRYPTION_KEY the bank routes answer 503 and the rest of the app
       # works; with it, Réglages > Banques takes the Enable Banking

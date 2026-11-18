@@ -6,9 +6,9 @@ Archant SHALL allow get_budget and update_budget to use the same inputs, orderin
 
 #### Scenario: Start a budget with a partial update
 
-- **GIVEN** `update_budget` with only `categories`, or only `expected_income`, for a month never set up
+- **GIVEN** `update_budget` with only `categories`, `expected_income` or `budgeted_spending` for a month without a stored budget
 - **WHEN** it runs
-- **THEN** it sets up the month and saves what it got, as Sure's `Budget.find_or_bootstrap` on any update; Archant no longer requires spending and income together.
+- **THEN** it saves the provided fields and creates a budget record if needed. A missing planned spending amount stays unset, and setting planned spending defaults still-unset expected income to zero. A refused update leaves the month unchanged, including when it had no record.
 
 #### Scenario: Apply repeated categories in order
 
@@ -25,5 +25,5 @@ Archant SHALL allow get_budget and update_budget to use the same inputs, orderin
 #### Scenario: Read prior months without writing
 
 - **GIVEN** `get_budget` with `prior_months`
-- **WHEN** an earlier month in bounds has no budget set up
-- **THEN** it is left out of `months` and counted in `months_unavailable`, as Sure lists only the months whose budget exists; a month out of bounds is counted nowhere; a target month out of bounds answers `{ currency, months: [] }` instead of `not_found`; the target month is always listed, computed without a write.
+- **WHEN** an earlier month in bounds has no stored budget
+- **THEN** it is left out of `months` and counted in `months_unavailable`. A prior month with a stored budget record is included even if the record has no planned spending. An out-of-bounds month is neither listed nor counted, including when it is the target. The response can still list earlier months within bounds. The target is computed without a write when it is within bounds and has no record.
