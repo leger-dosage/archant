@@ -21,7 +21,7 @@ export function preferencesRoutes(deps: ServiceDeps) {
 			.patch("/", validated("json", preferencesSchema), async (c) => {
 				const input = c.req.valid("json");
 
-				if (input.householdLocale !== undefined) {
+				if (input.householdLocale !== undefined || input.manualReconciliation !== undefined) {
 					assertRole(c, "admin");
 				}
 

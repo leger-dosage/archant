@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "cb976f5d-4b13-4c84-9ffb-1a6300b01932",
+  "id": "7138139c-2a48-4aa0-9aa4-a64519c67242",
   "prevId": "ac030b73-93e5-4815-82f6-2e29ff5e13b3",
   "tables": {
     "accounts": {
@@ -795,7 +795,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"users\".\"role\" in ('admin', 'viewer')"
         },
         "users_default_account_order_check": {
           "name": "users_default_account_order_check",
@@ -1530,6 +1530,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "reconciliation_status": {
+          "name": "reconciliation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unreconciled'"
+        },
         "date": {
           "name": "date",
           "type": "text",
@@ -1703,6 +1711,10 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
+        "entries_reconciliation_status_check": {
+          "name": "entries_reconciliation_status_check",
+          "value": "\"entries\".\"reconciliation_status\" in ('unreconciled', 'cleared', 'reconciled')"
+        },
         "entries_kind_check": {
           "name": "entries_kind_check",
           "value": "\"entries\".\"kind\" in ('transaction', 'valuation', 'trade')"
@@ -2574,7 +2586,7 @@
       "checkConstraints": {
         "invitations_role_check": {
           "name": "invitations_role_check",
-          "value": "\"invitations\".\"role\" in ('admin', 'member', 'guest')"
+          "value": "\"invitations\".\"role\" in ('admin', 'viewer')"
         }
       }
     },

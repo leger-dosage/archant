@@ -451,6 +451,28 @@ describe("users and settings", () => {
 		).resolves.toEqual([{ reportsLayout: null }]);
 	});
 
+	it("defaults existing entries to unreconciled and refuses an unknown reconciliation status", async () => {
+		const before = await migratedBefore("0106");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertEntry(before, "e1", "transaction", null);
+		await before.run(sql`insert into transactions (entry_id, label) values ('e1', 'Cotisation')`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(
+			database.all(sql`select reconciliation_status as status, label from entries
+				join transactions on entry_id = entries.id`),
+		).resolves.toEqual([{ status: "unreconciled", label: "Cotisation" }]);
+		await expect(
+			database.run(sql`update entries set reconciliation_status = 'unknown'`),
+		).rejects.toSatisfy(
+			(error: unknown) =>
+				error instanceof Error &&
+				String(error.cause).includes("entries_reconciliation_status_check"),
+		);
+	});
+
 	it("holds one pending invitation per email, a known role only, gone with its inviter", async () => {
 		const database = await migrated();
 		await insertUser(database, "u1", "admin");

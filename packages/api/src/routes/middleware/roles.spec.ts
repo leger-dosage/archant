@@ -355,6 +355,11 @@ describe("member and administrator writes", () => {
 		});
 		expect(forbidden.status).toBe(403);
 		await expect(forbidden.json()).resolves.toEqual(refused.body);
+		const reconciliation = await send("/api/preferences", "PATCH", {
+			manualReconciliation: true,
+		});
+		expect(reconciliation.status).toBe(403);
+
 		const preferences = async (): Promise<unknown> =>
 			(await app.request("/api/preferences")).json();
 		await expect(preferences()).resolves.toMatchObject({

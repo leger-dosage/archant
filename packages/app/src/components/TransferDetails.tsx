@@ -41,9 +41,11 @@ type Side = TransferDetailsData["outflow"];
  * field disabled and « Paramètres » left out (AD-21).
  */
 export function TransferDetails({
+	reconciliation,
 	transferId,
 	onClose,
 }: {
+	reconciliation?: ReactNode;
 	transferId: string;
 	onClose: () => void;
 }) {
@@ -67,13 +69,17 @@ export function TransferDetails({
 		);
 	}
 
-	return <TransferDrawer transfer={transfer.data} onClose={onClose} />;
+	return (
+		<TransferDrawer transfer={transfer.data} onClose={onClose} reconciliation={reconciliation} />
+	);
 }
 
 function TransferDrawer({
+	reconciliation,
 	transfer,
 	onClose,
 }: {
+	reconciliation: ReactNode;
 	transfer: TransferDetailsData;
 	onClose: () => void;
 }) {
@@ -100,6 +106,7 @@ function TransferDrawer({
 				<SheetDescription className="sr-only">
 					{t(`transactions.transfer.kinds.${transfer.kind}`)}
 				</SheetDescription>
+				{reconciliation}
 			</SheetHeader>
 			<div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
 				<Disclosure title={t("transfers.show.overview")} defaultOpen>

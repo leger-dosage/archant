@@ -15,6 +15,7 @@ import { useTranslation } from "react-i18next";
 
 import type { AmountOperator } from "@archant/api/schemas/transactions";
 import { MAX_TAG_FILTER, UNCATEGORISED, parseAmountBound } from "@archant/api/schemas/transactions";
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 
 import { DateField } from "@/components/DateField";
 import { TintedIcon } from "@/components/TintedIcon";
@@ -359,31 +360,26 @@ function DirectionEditor({ filters, onApply }: EditorProps) {
 	);
 }
 
-/**
- * Sure's « Statut »: « Confirmée » and « En attente ». Both checked, as none,
- * is no filter.
- */
-function StatusEditor({ filters, onApply }: EditorProps) {
-	const { t } = useTranslation();
-	const [selected, setSelected] = useState<ReadonlySet<string>>(
-		() => new Set(filters.status ?? []),
-	);
-	const picked = STATUS_OPTIONS.filter((value) => selected.has(value));
+function StatusEditor<Value extends string>({
+	values,
+	initial,
+	labelOf,
+	legend,
+	onSubmit,
+}: {
+	values: readonly Value[];
+	initial: readonly Value[] | undefined;
+	labelOf: (value: Value) => string;
+	legend: string;
+	onSubmit: (picked: Value[]) => void;
+}) {
+	const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(initial ?? []));
 
 	return (
-		<EditorForm
-			onSubmit={() =>
-				onApply({
-					status:
-						picked.length === 0 || picked.length === STATUS_OPTIONS.length ? undefined : picked,
-				})
-			}
-		>
+		<EditorForm onSubmit={() => onSubmit(values.filter((value) => selected.has(value)))}>
 			<fieldset className="flex flex-col gap-2">
-				<legend className="mb-1 text-xs font-medium text-muted-foreground">
-					{t("operations.editor.statuses")}
-				</legend>
-				{STATUS_OPTIONS.map((value) => (
+				<legend className="mb-1 text-xs font-medium text-muted-foreground">{legend}</legend>
+				{values.map((value) => (
 					<label key={value} className="flex min-h-6 items-center gap-2">
 						<input
 							type="checkbox"
@@ -391,7 +387,7 @@ function StatusEditor({ filters, onApply }: EditorProps) {
 							checked={selected.has(value)}
 							onChange={(event) => setSelected(toggled(selected, value, event.target.checked))}
 						/>
-						<span>{t(`operations.chips.statuses.${value}`)}</span>
+						<span>{labelOf(value)}</span>
 					</label>
 				))}
 			</fieldset>
@@ -540,6 +536,7 @@ function AmountEditor({ filters, onApply }: EditorProps) {
 }
 
 type TransactionFiltersProps = {
+	manualReconciliation: boolean;
 	filters: Filters;
 	accounts: readonly FilterAccount[];
 	categories: readonly CategoryData[];
@@ -555,6 +552,7 @@ type TransactionFiltersProps = {
  * chip reopens its own editor.
  */
 export function TransactionFilters({
+	manualReconciliation,
 	filters,
 	accounts,
 	categories,
@@ -565,7 +563,11 @@ export function TransactionFilters({
 }: TransactionFiltersProps) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
-	const [pane, setPane] = useState<FilterKind | null>(null);
+	const [selectedPane, setPane] = useState<FilterKind | null>(null);
+	const kinds = FILTER_KINDS.filter(
+		(kind) => kind !== "reconciliationStatus" || manualReconciliation,
+	);
+	const pane = selectedPane !== null && kinds.includes(selectedPane) ? selectedPane : null;
 	const accountNames = new Map(accounts.map((account) => [account.id, account.name]));
 	const categoryNames = new Map(categories.map((category) => [category.id, category.name]));
 	const merchantNames = new Map(merchants.map((merchant) => [merchant.id, merchant.name]));
@@ -611,7 +613,7 @@ export function TransactionFilters({
 				<PopoverContent align="start" className="w-80">
 					{pane === null && (
 						<ul aria-label={t("operations.filter")} className="flex flex-col">
-							{FILTER_KINDS.map((kind) => (
+							{kinds.map((kind) => (
 								<li key={kind}>
 									<Button
 										variant="ghost"
@@ -650,7 +652,28 @@ export function TransactionFilters({
 								<MerchantEditor filters={filters} merchants={merchants} onApply={apply} />
 							)}
 							{pane === "period" && <PeriodEditor filters={filters} onApply={apply} />}
-							{pane === "status" && <StatusEditor filters={filters} onApply={apply} />}
+							{pane === "status" && (
+								<StatusEditor
+									key={pane}
+									values={STATUS_OPTIONS}
+									initial={filters.status}
+									labelOf={(value) => t(`operations.chips.statuses.${value}`)}
+									legend={t("operations.editor.statuses")}
+									onSubmit={(picked) => apply({ status: picked.length === 1 ? picked : undefined })}
+								/>
+							)}
+							{pane === "reconciliationStatus" && (
+								<StatusEditor
+									key={pane}
+									values={RECONCILIATION_STATUSES}
+									initial={filters.reconciliationStatus}
+									labelOf={(value) => t(`transactions.reconciliation.statuses.${value}`)}
+									legend={t("operations.editor.reconciliationStatuses")}
+									onSubmit={(picked) =>
+										apply({ reconciliationStatus: picked.length === 0 ? undefined : picked })
+									}
+								/>
+							)}
 							{pane === "amount" && <AmountEditor filters={filters} onApply={apply} />}
 							{pane === "direction" && <DirectionEditor filters={filters} onApply={apply} />}
 						</div>

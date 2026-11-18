@@ -43,6 +43,7 @@ import {
 	useLedgerDatabase,
 } from "../../testing/ledger.ts";
 import { createTempDatabase } from "../../testing/temp-database.ts";
+import { saveManualReconciliation } from "../manual-reconciliation.ts";
 import { createAccount } from "./accounts.ts";
 import { balanceOn } from "./balances.ts";
 import {
@@ -58,7 +59,8 @@ import {
 	unlockTransaction,
 	updateTransaction,
 } from "./edits.ts";
-import { findTransaction } from "./queries.ts";
+import { findTransaction, listTransactionPage, sumTransactions } from "./queries.ts";
+import { setReconciliationStatus } from "./reconciliation.ts";
 import { splitTransaction } from "./splits.ts";
 
 useLedgerDatabase();
@@ -1071,6 +1073,110 @@ describe("countByTag", () => {
 
 		expect(perTag.get(holidays)).toBe(2);
 		expect(perTag.has(empty)).toBe(false);
+	});
+});
+
+describe("manual reconciliation", () => {
+	it("combines reconciliation with bank status and account filters without changing balances or locks", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+		const pending = await add(account.id, { pending: true, label: "Débit provisoire" }, "sync");
+		const before = await history(account.id);
+		const locks = await lockTimes(id);
+
+		await expect(setReconciliationStatus(deps(), id, "cleared")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await saveManualReconciliation(temp.db, true);
+		await expect(setReconciliationStatus(deps(), id, "cleared")).resolves.toBe("cleared");
+		await expect(setReconciliationStatus(deps(), pending, "reconciled")).resolves.toBe(
+			"reconciled",
+		);
+
+		const filter = {
+			accountIds: [account.id],
+			reconciliationStatus: ["cleared", "reconciled"] as const,
+			pending: false,
+		};
+		await expect(
+			listTransactionPage(deps(), filter, { page: 1, pageSize: 20 }),
+		).resolves.toMatchObject([{ id, reconciliationStatus: "cleared", pending: false }]);
+		await expect(sumTransactions(deps(), filter)).resolves.toMatchObject([{ count: 1 }]);
+		await expect(findTransaction(deps(), pending)).resolves.toMatchObject({
+			reconciliationStatus: "reconciled",
+			pending: true,
+		});
+		await expect(history(account.id)).resolves.toEqual(before);
+		await expect(lockTimes(id)).resolves.toEqual(locks);
+
+		await saveManualReconciliation(temp.db, false);
+		await expect(setReconciliationStatus(deps(), id, "reconciled")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await saveManualReconciliation(temp.db, true);
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			reconciliationStatus: "cleared",
+		});
+	});
+
+	it("skips bank-linked accounts and split parents while applying other bulk fields", async () => {
+		await saveManualReconciliation(temp.db, true);
+		const manual = await openChecking();
+		const { account: linked } = await linkedChecking();
+		const id = await add(manual.id);
+		const synced = await add(linked.id);
+		const { parent, food, home } = await splitInTwo(manual.id, { date: "2026-09-06" });
+		const selection = { ids: [id, synced, parent, food, home] };
+
+		await expect(setReconciliationStatus(deps(), synced, "cleared")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(setReconciliationStatus(deps(), parent, "cleared")).rejects.toMatchObject({
+			code: "NOT_FOUND",
+		});
+		await expect(
+			bulkUpdateTransactions(deps(), selection, { reconciliationStatus: "reconciled" }, asUser),
+		).resolves.toEqual({ matched: 4, changed: 3 });
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				selection,
+				{ reconciliationStatus: "reconciled", notes: "Lu" },
+				asUser,
+			),
+		).resolves.toEqual({ matched: 4, changed: 4 });
+		await expect(findTransaction(deps(), synced)).resolves.toMatchObject({
+			reconciliationStatus: null,
+			notes: "Lu",
+		});
+		await expect(findTransaction(deps(), parent)).resolves.toMatchObject({
+			reconciliationStatus: "unreconciled",
+			notes: null,
+		});
+		await expect(
+			listTransactionPage(
+				deps(),
+				{
+					accountIds: [manual.id, linked.id],
+					reconciliationStatus: ["reconciled", "unreconciled"],
+				},
+				{ page: 1, pageSize: 20 },
+			),
+		).resolves.toHaveLength(3);
+
+		await saveManualReconciliation(temp.db, false);
+		await expect(
+			bulkUpdateTransactions(
+				deps(),
+				selection,
+				{ reconciliationStatus: "cleared", notes: "Non" },
+				asUser,
+			),
+		).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
+			reconciliationStatus: "reconciled",
+			notes: "Lu",
+		});
 	});
 });
 

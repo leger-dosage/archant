@@ -16,6 +16,7 @@ import {
 	categorizeQuerySchema,
 	mergeDuplicateBodySchema,
 	pendingMergeCandidatesSchema,
+	reconciliationBodySchema,
 	splitBodySchema,
 	transactionFilterSchema,
 	transactionPatchBodySchema,
@@ -27,6 +28,7 @@ import {
 	previewCategorize,
 	uncategorisedCount,
 } from "../services/categorise.ts";
+import { setReconciliationStatus } from "../services/ledger/reconciliation.ts";
 import { getPreferences } from "../services/preferences.ts";
 import { offersRulePrompt } from "../services/rule-prompt.ts";
 import {
@@ -180,6 +182,15 @@ export function transactionsRoutes(deps: ServiceDeps) {
 					201,
 				),
 			)
+			.patch("/:id/reconciliation", validated("json", reconciliationBodySchema), async (c) => {
+				const status = await setReconciliationStatus(
+					deps,
+					c.req.param("id"),
+					c.req.valid("json").reconciliationStatus,
+				);
+
+				return c.json({ data: { reconciliationStatus: status } }, 200);
+			})
 			.patch("/:id", validated("json", transactionPatchBodySchema), async (c) => {
 				const id = c.req.param("id");
 				const input = c.req.valid("json");

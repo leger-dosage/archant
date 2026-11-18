@@ -47,6 +47,8 @@ import { parseMicros } from "@archant/data/micros";
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { isCurrencyCode, toMinorUnits } from "@archant/data/money";
 import { MERCHANT_NAME_MAX_LENGTH, TAG_NAME_MAX_LENGTH } from "@archant/data/name-limits";
+import type { ReconciliationStatus } from "@archant/data/reconciliation";
+import { RECONCILIATION_STATUSES } from "@archant/data/reconciliation";
 import type { BillType } from "@archant/data/recurring";
 import { BILL_TYPES, LAST_DAY_OF_MONTH, MAX_END_AFTER_COUNT } from "@archant/data/recurring";
 import type { CategoryOrigin } from "@archant/data/schema/categories";
@@ -144,6 +146,7 @@ type PlanSplitLine = {
 	amount: MinorUnits;
 	notes: string | null;
 	oneTime: boolean;
+	reconciliationStatus?: ReconciliationStatus | undefined;
 	categorySourceId: string | null;
 	/** `undefined` when the line names none: it takes its parent's, as Sure's. */
 	merchantSourceId: string | null | undefined;
@@ -162,6 +165,7 @@ export type PlanTransaction = {
 	notes: string | null;
 	excluded: boolean;
 	oneTime: boolean;
+	reconciliationStatus?: ReconciliationStatus | undefined;
 	pending: boolean;
 	reference: string | null;
 	possibleDuplicate: boolean;
@@ -784,6 +788,8 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 						amount: toMinorUnits(0 - lineAmount),
 						notes: cutOrNull(textOf(split.notes), NOTES_MAX_LENGTH),
 						oneTime: split.kind === "one_time",
+						reconciliationStatus:
+							oneOf(RECONCILIATION_STATUSES, archantOf(split).reconciliation_status) ?? undefined,
 						categorySourceId: idOf(split.category_id),
 						merchantSourceId: Object.hasOwn(split, "merchant_id")
 							? merchant(split.merchant_id)
@@ -821,6 +827,8 @@ function readTransactions(reader: Reader, merchantIds: ReadonlySet<string>): Pla
 				notes: cutOrNull(textOf(data.notes), NOTES_MAX_LENGTH),
 				excluded: booleanOf(data.excluded, false),
 				oneTime: data.kind === "one_time",
+				reconciliationStatus:
+					oneOf(RECONCILIATION_STATUSES, archantOf(data).reconciliation_status) ?? undefined,
 				pending: archant.pending,
 				reference: archant.reference,
 				possibleDuplicate: archant.possibleDuplicate,
