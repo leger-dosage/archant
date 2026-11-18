@@ -10,7 +10,7 @@ import {
 	goalSeries,
 	goalsSummary,
 	monthsOfExpenses,
-	paceStart,
+	goalHistoryStart,
 	targetAsRead,
 } from "./goals.ts";
 
@@ -71,18 +71,18 @@ describe("backingShares", () => {
 	});
 });
 
-describe("paceStart", () => {
+describe("goalHistoryStart", () => {
 	it("goes back 90 days", () => {
-		expect(paceStart("2026-09-21", "2020-01-01")).toBe("2026-06-23");
-		expect(paceStart("2026-09-21", null)).toBe("2026-06-23");
+		expect(goalHistoryStart("2026-09-21", "2020-01-01")).toBe("2026-06-23");
+		expect(goalHistoryStart("2026-09-21", null)).toBe("2026-06-23");
 	});
 
 	it("starts at the opening date of an account opened since", () => {
-		expect(paceStart("2026-09-21", "2026-08-01")).toBe("2026-08-01");
+		expect(goalHistoryStart("2026-09-21", "2026-08-01")).toBe("2026-08-01");
 	});
 
 	it("never starts after today, for an account opened at a future date", () => {
-		expect(paceStart("2026-09-21", "2026-10-15")).toBe("2026-09-21");
+		expect(goalHistoryStart("2026-09-21", "2026-10-15")).toBe("2026-09-21");
 	});
 });
 
@@ -146,12 +146,11 @@ describe("goalProgress", () => {
 		expect(progress({ saved: toMinorUnits(0) }).percent).toBe(0);
 	});
 
-	it("is on track when the 90-day pace covers the monthly amount", () => {
-		// Two accounts gained 900 and 300: 1 200 over three months is 400 a month.
+	it("is on track when the combined monthly pace covers the monthly amount", () => {
 		const accounts = [
-			{ now: toMinorUnits(150_000), before: toMinorUnits(60_000) },
-			{ now: toMinorUnits(40_000), before: toMinorUnits(10_000) },
-		];
+			{ change: toMinorUnits(90_000), months: 3 },
+			{ change: toMinorUnits(120_000), months: 12 },
+		] as const;
 
 		expect(
 			progress({ saved: toMinorUnits(60_000), targetDate: "2026-10-21", accounts }),
@@ -161,16 +160,21 @@ describe("goalProgress", () => {
 		).toMatchObject({ monthlyNeeded: 40_001, status: "behind" });
 	});
 
-	it("floors a falling pace toward the lower cent", () => {
-		const accounts = [{ now: toMinorUnits(0), before: toMinorUnits(100) }];
+	it.each([
+		[100, 33],
+		[-100, -33],
+		[102, 34],
+	])("rounds %i over three months to %i", (change, pace) => {
+		expect(progress({ accounts: [{ change: toMinorUnits(change), months: 3 }] }).pace).toBe(pace);
+	});
 
-		expect(progress({ accounts }).pace).toBe(-34);
-		expect(progress({ accounts: [{ now: toMinorUnits(100), before: toMinorUnits(0) }] }).pace).toBe(
-			33,
-		);
-		expect(progress({ accounts: [{ now: toMinorUnits(0), before: toMinorUnits(99) }] }).pace).toBe(
-			-33,
-		);
+	it("keeps pace unknown when any linked account is unmeasured", () => {
+		const accounts = [{ change: toMinorUnits(90_000), months: 3 }, undefined] as const;
+
+		expect(progress({ targetDate: "2026-10-21", accounts })).toMatchObject({
+			pace: null,
+			status: "pace_unknown",
+		});
 	});
 });
 
@@ -340,51 +344,46 @@ const daily = (from: string, amounts: readonly number[]) =>
 	amounts.map((amount, index) => ({ date: addDays(from, index), balance: toMinorUnits(amount) }));
 
 describe("goalSeries", () => {
-	it("draws each day's share under today's links, the last point being what is saved", () => {
-		// 0 → 1 000 over 90 days, B taking 300 first: A's whole link starts at 0, ends at 700.
-		const from = "2026-06-23";
-		const balances = daily(
-			from,
-			Array.from({ length: 91 }, (_, day) => Math.round((100_000 * day) / 90)),
-		);
-
-		const points = goalSeries({
-			goalId: "A",
-			from,
-			to: "2026-09-21",
-			accounts: [{ balances, links: [whole("A"), fixed("B", 30_000)] }],
-		});
-
-		expect(points).toHaveLength(91);
-		expect(points.at(0)).toEqual({ date: from, saved: 0 });
-		expect(points.at(45)).toEqual({ date: "2026-08-07", saved: 20_000 });
-		expect(points.at(-1)).toEqual({ date: "2026-09-21", saved: 70_000 });
-	});
-
-	it("sums every account, one opened since backing nothing before its first balance", () => {
-		const points = goalSeries({
-			goalId: "A",
-			from: "2026-09-18",
-			to: "2026-09-21",
-			accounts: [
-				{ balances: daily("2026-09-18", [100, 100, 200, 200]), links: [whole("A")] },
-				{ balances: daily("2026-09-20", [50, 80]), links: [fixed("A", 60)] },
-			],
-		});
-
-		expect(points.map((point) => point.saved)).toEqual([100, 100, 250, 260]);
-	});
-
-	it("backs nothing from an account whose links leave the goal out", () => {
+	it("draws zero while the linked account has no starting balance", () => {
 		expect(
 			goalSeries({
-				goalId: "A",
 				from: "2026-09-21",
 				to: "2026-09-21",
-				accounts: [{ balances: daily("2026-09-21", [500]), links: [whole("B")] }],
+				saved: toMinorUnits(0),
+				accounts: [[]],
 			}),
 		).toEqual([{ date: "2026-09-21", saved: 0 }]);
 	});
+
+	it("scales the sum of balances, including one opened during the window", () => {
+		const points = goalSeries({
+			from: "2026-09-18",
+			to: "2026-09-21",
+			saved: toMinorUnits(210),
+			accounts: [daily("2026-09-18", [100, 100, 200, 200]), daily("2026-09-20", [50, 80])],
+		});
+
+		expect(points.map((point) => point.saved)).toEqual([75, 75, 187, 210]);
+	});
+
+	it.each([
+		{ saved: 500, balances: [100, 50], expected: [100, 50] },
+		{ saved: 500, balances: [100, 0], expected: [0, 0] },
+		{ saved: 500, balances: [100, -50], expected: [0, 0] },
+	])(
+		"caps the ratio and handles a non-positive current balance",
+		({ saved, balances, expected }) => {
+			const from = "2026-09-20";
+			const points = goalSeries({
+				from,
+				to: "2026-09-21",
+				saved: toMinorUnits(saved),
+				accounts: [daily(from, balances)],
+			});
+
+			expect(points.map((point) => point.saved)).toEqual(expected);
+		},
+	);
 });
 
 const goal = (
@@ -423,6 +422,7 @@ describe("goalsSummary", () => {
 			target: 150_000,
 			// A paused goal is never behind, as Sure's `behind_pace?`.
 			behind: 2,
+			paceUnknown: 0,
 			leftOut: [{ id: "Voyage", name: "Voyage" }],
 			goals: [expect.objectContaining({ name: "Vacances" }), expect.anything(), expect.anything()],
 		});

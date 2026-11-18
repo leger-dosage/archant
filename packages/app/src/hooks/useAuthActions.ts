@@ -16,8 +16,6 @@ const AUTH_ACTIONS = {
 	verifyTotp: async (code: string) => authClient.twoFactor.verifyTotp({ code }),
 	verifyBackupCode: async (code: string) => authClient.twoFactor.verifyBackupCode({ code }),
 	enableTwoFactor: async (password: string) => authClient.twoFactor.enable({ password }),
-	generateBackupCodes: async (password: string) =>
-		authClient.twoFactor.generateBackupCodes({ password }),
 	disableTwoFactor: async (password: string) => authClient.twoFactor.disable({ password }),
 	rename: async (name: string) => authClient.updateUser({ name }),
 	// Better Auth revokes every other session and hands this browser a fresh
