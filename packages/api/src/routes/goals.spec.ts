@@ -1029,9 +1029,12 @@ describe("a reserve", () => {
 		await spent([["2026-05-10", "-5 000"]]);
 
 		vi.setSystemTime(new Date("2026-10-20T22:30:00Z"));
-		const first = await list();
+		const first = await send("GET", "/api/goals/summary");
 
-		expect(first).toMatchObject([{ id: created.id, targetAmount: 1_200_000 }]);
+		expect(first).toMatchObject({
+			status: 200,
+			body: { data: { target: 1_200_000, goals: [{ id: created.id, targetAmount: 1_200_000 }] } },
+		});
 		await expect(refreshedMonth()).resolves.toBe("2026-09");
 		await vi.waitFor(async () => {
 			expect(await refreshedMonth()).toBe("2026-10");

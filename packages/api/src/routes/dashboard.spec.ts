@@ -58,16 +58,21 @@ describe("GET /api/dashboard/layout", () => {
 		expect(data.sectionLayout["cashflow_sankey"]).toEqual({ height: "auto", colSpan: "full" });
 	});
 
-	it("drops a stored key the code no longer knows", async () => {
+	it("keeps saved preferences apart from the retired goals widget", async () => {
 		const { app, db } = await ownApp();
 		await db.run(
-			sql`update users set dashboard_layout = ${JSON.stringify({ sectionOrder: ["insights_feed", "goals"] })}`,
+			sql`update users set dashboard_layout = ${JSON.stringify({ sectionOrder: ["balance_sheet", "goals", "net_worth_chart"], hiddenSections: ["goals", "money_flow"], collapsedSections: { goals: true, outflows_donut: true }, sectionLayout: { goals: { colSpan: "full" }, net_worth_chart: { height: "tall", colSpan: "full" } } })}`,
 		);
 
 		const { data } = layoutBody.parse((await send(app, "GET")).body);
 
-		expect(data.sectionOrder[0]).toBe("goals");
-		expect(data.sectionOrder).not.toContain("insights_feed");
+		expect(data.sectionOrder.slice(0, 2)).toEqual(["balance_sheet", "net_worth_chart"]);
+		expect(data.sectionOrder).not.toContain("goals");
+		expect(data.hiddenSections).toEqual(["money_flow"]);
+		expect(data.collapsedSections).toMatchObject({ outflows_donut: true });
+		expect(data.collapsedSections).not.toHaveProperty("goals");
+		expect(data.sectionLayout).not.toHaveProperty("goals");
+		expect(data.sectionLayout["net_worth_chart"]).toEqual({ height: "tall", colSpan: "full" });
 		expect(data.sectionOrder).toHaveLength(DEFAULT_DASHBOARD_ORDER.length);
 	});
 });
@@ -101,9 +106,9 @@ describe("PATCH /api/dashboard/layout", () => {
 
 	it("shows a hidden widget again", async () => {
 		const { app } = await ownApp();
-		await send(app, "PATCH", { hiddenSections: { goals: true, money_flow: true } });
+		await send(app, "PATCH", { hiddenSections: { balance_sheet: true, money_flow: true } });
 
-		const shown = await send(app, "PATCH", { hiddenSections: { goals: false } });
+		const shown = await send(app, "PATCH", { hiddenSections: { balance_sheet: false } });
 
 		expect(layoutBody.parse(shown.body).data.hiddenSections).toEqual(["money_flow"]);
 	});
@@ -116,15 +121,15 @@ describe("PATCH /api/dashboard/layout", () => {
 			"collapsedSections.insights_feed",
 			"unrecognized_keys",
 		],
-		[{ sectionOrder: ["goals", "goals"] }, "sectionOrder", "duplicate_section"],
+		[{ sectionOrder: ["balance_sheet", "balance_sheet"] }, "sectionOrder", "duplicate_section"],
 		[
 			{ sectionLayout: { outflows_donut: { height: "tall" } } },
 			"sectionLayout.outflows_donut.height",
 			"size_not_offered",
 		],
 		[
-			{ sectionLayout: { goals: { colSpan: "full" } } },
-			"sectionLayout.goals.colSpan",
+			{ sectionLayout: { outflows_donut: { colSpan: "full" } } },
+			"sectionLayout.outflows_donut.colSpan",
 			"size_not_offered",
 		],
 		[
@@ -165,7 +170,7 @@ describe("PATCH /api/dashboard/layout", () => {
 		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
 
 		it("reads the default, and is refused FORBIDDEN on a save, nothing written", async () => {
-			const refused = await send(viewer(), "PATCH", { hiddenSections: { goals: true } });
+			const refused = await send(viewer(), "PATCH", { hiddenSections: { balance_sheet: true } });
 			const read = await send(viewer(), "GET");
 
 			expect(refused.status).toBe(403);
@@ -177,11 +182,11 @@ describe("PATCH /api/dashboard/layout", () => {
 		});
 
 		it("keeps another user's layout apart from the administrator's", async () => {
-			const saved = await send(buildApp(), "PATCH", { collapsedSections: { goals: true } });
+			const saved = await send(buildApp(), "PATCH", { collapsedSections: { balance_sheet: true } });
 			const read = await send(viewer(), "GET");
 
 			expect(saved.status).toBe(200);
-			expect(layoutBody.parse(read.body).data.collapsedSections["goals"]).toBe(false);
+			expect(layoutBody.parse(read.body).data.collapsedSections["balance_sheet"]).toBe(false);
 			expect(
 				await temp.db.all<{ role: string }>(
 					sql`select role from users where dashboard_layout is not null`,

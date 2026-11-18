@@ -18,16 +18,15 @@ const DESTINATIONS = [
 	"Accueil",
 	"Opérations",
 	"Comptes",
-	"Budgets",
-	"Objectifs",
+	"Plan",
 	"Factures",
 	"Rapports",
 	"Règles",
 	"Réglages",
 ];
 
-// Story 21.2: below 1024 px, four destinations and « Plus », whose menu holds the others.
-const PHONE_DESTINATIONS = ["Accueil", "Opérations", "Budgets", "Objectifs"];
+// Story 21.2: below 1024 px, three destinations and « Plus », whose menu holds the others.
+const PHONE_DESTINATIONS = ["Accueil", "Opérations", "Plan"];
 
 const MORE = ["Comptes", "Factures", "Rapports", "Règles", "Réglages"];
 
@@ -328,7 +327,7 @@ test("a settings section's title and actions top its content, in one 896 px colu
 test.describe("on a phone", () => {
 	test.use({ viewport: { width: 390, height: 844 } });
 
-	test("the bottom navigation holds four destinations and « Plus », and the menu opens the accounts column", async ({
+	test("the bottom navigation holds three destinations and « Plus », and the menu opens the accounts column", async ({
 		page,
 	}) => {
 		await fixedAccounts(page);
@@ -386,9 +385,9 @@ test.describe("on a phone", () => {
 		page,
 	}) => {
 		await page.goto("/");
-		await rail(page).getByRole("link", { name: "Objectifs" }).click();
-		await expect(page).toHaveURL(/\/goals$/u);
-		await expect(rail(page).getByRole("link", { name: "Objectifs" })).toHaveAttribute(
+		await rail(page).getByRole("link", { name: "Plan" }).click();
+		await expect(page).toHaveURL(/\/plan$/u);
+		await expect(rail(page).getByRole("link", { name: "Plan" })).toHaveAttribute(
 			"aria-current",
 			"page",
 		);
@@ -416,7 +415,7 @@ for (const width of [360, 390]) {
 	test.describe(`on a ${width} px screen`, () => {
 		test.use({ viewport: { width, height: 800 } });
 
-		test("every bottom-navigation label shows whole, and each of the nine destinations is reachable", async ({
+		test("every bottom-navigation label shows whole, and each destination is reachable", async ({
 			page,
 		}) => {
 			await page.goto("/");

@@ -67,7 +67,6 @@ export const SECTION_TITLES = {
 	money_flow: "dashboard.moneyFlow.title",
 	spending_trend: "dashboard.spendingTrend.title",
 	investment_summary: "dashboard.investmentSummary.title",
-	goals: "dashboard.goals.title",
 } as const satisfies Record<DashboardSection, string>;
 
 type LayoutChange = (change: {
