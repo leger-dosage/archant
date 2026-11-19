@@ -5,6 +5,7 @@ import { AppShell } from "@/components/AppShell";
 import { useFollowSavedLocale } from "@/hooks/useFollowSavedLocale";
 import { useRole } from "@/hooks/usePermissions";
 import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
+import { layoutForRole } from "@/lib/role-layout";
 
 declare module "@tanstack/react-router" {
 	interface StaticDataRouteOption {
@@ -54,7 +55,7 @@ function AuthedLayout() {
 	return bare ? (
 		<Outlet />
 	) : (
-		<AppShell>
+		<AppShell intro={layoutForRole(role ?? loadedRole) === "intro"}>
 			<Outlet />
 		</AppShell>
 	);

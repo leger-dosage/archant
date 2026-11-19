@@ -10,8 +10,6 @@ import {
 	daysAgo,
 	euros,
 	expect,
-	periodPicker,
-	pickPeriod,
 	sgml,
 	test,
 	uniqueName,
@@ -264,36 +262,10 @@ reader.describe("a guest", () => {
 		await administrator.dispose();
 	});
 
-	reader("the dashboard and the accounts offer no new account", async ({ guest: page }) => {
-		const { name, account } = household;
-
-		await page.goto("/");
-		await expect(page.getByRole("heading", { level: 1, name: `Bonjour ${name}` })).toBeVisible();
-		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
-		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
-		// Story 34.6: Sure's default layout, with nothing to arrange (AD-21).
-		await expect(page.getByRole("region", { name: "Bilan" })).toBeVisible();
-		await expectNone(page, [
-			{ role: "button", name: "Afficher/masquer la section" },
-			{ role: "button", name: "Glisser pour réorganiser la section" },
-			{ role: "button", name: "Ajuster la taille" },
-			{ role: "link", name: "Personnaliser" },
-		]);
-
-		// An empty period: the Sankey says so, and offers a guest nothing to add.
-		await page.goto("/?startDate=2000-01-01&endDate=2000-01-31");
-		const flows = page.getByRole("region", { name: "Flux de trésorerie" });
-		await expect(
-			flows.getByRole("heading", {
-				name: "Aucune donnée de flux de trésorerie pour cette période",
-			}),
-		).toBeVisible();
-		await expect(flows.getByRole("button", { name: "Ajouter une transaction" })).toHaveCount(0);
-
+	reader("the accounts offer no new account", async ({ guest: page }) => {
 		await page.goto("/accounts");
-		await expect(page.getByRole("link", { name: account.name }).first()).toBeVisible();
+		await expect(page.getByRole("link", { name: household.account.name }).first()).toBeVisible();
 		await expectNone(page, [{ role: "button", name: "Ajouter un compte" }]);
-		// No row carries the menu that writes, whichever account it is.
 		await expect(page.getByRole("button", { name: /^Actions du compte /u })).toHaveCount(0);
 	});
 
@@ -335,23 +307,6 @@ reader.describe("a guest", () => {
 			await print.close();
 		},
 	);
-
-	reader("a period pick changes the address and saves nothing (AD-21)", async ({ guest: page }) => {
-		const writes: string[] = [];
-		page.on("request", (request) => {
-			if (request.url().includes("/api/") && !["GET", "HEAD"].includes(request.method())) {
-				writes.push(`${request.method()} ${request.url()}`);
-			}
-		});
-
-		await page.goto("/");
-		await expect(periodPicker(page)).toHaveText("30J");
-		await pickPeriod(page, page, "AC", { saved: false });
-
-		await expect(page).toHaveURL(/[?&]period=current_year(&|$)/u);
-		await expect(periodPicker(page)).toHaveText("AC");
-		expect(writes).toEqual([]);
-	});
 
 	reader(
 		"an account shows its rows, snapshots and imports, and nothing to change them",
@@ -779,25 +734,7 @@ reader.describe("a guest", () => {
 		// Story 30.8: no « Réinitialiser le compte », the server's 403 aside.
 		await expect(page.getByRole("region", { name: "Zone dangereuse" })).toHaveCount(0);
 		await expect(page.getByRole("button", { name: "Réinitialiser le compte" })).toHaveCount(0);
-		const sections = page.getByRole("navigation", { name: "Réglages" });
-		await expect(sections.getByRole("link", { name: "Sécurité" })).toBeVisible();
-		await expectNone(
-			sections,
-			[
-				"Banques",
-				"Préférences",
-				"Placements",
-				"Catégories",
-				"Transactions récurrentes",
-				"Assistants IA",
-				"Importations",
-				"Données",
-				"Membres",
-			].map((section) => ({
-				role: "link",
-				name: section,
-			})),
-		);
+		await expect(page.getByRole("navigation", { name: "Réglages" })).toHaveCount(0);
 
 		await page.goto("/settings/categories");
 		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);

@@ -16,6 +16,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AuthedIndexRouteImport } from './routes/_authed.index'
 import { Route as AuthedBillsRouteImport } from './routes/_authed.bills'
+import { Route as AuthedIntroRouteImport } from './routes/_authed.intro'
 import { Route as AuthedPlanRouteImport } from './routes/_authed.plan'
 import { Route as AuthedRecurringRouteImport } from './routes/_authed.recurring'
 import { Route as AuthedReportsRouteImport } from './routes/_authed.reports'
@@ -85,6 +86,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const AuthedBillsRoute = AuthedBillsRouteImport.update({
   id: '/bills',
   path: '/bills',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedIntroRoute = AuthedIntroRouteImport.update({
+  id: '/intro',
+  path: '/intro',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedPlanRoute = AuthedPlanRouteImport.update({
@@ -285,6 +291,7 @@ export interface FileRoutesByFullPath {
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/bills': typeof AuthedBillsRouteWithChildren
+  '/intro': typeof AuthedIntroRoute
   '/plan': typeof AuthedPlanRoute
   '/recurring': typeof AuthedRecurringRoute
   '/reports': typeof AuthedReportsRoute
@@ -328,6 +335,7 @@ export interface FileRoutesByTo {
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/bills': typeof AuthedBillsRouteWithChildren
+  '/intro': typeof AuthedIntroRoute
   '/plan': typeof AuthedPlanRoute
   '/recurring': typeof AuthedRecurringRoute
   '/reports': typeof AuthedReportsRoute
@@ -373,6 +381,7 @@ export interface FileRoutesById {
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/_authed/bills': typeof AuthedBillsRouteWithChildren
+  '/_authed/intro': typeof AuthedIntroRoute
   '/_authed/plan': typeof AuthedPlanRoute
   '/_authed/recurring': typeof AuthedRecurringRoute
   '/_authed/reports': typeof AuthedReportsRoute
@@ -420,6 +429,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/sign-in'
     | '/bills'
+    | '/intro'
     | '/plan'
     | '/recurring'
     | '/reports'
@@ -463,6 +473,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/sign-in'
     | '/bills'
+    | '/intro'
     | '/plan'
     | '/recurring'
     | '/reports'
@@ -507,6 +518,7 @@ export interface FileRouteTypes {
     | '/setup'
     | '/sign-in'
     | '/_authed/bills'
+    | '/_authed/intro'
     | '/_authed/plan'
     | '/_authed/recurring'
     | '/_authed/reports'
@@ -605,6 +617,13 @@ declare module '@tanstack/react-router' {
       path: '/bills'
       fullPath: '/bills'
       preLoaderRoute: typeof AuthedBillsRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/intro': {
+      id: '/_authed/intro'
+      path: '/intro'
+      fullPath: '/intro'
+      preLoaderRoute: typeof AuthedIntroRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/plan': {
@@ -920,6 +939,7 @@ const AuthedSettingsRouteWithChildren = AuthedSettingsRoute._addFileChildren(
 
 interface AuthedRouteChildren {
   AuthedBillsRoute: typeof AuthedBillsRouteWithChildren
+  AuthedIntroRoute: typeof AuthedIntroRoute
   AuthedPlanRoute: typeof AuthedPlanRoute
   AuthedRecurringRoute: typeof AuthedRecurringRoute
   AuthedReportsRoute: typeof AuthedReportsRoute
@@ -941,6 +961,7 @@ interface AuthedRouteChildren {
 
 const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedBillsRoute: AuthedBillsRouteWithChildren,
+  AuthedIntroRoute: AuthedIntroRoute,
   AuthedPlanRoute: AuthedPlanRoute,
   AuthedRecurringRoute: AuthedRecurringRoute,
   AuthedReportsRoute: AuthedReportsRoute,
