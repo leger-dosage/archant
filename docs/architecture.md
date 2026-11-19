@@ -243,6 +243,7 @@ use in the transaction that creates the session.
   - `services/members.ts` counts administrators inside the update or delete, and refuses self-demotion, self-removal and losing the last administrator. A demotion from `admin` cancels pending invitations and revokes assistant consents and tokens in that transaction. A removal cascades to the user's sessions and credentials and deletes the invitations to their email.
   - Invitations store the SHA-256 of their token and expire after three days. The accept route claims the invitation in one conditional update before it calls Better Auth. If creation fails, it releases the claim only while the inviter is still an administrator.
   - The interface uses `useCanWrite` for ledger and personal preference controls and `useIsAdmin` for administration. A refusal or window focus refreshes the session, and a role change reruns the route guards. `routes/middleware/roles.spec.ts` checks the roles against the running route table.
+  - The signed-in shell derives its layout from the current session role. Guests have the Intro navigation and no sidebar. The dashboard redirects guests to `/intro`, and that route sends other roles back with a notice. Promoting a guest restores the standard shell when their session refreshes, without a saved layout preference to migrate.
 
 ### AD-22 — Securities, trades and holdings
 

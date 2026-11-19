@@ -2,7 +2,7 @@ import type { AccountListData } from "@/hooks/useAccounts";
 import type { DashboardLayoutData } from "@/hooks/useDashboardLayout";
 import type { ReactNode } from "react";
 
-import { Link, createFileRoute } from "@tanstack/react-router";
+import { Link, createFileRoute, redirect, useRouterState } from "@tanstack/react-router";
 import { CheckIcon, LayoutGridIcon, PlusIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,7 @@ import { OutflowsDonut } from "@/components/OutflowsDonut";
 import { Page } from "@/components/Page";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { SpendingTrendSection } from "@/components/SpendingTrendSection";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
@@ -42,6 +43,7 @@ import { useDashboardMasonry } from "@/hooks/useDashboardMasonry";
 import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { toIsoMonth } from "@/lib/dates";
+import { layoutForRole } from "@/lib/role-layout";
 
 // Absent means the user's saved period, so links to the dashboard need no
 // search params; a period from an old or hand-edited link, such as « 1M »,
@@ -65,14 +67,16 @@ const searchSchema = z.object({
 	customize: z.boolean().optional().catch(undefined),
 });
 
-/**
- * Sure's default layout, what a guest sees and what shows when the saved
- * one cannot be read.
- */
+/** Sure's default layout, used when the saved one cannot be read. */
 const DEFAULT_LAYOUT: DashboardLayoutData = resolveLayout(null);
 
 export const Route = createFileRoute("/_authed/")({
 	validateSearch: searchSchema,
+	beforeLoad: ({ context }) => {
+		if (layoutForRole(context.session.user.role) === "intro") {
+			throw redirect({ to: "/intro", replace: true });
+		}
+	},
 	component: DashboardPage,
 });
 
@@ -91,6 +95,7 @@ function DashboardPage() {
 	const chartPeriod = useChartPeriod({ period, startDate, endDate });
 	const cashFlow = useDashboardCashFlow(chartPeriod.chart, chartPeriod.ready);
 	const navigate = Route.useNavigate();
+	const introGuestOnly = useRouterState({ select: (state) => state.location.state.introGuestOnly });
 	const canWrite = useCanWrite();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
@@ -98,7 +103,6 @@ function DashboardPage() {
 	const customizing = customize === true;
 	const savedLayout = useDashboardLayout({ enabled: canWrite });
 	const updateLayout = useUpdateDashboardLayout();
-	// A guest arranges nothing and sees Sure's default (AD-21).
 	const layout = (canWrite ? savedLayout.data : undefined) ?? DEFAULT_LAYOUT;
 	// An administrator's widgets wait for their order, so they never jump into it.
 	const layoutReady = !canWrite || !savedLayout.isPending;
@@ -138,7 +142,7 @@ function DashboardPage() {
 		document.title = t("app.pageTitle", { page: t("dashboard.title"), app: t("app.name") });
 	}, [t]);
 
-	// Always in the address, so Back and Reload keep a guest's pick too.
+	// Always in the address, so Back and Reload keep the chosen period.
 	const pickPeriod = (next: SurePeriod) => {
 		void navigate({
 			search: (previous) => ({
@@ -247,6 +251,11 @@ function DashboardPage() {
 				) : undefined
 			}
 		>
+			{introGuestOnly === true && (
+				<Alert>
+					<AlertDescription>{t("intro.guestOnly")}</AlertDescription>
+				</Alert>
+			)}
 			{accounts.isPending && <Skeleton className="h-96 w-full rounded-xl" aria-hidden="true" />}
 
 			{accounts.isError && (
