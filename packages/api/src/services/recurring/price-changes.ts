@@ -74,7 +74,11 @@ async function latestPaid(tx: Writer, seriesId: string): Promise<PaidOccurrence[
  * own and the change stays recorded, as Sure's `update!` fails on its own
  * unique index after the change is saved.
  */
-export async function detectPriceChanges(tx: Writer, day: IsoDate): Promise<void> {
+export async function detectPriceChanges(
+	tx: Writer,
+	day: IsoDate,
+	ids?: readonly string[],
+): Promise<void> {
 	const series = await tx
 		.select({
 			id: recurringTransactions.id,
@@ -88,7 +92,13 @@ export async function detectPriceChanges(tx: Writer, day: IsoDate): Promise<void
 			manual: recurringTransactions.manual,
 		})
 		.from(recurringTransactions)
-		.where(and(eq(recurringTransactions.status, "active"), lt(recurringTransactions.amount, 0)))
+		.where(
+			and(
+				eq(recurringTransactions.status, "active"),
+				lt(recurringTransactions.amount, 0),
+				ids === undefined ? undefined : inArray(recurringTransactions.id, [...ids]),
+			),
+		)
 		.orderBy(recurringTransactions.createdAt, recurringTransactions.id);
 
 	await oneByOne(series, async (one) => {

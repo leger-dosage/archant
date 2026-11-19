@@ -162,6 +162,7 @@ const summary = (overrides: Record<string, unknown>) => ({
 	currency: "EUR",
 	active: true,
 	excludedFromReports: false,
+	includeInFinances: true,
 	...overrides,
 });
 

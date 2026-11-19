@@ -11,6 +11,7 @@ import { transactions } from "@archant/data/schema/transactions";
 
 import { AppError } from "../../lib/errors.ts";
 import { MAX_SPLIT_LINES } from "../../schemas/transactions.ts";
+import { accountIds, requireEntry } from "../account-access.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { categoryExists, categoryOriginOf } from "./patch.ts";
 import {
@@ -226,6 +227,7 @@ export async function splitTransaction(
 ): Promise<Split> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const parent = await splitRow(tx, id);
 
 			if (
@@ -251,7 +253,7 @@ export async function splitTransaction(
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);
-			await matchTransfers(tx, now);
+			await matchTransfers(tx, now, undefined, await accountIds({ ...deps, db: tx }, "edit"));
 
 			return { parentId: parent.id, childIds: await childIdsOf(tx, parent.id) };
 		},
@@ -277,6 +279,7 @@ export async function editSplit(
 ): Promise<Split> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const parent = await parentOf(tx, id);
 			const now = Date.now();
 
@@ -284,7 +287,7 @@ export async function editSplit(
 			await deleteTransactionRows(tx, await childIdsOf(tx, parent.id));
 			await insertChildren(tx, parent, lines, options.origin, now);
 			await recompute(deps, tx, parent);
-			await matchTransfers(tx, now);
+			await matchTransfers(tx, now, undefined, await accountIds({ ...deps, db: tx }, "edit"));
 
 			return { parentId: parent.id, childIds: await childIdsOf(tx, parent.id) };
 		},
@@ -307,6 +310,7 @@ export async function unsplitTransaction(
 ): Promise<string> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const parent = await parentOf(tx, id);
 			const now = Date.now();
 
@@ -319,7 +323,7 @@ export async function unsplitTransaction(
 				})
 				.where(eq(transactions.entryId, parent.id));
 			await recompute(deps, tx, parent);
-			await matchTransfers(tx, now);
+			await matchTransfers(tx, now, undefined, await accountIds({ ...deps, db: tx }, "edit"));
 
 			return parent.id;
 		},

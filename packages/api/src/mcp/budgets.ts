@@ -15,6 +15,7 @@ import {
 	sureMonthOf,
 	updateBudgetInput,
 } from "../schemas/assistants/budgets.ts";
+import { budgetDeps } from "../services/budget-access.ts";
 import { getBudgetHistory, isBudgetableMonth, updateBudget } from "../services/budgets.ts";
 import { categoriesByRef, isUncategorisedName } from "../services/names.ts";
 import { getReportingCurrency } from "../services/settings.ts";
@@ -197,7 +198,7 @@ export const getBudgetTool = defineTool({
 	run: async (deps, input) => {
 		const day = today(deps.timeZone);
 		const { currency, months, unavailable } = await getBudgetHistory(
-			deps,
+			await budgetDeps(deps),
 			input.month,
 			input.prior_months,
 		);
@@ -317,7 +318,7 @@ export const updateBudgetTool = defineTool({
 
 		const month = monthOfParam(input.month);
 
-		if (month !== undefined && !(await isBudgetableMonth(deps, month))) {
+		if (month !== undefined && !(await isBudgetableMonth(await budgetDeps(deps), month))) {
 			refuse(
 				"invalid_month",
 				"No budget exists (or can be created) for that month — it is outside the valid budget range.",
@@ -360,7 +361,7 @@ export const updateBudgetTool = defineTool({
 				budgeted: budgetAmount(entry.amount, `amount for '${category.name}'`, currency),
 			};
 		});
-		const { budget, updated } = await updateBudget(deps, month, {
+		const { budget, updated } = await updateBudget(await budgetDeps(deps, undefined, true), month, {
 			budgetedSpending,
 			expectedIncome,
 			categories: categoryAmounts,

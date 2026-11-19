@@ -7,7 +7,7 @@ import type { ServiceDeps } from "./deps.ts";
 import type { NewAccountInput } from "./ledger/accounts.ts";
 import type { OpeningBalanceResult, OpeningDateRule } from "./ledger/opening.ts";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { AccountOrder } from "@archant/data/account-orders";
 import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
@@ -37,6 +37,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { parseAccountDetails } from "../schemas/accounts.ts";
 import { openingBalanceSchema } from "../schemas/snapshots.ts";
+import { accountPermission, accountScope, requireAccount } from "./account-access.ts";
 import { codeOf } from "./bank-connections.ts";
 import {
 	createAccount as createLedgerAccount,
@@ -49,6 +50,8 @@ import { startConnectionSync } from "./sync.ts";
 
 export type AccountSummary = {
 	id: string;
+	permission: Awaited<ReturnType<typeof accountPermission>>;
+	includeInFinances: boolean;
 	name: string;
 	type: AccountType;
 	subtype: AccountSubtype | null;
@@ -108,11 +111,20 @@ async function summarise(
 	account: Account,
 	date: IsoDate,
 	bankName: string | null,
+	includeInFinances?: boolean,
 ): Promise<AccountSummary> {
 	const balance = await balanceOn(deps, account.id, date);
 
 	return {
 		id: account.id,
+		permission: await accountPermission(deps, account.id),
+		includeInFinances:
+			includeInFinances ??
+			(await deps.db
+				.select({ id: accounts.id })
+				.from(accounts)
+				.where(and(eq(accounts.id, account.id), accountScope(deps, "finance")))
+				.get()) !== undefined,
 		name: account.name,
 		type: account.type,
 		subtype: account.subtype,
@@ -138,7 +150,12 @@ export async function listAccounts(
 ): Promise<AccountList> {
 	const date = today(deps.timeZone);
 	const reportingCurrency = await getReportingCurrency(deps.db);
-	const rows = await deps.db.select().from(accounts);
+	const rows = await deps.db.select().from(accounts).where(accountScope(deps));
+	const included = new Set(
+		(
+			await deps.db.select({ id: accounts.id }).from(accounts).where(accountScope(deps, "finance"))
+		).map(({ id }) => id),
+	);
 	const banks = await bankNames(deps);
 	const summaries = await Promise.all(
 		rows.map((row) =>
@@ -147,6 +164,7 @@ export async function listAccounts(
 				row,
 				date,
 				row.bankAccountId === null ? null : (banks.get(row.bankAccountId) ?? null),
+				included.has(row.id),
 			),
 		),
 	);
@@ -156,7 +174,9 @@ export async function listAccounts(
 			summaries.filter((summary) => classificationOf(summary.type) === classification),
 			order,
 		);
-		const reported = members.filter((summary) => summary.active && !summary.excludedFromReports);
+		const reported = members.filter(
+			(summary) => summary.active && !summary.excludedFromReports && included.has(summary.id),
+		);
 		const counted = reported.filter((summary) => summary.currency === reportingCurrency);
 
 		return {
@@ -185,7 +205,9 @@ export async function getDefaultAccountId(
 		.where(eq(users.id, userId))
 		.get();
 
-	return user?.defaultAccountId ?? null;
+	const id = user?.defaultAccountId ?? null;
+	const permission = id === null ? null : await accountPermission(deps, id);
+	return permission === "owner" || permission === "full_control" ? id : null;
 }
 
 /**
@@ -198,6 +220,7 @@ export async function setDefaultAccount(
 	userId: string,
 	accountId: string,
 ): Promise<{ defaultAccountId: string | null }> {
+	await requireAccount(deps, accountId, "edit");
 	const account = await deps.db
 		.select({ type: accounts.type, active: accounts.active, bankAccountId: accounts.bankAccountId })
 		.from(accounts)
@@ -235,6 +258,7 @@ export async function removeDefaultAccount(
 	userId: string,
 	accountId: string,
 ): Promise<{ defaultAccountId: string | null }> {
+	await requireAccount(deps, accountId, "read");
 	const account = await deps.db
 		.select({ id: accounts.id })
 		.from(accounts)
@@ -319,6 +343,7 @@ export type AccountDetail = AccountSummary & {
 
 /** One account as its page shows it. */
 export async function getAccount(deps: ServiceDeps, id: string): Promise<AccountDetail> {
+	await requireAccount(deps, id, "read");
 	const account = await deps.db.select().from(accounts).where(eq(accounts.id, id)).get();
 	const opening = await openingAnchorOf(deps, id);
 
@@ -382,6 +407,7 @@ export async function updateAccount(
 	id: string,
 	patch: UpdateAccountRequest,
 ): Promise<AccountDetail> {
+	await requireAccount(deps, id, "edit");
 	const account = await deps.db.select().from(accounts).where(eq(accounts.id, id)).get();
 
 	if (account === undefined) {
@@ -421,6 +447,7 @@ export async function updateAccount(
 	// Read and written in one transaction, so a concurrent save cannot make
 	// this one start a sync for a toggle it did not change.
 	const toggled = await deps.db.transaction(async (tx) => {
+		await requireAccount({ ...deps, db: tx }, id, "edit");
 		await tx
 			.update(accounts)
 			.set({
@@ -532,6 +559,7 @@ export async function setAccountOpeningBalance(
 	input: OpeningBalanceRequest,
 	options: { rule: OpeningDateRule; dryRun?: boolean },
 ): Promise<OpeningBalanceChange> {
+	await requireAccount(deps, id, "edit");
 	const account = await getAccount(deps, id);
 
 	if (!isCurrencyCode(account.currency)) {
@@ -573,6 +601,7 @@ export async function setAccountOpeningBalance(
  * lives here, not in the ledger, whose delete also serves disconnection.
  */
 export async function deleteAccount(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	await requireAccount(deps, id, "edit");
 	const account = await deps.db
 		.select({ bankAccountId: accounts.bankAccountId })
 		.from(accounts)

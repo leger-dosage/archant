@@ -30,6 +30,7 @@ import {
 	unsignedQuantity,
 } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
+import { requireAccount, requireEntry } from "../account-access.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import {
 	invalidField,
@@ -411,6 +412,7 @@ export async function recordTrade(
 ): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const account = await tradingAccount(tx, accountId);
 			refuseFutureDate(input.date, deps.timeZone);
 
@@ -547,6 +549,7 @@ export async function updateTrade(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const current = await tradeRow(tx, id);
 			// Drawer notes carry no figures, so they do not recalculate the ledger.
 			if (notes !== undefined && Object.keys(patch).length === 0) {
@@ -614,6 +617,7 @@ export async function deleteTrade(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const current = await tradeRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
@@ -660,6 +664,7 @@ export async function convertTransaction(
 ): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const source = await splitRow(tx, id);
 			const account = await tradingAccount(tx, source.accountId);
 

@@ -5,8 +5,10 @@ import { eq } from "drizzle-orm";
 import { users } from "@archant/data/schema/auth";
 
 import { matches } from "../domain/rules/matching.ts";
+import { AppError } from "../lib/errors.ts";
+import { requireEntry } from "./account-access.ts";
 import { ruleCandidates } from "./ledger/rule-plans.ts";
-import { knownReferences, readRules, toRule } from "./rule-reader.ts";
+import { knownReferences, toRule, visibleRules } from "./rule-reader.ts";
 
 /** How long « Masquer pour aujourd'hui » hides the prompt, Sure's `1.day`. */
 const DISMISSED_FOR_MS = 24 * 60 * 60 * 1000;
@@ -36,11 +38,12 @@ async function eligibleForCategoryRule(deps: ServiceDeps, entryId: string): Prom
 		return true;
 	}
 
-	const setting = (await readRules(deps.db, { enabled: true })).filter(({ actions }) =>
-		actions.some(
-			(action) =>
-				action.actionType === "set_transaction_category" && action.value === line.categoryId,
-		),
+	const setting = (await visibleRules(deps.db, deps.actor, { enabled: true })).filter(
+		({ actions }) =>
+			actions.some(
+				(action) =>
+					action.actionType === "set_transaction_category" && action.value === line.categoryId,
+			),
 	);
 
 	if (setting.length === 0) {
@@ -62,6 +65,14 @@ export async function offersRulePrompt(
 	userId: string,
 	entryId: string,
 ): Promise<boolean> {
+	try {
+		await requireEntry(deps, entryId, "annotate");
+	} catch (error) {
+		if (error instanceof AppError && (error.code === "NOT_FOUND" || error.code === "FORBIDDEN")) {
+			return false;
+		}
+		throw error;
+	}
 	const user = await deps.db
 		.select({
 			disabled: users.rulePromptsDisabled,

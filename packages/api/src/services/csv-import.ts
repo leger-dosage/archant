@@ -67,6 +67,7 @@ import {
 	maxRowsOf,
 } from "../schemas/csv-imports.ts";
 import { MERCHANT_WEBSITE_MAX_LENGTH } from "../schemas/merchants.ts";
+import { accountScope } from "./account-access.ts";
 import { cleanOf } from "./csv-import-clean.ts";
 import {
 	columnOf,
@@ -672,7 +673,7 @@ async function analyseMerchants(db: Pick<Transaction, "select">, sheet: Sheet): 
 // --- Trades -----------------------------------------------------------------
 
 /** The accounts a trade may go to, as Sure's `supports_trades?`, active ones only. */
-async function tradingAccounts(db: Pick<Transaction, "select">) {
+async function tradingAccounts(db: Pick<Transaction, "select">, actor: ServiceDeps["actor"]) {
 	const rows = await db
 		.select({
 			id: accounts.id,
@@ -682,7 +683,8 @@ async function tradingAccounts(db: Pick<Transaction, "select">) {
 			currency: accounts.currency,
 			active: accounts.active,
 		})
-		.from(accounts);
+		.from(accounts)
+		.where(accountScope({ db, actor }, "edit"));
 
 	return rows.filter((account) => account.active && supportsTrades(account));
 }
@@ -733,9 +735,10 @@ async function analyseTrades(
 	db: Pick<Transaction, "select">,
 	sheet: Sheet,
 	mappings: Mappings | undefined,
+	actor: ServiceDeps["actor"],
 ): Promise<Analysis> {
 	const errors: SureIssue[] = [];
-	const trading = await tradingAccounts(db);
+	const trading = await tradingAccounts(db, actor);
 	const single = sheet.configuration.accountId;
 
 	if (single !== null && !trading.some((account) => account.id === single)) {
@@ -909,7 +912,7 @@ async function analyseTrades(
 			await insertCsvTrades(
 				tx,
 				{ existing, newAccounts, trades: read },
-				{ now: Date.now(), timeZone: deps.timeZone },
+				{ now: Date.now(), timeZone: deps.timeZone, creatorId: deps.actor?.id },
 			);
 		},
 	};
@@ -960,11 +963,12 @@ async function analyse(
 	day: IsoDate,
 	locale: Locale,
 	currency: CurrencyCode,
+	actor: ServiceDeps["actor"],
 ): Promise<{ sheet: Sheet; analysis: Analysis }> {
 	if (source.kind === "qif") {
 		return {
 			sheet: source.qif.sheet,
-			analysis: await analyseQif(db, source.qif, request.mappings, locale),
+			analysis: await analyseQif(db, source.qif, request.mappings, locale, actor),
 		};
 	}
 
@@ -1003,7 +1007,7 @@ async function analyse(
 		};
 	}
 
-	return { sheet, analysis: await analysisOf(db, request, sheet, locale) };
+	return { sheet, analysis: await analysisOf(db, request, sheet, locale, actor) };
 }
 
 /** What the import of `request.type` reads from the sheet. */
@@ -1012,6 +1016,7 @@ async function analysisOf(
 	request: CsvImportRequest,
 	sheet: Sheet,
 	locale: Locale,
+	actor: ServiceDeps["actor"],
 ): Promise<Analysis> {
 	switch (request.type) {
 		case "accounts":
@@ -1024,16 +1029,20 @@ async function analysisOf(
 		case "mint":
 		case "ynab":
 		case "actual":
-			return analyseTransactions(db, sheet, request.mappings, locale);
+			return analyseTransactions(db, sheet, request.mappings, locale, actor);
 		case "rules":
-			return analyseRules(db, {
-				rows: sheet.table.rows,
-				lookup: sheet.lookup,
-				separator: sheet.configuration.separator,
-				edited: (row, key) => editOf(sheet, row, key),
-			});
+			return analyseRules(
+				db,
+				{
+					rows: sheet.table.rows,
+					lookup: sheet.lookup,
+					separator: sheet.configuration.separator,
+					edited: (row, key) => editOf(sheet, row, key),
+				},
+				actor,
+			);
 		default:
-			return analyseTrades(db, sheet, request.mappings);
+			return analyseTrades(db, sheet, request.mappings, actor);
 	}
 }
 
@@ -1053,7 +1062,15 @@ export async function previewCsvImport(
 		getReportingCurrency(deps.db),
 	]);
 	const source = readSource(request, day, locale, currency);
-	const { sheet, analysis } = await analyse(deps.db, request, source, day, locale, currency);
+	const { sheet, analysis } = await analyse(
+		deps.db,
+		request,
+		source,
+		day,
+		locale,
+		currency,
+		deps.actor,
+	);
 	const qif = source.kind === "qif" ? source.qif : null;
 
 	return {
@@ -1098,7 +1115,7 @@ export async function importCsv(
 		const source = readSource(request, day, locale, currency);
 		const { counts, committed } = await deps.db.transaction(
 			async (tx) => {
-				const { analysis } = await analyse(tx, request, source, day, locale, currency);
+				const { analysis } = await analyse(tx, request, source, day, locale, currency, deps.actor);
 
 				if (analysis.errors.length > 0) {
 					throw new AppError("CSV_IMPORT_INVALID", "The file's preview found errors.");

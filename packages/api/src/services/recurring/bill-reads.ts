@@ -2,7 +2,6 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { OccurrenceState } from "../../domain/recurring/occurrences.ts";
 import type { BillLifecycle, BillPaymentState, BillStatus } from "../../schemas/bills.ts";
 import type { ServiceDeps } from "../deps.ts";
-import type { Transaction } from "../ledger/shared.ts";
 import type { BillOccurrence, BillRecord, PriceChange } from "./all-bills.ts";
 import type { SQL } from "drizzle-orm";
 
@@ -30,6 +29,7 @@ import { annualizedAverage, monthlyRollup } from "../../domain/recurring/schedul
 import { billStatusSchema } from "../../schemas/bills.ts";
 import { paymentEntries } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
+import { recurringScope } from "./access.ts";
 import { priceChangesWhere, withAmounts } from "./all-bills.ts";
 import { loadBills } from "./bill-overview.ts";
 import { notFound, nullableMinor, selectRecords, toRecords } from "./series.ts";
@@ -41,8 +41,6 @@ export type BillView = BillRecord & {
 	/** The current open occurrence's effective due date, else the series' next expected date. */
 	nextDueDate: IsoDate;
 };
-
-type Reader = Pick<Transaction, "select">;
 
 // Sure's `STATUS_VOCABULARY`: nothing stores `paused`, the interface's
 // « En pause » is `inactive`.
@@ -61,10 +59,18 @@ export const lifecycleOf = (status: RecurringStatus): BillStatus =>
  * The series `where` keeps, with the amounts of their current occurrence
  * as « Toutes les factures » reads them, by next due date.
  */
-export async function loadBillViews(db: Reader, day: IsoDate, where?: SQL): Promise<BillView[]> {
+export async function loadBillViews(
+	deps: ServiceDeps,
+	day: IsoDate,
+	where?: SQL,
+): Promise<BillView[]> {
 	const records = await withAmounts(
-		db,
-		await toRecords(db, await selectRecords(db).where(where), day),
+		deps,
+		await toRecords(
+			deps.db,
+			await selectRecords(deps.db).where(and(where, recurringScope(deps))),
+			day,
+		),
 	);
 
 	return records
@@ -79,9 +85,9 @@ export async function loadBillViews(db: Reader, day: IsoDate, where?: SQL): Prom
 /** One series as the bill tools read it; `NOT_FOUND` when no series has `id`. */
 export async function billView(deps: ServiceDeps, id: string): Promise<BillView> {
 	const [view] = await loadBillViews(
-		deps.db,
+		deps,
 		today(deps.timeZone),
-		eq(recurringTransactions.id, id),
+		and(eq(recurringTransactions.id, id), recurringScope(deps)),
 	);
 
 	if (view === undefined) {
@@ -157,13 +163,14 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 	const byType =
 		query.billType === undefined ? undefined : eq(recurringTransactions.billType, query.billType);
 	const views = await loadBillViews(
-		deps.db,
+		deps,
 		day,
 		and(
 			query.status === "all"
 				? undefined
 				: eq(recurringTransactions.status, STORED_STATUS[query.status]),
 			byType,
+			recurringScope(deps),
 		),
 	);
 	const bills = views.filter(
@@ -199,7 +206,13 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 			: await deps.db
 					.select({ status: recurringTransactions.status, count: count() })
 					.from(recurringTransactions)
-					.where(and(ne(recurringTransactions.status, STORED_STATUS[query.status]), byType))
+					.where(
+						and(
+							ne(recurringTransactions.status, STORED_STATUS[query.status]),
+							byType,
+							recurringScope(deps),
+						),
+					)
 					.groupBy(recurringTransactions.status);
 
 	return {
@@ -352,7 +365,7 @@ export async function billHistory(deps: ServiceDeps, id: string): Promise<BillHi
 		.where(eq(recurringTransactions.id, id))
 		.get();
 	const { rows, allocations } = await loadBills(
-		deps.db,
+		deps,
 		eq(recurringOccurrences.recurringTransactionId, id),
 		day,
 	);

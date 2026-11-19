@@ -1,6 +1,7 @@
 import type { ErrorBody } from "./lib/errors.ts";
 import type { Logger } from "./lib/logger.ts";
 import type { SessionEnv } from "./routes/middleware/auth.ts";
+import type { AccountActor } from "./services/account-access.ts";
 import type { Auth } from "./services/auth.ts";
 import type { BankConnectionDeps } from "./services/bank-connections.ts";
 import type { ServiceDeps } from "./services/deps.ts";
@@ -372,9 +373,13 @@ function serveInterface(app: Hono<SessionEnv>, root: string) {
 export function createApp(defaults: AppDeps) {
 	// Mounted routes share their dependencies. Keep one zone per request so a
 	// preference edit cannot move the calendar day of work already in flight.
+	const requestActor = new AsyncLocalStorage<AccountActor>();
 	const requestZone = new AsyncLocalStorage<string>();
 	const deps: AppDeps = {
 		...defaults,
+		get actor() {
+			return requestActor.getStore();
+		},
 		get timeZone() {
 			return requestZone.getStore() ?? defaults.timeZone;
 		},
@@ -518,6 +523,21 @@ export function createApp(defaults: AppDeps) {
 		.use("/api/*", dailyPrices(deps))
 		.use("/api/*", dailyRecurring(deps))
 		.use("/api/*", monthlyReserveTargets(deps))
+		.use(
+			"/api/*",
+			createMiddleware<SessionEnv>(async (c, next) => {
+				const actor = c.get("user");
+				await (actor === undefined
+					? next()
+					: requestActor.run(
+							{
+								id: actor.id,
+								role: actor.role === "admin" || actor.role === "member" ? actor.role : "guest",
+							},
+							next,
+						));
+			}),
+		)
 		.route("/api", createApi(deps))
 		.all("/api/*", notFound);
 

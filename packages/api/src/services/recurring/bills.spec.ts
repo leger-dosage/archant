@@ -71,7 +71,7 @@ describe("one-off schedules", () => {
 		});
 		expect((await upcomingRecurring(deps())).map(({ id }) => id)).toEqual([fee.id, bonus.id]);
 		const period = { from: "2026-09-15", to: "2026-10-14", currency: "EUR" };
-		const reservations = () => budgetBillReservations(temp.db, period);
+		const reservations = () => budgetBillReservations(deps(), period);
 		await expect(reservations()).resolves.toEqual({
 			fees: { amount: 8420, unconvertibleCount: 0 },
 		});

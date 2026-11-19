@@ -34,9 +34,12 @@ import { cn } from "@/lib/utils";
  * `BudgetCategoriesController#show`, since its envelope nets them.
  */
 function filtersOf(envelope: Envelope, budget: BudgetData): TransactionFilters {
-	return envelope.kind === "category"
-		? { category: [envelope.line.categoryId], from: budget.from, to: budget.to }
-		: { category: [UNCATEGORISED], from: budget.from, to: budget.to };
+	return {
+		category: [envelope.kind === "category" ? envelope.line.categoryId : UNCATEGORISED],
+		from: budget.from,
+		to: budget.to,
+		budgetOwner: budget.ownerId ?? "shared",
+	};
 }
 
 function Figure({ label, children }: { label: string; children: React.ReactNode }) {
@@ -69,7 +72,8 @@ export function BudgetCategorySheet({
 	const { t } = useTranslation();
 	const { line } = envelope;
 	const filters = filtersOf(envelope, budget);
-	const recent = useRecentTransactions(filters, open);
+	const { canReadTransactions } = budget;
+	const recent = useRecentTransactions(filters, open && canReadTransactions);
 	const shared = envelope.kind === "category" && envelope.line.shared;
 	const money = (amount: MinorUnits) => formatMoney({ amount, currency: budget.currency });
 	const budgeted = shared ? t("budgets.categories.shared") : money(line.budgetedSpending);
@@ -130,41 +134,46 @@ export function BudgetCategorySheet({
 							<Figure label={t("budgets.sheet.median")}>{optional(line.median)}</Figure>
 						</dl>
 					</InsetGroup>
-					<InsetGroup level={3} title={t("budgets.sheet.recent")}>
-						<div className="flex flex-col gap-4 p-4">
-							{recent.isPending && <Skeleton className="h-24 w-full" aria-hidden="true" />}
-							{recent.isError && (
-								<p role="alert" className="text-sm text-muted-foreground">
-									{t(`errors.${errorCodeOf(recent.error)}`)}
-								</p>
-							)}
-							{recent.data !== undefined &&
-								(recent.data.length === 0 ? (
-									<p className="text-sm text-muted-foreground">
-										{t("budgets.sheet.noTransactions")}
+					{canReadTransactions && (
+						<InsetGroup level={3} title={t("budgets.sheet.recent")}>
+							<div className="flex flex-col gap-4 p-4">
+								{recent.isPending && <Skeleton className="h-24 w-full" aria-hidden="true" />}
+								{recent.isError && (
+									<p role="alert" className="text-sm text-muted-foreground">
+										{t(`errors.${errorCodeOf(recent.error)}`)}
 									</p>
-								) : (
-									<ul aria-label={t("budgets.sheet.recent")} className="flex flex-col gap-3">
-										{recent.data.map((item) => (
-											<li key={item.id} className="flex items-start justify-between gap-4 text-sm">
-												<div className="flex min-w-0 flex-col">
-													<span className="text-xs text-muted-foreground uppercase">
-														{formatShortDate(item.date)}
-													</span>
-													<span className="truncate">{item.label}</span>
-												</div>
-												<Money amount={item.amount} currency={item.currency} signed />
-											</li>
-										))}
-									</ul>
-								))}
-							<Button variant="outline" asChild>
-								<Link to="/transactions" search={filters}>
-									{t("budgets.sheet.all")}
-								</Link>
-							</Button>
-						</div>
-					</InsetGroup>
+								)}
+								{recent.data !== undefined &&
+									(recent.data.length === 0 ? (
+										<p className="text-sm text-muted-foreground">
+											{t("budgets.sheet.noTransactions")}
+										</p>
+									) : (
+										<ul aria-label={t("budgets.sheet.recent")} className="flex flex-col gap-3">
+											{recent.data.map((item) => (
+												<li
+													key={item.id}
+													className="flex items-start justify-between gap-4 text-sm"
+												>
+													<div className="flex min-w-0 flex-col">
+														<span className="text-xs text-muted-foreground uppercase">
+															{formatShortDate(item.date)}
+														</span>
+														<span className="truncate">{item.label}</span>
+													</div>
+													<Money amount={item.amount} currency={item.currency} signed />
+												</li>
+											))}
+										</ul>
+									))}
+								<Button variant="outline" asChild>
+									<Link to="/transactions" search={filters}>
+										{t("budgets.sheet.all")}
+									</Link>
+								</Button>
+							</div>
+						</InsetGroup>
+					)}
 				</div>
 			</SheetContent>
 		</Sheet>

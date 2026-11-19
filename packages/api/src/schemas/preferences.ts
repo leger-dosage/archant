@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { ACCOUNT_ORDERS } from "@archant/data/account-orders";
+import { ACCOUNT_SHARING_DEFAULTS } from "@archant/data/account-sharing";
 import { LOCALES } from "@archant/data/locales";
 import { SURE_PERIODS } from "@archant/data/periods";
 
@@ -19,6 +20,8 @@ export const preferencesSchema = z.object({
 	// Null goes back to the browser's language, Sure's blank `locale`.
 	locale: z.enum(LOCALES).nullable().optional(),
 	// The household's, Sure's `families.locale`. The route keeps it to administrators.
+	defaultAccountSharing: z.enum(ACCOUNT_SHARING_DEFAULTS).optional(),
+	personalBudgets: z.boolean().optional(),
 	householdLocale: z.enum(LOCALES).optional(),
 });
 

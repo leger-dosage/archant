@@ -13,6 +13,7 @@ import {
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { remainingOf, resolvedExpected } from "../../domain/recurring/occurrences.ts";
+import { allocationScope, recurringScope } from "./access.ts";
 
 type Reservation = { amount: MinorUnits; unconvertibleCount: number };
 
@@ -20,10 +21,10 @@ export type BillReservations = Record<string, Reservation | undefined>;
 
 /** Sure's `open_bills_due` and `bills_reservation`, batched for all envelopes. */
 export async function budgetBillReservations(
-	db: ServiceDeps["db"],
+	deps: ServiceDeps,
 	period: { from: IsoDate; to: IsoDate; currency: string },
 ): Promise<BillReservations> {
-	const occurrences = await db
+	const occurrences = await deps.db
 		.select({
 			categoryId: categories.id,
 			currency: recurringOccurrences.currency,
@@ -42,6 +43,7 @@ export async function budgetBillReservations(
 			and(
 				eq(recurringAllocations.recurringOccurrenceId, recurringOccurrences.id),
 				eq(recurringAllocations.state, "confirmed"),
+				allocationScope(deps, "finance"),
 			),
 		)
 		.where(
@@ -49,6 +51,7 @@ export async function budgetBillReservations(
 				eq(recurringOccurrences.status, "scheduled"),
 				between(recurringOccurrences.dueOn, period.from, period.to),
 				eq(recurringTransactions.status, "active"),
+				recurringScope(deps, "finance"),
 				isNull(recurringTransactions.destinationAccountId),
 				lt(recurringTransactions.amount, 0),
 			),

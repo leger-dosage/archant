@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./account-sharing": "./account-sharing.ts",
 		"./account-orders": "./account-orders.ts",
 		"./account-types": "./account-types.ts",
 		"./activity-labels": "./activity-labels.ts",
@@ -56,6 +57,7 @@
 		"./schema/rules": "./schema/rules.ts",
 		"./schema/securities": "./schema/securities.ts",
 		"./schema/settings": "./schema/settings.ts",
+		"./schema/sharing": "./schema/sharing.ts",
 		"./schema/taggings": "./schema/taggings.ts",
 		"./schema/tags": "./schema/tags.ts",
 		"./schema/transaction-attachments": "./schema/transaction-attachments.ts",

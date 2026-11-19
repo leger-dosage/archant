@@ -4,6 +4,7 @@ import type { TagData } from "@/hooks/useTags";
 import type { TintSubject } from "@/lib/tint";
 import type {
 	Direction,
+	FilterChip,
 	FilterKind,
 	TransactionFilters as Filters,
 } from "@/lib/transaction-filters";
@@ -543,7 +544,7 @@ type TransactionFiltersProps = {
 	merchants: readonly MerchantData[];
 	tags: readonly TagData[];
 	onChange: (change: FilterChange) => void;
-	onRemove: (kind: FilterKind) => void;
+	onRemove: (kind: FilterChip["kind"]) => void;
 };
 
 /**
@@ -684,13 +685,17 @@ export function TransactionFilters({
 			{chips.map((chip) => (
 				// As tall as its 28 px remove button, the floor for a control.
 				<Badge key={chip.kind} variant="outline" className="h-auto gap-0.5 py-0 pr-0 pl-0">
-					<button
-						type="button"
-						className="self-stretch rounded-l-4xl pr-1 pl-2.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-						onClick={() => edit(chip.kind)}
-					>
-						{chip.label}
-					</button>
+					{chip.kind === "budgetOwner" ? (
+						<span className="pl-2.5">{chip.label}</span>
+					) : (
+						<button
+							type="button"
+							className="self-stretch rounded-l-4xl pr-1 pl-2.5 outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+							onClick={() => edit(chip.kind === "budgetOwner" ? null : chip.kind)}
+						>
+							{chip.label}
+						</button>
+					)}
 					<button
 						type="button"
 						aria-label={t("operations.removeFilter", { label: chip.label })}

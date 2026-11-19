@@ -30,6 +30,7 @@ import { isLinkCandidate, suggestedTarget } from "../domain/bank-accounts.ts";
 import { connectionAlert } from "../domain/bank-connection-alert.ts";
 import { addDays, addMonths, minDate, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { accountIds, requireAccount } from "./account-access.ts";
 import {
 	assertRemovable,
 	bankSetup,
@@ -647,25 +648,38 @@ export async function listBankAccounts(
 		.where(eq(bankAccounts.bankConnectionId, connectionId))
 		.orderBy(asc(bankAccounts.createdAt), asc(bankAccounts.name), asc(bankAccounts.id));
 	const all = await deps.db.select().from(accounts);
+	const readable = await accountIds(deps);
+	const writable = await accountIds(deps, "edit");
 	const linked = new Map(
 		all.flatMap((account) =>
 			account.bankAccountId === null ? [] : [[account.bankAccountId, account] as const],
 		),
 	);
 
-	return rows.map((row): BankAccountRecord => {
-		const account = linked.get(row.id);
+	return rows
+		.filter((row) => {
+			const account = linked.get(row.id);
+			return account === undefined || readable === undefined || readable.includes(account.id);
+		})
+		.map((row): BankAccountRecord => {
+			const account = linked.get(row.id);
 
-		return {
-			id: row.id,
-			name: row.name,
-			ibanLast4: row.ibanLast4,
-			currency: row.currency,
-			suggestion: targetRecord(suggestedTarget(row.cashAccountType)),
-			account: account === undefined ? null : { id: account.id, name: account.name },
-			candidates: account === undefined ? candidatesFor(row, all) : [],
-		};
-	});
+			return {
+				id: row.id,
+				name: row.name,
+				ibanLast4: row.ibanLast4,
+				currency: row.currency,
+				suggestion: targetRecord(suggestedTarget(row.cashAccountType)),
+				account: account === undefined ? null : { id: account.id, name: account.name },
+				candidates:
+					account === undefined
+						? candidatesFor(
+								row,
+								all.filter(({ id }) => writable === undefined || writable.includes(id)),
+							)
+						: [],
+			};
+		});
 }
 
 const invalidLink = (path: string): FieldError => ({ path, code: "invalid_value" });
@@ -706,6 +720,7 @@ export async function linkBankAccounts(
 		.where(and(eq(bankAccounts.bankConnectionId, connectionId), inArray(bankAccounts.id, ids)));
 	const byId = new Map(rows.map((row) => [row.id, row]));
 	const all = await deps.db.select().from(accounts);
+	const writable = await accountIds(deps, "edit");
 	const taken = new Set(all.map((account) => account.bankAccountId));
 	const errors: FieldError[] = [];
 	const seenBankAccounts = new Set<string>();
@@ -731,6 +746,7 @@ export async function linkBankAccounts(
 
 			if (
 				target === undefined ||
+				(writable !== undefined && !writable.includes(target.id)) ||
 				seenAccounts.has(target.id) ||
 				!isLinkCandidate(target, bankAccount)
 			) {
@@ -806,6 +822,9 @@ export async function linkBankAccounts(
 		}
 
 		const write = async ({ link, bankAccount }: (typeof planned)[number], index: number) => {
+			if (link.action === "link") {
+				await requireAccount(inner, link.accountId, "edit");
+			}
 			const balance = balances[index] ?? null;
 			const accountId =
 				link.action === "link"

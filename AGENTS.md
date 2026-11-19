@@ -89,7 +89,7 @@ Success is `{ "data": ... }`, failure is `{ "error": { "code": "...", "message":
 
 Error messages returned by the API are in English. The interface translates them from the code.
 
-`guestReadOnly` in `packages/api/src/routes/middleware/roles.ts` allows only `GET` and `HEAD` from a guest on session-protected routes. A write uses a mutating method. Reserve administration to `requireRole("admin")`, or use `assertRole` when a validated field determines the permission (AD-21). In the interface, `useCanWrite()` controls ledger writes and `useIsAdmin()` controls administration, including reads reserved for administrators. The server enforces both permissions.
+`guestReadOnly` in `packages/api/src/routes/middleware/roles.ts` allows only `GET` and `HEAD` from a guest on session-protected routes. A write uses a mutating method. Reserve administration to `requireRole("admin")`, or use `assertRole` when a validated field determines the permission (AD-21). In the interface, `useCanWrite()` controls ledger writes and `useIsAdmin()` controls administration, including reads reserved for administrators. The server enforces both permissions. Ordinary financial routes also apply account ownership and grants through `services/account-access.ts`. The signed-in actor has the same scope through an assistant. Household administration and background maintenance follow AD-21.
 
 ## Security
 

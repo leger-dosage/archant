@@ -17,7 +17,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useCanWrite } from "@/hooks/usePermissions";
+import { useBudgetOwner } from "@/hooks/useBudget";
 import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
@@ -198,7 +198,8 @@ export function BudgetCategories({
 	onFilterChange: (filter: BudgetFilter | undefined) => void;
 }) {
 	const { t } = useTranslation();
-	const canWrite = useCanWrite();
+	const owner = useBudgetOwner();
+	const canWrite = budget.canWrite;
 	// The sheet keeps the last card it opened while it slides out.
 	const [opened, setOpened] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
@@ -299,6 +300,7 @@ export function BudgetCategories({
 							<Link
 								to="/budgets/$month/categories"
 								params={{ month: budget.month }}
+								search={{ owner }}
 								aria-label={t("budgets.categories.editLabel")}
 							>
 								<Settings2Icon aria-hidden="true" />

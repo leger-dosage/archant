@@ -18,6 +18,7 @@ import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds"
 import { takesCategory } from "@archant/data/transfer-kinds";
 
 import { AppError } from "../../lib/errors.ts";
+import { requireTransfer } from "../account-access.ts";
 import {
 	categoryExists,
 	changeOf,
@@ -169,6 +170,7 @@ export async function updateTransferDetails(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "annotate");
 			const transfer = await transferRow(tx, transferId);
 
 			if (patch.categoryId !== undefined) {
@@ -220,6 +222,7 @@ export async function setTransferTags(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "annotate");
 			const transfer = await transferRow(tx, transferId);
 
 			if (tagIds.length > 0 && !(await tagsExist(tx, [...new Set(tagIds)]))) {

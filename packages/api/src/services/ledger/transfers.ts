@@ -37,6 +37,14 @@ import {
 } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
 import {
+	accountIdFilter,
+	accountIds,
+	entryScope,
+	requireAccount,
+	requireEntry,
+	requireTransfer,
+} from "../account-access.ts";
+import {
 	investmentContributionsCategoryFor,
 	transferFeesCategoryFor,
 } from "../default-categories.ts";
@@ -249,6 +257,7 @@ async function handCandidates(
 	db: Pick<Transaction, "select">,
 	entryId: string,
 	counterpartId?: string,
+	accountFilter?: SQL,
 ): Promise<CandidatePair[]> {
 	const rows = await candidatePairQuery(
 		db,
@@ -259,6 +268,7 @@ async function handCandidates(
 			// 100,000 transactions the planner scanned every transaction instead of
 			// looking the source up by its id.
 			eq(sql`+${sourceEntry.kind}`, "transaction"),
+			accountFilter,
 			counterpartId === undefined ? undefined : eq(entries.id, counterpartId),
 		),
 		BY_HAND,
@@ -293,10 +303,18 @@ function transferBetween(a: PairSide, b: PairSide, status: TransferStatus, now: 
  * `entries_kind_amount_date` by its sign, and its candidates from the same
  * index by the opposite amount and the window.
  */
-export function proposalCandidateQuery(db: Pick<Transaction, "select">) {
+export function proposalCandidateQuery(
+	db: Pick<Transaction, "select">,
+	allowed?: readonly string[],
+) {
 	return candidatePairQuery(
 		db,
-		and(eq(sourceEntry.kind, "transaction"), lt(sourceEntry.amount, 0)),
+		and(
+			eq(sourceEntry.kind, "transaction"),
+			accountIdFilter(sourceEntry.accountId, allowed),
+			accountIdFilter(entries.accountId, allowed),
+			lt(sourceEntry.amount, 0),
+		),
 		PROPOSAL,
 	);
 }
@@ -349,8 +367,9 @@ export async function matchTransfers(
 	tx: Pick<Transaction, "select" | "insert" | "update">,
 	now: number,
 	only?: ReadonlySet<string>,
+	allowed?: readonly string[],
 ): Promise<string[]> {
-	const rows = accepted(await proposalCandidateQuery(tx), PROPOSAL);
+	const rows = accepted(await proposalCandidateQuery(tx, allowed), PROPOSAL);
 	// Each line with what it sees of the other side of each of its pairs.
 	const lines = new Map<string, { side: ExpectingSide; candidates: ExpectingSide[] }>();
 	const meet = (side: ExpectingSide, other: ExpectingSide) => {
@@ -410,7 +429,7 @@ export async function transferCandidates(
 		throw new AppError("NOT_FOUND", "No transaction has this id.");
 	}
 
-	const rows = await handCandidates(deps.db, entryId);
+	const rows = await handCandidates(deps.db, entryId, undefined, entryScope(deps));
 
 	return (
 		rows
@@ -455,11 +474,17 @@ export async function matchTransfer(
 ): Promise<Transfer> {
 	return deps.db.transaction(
 		async (tx): Promise<Transfer> => {
+			await requireEntry({ ...deps, db: tx }, entryId, "edit");
 			if ((await transferSide(tx, entryId)) === undefined) {
 				throw new AppError("NOT_FOUND", "No transaction has this id.");
 			}
 
-			const [pair] = await handCandidates(tx, entryId, counterpartId);
+			const [pair] = await handCandidates(
+				tx,
+				entryId,
+				counterpartId,
+				entryScope({ ...deps, db: tx }, "edit"),
+			);
 
 			if (pair === undefined) {
 				throw invalidField("counterpartId", "not_a_candidate");
@@ -490,6 +515,7 @@ export async function confirmTransfer(
 ): Promise<TransferSides> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "edit");
 			const [confirmed] = await tx
 				.update(transfers)
 				.set({ status: "confirmed" })
@@ -540,6 +566,7 @@ export async function unmatchTransfer(
 ): Promise<TransferSides> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "edit");
 			const deleted = await deleteTransferRow(tx, transferId);
 
 			if (deleted === undefined) {
@@ -572,6 +599,7 @@ export async function rejectTransfer(
 ): Promise<TransferSides> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "edit");
 			const deleted = await deleteTransferRow(tx, transferId);
 
 			if (deleted === undefined) {
@@ -806,10 +834,12 @@ export async function createTransferBetween(
 ): Promise<CreatedTransfer> {
 	const result = await deps.db.transaction(
 		async (tx): Promise<CreatedTransfer> => {
+			await requireAccount({ ...deps, db: tx }, input.fromAccountId, "edit");
 			if (input.idempotencyKey !== undefined) {
 				const existing = await transferOfKey(tx, input.idempotencyKey);
 
 				if (existing !== undefined) {
+					await requireAccount({ ...deps, db: tx }, existing.toAccountId, "edit");
 					const same =
 						existing.fromAccountId === input.fromAccountId &&
 						existing.toAccountId === input.toAccountId &&
@@ -831,6 +861,7 @@ export async function createTransferBetween(
 
 			const source = await transferAccount(tx, input.fromAccountId, "fromAccountId");
 			const destination = await transferAccount(tx, input.toAccountId, "toAccountId");
+			await requireAccount({ ...deps, db: tx }, destination.id, "edit");
 
 			if (source.id === destination.id) {
 				throw invalidField("toAccountId", "same_account");
@@ -963,7 +994,7 @@ export async function createTransferBetween(
 			);
 
 			// The fee lines are standard lines, weighed as any line typed by hand.
-			await matchTransfers(tx, now);
+			await matchTransfers(tx, now, undefined, await accountIds({ ...deps, db: tx }, "edit"));
 
 			return { transfer, created: true };
 		},

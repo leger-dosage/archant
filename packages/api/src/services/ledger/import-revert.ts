@@ -15,6 +15,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
 import { AppError } from "../../lib/errors.ts";
+import { requireAccount } from "../account-access.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import {
@@ -128,6 +129,8 @@ export async function revertImport(
 			if (row === undefined) {
 				throw new AppError("NOT_FOUND", "No import has this id.");
 			}
+
+			await requireAccount({ ...deps, db: tx }, row.accountId, "edit");
 
 			// A preview wrote nothing and is purged; a reverted import has nothing
 			// left to undo, and a revert is never undone.

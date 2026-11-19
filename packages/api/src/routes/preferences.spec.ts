@@ -55,6 +55,8 @@ describe("GET /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -91,6 +93,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 		await expect(read.json()).resolves.toEqual({
@@ -101,6 +105,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -120,6 +126,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -144,6 +152,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 		await expect(readOff.json()).resolves.toEqual({
@@ -154,6 +164,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 		await expect(on.json()).resolves.toEqual({
@@ -164,6 +176,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -184,6 +198,8 @@ describe("PATCH /api/preferences", () => {
 				locale: "en",
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 		await expect(french.json()).resolves.toEqual({
@@ -194,6 +210,8 @@ describe("PATCH /api/preferences", () => {
 				locale: "fr",
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 		await expect(browser.json()).resolves.toEqual({
@@ -204,6 +222,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -257,6 +277,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -296,6 +318,8 @@ describe("PATCH /api/preferences", () => {
 				locale: null,
 				householdLocale: "fr",
 				manualReconciliation: false,
+				defaultAccountSharing: "shared",
+				personalBudgets: false,
 			},
 		});
 	});
@@ -409,6 +433,8 @@ describe("PATCH /api/preferences", () => {
 					locale: null,
 					householdLocale: "fr",
 					manualReconciliation: false,
+					defaultAccountSharing: "shared",
+					personalBudgets: false,
 				},
 			});
 		});

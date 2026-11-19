@@ -7,6 +7,7 @@ import { categories } from "@archant/data/schema/categories";
 import { merchants } from "@archant/data/schema/merchants";
 import { tags } from "@archant/data/schema/tags";
 
+import { accountScope } from "./account-access.ts";
 import { invalidField } from "./ledger/shared.ts";
 
 /** A row another one points to, as Sure's assistant functions give it: `{ id, name }`. */
@@ -167,7 +168,7 @@ export async function accountsNamed(deps: ServiceDeps, name: string): Promise<st
 	const rows = await deps.db
 		.select({ id: accounts.id })
 		.from(accounts)
-		.where(and(eq(accounts.name, name), eq(accounts.active, true)))
+		.where(and(accountScope(deps, "edit"), eq(accounts.name, name), eq(accounts.active, true)))
 		.limit(2);
 
 	return rows.map((row) => row.id);
@@ -193,6 +194,7 @@ export async function fundableAccountsNamed(
 		.from(accounts)
 		.where(
 			and(
+				accountScope(deps, "edit"),
 				inArray(accounts.name, [...new Set(names)]),
 				eq(accounts.active, true),
 				eq(accounts.type, "depository"),

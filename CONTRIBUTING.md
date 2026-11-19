@@ -24,7 +24,7 @@ For a behaviour change, read the relevant [OpenSpec specification](openspec/spec
 
 A new dependency needs a reason in the pull request description: dependencies stay few and popular.
 
-Use a mutating method for writes. `guestReadOnly` blocks guest writes before routes run. Use `requireRole("admin")` for household administration, including reads that only an administrator may see. When only part of a request is reserved to administrators, validate the request and call `assertRole` before any writes. The interface uses `useCanWrite()` for ledger and personal preference controls and `useIsAdmin()` for administration. The server enforces both permissions.
+Use a mutating method for writes. `guestReadOnly` blocks guest writes before routes run. Use `requireRole("admin")` for household administration, including reads that only an administrator may see. When only part of a request is reserved to administrators, validate the request and call `assertRole` before any writes. The interface uses `useCanWrite()` for ledger and personal preference controls and `useIsAdmin()` for administration. The server enforces both permissions. For a financial read, apply account scope before filtering or aggregating. For a write, check the required account grant inside the transaction when the write spans multiple statements. See AD-21 in [the architecture](docs/architecture.md#ad-21--roles).
 
 ## Translations
 

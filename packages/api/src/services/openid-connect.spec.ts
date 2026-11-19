@@ -4,9 +4,12 @@ import { afterEach, expect, it } from "vitest";
 import { z } from "zod";
 
 import { users, authAccounts, ssoAuditLogs } from "@archant/data/schema/auth";
+import { settings } from "@archant/data/schema/settings";
+import { accountShares } from "@archant/data/schema/sharing";
 
 import { server } from "../../vitest.setup.ts";
 import { createLogger } from "../lib/logger.ts";
+import { valid } from "../testing/app.ts";
 import {
 	ADMIN,
 	TEST_ORIGIN,
@@ -229,6 +232,42 @@ it("creates a passwordless user only with the matching invitation and its role",
 		"login",
 	]);
 });
+
+it.each([
+	{ sharing: "shared", role: "member", permission: "read_write" },
+	{ sharing: "shared", role: "guest", permission: "read_only" },
+	{ sharing: "private", role: "member", permission: null },
+])(
+	"applies $sharing account sharing to an invited $role",
+	async ({ sharing, role, permission }) => {
+		const { app, cookie, db, post, start, finish } = await setup();
+		const opened = await post("accounts", valid, cookie);
+		expect(opened.status).toBe(201);
+		const accountId = z.object({ data: z.object({ id: z.string() }) }).parse(await opened.json())
+			.data.id;
+		await db.insert(settings).values({
+			key: "default_account_sharing",
+			value: sharing,
+			updatedAt: Date.now(),
+		});
+
+		const email = "invitee@example.test";
+		const invited = await post("invitations", { email, role }, cookie);
+		expect(invited.status).toBe(201);
+		const { data } = z.object({ data: z.object({ url: z.url() }) }).parse(await invited.json());
+		const invitationToken = data.url.split("/").at(-1);
+		const signedIn = await finish(await start({ invitationToken }), { email });
+		expect(signedIn.headers.get("location")).toBe("/");
+
+		expect(
+			(await app.request(`/api/accounts/${accountId}`, { headers: { cookie: cookieOf(signedIn) } }))
+				.status,
+		).toBe(permission === null ? 404 : 200);
+		expect(await db.select({ permission: accountShares.permission }).from(accountShares)).toEqual(
+			permission === null ? [] : [{ permission }],
+		);
+	},
+);
 
 it("refuses mismatched issuer, audience and nonce before establishing a session", async () => {
 	const { start, finish, getExchanges } = await setup();

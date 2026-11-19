@@ -9,6 +9,7 @@ import type {
 	ResolvedConfiguration,
 	Sheet,
 } from "./csv-import-sheet.ts";
+import type { ServiceDeps } from "./deps.ts";
 import type { CsvTrade } from "./ledger/csv-trades.ts";
 import type { CsvStatement } from "./ledger/csv-transactions.ts";
 import type { Transaction } from "./ledger/shared.ts";
@@ -33,6 +34,7 @@ import { IMPORT_LABELS } from "../lib/import-labels.ts";
 import { ACCOUNT_NAME_MAX_LENGTH } from "../schemas/accounts.ts";
 import { CREATE_NEW_KEY, DATE_FORMATS, cleanColumnsOf } from "../schemas/csv-imports.ts";
 import { LABEL_MAX_LENGTH, MAX_SPLIT_LINES, NOTES_MAX_LENGTH } from "../schemas/transactions.ts";
+import { accountScope } from "./account-access.ts";
 import {
 	csvIssue,
 	detectDateFormat,
@@ -539,6 +541,7 @@ export async function analyseQif(
 	qif: QifSheet,
 	mappings: Mappings | undefined,
 	locale: Locale = "fr",
+	actor?: ServiceDeps["actor"],
 ): Promise<Analysis> {
 	const { sheet, facts, file, chosen } = qif;
 	const errors: SureIssue[] = [];
@@ -552,7 +555,8 @@ export async function analyseQif(
 			active: accounts.active,
 			bankAccountId: accounts.bankAccountId,
 		})
-		.from(accounts);
+		.from(accounts)
+		.where(accountScope({ db, actor }, "edit"));
 	const single = chosen === null ? undefined : stored.find((account) => account.id === chosen);
 
 	if (chosen !== null && single?.active !== true) {
@@ -788,7 +792,7 @@ export async function analyseQif(
 				await insertCsvTrades(
 					tx,
 					{ existing: ids, newAccounts: [], trades: written },
-					{ now: Date.now(), timeZone: deps.timeZone },
+					{ now: Date.now(), timeZone: deps.timeZone, creatorId: deps.actor?.id },
 				);
 			}
 		},

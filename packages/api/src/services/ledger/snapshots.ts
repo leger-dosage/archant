@@ -5,9 +5,12 @@ import type { Origin, Transaction } from "./shared.ts";
 
 import { and, count, desc, eq, gte, inArray, lte, ne, sql, sum } from "drizzle-orm";
 
-import { balanceTypeOf } from "@archant/data/account-types";
+import {
+	balanceTypeOf,
+	classificationOf,
+	transactionsMoveBalance,
+} from "@archant/data/account-types";
 import type { AccountType } from "@archant/data/account-types";
-import { classificationOf, transactionsMoveBalance } from "@archant/data/account-types";
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
 import { accounts } from "@archant/data/schema/accounts";
@@ -25,6 +28,7 @@ import {
 import { addDays, minDate, today } from "../../domain/dates.ts";
 import { isTooFarAhead } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
+import { entryScope, requireAccount, requireEntry } from "../account-access.ts";
 import {
 	accountWithOpeningDate,
 	backwardAnchor,
@@ -135,6 +139,7 @@ export async function recordSnapshot(
 ): Promise<RecordSnapshotResult> {
 	const result = await deps.db.transaction(
 		async (tx): Promise<RecordSnapshotResult> => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const account = await accountWithOpeningDate(tx, accountId);
 			const reason = snapshotRejection(account, input.date, deps.timeZone);
 
@@ -220,6 +225,7 @@ export async function updateSnapshot(
 ): Promise<SnapshotUpdateResult> {
 	const result = await deps.db.transaction(
 		async (tx): Promise<SnapshotUpdateResult> => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const current = await snapshotRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 			const date = patch.date ?? current.date;
@@ -320,6 +326,7 @@ export async function deleteSnapshot(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const current = await snapshotRow(tx, id);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 
@@ -543,6 +550,7 @@ export async function listValuations(
 	const where = and(
 		eq(entries.kind, "valuation"),
 		eq(accounts.active, true),
+		entryScope(deps),
 		filter.accountId === undefined ? undefined : eq(entries.accountId, filter.accountId),
 		filter.from === undefined ? undefined : gte(entries.date, filter.from),
 		filter.to === undefined ? undefined : lte(entries.date, filter.to),

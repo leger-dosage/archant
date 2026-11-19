@@ -23,6 +23,7 @@ import { authAccounts, sessions, ssoAuditLogs, users } from "@archant/data/schem
 import { USER_ROLES } from "@archant/data/user-roles";
 
 import { PASSWORD_MAX_LENGTH } from "../schemas/setup.ts";
+import { shareExistingAccounts } from "./account-access.ts";
 import { hashInvitationToken } from "./invitations.ts";
 import { allowsPassword, type LocalLoginPolicy } from "./local-login-policy.ts";
 import { type OpenIdConnectConfig, openIdAccountId, OPENID_PROVIDER } from "./openid-provider.ts";
@@ -155,6 +156,15 @@ export function openIdConnect(
 								}
 
 								return { data: { ...user, role: role.data } };
+							},
+							after: async (user, ctx) => {
+								if (ctx?.path !== CALLBACK || ctx.params?.id !== OPENID_PROVIDER) {
+									return;
+								}
+								const role = z.enum(USER_ROLES).parse(user.role);
+								await db.transaction((tx) => shareExistingAccounts(tx, { id: user.id, role }), {
+									behavior: "immediate",
+								});
 							},
 						},
 					},

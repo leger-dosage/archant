@@ -36,6 +36,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import { maxDate, minDate, today } from "../../domain/dates.ts";
 import { marketValue } from "../../domain/trades.ts";
 import { AppError } from "../../lib/errors.ts";
+import { requireAccount } from "../account-access.ts";
 import { historyStartOf, lastBalanceOnOrBefore, recomputeBalances } from "./balances.ts";
 import { stampedLocks } from "./patch.ts";
 import {
@@ -503,6 +504,7 @@ export async function lockCostBasis(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const held = await heldToday(tx, accountId, securityId, deps.timeZone);
 
 			if (marketValue(held.quantity, costBasis, held.currency) > BigInt(MAX_MINOR_UNITS)) {
@@ -534,6 +536,7 @@ export async function unlockCostBasis(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			await heldToday(tx, accountId, securityId, deps.timeZone);
 			await tx
 				.delete(costBasisLocks)
@@ -591,6 +594,7 @@ export async function deletePosition(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const account = await securitiesAccount(tx, accountId);
 			const first = await firstTradeOf(tx, accountId, securityId);
 
@@ -663,6 +667,7 @@ export async function remapPosition(
 ): Promise<{ securityId: string }> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const account = await securitiesAccount(tx, accountId);
 			const first = await firstTradeOf(tx, accountId, securityId);
 

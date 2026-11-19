@@ -609,7 +609,10 @@ export function mcpHandler(deps: McpDeps): (request: Request) => Promise<Respons
 				throw new Error("An MCP server was asked for without an authenticated caller.");
 			}
 
-			return serverFor({ ...deps, timeZone: caller.timeZone }, caller);
+			return serverFor(
+				{ ...deps, actor: { id: caller.userId, role: "admin" }, timeZone: caller.timeZone },
+				caller,
+			);
 		},
 		{
 			// `withinLimit` has refused anything larger by now.

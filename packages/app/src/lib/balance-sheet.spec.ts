@@ -26,6 +26,8 @@ const account = (
 		excludedFromReports: false,
 		linked: false,
 		institutionName: null,
+		permission: "owner",
+		includeInFinances: true,
 		...overrides,
 	};
 };

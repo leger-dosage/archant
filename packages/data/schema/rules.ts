@@ -28,6 +28,7 @@ import { inList } from "./check.ts";
  */
 export const rules = sqliteTable("rules", {
 	id: text("id").primaryKey(),
+	authorId: text("author_id"),
 	// Null shows the summary built from the first condition and the action.
 	name: text("name"),
 	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
@@ -123,6 +124,7 @@ export const ruleRuns = sqliteTable(
 	"rule_runs",
 	{
 		id: text("id").primaryKey(),
+		actorId: text("actor_id"),
 		ruleId: text("rule_id").references(() => rules.id, { onDelete: "set null" }),
 		rule: text("rule", { mode: "json" }).$type<RuleSnapshot>().notNull(),
 		executionType: text("execution_type").$type<RuleRunExecutionType>().notNull(),

@@ -44,7 +44,12 @@ export function TransactionSheet({
 	onOpenChange,
 }: TransactionSheetProps) {
 	const { t } = useTranslation();
-	const canWrite = useCanWrite();
+	const canWriteHousehold = useCanWrite();
+	const permission = "permission" in account ? account.permission : undefined;
+	const canWrite =
+		canWriteHousehold &&
+		(transaction === null || permission === "owner" || permission === "full_control");
+	const canAnnotate = canWrite || (canWriteHousehold && permission === "read_write");
 	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
@@ -156,7 +161,7 @@ export function TransactionSheet({
 									? "transfers.form.title"
 									: transaction === null
 										? "transactions.form.addTitle"
-										: canWrite
+										: canAnnotate
 											? "transactions.form.editTitle"
 											: "transactions.form.viewTitle",
 							)}

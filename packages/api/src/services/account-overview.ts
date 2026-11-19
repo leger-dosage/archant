@@ -7,6 +7,7 @@ import type { MinorUnits } from "@archant/data/money";
 
 import { balanceChange } from "../domain/balances/history.ts";
 import { today } from "../domain/dates.ts";
+import { requireAccount } from "./account-access.ts";
 import { getAccount } from "./accounts.ts";
 import { firstValuationOf } from "./ledger/balances.ts";
 import { loanOverview } from "./loans.ts";
@@ -35,6 +36,7 @@ export async function accountOverview(
 	deps: ServiceDeps,
 	accountId: string,
 ): Promise<LoanOverviewData | AssetOverviewData | null> {
+	await requireAccount(deps, accountId);
 	const account = await getAccount(deps, accountId);
 
 	if (account.type === "loan") {

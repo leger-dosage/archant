@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "77400954-1e63-4bed-8b28-6213bfd571bf",
+  "id": "b28dd1d7-692d-4f80-813a-fdbac63ee740",
   "prevId": "a9097609-1fee-418f-84a9-1d7db516dc73",
   "tables": {
     "accounts": {
@@ -12,6 +12,13 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true,
+          "autoincrement": false
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "name": {
@@ -109,6 +116,13 @@
         }
       },
       "indexes": {
+        "accounts_owner": {
+          "name": "accounts_owner",
+          "columns": [
+            "owner_id"
+          ],
+          "isUnique": false
+        },
         "accounts_bank_account_unique": {
           "name": "accounts_bank_account_unique",
           "columns": [
@@ -118,6 +132,19 @@
         }
       },
       "foreignKeys": {
+        "accounts_owner_id_users_id_fk": {
+          "name": "accounts_owner_id_users_id_fk",
+          "tableFrom": "accounts",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
         "accounts_bank_account_id_bank_accounts_id_fk": {
           "name": "accounts_bank_account_id_bank_accounts_id_fk",
           "tableFrom": "accounts",
@@ -142,6 +169,211 @@
         "accounts_subtype_check": {
           "name": "accounts_subtype_check",
           "value": "(\"accounts\".\"type\" = 'depository' and (\"accounts\".\"subtype\" is null or \"accounts\".\"subtype\" in ('cash', 'checking', 'savings', 'cd', 'money_market'))) or (\"accounts\".\"type\" = 'credit_card' and \"accounts\".\"subtype\" is null) or (\"accounts\".\"type\" = 'loan' and \"accounts\".\"subtype\" is not null and \"accounts\".\"subtype\" in ('mortgage', 'student', 'auto', 'home_equity', 'line_of_credit', 'business', 'other')) or (\"accounts\".\"type\" = 'investment' and (\"accounts\".\"subtype\" is null or \"accounts\".\"subtype\" in ('assurance_vie', 'pea', 'pillar_3a', 'riester', 'pension', 'retirement', 'mutual_fund', 'gold', 'angel', 'trust', 'other', 'brokerage'))) or (\"accounts\".\"type\" = 'crypto' and (\"accounts\".\"subtype\" is null or \"accounts\".\"subtype\" in ('wallet', 'exchange'))) or (\"accounts\".\"type\" = 'property' and \"accounts\".\"subtype\" is not null and \"accounts\".\"subtype\" in ('single_family_home', 'multi_family_home', 'condominium', 'townhouse', 'investment_property', 'second_home', 'apartment', 'plot', 'commercial', 'agri_land')) or (\"accounts\".\"type\" = 'vehicle' and \"accounts\".\"subtype\" is null) or (\"accounts\".\"type\" = 'other_asset' and \"accounts\".\"subtype\" is null) or (\"accounts\".\"type\" = 'other_liability' and \"accounts\".\"subtype\" is null)"
+        }
+      }
+    },
+    "users": {
+      "name": "users",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "email_verified": {
+          "name": "email_verified",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "image": {
+          "name": "image",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "banned": {
+          "name": "banned",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": false
+        },
+        "ban_reason": {
+          "name": "ban_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "ban_expires": {
+          "name": "ban_expires",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "two_factor_enabled": {
+          "name": "two_factor_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false,
+          "default": false
+        },
+        "default_account_id": {
+          "name": "default_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "default_account_order": {
+          "name": "default_account_order",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'name_asc'"
+        },
+        "default_period": {
+          "name": "default_period",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'last_30_days'"
+        },
+        "locale": {
+          "name": "locale",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "show_split_grouped": {
+          "name": "show_split_grouped",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        },
+        "rule_prompts_disabled": {
+          "name": "rule_prompts_disabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
+        },
+        "rule_prompt_dismissed_at": {
+          "name": "rule_prompt_dismissed_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "dashboard_layout": {
+          "name": "dashboard_layout",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "reports_layout": {
+          "name": "reports_layout",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "users_email_unique": {
+          "name": "users_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "users_default_account_id_accounts_id_fk": {
+          "name": "users_default_account_id_accounts_id_fk",
+          "tableFrom": "users",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "default_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "users_role_check": {
+          "name": "users_role_check",
+          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
+        },
+        "users_default_account_order_check": {
+          "name": "users_default_account_order_check",
+          "value": "\"users\".\"default_account_order\" in ('name_asc', 'name_desc', 'balance_asc', 'balance_desc')"
+        },
+        "users_default_period_check": {
+          "name": "users_default_period_check",
+          "value": "\"users\".\"default_period\" in ('last_day', 'current_week', 'last_7_days', 'current_month', 'last_month', 'last_30_days', 'last_90_days', 'current_year', 'last_365_days', 'last_5_years', 'last_10_years', 'all_time')"
+        },
+        "users_locale_check": {
+          "name": "users_locale_check",
+          "value": "\"users\".\"locale\" is null or \"users\".\"locale\" in ('en', 'fr')"
         }
       }
     },
@@ -315,23 +547,6 @@
             "user_id"
           ],
           "isUnique": false
-        },
-        "auth_accounts_openid_identity": {
-          "name": "auth_accounts_openid_identity",
-          "columns": [
-            "provider_id",
-            "account_id"
-          ],
-          "isUnique": true,
-          "where": "\"auth_accounts\".\"provider_id\" = 'openid-connect'"
-        },
-        "auth_accounts_openid_user": {
-          "name": "auth_accounts_openid_user",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": true,
-          "where": "\"auth_accounts\".\"provider_id\" = 'openid-connect'"
         }
       },
       "foreignKeys": {
@@ -691,64 +906,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "sso_audit_logs": {
-      "name": "sso_audit_logs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_type": {
-          "name": "event_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "sso_audit_logs_user_id_users_id_fk": {
-          "name": "sso_audit_logs_user_id_users_id_fk",
-          "tableFrom": "sso_audit_logs",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "sso_audit_logs_event_type_check": {
-          "name": "sso_audit_logs_event_type_check",
-          "value": "\"sso_audit_logs\".\"event_type\" in ('login', 'login_failed', 'link', 'unlink', 'jit_account_created')"
-        }
-      }
-    },
     "two_factors": {
       "name": "two_factors",
       "columns": {
@@ -838,211 +995,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "users": {
-      "name": "users",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "email_verified": {
-          "name": "email_verified",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "image": {
-          "name": "image",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "role": {
-          "name": "role",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "banned": {
-          "name": "banned",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": false
-        },
-        "ban_reason": {
-          "name": "ban_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "ban_expires": {
-          "name": "ban_expires",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "two_factor_enabled": {
-          "name": "two_factor_enabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false,
-          "default": false
-        },
-        "default_account_id": {
-          "name": "default_account_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "default_account_order": {
-          "name": "default_account_order",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'name_asc'"
-        },
-        "default_period": {
-          "name": "default_period",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'last_30_days'"
-        },
-        "locale": {
-          "name": "locale",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "show_split_grouped": {
-          "name": "show_split_grouped",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
-        "rule_prompts_disabled": {
-          "name": "rule_prompts_disabled",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
-        },
-        "rule_prompt_dismissed_at": {
-          "name": "rule_prompt_dismissed_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "dashboard_layout": {
-          "name": "dashboard_layout",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "reports_layout": {
-          "name": "reports_layout",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "users_email_unique": {
-          "name": "users_email_unique",
-          "columns": [
-            "email"
-          ],
-          "isUnique": true
-        }
-      },
-      "foreignKeys": {
-        "users_default_account_id_accounts_id_fk": {
-          "name": "users_default_account_id_accounts_id_fk",
-          "tableFrom": "users",
-          "tableTo": "accounts",
-          "columnsFrom": [
-            "default_account_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "users_role_check": {
-          "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
-        },
-        "users_default_account_order_check": {
-          "name": "users_default_account_order_check",
-          "value": "\"users\".\"default_account_order\" in ('name_asc', 'name_desc', 'balance_asc', 'balance_desc')"
-        },
-        "users_default_period_check": {
-          "name": "users_default_period_check",
-          "value": "\"users\".\"default_period\" in ('last_day', 'current_week', 'last_7_days', 'current_month', 'last_month', 'last_30_days', 'last_90_days', 'current_year', 'last_365_days', 'last_5_years', 'last_10_years', 'all_time')"
-        },
-        "users_locale_check": {
-          "name": "users_locale_check",
-          "value": "\"users\".\"locale\" is null or \"users\".\"locale\" in ('en', 'fr')"
-        }
-      }
     },
     "verifications": {
       "name": "verifications",
@@ -1582,6 +1534,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "month": {
           "name": "month",
           "type": "text",
@@ -1645,11 +1604,29 @@
           "columns": [
             "month"
           ],
+          "isUnique": true,
+          "where": "\"budgets\".\"owner_id\" is null"
+        },
+        "budgets_owner_month_unique": {
+          "name": "budgets_owner_month_unique",
+          "columns": [
+            "owner_id",
+            "month"
+          ],
           "isUnique": true
         },
         "budgets_start_date_unique": {
           "name": "budgets_start_date_unique",
           "columns": [
+            "start_date"
+          ],
+          "isUnique": true,
+          "where": "\"budgets\".\"owner_id\" is null"
+        },
+        "budgets_owner_start_date_unique": {
+          "name": "budgets_owner_start_date_unique",
+          "columns": [
+            "owner_id",
             "start_date"
           ],
           "isUnique": true
@@ -1659,10 +1636,33 @@
           "columns": [
             "end_date"
           ],
+          "isUnique": true,
+          "where": "\"budgets\".\"owner_id\" is null"
+        },
+        "budgets_owner_end_date_unique": {
+          "name": "budgets_owner_end_date_unique",
+          "columns": [
+            "owner_id",
+            "end_date"
+          ],
           "isUnique": true
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "budgets_owner_id_users_id_fk": {
+          "name": "budgets_owner_id_users_id_fk",
+          "tableFrom": "budgets",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
@@ -5540,6 +5540,13 @@
           "notNull": true,
           "autoincrement": false
         },
+        "actor_id": {
+          "name": "actor_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "rule_id": {
           "name": "rule_id",
           "type": "text",
@@ -5657,6 +5664,13 @@
           "type": "text",
           "primaryKey": true,
           "notNull": true,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         },
         "name": {
@@ -5954,6 +5968,176 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "account_shares": {
+      "name": "account_shares",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "include_in_finances": {
+          "name": "include_in_finances",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": true
+        }
+      },
+      "indexes": {
+        "account_shares_user": {
+          "name": "account_shares_user",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "account_shares_account_id_accounts_id_fk": {
+          "name": "account_shares_account_id_accounts_id_fk",
+          "tableFrom": "account_shares",
+          "tableTo": "accounts",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "account_shares_user_id_users_id_fk": {
+          "name": "account_shares_user_id_users_id_fk",
+          "tableFrom": "account_shares",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "account_shares_account_id_user_id_pk": {
+          "columns": [
+            "account_id",
+            "user_id"
+          ],
+          "name": "account_shares_account_id_user_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "account_shares_permission_check": {
+          "name": "account_shares_permission_check",
+          "value": "\"account_shares\".\"permission\" in ('full_control', 'read_write', 'read_only')"
+        }
+      }
+    },
+    "budget_shares": {
+      "name": "budget_shares",
+      "columns": {
+        "owner_id": {
+          "name": "owner_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "viewer_id": {
+          "name": "viewer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "permission": {
+          "name": "permission",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "budget_shares_viewer": {
+          "name": "budget_shares_viewer",
+          "columns": [
+            "viewer_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "budget_shares_owner_id_users_id_fk": {
+          "name": "budget_shares_owner_id_users_id_fk",
+          "tableFrom": "budget_shares",
+          "tableTo": "users",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "budget_shares_viewer_id_users_id_fk": {
+          "name": "budget_shares_viewer_id_users_id_fk",
+          "tableFrom": "budget_shares",
+          "tableTo": "users",
+          "columnsFrom": [
+            "viewer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "budget_shares_owner_id_viewer_id_pk": {
+          "columns": [
+            "owner_id",
+            "viewer_id"
+          ],
+          "name": "budget_shares_owner_id_viewer_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "budget_shares_permission_check": {
+          "name": "budget_shares_permission_check",
+          "value": "\"budget_shares\".\"permission\" in ('read_write', 'read_only')"
+        },
+        "budget_shares_distinct_users": {
+          "name": "budget_shares_distinct_users",
+          "value": "\"budget_shares\".\"owner_id\" != \"budget_shares\".\"viewer_id\""
+        }
+      }
     },
     "taggings": {
       "name": "taggings",
