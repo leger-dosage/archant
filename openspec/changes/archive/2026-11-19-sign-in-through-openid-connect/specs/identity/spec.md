@@ -14,7 +14,9 @@ Archant SHALL support OpenID Connect sign-in, linking and invitation-only accoun
 
 - **GIVEN** the sign-in page with a provider set
 - **WHEN** a member chooses « Se connecter avec OpenID Connect »
-- **THEN** a known identity signs in; a new one links an existing user after their password, as `oidc_accounts_controller.rb#create_link`, or creates a user only through a pending invitation, since one instance is one household; `AUTH_JIT_MODE=link_only` and `ALLOWED_OIDC_DOMAINS` restrict creation as `AuthConfig` does.
+- **THEN** a known identity signs in by its verified issuer and subject.
+- **AND** an existing member can link a new identity from their signed-in security settings by entering their current password and using the same verified email at the provider. Email alone never links a user.
+- **AND** an invitee can create a passwordless account only from a pending invitation link for the verified email. The invitation is consumed with the account creation and determines the role. `AUTH_JIT_MODE=link_only` disallows creation, and `ALLOWED_OIDC_DOMAINS` restricts the allowed email domains.
 
 #### Scenario: Apply the local sign-in policy
 

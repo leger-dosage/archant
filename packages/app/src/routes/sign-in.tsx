@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/hooks/useAuthActions";
 import { passwordResetAvailability, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
+import { signInOptionsQuery, signInWithOpenIdConnect } from "@/lib/openid-connect-client";
 import { passkeyConfigQuery, signInWithPasskey } from "@/lib/passkey-client";
 import { queryKeys } from "@/lib/query-keys";
 import { safeRedirect } from "@/lib/safe-redirect";
@@ -25,6 +26,7 @@ import { safeRedirect } from "@/lib/safe-redirect";
 // came, since `oauthProviderClient` reads it from there on each step.
 const searchSchema = z.looseObject({
 	redirect: z.string().optional().catch(undefined),
+	oidc: z.literal("failed").optional().catch(undefined),
 	passwordReset: z.literal(true).optional().catch(undefined),
 });
 
@@ -94,6 +96,8 @@ function SignInPage() {
 	const queryClient = useQueryClient();
 	const search = Route.useSearch();
 	const { data: passkeyConfig } = useQuery(passkeyConfigQuery);
+	const { data: options } = useQuery(signInOptionsQuery);
+	const [oidcFailure, setOidcFailure] = useState(search.oidc === "failed");
 	const { data: recovery } = useQuery(passwordResetAvailability);
 	const [failure, setFailure] = useState<FormFailure | null>(null);
 	// Two-factor on: the password was right and a code is now expected. No
@@ -172,47 +176,67 @@ function SignInPage() {
 		<OutsideShell className="flex flex-col gap-6">
 			<h1 className="page-title">{t("signIn.title")}</h1>
 			{search.passwordReset && <p role="status">{t("passwordRecovery.success")}</p>}
-			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="email">{t("signIn.email")}</Label>
-					<Input
-						id="email"
-						type="email"
-						autoComplete="username"
-						aria-invalid={errors.email !== undefined}
-						{...describedBy("email")}
-						{...form.register("email")}
-					/>
-					<FieldMessage id="email-error" error={errors.email} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<div className="flex items-center justify-between gap-2">
-						<Label htmlFor="password">{t("signIn.password")}</Label>
-						{recovery?.data.enabled && (
-							<Link to="/forgot-password" className="text-sm underline">
-								{t("passwordRecovery.forgotTitle")}
-							</Link>
-						)}
+			{options?.password !== false && (
+				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="email">{t("signIn.email")}</Label>
+						<Input
+							id="email"
+							type="email"
+							autoComplete="username"
+							aria-invalid={errors.email !== undefined}
+							{...describedBy("email")}
+							{...form.register("email")}
+						/>
+						<FieldMessage id="email-error" error={errors.email} />
 					</div>
-					<Input
-						id="password"
-						type="password"
-						autoComplete="current-password"
-						aria-invalid={errors.password !== undefined}
-						{...describedBy("password")}
-						{...form.register("password")}
-					/>
-					<FieldMessage id="password-error" error={errors.password} />
-				</div>
-				<Button type="submit" disabled={isSubmitting}>
-					{t("signIn.submit")}
+					<div className="flex flex-col gap-1.5">
+						<div className="flex items-center justify-between gap-2">
+							<Label htmlFor="password">{t("signIn.password")}</Label>
+							{recovery?.data.enabled && (
+								<Link to="/forgot-password" className="text-sm underline">
+									{t("passwordRecovery.forgotTitle")}
+								</Link>
+							)}
+						</div>
+						<Input
+							id="password"
+							type="password"
+							autoComplete="current-password"
+							aria-invalid={errors.password !== undefined}
+							{...describedBy("password")}
+							{...form.register("password")}
+						/>
+						<FieldMessage id="password-error" error={errors.password} />
+					</div>
+					<Button type="submit" disabled={isSubmitting}>
+						{t("signIn.submit")}
+					</Button>
+					{failure !== null && (
+						<p role="alert" className="text-sm text-destructive">
+							{failure === "originMismatch" ? t("errors.ORIGIN_MISMATCH") : t(`signIn.${failure}`)}
+						</p>
+					)}
+				</form>
+			)}
+			{options?.openIdConnect && (
+				<Button
+					type="button"
+					variant="outline"
+					onClick={() => {
+						void signInWithOpenIdConnect(safeRedirect(search.redirect))
+							.then(({ error }) => setOidcFailure(error !== null))
+							.catch(() => setOidcFailure(true));
+					}}
+				>
+					{t("openidConnect.signIn")}
 				</Button>
-				{failure !== null && (
-					<p role="alert" className="text-sm text-destructive">
-						{failure === "originMismatch" ? t("errors.ORIGIN_MISMATCH") : t(`signIn.${failure}`)}
-					</p>
-				)}
-			</form>
+			)}
+			{oidcFailure && (
+				<p role="alert" className="text-sm text-destructive">
+					{t("openidConnect.signInFailure")}
+				</p>
+			)}
 			{passkeyConfig?.standalone === true && (
 				<PasskeyButton mode="standalone" disabled={isSubmitting} onSignedIn={completeSignIn} />
 			)}

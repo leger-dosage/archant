@@ -78,6 +78,8 @@ import {
 	signDeviceCookie,
 } from "./services/device-cookie.ts";
 import { emailPasswordResetAvailable } from "./services/email-password-reset.ts";
+import { openIdCallbackResponse } from "./services/openid-connect.ts";
+import { OPENID_CALLBACK } from "./services/openid-provider.ts";
 import { householdTimeZone } from "./services/settings.ts";
 import {
 	SIGN_IN_CEILING,
@@ -302,6 +304,7 @@ function createApi(deps: AppDeps) {
 		.route("/securities", securitiesRoutes(deps))
 		.route("/sync", syncRoutes(deps))
 		.route("/setup", setupRoutes(deps))
+		.get("/sign-in-options", (c) => c.json({ data: deps.auth.signInOptions }, 200))
 		.get("/password-reset", async (c) => {
 			const { options } = await deps.auth.$context;
 
@@ -493,11 +496,20 @@ export function createApp(defaults: AppDeps) {
 		)
 		// Better Auth answers in its own shape, outside the envelope and outside
 		// `AppType`; the interface calls it through `better-auth/react`.
-		.on(["GET", "POST"], "/api/auth/*", async (c) =>
-			deps.auth.handler(
+		.on(["GET", "POST"], "/api/auth/*", async (c) => {
+			const response = await deps.auth.handler(
 				withForwardedFor(c.req.raw, deps.clientAddress(c), deps.trustedProxies.length > 0),
-			),
-		)
+			);
+			if (
+				deps.auth.signInOptions.openIdConnect &&
+				c.req.method === "GET" &&
+				c.req.path === OPENID_CALLBACK
+			) {
+				return openIdCallbackResponse(deps.db, deps.trustedOrigin, response);
+			}
+
+			return response;
+		})
 		// No session there (AD-19): a strict origin check against DNS rebinding,
 		// then the token check and the tools.
 		.use("/api/mcp", sameOrigin(deps, { strict: true }))

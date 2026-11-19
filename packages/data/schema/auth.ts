@@ -1,7 +1,8 @@
 import { sql } from "drizzle-orm";
-import { index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 import { users } from "./accounts.ts";
+import { inList } from "./check.ts";
 
 export { users } from "./accounts.ts";
 
@@ -69,7 +70,15 @@ export const authAccounts = sqliteTable(
 			.$onUpdate(() => new Date())
 			.notNull(),
 	},
-	(table) => [index("auth_accounts_user_id").on(table.userId)],
+	(table) => [
+		index("auth_accounts_user_id").on(table.userId),
+		uniqueIndex("auth_accounts_openid_identity")
+			.on(table.providerId, table.accountId)
+			.where(sql`${table.providerId} = 'openid-connect'`),
+		uniqueIndex("auth_accounts_openid_user")
+			.on(table.userId)
+			.where(sql`${table.providerId} = 'openid-connect'`),
+	],
 );
 
 export const verifications = sqliteTable(
@@ -165,3 +174,18 @@ export const signInFailures = sqliteTable("sign_in_failures", {
 	count: integer("count").notNull(),
 	windowStartedAt: integer("window_started_at").notNull(),
 });
+
+const SSO_EVENTS = ["login", "login_failed", "link", "unlink", "jit_account_created"] as const;
+
+export const ssoAuditLogs = sqliteTable(
+	"sso_audit_logs",
+	{
+		id: text("id").primaryKey(),
+		eventType: text("event_type").$type<(typeof SSO_EVENTS)[number]>().notNull(),
+		userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+		createdAt: createdAt(),
+	},
+	(table) => [
+		check("sso_audit_logs_event_type_check", sql`${table.eventType} in ${inList(SSO_EVENTS)}`),
+	],
+);

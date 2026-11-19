@@ -5,7 +5,11 @@ import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "../schemas/setup.ts";
 
 /** Why a reset was refused, as a code the caller turns into its own words. */
-export type PasswordResetProblem = "unknown_user" | "password_too_short" | "password_too_long";
+export type PasswordResetProblem =
+	| "unknown_user"
+	| "no_local_password"
+	| "password_too_short"
+	| "password_too_long";
 
 export class PasswordResetError extends Error {
 	readonly problem: PasswordResetProblem;
@@ -54,6 +58,11 @@ export async function resetPassword(
 	const hash = await context.password.hash(newPassword);
 	return runWithTransaction(context.adapter, async () => {
 		const userId = found.user.id;
+		const credential = await context.internalAdapter.findCredentialAccount(userId);
+		if (!credential?.password) {
+			throw new PasswordResetError("no_local_password");
+		}
+
 		await context.internalAdapter.updatePassword(userId, hash);
 		const user = await context.internalAdapter.findUserById(userId);
 		const wasEnabled =

@@ -39,6 +39,42 @@ describe("validateEnv", () => {
 		).toThrow("Invalid environment variables: SMTP_USERNAME");
 	});
 
+	it("requires complete OpenID Connect credentials and an exact callback on the application origin", () => {
+		const settings = {
+			...required,
+			OIDC_ISSUER: "https://identity.example.test/household",
+			OIDC_CLIENT_ID: "archant",
+			OIDC_CLIENT_SECRET: "fictional-client-secret",
+		};
+		expect(
+			validateEnv({
+				...settings,
+				OIDC_REDIRECT_URI: "http://localhost:5173/api/auth/callback/openid-connect",
+				AUTH_LOCAL_LOGIN_ENABLED: "false",
+				AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: "true",
+				AUTH_JIT_MODE: "link_only",
+				ALLOWED_OIDC_DOMAINS: " Example.TEST, other.example ",
+			}),
+		).toMatchObject({
+			AUTH_LOCAL_LOGIN_ENABLED: false,
+			AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: true,
+			AUTH_JIT_MODE: "link_only",
+			ALLOWED_OIDC_DOMAINS: ["example.test", "other.example"],
+		});
+		expect(() => validateEnv({ ...settings, OIDC_CLIENT_ID: "" })).toThrow(
+			"Invalid environment variables: OIDC_CLIENT_ID",
+		);
+		expect(() =>
+			validateEnv({
+				...settings,
+				OIDC_REDIRECT_URI: "https://other.test/api/auth/callback/openid-connect",
+			}),
+		).toThrow("Invalid environment variables: OIDC_REDIRECT_URI");
+		expect(() => validateEnv({ ...settings, OIDC_ISSUER: "http://identity.example.test" })).toThrow(
+			"Invalid environment variables: OIDC_ISSUER",
+		);
+	});
+
 	it("names every missing variable", () => {
 		expect(() => validateEnv({})).toThrow(/DATABASE_URL.*BETTER_AUTH_SECRET.*BETTER_AUTH_URL/u);
 	});

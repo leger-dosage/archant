@@ -8,6 +8,8 @@ import { z } from "zod";
 import { BANK_COUNTRIES, DEFAULT_BANK_COUNTRY } from "@archant/data/bank-countries";
 import { DEFAULT_TIME_ZONE, isTimeZone } from "@archant/data/household-preferences";
 
+import { OPENID_CALLBACK, secureOpenIdUrl } from "./services/openid-provider.ts";
+
 const LOG_LEVELS = ["fatal", "error", "warn", "info", "debug", "trace", "silent"] as const;
 
 /** Whether `url` is HTTPS, or plain HTTP to this machine's own loopback. */
@@ -113,6 +115,28 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 				.enum(["true", "false"])
 				.default("true")
 				.transform((value) => value === "true"),
+			OIDC_ISSUER: z
+				.string()
+				.refine((value) => secureOpenIdUrl(value) && !value.includes("?"))
+				.optional(),
+			OIDC_CLIENT_ID: z.string().trim().min(1).optional(),
+			OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+			OIDC_REDIRECT_URI: z.string().refine(secureOpenIdUrl).optional(),
+			AUTH_LOCAL_LOGIN_ENABLED: z.stringbool({ truthy: ["true"], falsy: ["false"] }).default(true),
+			AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: z
+				.stringbool({ truthy: ["true"], falsy: ["false"] })
+				.default(false),
+			AUTH_JIT_MODE: z.enum(["create_and_link", "link_only"]).default("create_and_link"),
+			ALLOWED_OIDC_DOMAINS: z
+				.string()
+				.default("")
+				.transform((value) =>
+					value
+						.split(",")
+						.map((domain) => domain.trim().toLowerCase())
+						.filter(Boolean),
+				)
+				.pipe(z.array(z.hostname())),
 			WEBAUTHN_RP_ID: z.hostname().toLowerCase().optional(),
 			WEBAUTHN_ALLOWED_ORIGINS: z
 				.string()
@@ -243,6 +267,24 @@ export function validateEnv(runtimeEnv: Record<string, string | undefined>) {
 		// A single credential would leave a half-configured integration.
 		createFinalSchema: (shape) =>
 			z.object(shape).superRefine((env, context) => {
+				const oidc = ["OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET"] as const;
+				if ([...oidc, "OIDC_REDIRECT_URI" as const].some((key) => env[key] !== undefined)) {
+					for (const key of oidc) {
+						if (env[key] === undefined) {
+							context.addIssue({ code: "custom", path: [key], message: "missing_oidc_setting" });
+						}
+					}
+					if (
+						env.OIDC_REDIRECT_URI !== undefined &&
+						env.OIDC_REDIRECT_URI !== new URL(OPENID_CALLBACK, env.BETTER_AUTH_URL).href
+					) {
+						context.addIssue({
+							code: "custom",
+							path: ["OIDC_REDIRECT_URI"],
+							message: "invalid_oidc_callback",
+						});
+					}
+				}
 				const bank = ["ENABLE_BANKING_APPLICATION_ID", "ENABLE_BANKING_PRIVATE_KEY"] as const;
 				const mail = ["SMTP_USERNAME", "SMTP_PASSWORD"] as const;
 				for (const [first, second] of env.SMTP_ADDRESS ? [bank, mail] : [bank]) {
