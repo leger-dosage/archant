@@ -24,7 +24,7 @@ import {
 	useSignedInApp,
 } from "../testing/app.ts";
 import {
-	addViewer,
+	addTestUser,
 	buildTestApp,
 	createTestAuth,
 	TEST_ORIGIN,
@@ -38,15 +38,15 @@ useSignedInApp();
 const silent = createLogger("silent");
 
 let auth: Auth;
-let viewerCookie: string;
+let guestCookie: string;
 
-// One Better Auth and one viewer sign-in for the file: the limit allows three per ten seconds.
+// One Better Auth and one guest sign-in for the file: the limit allows three per ten seconds.
 beforeAll(async () => {
 	auth = createTestAuth(temp.db, silent);
-	viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+	guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 });
 
-const viewer = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+const guest = (): TestApp => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
 async function count(db: typeof temp.db, table: "accounts" | "entries" | "users" | "goals") {
 	const row = await db.get<{ count: number }>(
@@ -57,8 +57,8 @@ async function count(db: typeof temp.db, table: "accounts" | "entries" | "users"
 }
 
 /**
- * The route behind the session guard alone, without `viewerReadOnly`, so its
- * own `requireRole("admin")` is what answers a viewer.
+ * The route behind the session guard alone, without `guestReadOnly`, so its
+ * own `requireRole("admin")` is what answers a guest.
  */
 function sessionGuardOnly() {
 	const app = new Hono<SessionEnv>();
@@ -127,26 +127,26 @@ describe("DELETE /api/financial-data", () => {
 		expect(logLines.join("\n")).not.toContain("financial data reset");
 	});
 
-	it("refuses a viewer FORBIDDEN, the household intact", async () => {
+	it("refuses a guest FORBIDDEN, the household intact", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 		const before = [await count(temp.db, "accounts"), await count(temp.db, "entries")];
 
-		const response = await viewer().request("/api/financial-data", { method: "DELETE" });
+		const response = await guest().request("/api/financial-data", { method: "DELETE" });
 
 		expect(response.status).toBe(403);
 		expect(errorBody.parse(await response.json()).error.code).toBe("FORBIDDEN");
 		expect([await count(temp.db, "accounts"), await count(temp.db, "entries")]).toEqual(before);
 	});
 
-	it("refuses a viewer FORBIDDEN through its own guard, without viewerReadOnly", async () => {
+	it("refuses a guest FORBIDDEN through its own guard, without guestReadOnly", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 		const before = [await count(temp.db, "accounts"), await count(temp.db, "entries")];
 
 		const response = await sessionGuardOnly().request("/api/financial-data", {
 			method: "DELETE",
-			headers: { cookie: viewerCookie },
+			headers: { cookie: guestCookie },
 		});
 
 		expect(response.status).toBe(403);
@@ -216,14 +216,14 @@ describe("DELETE /api/financial-data?sampleData=true", { timeout: 30_000 }, () =
 		expect(await count(db, "goals")).toBe(0);
 	});
 
-	it("refuses a viewer FORBIDDEN through its own guard, the household intact", async () => {
+	it("refuses a guest FORBIDDEN through its own guard, the household intact", async () => {
 		const account = await openAccount();
 		await postTransaction(account.id, expense);
 		const before = [await count(temp.db, "accounts"), await count(temp.db, "entries")];
 
 		const response = await sessionGuardOnly().request("/api/financial-data?sampleData=true", {
 			method: "DELETE",
-			headers: { cookie: viewerCookie },
+			headers: { cookie: guestCookie },
 		});
 
 		expect(response.status).toBe(403);

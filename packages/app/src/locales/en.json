@@ -159,7 +159,7 @@
 		"empty": {
 			"title": "No accounts yet",
 			"description": "Connect a bank or import a statement to see your net worth here.",
-			"viewerDescription": "The household admin adds accounts. They will appear here."
+			"guestDescription": "The household's accounts will appear here."
 		},
 		"sections": "Dashboard sections",
 		"toggleSection": "Toggle section visibility",
@@ -3583,23 +3583,32 @@
 		"list": "Members",
 		"you": "You",
 		"actions": "Actions for {{name}}",
-		"promote": "Make admin",
-		"demote": "Make guest",
 		"remove": "Remove",
-		"promoteDialog": {
-			"title": "Make {{name}} an admin?",
-			"description": "{{name}} will be able to change everything, invite and remove members, and connect assistants. The change applies from their next action."
+		"roleChange": {
+			"admin": {
+				"action": "Make admin",
+				"title": "Make {{name}} an admin?",
+				"description": "{{name}} will be able to manage household settings, members and assistants.",
+				"done": "{{name}} is now an admin."
+			},
+			"member": {
+				"action": "Make member",
+				"title": "Make {{name}} a member?",
+				"description": "{{name}} will be able to edit accounts, transactions, rules and budgets.",
+				"done": "{{name}} is now a member."
+			},
+			"guest": {
+				"action": "Make guest",
+				"title": "Make {{name}} a guest?",
+				"description": "{{name}} will have read-only access to household data.",
+				"done": "{{name}} is now a guest."
+			}
 		},
-		"demoteDialog": {
-			"title": "Make {{name}} a guest?",
-			"description": "{{name}} will be able to read everything without changing anything. Their connected assistants and pending invitations will be deleted."
-		},
+		"revokesAdminAccess": "Their connected assistants and pending invitations will be revoked.",
 		"removeDialog": {
 			"title": "Remove {{name}}?",
 			"description": "{{name}} will no longer have access to Archant: their sessions will be closed on all their devices. The household's accounts and transactions stay."
 		},
-		"promoted": "{{name}} is now an admin.",
-		"demoted": "{{name}} is now a guest.",
 		"removed": "{{name}} no longer has access to Archant.",
 		"invite": "Invite",
 		"pending": "Pending invitations",
@@ -3616,7 +3625,8 @@
 			"description": "An invitation appears here until the person creates their account, or for three days at most."
 		},
 		"roles": {
-			"viewer": "Guest",
+			"guest": "Guest",
+			"member": "Member",
 			"admin": "Admin"
 		},
 		"inviteDialog": {
@@ -3942,7 +3952,8 @@
 		"title": "Join Archant",
 		"intro": "{{inviter}} invites you to join Archant as {{role}}.",
 		"roles": {
-			"viewer": "a guest",
+			"guest": "a guest",
+			"member": "a member",
 			"admin": "an admin"
 		},
 		"email": "Email address",

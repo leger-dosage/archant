@@ -78,7 +78,7 @@ const lastAdmin = () =>
 /**
  * Gives `memberId` the role `role`, applied at their next request, since
  * `requireSession` reads the role on each one; their sessions stay. A
- * demotion to `viewer` also deletes, in the same transaction, the
+ * demotion to member or guest also deletes, in the same transaction, the
  * invitations they sent that are still pending and every assistant they
  * connected, consents and tokens: a later promotion must not revive a link
  * or an assistant granted under the role they lost, as Sure revokes tokens
@@ -110,7 +110,7 @@ export async function setMemberRole(
 				throw lastAdmin();
 			}
 
-			if (role === "viewer") {
+			if (current.role === "admin" && role !== "admin") {
 				await tx
 					.delete(invitations)
 					.where(and(eq(invitations.inviterId, memberId), isNull(invitations.acceptedAt)));

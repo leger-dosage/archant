@@ -6,7 +6,7 @@ import { z } from "zod";
 
 import { createLogger } from "../lib/logger.ts";
 import { buildApp, logLines, openOwn, ownDatabase, temp, useSignedInApp } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -267,15 +267,15 @@ describe("POST /api/csv-imports", () => {
 		).toEqual([{ account: checking.id, amount: -1250 }]);
 	});
 
-	it("refuses a viewer FORBIDDEN, the preview too", async () => {
+	it("refuses a guest FORBIDDEN, the preview too", async () => {
 		const silent = createLogger("silent");
 		const auth = createTestAuth(temp.db, silent);
-		const cookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), cookie);
+		const cookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), cookie);
 
 		const responses = await Promise.all(
 			(["/api/csv-imports", "/api/csv-imports/preview"] as const).map(async (path) =>
-				post(path, { type: "merchants" }, "name\nA", viewer),
+				post(path, { type: "merchants" }, "name\nA", guest),
 			),
 		);
 

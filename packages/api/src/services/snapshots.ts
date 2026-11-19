@@ -121,7 +121,7 @@ export async function createSnapshot(
  * and `confirm_update`, which every balance form shows before it saves. The
  * amount and the date's format are checked, not the ledger's refusals, as
  * Sure's `prepare_reconciliation` checks nothing; those come with the save.
- * Its route is a POST, as Sure's, so `viewerReadOnly` refuses a viewer as
+ * Its route is a POST, as Sure's, so `guestReadOnly` refuses a guest as
  * Sure's `require_account_permission!` does.
  */
 export async function dryRunSnapshot(

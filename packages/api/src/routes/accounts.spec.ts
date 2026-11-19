@@ -50,7 +50,7 @@ import {
 	useSignedInApp,
 } from "../testing/app.ts";
 import {
-	addViewer,
+	addTestUser,
 	buildTestApp,
 	cookieOf,
 	createTestAuth,
@@ -2828,23 +2828,23 @@ describe("an account created excluded from reports", () => {
 	});
 });
 
-describe("a viewer on a loan or a position", () => {
-	let viewerCookie: string;
+describe("a guest on a loan or a position", () => {
+	let guestCookie: string;
 	let auth: Auth;
 	const silent = createLogger("silent");
 
-	// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+	// One guest sign-in for the block: Better Auth allows three per ten seconds.
 	beforeAll(async () => {
 		auth = createTestAuth(temp.db, silent);
-		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 	});
 
 	it("reads its terms, and is refused FORBIDDEN on an edit, nothing written", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${loan.id}`);
-		const edit = await viewer.request(`/api/accounts/${loan.id}`, {
+		const read = await guest.request(`/api/accounts/${loan.id}`);
+		const edit = await guest.request(`/api/accounts/${loan.id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ details: { ...ingTerms, interestRate: "2" } }),
@@ -2860,10 +2860,10 @@ describe("a viewer on a loan or a position", () => {
 
 	it("reads an account's institution and notes, and is refused FORBIDDEN on an edit, nothing written", async () => {
 		const account = await openAccount({ institutionName: "BNP", notes: "Conseiller" });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${account.id}`);
-		const edit = await viewer.request(`/api/accounts/${account.id}`, {
+		const read = await guest.request(`/api/accounts/${account.id}`);
+		const edit = await guest.request(`/api/accounts/${account.id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ institutionName: "LCL", notes: null }),
@@ -2880,9 +2880,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("is refused FORBIDDEN on an unlink, the account still linked", async () => {
 		const card = await linkedCard(false);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const unlink = await viewer.request(`/api/accounts/${card.id}/unlink`, { method: "DELETE" });
+		const unlink = await guest.request(`/api/accounts/${card.id}/unlink`, { method: "DELETE" });
 
 		expect(unlink.status).toBe(403);
 		expect(errorBody.parse(await unlink.json()).error.code).toBe("FORBIDDEN");
@@ -2898,15 +2898,15 @@ describe("a viewer on a loan or a position", () => {
 	it("reads a card's details and toggle, and is refused FORBIDDEN on either, nothing written", async () => {
 		const card = await linkedCard(false);
 		await patchAccount(card.id, { details: { ...blankCard, apr: "15,99" } });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 		const edit = (body: unknown) =>
-			viewer.request(`/api/accounts/${card.id}`, {
+			guest.request(`/api/accounts/${card.id}`, {
 				method: "PATCH",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify(body),
 			});
 
-		const read = await viewer.request(`/api/accounts/${card.id}`);
+		const read = await guest.request(`/api/accounts/${card.id}`);
 		const details = await edit({ details: { ...blankCard, apr: "20" } });
 		const toggle = await edit({ treatBalanceAsAvailableCredit: true });
 
@@ -2922,9 +2922,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("refuses an edit of the opening balance with FORBIDDEN, nothing written", async () => {
 		const account = await openPinned();
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const refused = await viewer.request(`/api/accounts/${account.id}/opening-balance`, {
+		const refused = await guest.request(`/api/accounts/${account.id}/opening-balance`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ date: "2025-12-01", balance: "1,00" }),
@@ -2938,9 +2938,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("refuses a balance's dry run with FORBIDDEN, as Sure's require_account_permission!", async () => {
 		const account = await openPinned();
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const refused = await viewer.request(`/api/accounts/${account.id}/snapshots/dry-run`, {
+		const refused = await guest.request(`/api/accounts/${account.id}/snapshots/dry-run`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ date: "2026-03-05", balance: "1,00" }),
@@ -2952,11 +2952,11 @@ describe("a viewer on a loan or a position", () => {
 
 	it("is refused a position's deletion or remap with FORBIDDEN, nothing written", async () => {
 		const { account, securityId } = await heldFund();
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 		const url = `/api/accounts/${account.id}/holdings/${securityId}`;
 
-		const deleted = await viewer.request(url, { method: "DELETE" });
-		const remapped = await viewer.request(`${url}/security`, {
+		const deleted = await guest.request(url, { method: "DELETE" });
+		const remapped = await guest.request(`${url}/security`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ security: { source: "known", id: securityId } }),
@@ -2972,9 +2972,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("reads its schedule", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${loan.id}/schedule`);
+		const read = await guest.request(`/api/accounts/${loan.id}/schedule`);
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { periodicPayment: 53_969 } });
@@ -2982,9 +2982,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("reads its overview", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${loan.id}/overview`);
+		const read = await guest.request(`/api/accounts/${loan.id}/overview`);
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { monthlyPayment: 53_969, insured: true } });
@@ -2992,11 +2992,11 @@ describe("a viewer on a loan or a position", () => {
 
 	it("reads a property's details and overview, and is refused FORBIDDEN on an edit, nothing written", async () => {
 		const property = await openAccount({ ...home, details: { locality: "Lyon" } });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${property.id}`);
-		const overviewRead = await viewer.request(`/api/accounts/${property.id}/overview`);
-		const edit = await viewer.request(`/api/accounts/${property.id}`, {
+		const read = await guest.request(`/api/accounts/${property.id}`);
+		const overviewRead = await guest.request(`/api/accounts/${property.id}/overview`);
+		const edit = await guest.request(`/api/accounts/${property.id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ details: { ...blankProperty, locality: "Paris" } }),
@@ -3014,9 +3014,9 @@ describe("a viewer on a loan or a position", () => {
 
 	it("reads its payoff chart", async () => {
 		const loan = await openAccount({ ...mortgage, details: ingTerms });
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const read = await viewer.request(`/api/accounts/${loan.id}/payoff-chart?period=all_time`);
+		const read = await guest.request(`/api/accounts/${loan.id}/payoff-chart?period=all_time`);
 
 		expect(read.status).toBe(200);
 		expect(await read.json()).toMatchObject({ data: { scheduledPayoffDate: "2045-12-05" } });
@@ -4502,25 +4502,25 @@ async function removeDefault(id: string, app = buildApp()) {
 describe("the default account for new transactions", () => {
 	const silent = createLogger("silent");
 	const SECOND_ADMIN = { email: "second@example.test", password: "battery staple horse" };
-	// Not `addViewer`'s: the viewer block above created that one already.
+	// Not `addTestUser`'s: the guest block above created that one already.
 	const READER = { email: "reader@example.test", password: "horse staple battery" };
 	let auth: Auth;
 	let secondCookie: string;
-	let viewerCookie: string;
+	let guestCookie: string;
 
 	// Two sign-ins for the block, on a fresh allowance: Better Auth allows
-	// three per ten seconds, and the viewer block above spent one.
+	// three per ten seconds, and the guest block above spent one.
 	beforeAll(async () => {
 		await temp.db.delete(rateLimits);
 		auth = createTestAuth(temp.db, silent);
-		await auth.api.createUser({ body: { ...READER, name: "", data: { role: "viewer" } } });
-		viewerCookie = cookieOf(await signIn(buildTestApp(temp.db, silent, auth), READER));
+		await auth.api.createUser({ body: { ...READER, name: "", data: { role: "guest" } } });
+		guestCookie = cookieOf(await signIn(buildTestApp(temp.db, silent, auth), READER));
 		await auth.api.createUser({ body: { ...SECOND_ADMIN, name: "", data: { role: "admin" } } });
 		secondCookie = cookieOf(await signIn(buildTestApp(temp.db, silent, auth), SECOND_ADMIN));
 	});
 
 	const second = () => withSession(buildTestApp(temp.db, silent, auth), secondCookie);
-	const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+	const guest = () => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
 	it("sets an active manual checking account as the default, then switches to another", async () => {
 		const checking = await openAccount();
@@ -4606,7 +4606,7 @@ describe("the default account for new transactions", () => {
 		await expect(defaultOf()).resolves.toBeNull();
 	});
 
-	it("lists each group in each administrator's own saved order, the viewer's by name", async () => {
+	it("lists each group in each administrator's own saved order, the guest's by name", async () => {
 		const names = ["Ordre Alpha", "Ordre Bravo", "Ordre Charlie"];
 		const cards = ["Ordre Carte Petite", "Ordre Carte Grosse"];
 		await openAccount({ name: "Ordre Alpha", openingBalance: "200,00" });
@@ -4652,7 +4652,7 @@ describe("the default account for new transactions", () => {
 				assets: names.toReversed(),
 				liabilities: ["Ordre Carte Petite", "Ordre Carte Grosse"],
 			});
-			await expect(listed(viewer())).resolves.toEqual({
+			await expect(listed(guest())).resolves.toEqual({
 				assets: names,
 				liabilities: ["Ordre Carte Grosse", "Ordre Carte Petite"],
 			});
@@ -4669,17 +4669,17 @@ describe("the default account for new transactions", () => {
 		}
 	});
 
-	it("refuses a viewer FORBIDDEN on either method, nothing written", async () => {
+	it("refuses a guest FORBIDDEN on either method, nothing written", async () => {
 		const checking = await openAccount();
 		await removeDefault(checking.id);
 
-		const set = await setDefault(checking.id, viewer());
-		const removed = await removeDefault(checking.id, viewer());
+		const set = await setDefault(checking.id, guest());
+		const removed = await removeDefault(checking.id, guest());
 
 		expect(set.status).toBe(403);
 		expect(errorBody.parse(set.body).error.code).toBe("FORBIDDEN");
 		expect(removed.status).toBe(403);
-		await expect(defaultOf(viewer())).resolves.toBeNull();
+		await expect(defaultOf(guest())).resolves.toBeNull();
 		await expect(defaultOf()).resolves.toBeNull();
 	});
 });

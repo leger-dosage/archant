@@ -10,9 +10,10 @@ import { rateLimits, users } from "@archant/data/schema/auth";
 import type { UserRole } from "@archant/data/user-roles";
 
 import { createLogger } from "../lib/logger.ts";
+import { createInvitation } from "../services/invitations.ts";
 import { removeMember, setMemberRole } from "../services/members.ts";
 import { ownDatabase, template, useSignedInApp, valid } from "../testing/app.ts";
-import { connect, registerClient } from "../testing/assistant.ts";
+import { connect, refresh, registerClient } from "../testing/assistant.ts";
 import {
 	ADMIN,
 	TEST_ORIGIN,
@@ -110,7 +111,7 @@ describe("GET /api/members", () => {
 	it("lists every member, the oldest first, with no secret column", async () => {
 		// After the administrator, whose template was signed in on 2026-10-21.
 		vi.setSystemTime(new Date("2026-10-22T08:00:00Z"));
-		const camille = await addMember("viewer", "Camille");
+		const camille = await addMember("guest", "Camille");
 
 		const { status, body } = await send(admin(), "GET", "/api/members");
 
@@ -127,7 +128,7 @@ describe("GET /api/members", () => {
 				id: camille.id,
 				name: "Camille",
 				email: camille.email,
-				role: "viewer",
+				role: "guest",
 				createdAt: Date.parse("2026-10-22T08:00:00Z"),
 			},
 		]);
@@ -135,63 +136,113 @@ describe("GET /api/members", () => {
 });
 
 describe("PATCH /api/members/:id", () => {
-	it("promotes a viewer, whose next write goes through", async () => {
-		const viewer = await addMember("viewer");
+	it("promotes a guest, whose next write goes through", async () => {
+		const guest = await addMember("guest");
 
-		expect((await createAccount(as(viewer.cookie))).status).toBe(403);
+		expect((await createAccount(as(guest.cookie))).status).toBe(403);
 
-		const { status, body } = await send(admin(), "PATCH", `/api/members/${viewer.id}`, {
+		const { status, body } = await send(admin(), "PATCH", `/api/members/${guest.id}`, {
 			role: "admin",
 		});
 
 		expect(status).toBe(200);
 		expect(z.object({ data: memberBody }).parse(body).data).toMatchObject({
-			id: viewer.id,
+			id: guest.id,
 			role: "admin",
 		});
-		expect((await createAccount(as(viewer.cookie))).status).toBe(201);
+		expect((await createAccount(as(guest.cookie))).status).toBe(201);
 	});
 
-	it("demotes an administrator, deleting their assistants and pending invitations, and refuses their next write", async () => {
+	it.each(["guest", "member"] as const)(
+		"demotes an administrator to %s and revokes their assistant and invitation access",
+		async (role) => {
+			const other = await addMember("admin");
+			const owner = await ownerId();
+			const clientId = await registerClient(bare());
+			const tokens = await connect(as(other.cookie), bare(), clientId);
+			// The owner's own consent to the same client, and their own invitation, stay.
+			await connect(admin(), bare(), clientId);
+			const invited = await send(as(other.cookie), "POST", "/api/invitations", {
+				email: "dominique@example.test",
+				role: "guest",
+			});
+			expect(invited.status).toBe(201);
+			const ownInvitation = await send(admin(), "POST", "/api/invitations", {
+				email: "eden@example.test",
+				role: "guest",
+			});
+			expect(ownInvitation.status).toBe(201);
+			expect(await countOf("oauth_consents", "user_id", other.id)).toBe(1);
+			expect(await countOf("oauth_refresh_tokens", "user_id", other.id)).toBe(1);
+			logLines = [];
+
+			const { status, body } = await send(admin(), "PATCH", `/api/members/${other.id}`, {
+				role,
+			});
+
+			expect(status, JSON.stringify(body)).toBe(200);
+			expect(await countOf("oauth_consents", "user_id", other.id)).toBe(0);
+			expect(await countOf("oauth_refresh_tokens", "user_id", other.id)).toBe(0);
+			expect(await countOf("oauth_access_tokens", "user_id", other.id)).toBe(0);
+			expect(await countOf("invitations", "inviter_id", other.id)).toBe(0);
+			expect(await countOf("oauth_consents", "user_id", owner)).toBe(1);
+			expect(await countOf("oauth_refresh_tokens", "user_id", owner)).toBe(1);
+			expect(await countOf("invitations", "inviter_id", owner)).toBe(1);
+			// Their session stays; their role changes at the next request.
+			expect(await countOf("sessions", "user_id", other.id)).toBe(1);
+			expect((await createAccount(as(other.cookie))).status).toBe(role === "guest" ? 403 : 201);
+			expect((await send(as(other.cookie), "GET", "/api/members")).status).toBe(403);
+			expect(
+				(await send(admin(), "PATCH", `/api/members/${other.id}`, { role: "admin" })).status,
+			).toBe(200);
+			expect((await refresh(bare(), clientId, tokens.refresh_token)).ok).toBe(false);
+			expect(await countOf("oauth_consents", "user_id", other.id)).toBe(0);
+			expect(await countOf("invitations", "inviter_id", other.id)).toBe(0);
+			// Ids only: never an email or a name.
+			const logs = logLines.join("\n");
+			expect(logs).toContain(other.id);
+			expect(logs).not.toContain("@example.test");
+		},
+	);
+
+	it("does not recreate a pending invitation after its inviter loses admin access", async () => {
 		const other = await addMember("admin");
 		const owner = await ownerId();
-		const clientId = await registerClient(bare());
-		await connect(as(other.cookie), bare(), clientId);
-		// The owner's own consent to the same client, and their own invitation, stay.
-		await connect(admin(), bare(), clientId);
-		const invited = await send(as(other.cookie), "POST", "/api/invitations", {
-			email: "dominique@example.test",
-			role: "viewer",
+		const email = "pending@example.test";
+		const sent = await send(as(other.cookie), "POST", "/api/invitations", {
+			email,
+			role: "member",
 		});
-		expect(invited.status).toBe(201);
-		const ownInvitation = await send(admin(), "POST", "/api/invitations", {
-			email: "eden@example.test",
-			role: "viewer",
-		});
-		expect(ownInvitation.status).toBe(201);
-		expect(await countOf("oauth_consents", "user_id", other.id)).toBe(1);
-		expect(await countOf("oauth_refresh_tokens", "user_id", other.id)).toBe(1);
-		logLines = [];
+		expect(sent.status).toBe(201);
+		const token = z
+			.object({ data: z.object({ url: z.url() }) })
+			.parse(sent.body)
+			.data.url.split("/")
+			.at(-1);
 
-		const { status, body } = await send(admin(), "PATCH", `/api/members/${other.id}`, {
-			role: "viewer",
+		vi.spyOn(auth.api, "createUser").mockImplementationOnce(async () => {
+			await setMemberRole(deps(), owner, other.id, "member");
+			throw new Error("Could not create user");
 		});
+		expect(
+			(
+				await send(bare(), "POST", "/api/invitations/accept", {
+					token,
+					password: "un mot de passe",
+				})
+			).status,
+		).toBe(500);
+		expect((await send(bare(), "POST", "/api/invitations/preview", { token })).status).toBe(404);
 
-		expect(status, JSON.stringify(body)).toBe(200);
-		expect(await countOf("oauth_consents", "user_id", other.id)).toBe(0);
-		expect(await countOf("oauth_refresh_tokens", "user_id", other.id)).toBe(0);
-		expect(await countOf("oauth_access_tokens", "user_id", other.id)).toBe(0);
-		expect(await countOf("invitations", "inviter_id", other.id)).toBe(0);
-		expect(await countOf("oauth_consents", "user_id", owner)).toBe(1);
-		expect(await countOf("oauth_refresh_tokens", "user_id", owner)).toBe(1);
-		expect(await countOf("invitations", "inviter_id", owner)).toBe(1);
-		// Their session stays; their role changes at the next request.
-		expect(await countOf("sessions", "user_id", other.id)).toBe(1);
-		expect((await createAccount(as(other.cookie))).status).toBe(403);
-		// Ids only: never an email or a name.
-		const logs = logLines.join("\n");
-		expect(logs).toContain(other.id);
-		expect(logs).not.toContain("@example.test");
+		// This call models a request that already passed its route guard before the demotion.
+		await expect(
+			createInvitation({ ...deps(), auth, trustedOrigin: TEST_ORIGIN }, other.id, {
+				email: "another@example.test",
+				role: "admin",
+			}),
+		).rejects.toMatchObject({ code: "FORBIDDEN" });
+		await setMemberRole(deps(), owner, other.id, "admin");
+		expect((await send(bare(), "POST", "/api/invitations/preview", { token })).status).toBe(404);
 	});
 
 	it("answers the member unchanged and deletes nothing when the role is the same", async () => {
@@ -209,15 +260,15 @@ describe("PATCH /api/members/:id", () => {
 	});
 
 	it("refuses a role that does not exist", async () => {
-		const viewer = await addMember("viewer");
+		const guest = await addMember("guest");
 
-		const { status, body } = await send(admin(), "PATCH", `/api/members/${viewer.id}`, {
+		const { status, body } = await send(admin(), "PATCH", `/api/members/${guest.id}`, {
 			role: "owner",
 		});
 
 		expect(status).toBe(400);
 		expect(errorCode(body)).toBe("VALIDATION_ERROR");
-		expect(await roleOf(viewer.id)).toBe("viewer");
+		expect(await roleOf(guest.id)).toBe("guest");
 	});
 });
 
@@ -225,7 +276,7 @@ describe("DELETE /api/members/:id", () => {
 	it("removes a member, signs them out everywhere and deletes the invitations to their email", async () => {
 		const invited = await send(admin(), "POST", "/api/invitations", {
 			email: "camille@example.test",
-			role: "viewer",
+			role: "guest",
 		});
 		const token = z
 			.object({ data: z.object({ url: z.string() }) })
@@ -291,7 +342,7 @@ describe("the members routes", () => {
 		const id = await ownerId();
 
 		const { status, body } = await send(admin(), method, `/api/members/${id}`, {
-			role: "viewer",
+			role: "guest",
 		});
 
 		expect(status).toBe(409);
@@ -301,21 +352,21 @@ describe("the members routes", () => {
 
 	it.each(["PATCH", "DELETE"])("answer NOT_FOUND to %s on an unknown id", async (method) => {
 		const { status, body } = await send(admin(), method, `/api/members/${crypto.randomUUID()}`, {
-			role: "viewer",
+			role: "guest",
 		});
 
 		expect(status).toBe(404);
 		expect(errorCode(body)).toBe("NOT_FOUND");
 	});
 
-	it("refuse a viewer to list, change or remove", async () => {
-		const viewer = await addMember("viewer");
+	it("refuse a guest to list, change or remove", async () => {
+		const guest = await addMember("guest");
 		const id = await ownerId();
 
 		const answers = await Promise.all([
-			send(as(viewer.cookie), "GET", "/api/members"),
-			send(as(viewer.cookie), "PATCH", `/api/members/${id}`, { role: "viewer" }),
-			send(as(viewer.cookie), "DELETE", `/api/members/${id}`),
+			send(as(guest.cookie), "GET", "/api/members"),
+			send(as(guest.cookie), "PATCH", `/api/members/${id}`, { role: "guest" }),
+			send(as(guest.cookie), "DELETE", `/api/members/${id}`),
 		]);
 
 		expect(answers.map(({ status, body }) => [status, errorCode(body)])).toEqual([
@@ -332,13 +383,13 @@ describe("the members routes", () => {
 });
 
 describe("the last administrator", () => {
-	it("is never demoted or removed", async () => {
+	it.each(["guest", "member"] as const)("is never demoted to %s or removed", async (role) => {
 		const actor = await ownerId();
 		const other = await addMember("admin");
 		// Demoted meanwhile, as by `other` in another tab: `other` is now the only administrator.
-		await db.update(users).set({ role: "viewer" }).where(eq(users.id, actor));
+		await db.update(users).set({ role: "guest" }).where(eq(users.id, actor));
 
-		await expect(setMemberRole(deps(), actor, other.id, "viewer")).rejects.toMatchObject({
+		await expect(setMemberRole(deps(), actor, other.id, role)).rejects.toMatchObject({
 			code: "LAST_ADMIN",
 		});
 		await expect(removeMember(deps(), actor, other.id)).rejects.toMatchObject({

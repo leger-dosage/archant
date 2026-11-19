@@ -3,8 +3,8 @@ import { useEffect } from "react";
 
 import { AppShell } from "@/components/AppShell";
 import { useFollowSavedLocale } from "@/hooks/useFollowSavedLocale";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
-import { isAdmin, isSetupOpen, sessionQuery } from "@/lib/auth-client";
+import { useRole } from "@/hooks/usePermissions";
+import { isSetupOpen, sessionQuery } from "@/lib/auth-client";
 
 declare module "@tanstack/react-router" {
 	interface StaticDataRouteOption {
@@ -37,19 +37,19 @@ export const Route = createFileRoute("/_authed")({
 
 function AuthedLayout() {
 	const router = useRouter();
-	const admin = useIsAdmin();
+	const role = useRole();
 	useFollowSavedLocale();
-	const loadedAsAdmin = isAdmin(Route.useRouteContext({ select: ({ session }) => session }));
+	const loadedRole = Route.useRouteContext({ select: ({ session }) => session.user.role });
 	const bare = useMatches({ select: (matches) => matches.at(-1)?.staticData.bare === true });
 
 	// The role changed under an open page, read again on a refusal or when the
-	// window comes back: the route guards run again, so a demoted member leaves
-	// a page kept to administrators.
+	// window comes back: the route guards run again, so a demoted user leaves a page
+	// their new role cannot open.
 	useEffect(() => {
-		if (admin !== loadedAsAdmin) {
+		if (role !== loadedRole) {
 			void router.invalidate();
 		}
-	}, [admin, loadedAsAdmin, router]);
+	}, [role, loadedRole, router]);
 
 	return bare ? (
 		<Outlet />

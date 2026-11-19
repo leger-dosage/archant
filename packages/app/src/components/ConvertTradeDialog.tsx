@@ -311,7 +311,7 @@ function ConvertTradeDialog({ open, onOpenChange, ...props }: ConvertTradeDialog
  * The sheet's « Ordre » block on an investment account: « Convertir en
  * ordre » for a line the ledger can convert, to an administrator, saving
  * apart from the form, so it waits while the form holds unsaved edits, as
- * the split block does. A viewer sees nothing.
+ * the split block does. A guest sees nothing.
  */
 export function ConvertBlock({
 	transaction,

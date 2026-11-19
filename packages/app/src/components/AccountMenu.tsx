@@ -25,6 +25,7 @@ import {
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAccountToggles } from "@/hooks/useAccountToggles";
+import { useIsAdmin } from "@/hooks/usePermissions";
 
 /**
  * The « … » menu beside an account's name, as Sure's `accounts/show/_menu`:
@@ -33,6 +34,7 @@ import { useAccountToggles } from "@/hooks/useAccountToggles";
  */
 export function AccountMenu({ account }: { account: AccountDetailData }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const [editing, setEditing] = useState(false);
 	const trigger = useRef<HTMLButtonElement>(null);
 	const [confirming, setConfirming] = useState(false);
@@ -75,13 +77,13 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 						)}
 						{t(account.active ? "accountActions.deactivate" : "accountActions.reactivate")}
 					</DropdownMenuItem>
-					<DropdownMenuSeparator />
+					{(account.bankConnection === null || admin) && <DropdownMenuSeparator />}
 					{account.bankConnection === null ? (
 						<DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
 							<Trash2Icon aria-hidden="true" className="size-3.5" />
 							{t("accountActions.delete.action")}
 						</DropdownMenuItem>
-					) : (
+					) : admin ? (
 						<DropdownMenuItem asChild>
 							<Link
 								to="/settings/banks/$connectionId"
@@ -93,7 +95,7 @@ export function AccountMenu({ account }: { account: AccountDetailData }) {
 								})}
 							</Link>
 						</DropdownMenuItem>
-					)}
+					) : null}
 				</DropdownMenuContent>
 			</DropdownMenu>
 

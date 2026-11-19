@@ -15,7 +15,7 @@ import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCurrentBudget } from "@/hooks/useBudget";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { formatMoney } from "@/lib/format-money";
 import { budgetDaysLeft, percentOf, topBudgetCategories } from "@/lib/plan-summary";
@@ -77,7 +77,7 @@ export function PlanBudget() {
 	const { t } = useTranslation();
 	const current = useCurrentBudget();
 	const budget = current.data?.budget;
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 
 	return (
 		<Section title={t("plan.budget.title")}>
@@ -97,7 +97,7 @@ export function PlanBudget() {
 				{budget?.setUp === false && (
 					<div className="my-auto flex flex-col items-center gap-3 py-4 text-center">
 						<p className="max-w-xs text-muted-foreground">{t("plan.budget.empty")}</p>
-						{admin && (
+						{canWrite && (
 							<Button asChild>
 								<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
 									{t("plan.budget.setUp")}

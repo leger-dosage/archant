@@ -34,7 +34,7 @@ const LEVERAGE_BAND_CLASSES = {
 
 type LoanOverviewProps = {
 	overview: LoanOverviewData;
-	/** `null` for a viewer, who changes nothing: the button is left out. */
+	/** `null` for a guest, who changes nothing: the button is left out. */
 	onEdit: (() => void) | null;
 };
 

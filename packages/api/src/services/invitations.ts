@@ -3,7 +3,7 @@ import type { AcceptInvitationInput, CreateInvitationInput } from "../schemas/in
 import type { Auth } from "./auth.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { and, asc, eq, gt, isNull, lte } from "drizzle-orm";
+import { and, asc, eq, exists, gt, isNull, lte } from "drizzle-orm";
 import { createHash, randomBytes } from "node:crypto";
 
 import { users } from "@archant/data/schema/auth";
@@ -64,6 +64,18 @@ export async function createInvitation(
 
 	await deps.db.transaction(
 		async (tx) => {
+			// A request that passed the role guard before a demotion must not
+			// recreate an invitation after the demotion removes them.
+			const inviter = await tx
+				.select({ role: users.role })
+				.from(users)
+				.where(eq(users.id, inviterId))
+				.get();
+
+			if (inviter?.role !== "admin") {
+				throw new AppError("FORBIDDEN", "Your role does not allow this.");
+			}
+
 			const user = await tx
 				.select({ id: users.id })
 				.from(users)
@@ -220,10 +232,17 @@ export async function acceptInvitation(
 		userId = user.id;
 	} catch (error) {
 		try {
+			// During creation the invitation is already claimed. A demotion may
+			// have skipped that row, so release it only for a current administrator.
+			const inviter = deps.db
+				.select({ id: users.id })
+				.from(users)
+				.where(and(eq(users.id, invitations.inviterId), eq(users.role, "admin")));
+
 			await deps.db
 				.update(invitations)
 				.set({ acceptedAt: null })
-				.where(eq(invitations.id, claimed.id));
+				.where(and(eq(invitations.id, claimed.id), exists(inviter)));
 		} catch {
 			// The link stays spent with no user behind it; the original failure says why.
 			deps.logger.warn({ invitationId: claimed.id }, "releasing an invitation failed");

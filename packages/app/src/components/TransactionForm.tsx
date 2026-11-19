@@ -49,8 +49,8 @@ import {
 import { SheetFooter } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useAttachmentCount } from "@/hooks/useAttachments";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useOfferRule } from "@/hooks/useOfferRule";
+import { useCanWrite } from "@/hooks/usePermissions";
 import {
 	useCreateTransaction,
 	useDeleteTransaction,
@@ -153,8 +153,8 @@ export function TransactionForm({
 	initialNature,
 }: TransactionFormProps) {
 	const { t } = useTranslation();
-	// A viewer reads every field, disabled, and saves nothing.
-	const admin = useIsAdmin();
+	// A guest reads every field, disabled, and saves nothing.
+	const canWrite = useCanWrite();
 	const choice = isAccountChoice(account) ? account : null;
 	const [chosenId, setChosenId] = useState(choice?.initialAccountId ?? null);
 	const [accountMissing, setAccountMissing] = useState(false);
@@ -217,7 +217,7 @@ export function TransactionForm({
 		resolver: zodResolver(schema, undefined, { raw: true }),
 		defaultValues: {
 			...valuesOf(transaction),
-			...(admin && transaction !== null ? { notes: "" } : {}),
+			...(canWrite && transaction !== null ? { notes: "" } : {}),
 		},
 	});
 	const { errors, isSubmitting, isDirty } = form.formState;
@@ -360,7 +360,7 @@ export function TransactionForm({
 						return;
 					}
 
-					if (!admin) {
+					if (!canWrite) {
 						event.preventDefault();
 						return;
 					}
@@ -428,7 +428,7 @@ export function TransactionForm({
 				)}
 				{/* The ledger's conversion refuses what it refuses a split (AD-20). */}
 				{transaction !== null &&
-					admin &&
+					canWrite &&
 					chosen !== null &&
 					supportsTrades(chosen) &&
 					splittable && (
@@ -454,7 +454,7 @@ export function TransactionForm({
 						onGone={onClose}
 					/>
 				)}
-				{transaction !== null && admin && pendingLine && !inSplit && (
+				{transaction !== null && canWrite && pendingLine && !inSplit && (
 					<PendingMergeBlock
 						transaction={transaction}
 						onMerged={onCloseFocusing}
@@ -472,7 +472,7 @@ export function TransactionForm({
 					<RecurringBlock transaction={transaction} dirty={dirty} />
 				)}
 
-				<fieldset disabled={!admin} className="flex min-w-0 flex-col gap-4">
+				<fieldset disabled={!canWrite} className="flex min-w-0 flex-col gap-4">
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-date">{t("transactions.form.date")}</Label>
 						<DateField
@@ -549,7 +549,7 @@ export function TransactionForm({
 						<FieldMessage id="transaction-amount-error" error={errors.amount} />
 					</div>
 
-					{transaction === null || !admin ? (
+					{transaction === null || !canWrite ? (
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
 							<textarea
@@ -651,7 +651,7 @@ export function TransactionForm({
 
 					{/* Between « Exclure » and the one-time switch, as Sure's settings. */}
 					{transaction !== null &&
-						admin &&
+						canWrite &&
 						chosen !== null &&
 						(chosen.type === "investment" || chosen.type === "crypto") && (
 							<ActivityLabelField
@@ -692,7 +692,7 @@ export function TransactionForm({
 			</form>
 
 			<SheetFooter className="shrink-0 flex-row items-center justify-between border-t">
-				{transaction === null || splitChild || !admin ? (
+				{transaction === null || splitChild || !canWrite ? (
 					<span />
 				) : (
 					<Button type="button" variant="destructive" onClick={() => setConfirmingDelete(true)}>
@@ -701,9 +701,9 @@ export function TransactionForm({
 				)}
 				<div className="flex gap-2">
 					<Button type="button" variant="outline" onClick={onCancel}>
-						{admin ? t("common.cancel") : t("common.close")}
+						{canWrite ? t("common.cancel") : t("common.close")}
 					</Button>
-					{admin && (
+					{canWrite && (
 						<Button type="submit" form="transaction-form" disabled={isSubmitting}>
 							{t("transactions.form.save")}
 						</Button>

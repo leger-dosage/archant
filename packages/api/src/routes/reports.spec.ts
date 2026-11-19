@@ -29,7 +29,7 @@ import {
 	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 import { insertSecurity } from "../testing/prices.ts";
 
 useSignedInApp();
@@ -1170,22 +1170,22 @@ describe("/api/reports/layout", () => {
 		expect(error.fields).toEqual([{ path: "sectionOrder", code: "duplicate_section" }]);
 	});
 
-	describe("as a viewer", () => {
+	describe("as a guest", () => {
 		const silent = createLogger("silent");
 		let auth: Auth;
-		let viewerCookie: string;
+		let guestCookie: string;
 
-		// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+		// One guest sign-in for the block: Better Auth allows three per ten seconds.
 		beforeAll(async () => {
 			auth = createTestAuth(temp.db, silent);
-			viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
-			await insertSecurity(temp.db, { name: "Viewer report holding" });
+			guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
+			await insertSecurity(temp.db, { name: "Guest report holding" });
 		});
 
-		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = () => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		it("reads investment figures as a viewer without changing preferences", async () => {
-			const read = await viewer().request("/api/reports/page");
+		it("reads investment figures as a guest without changing preferences", async () => {
+			const read = await guest().request("/api/reports/page");
 			expect(read.status).toBe(200);
 			const report = z
 				.object({
@@ -1198,12 +1198,12 @@ describe("/api/reports/layout", () => {
 				})
 				.parse(await read.json());
 			expect(report.data.investments.holdings.map((holding) => holding.security.name)).toContain(
-				"Viewer report holding",
+				"Guest report holding",
 			);
 		});
 
 		it("is refused FORBIDDEN on a save, nothing written, and still downloads the CSV", async () => {
-			const refused = await viewer().request("/api/reports/layout", {
+			const refused = await guest().request("/api/reports/layout", {
 				method: "PATCH",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({
@@ -1211,7 +1211,7 @@ describe("/api/reports/layout", () => {
 					biggestExpensesLimit: 5,
 				}),
 			});
-			const exported = await viewer().request("/api/reports/export");
+			const exported = await guest().request("/api/reports/export");
 
 			expect(refused.status).toBe(403);
 			expect(errorBody.parse(await refused.json()).error.code).toBe("FORBIDDEN");

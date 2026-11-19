@@ -18,11 +18,7 @@ const resetQuerySchema = z.object({ sampleData: z.enum(["true", "false"]).option
  * `sampleData=true` « Réinitialiser et précharger », its `DELETE
  * /users/:id/reset_with_sample_data`, which runs `Demo::Generator` after:
  * one route, as both reach Sure's one `FamilyResetJob`. Sure's
- * `ensure_admin` as `requireRole("admin")`, beside `viewerReadOnly`, which
- * already refuses a viewer's `DELETE`: a guard that names the role stays if
- * the route's method ever changes. At once rather than in a background job, as
- * Sure's `FamilyResetJob`: Archant has no queue, and one SQLite transaction
- * is fast.
+ * `ensure_admin`: resetting the entire household requires an administrator.
  */
 export function financialDataRoutes(deps: SureImportDeps) {
 	return new Hono<SessionEnv>().delete(

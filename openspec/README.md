@@ -18,12 +18,11 @@ The agent integrations are checked in. Refresh them with `pnpm exec openspec ini
 
 Use `pnpm exec openspec list` for current status. The table maps story numbers from the [previous tracker](../docs/archive/bmad/implementation-artifacts/sprint-status.yaml) to their proposed changes. Check the prerequisite named in each proposal before starting. For work beyond these proposals, see the [feature inventory](../docs/archive/bmad/planning-artifacts/feature-inventory.md) and [deferred findings](../docs/archive/bmad/implementation-artifacts/deferred-work.md).
 
-| Story | Change                                                                                                                                          | Prerequisite                                                         |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| 36.2  | [A member who writes, and a guest as Sure's](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md)                                      |                                                                      |
-| 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
-| 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
-| 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2](changes/a-member-who-writes-and-a-guest-as-sures/proposal.md) |
+| Story | Change                                                                                                                                          | Prerequisite       |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2][story-36-2] |
+| 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2][story-36-2] |
+| 36.8  | [Sign in through OpenID Connect](changes/sign-in-through-openid-connect/proposal.md)                                                            | [36.2][story-36-2] |
 
 [35.9]: changes/archive/2026-11-18-a-goals-pace-and-history-as-sure/proposal.md
 
@@ -45,6 +44,9 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 - Story 35.11: [Filter, search and summarise goals](changes/archive/2026-11-18-filter-search-and-summarise-goals/proposal.md).
 
 - Story 36.1: [Reset a forgotten password by e-mail](changes/archive/2026-11-18-reset-a-forgotten-password-by-e-mail/proposal.md).
+- [36.2. A member who writes, and a guest as Sure's][story-36-2]
+
+[story-36-2]: changes/archive/2026-11-18-a-member-who-writes-and-a-guest-as-sures/proposal.md
 
 - Story 35.12: [Refresh a months-of-expenses reserve monthly](changes/archive/2026-11-18-refresh-a-months-of-expenses-reserve-monthly/proposal.md).
 

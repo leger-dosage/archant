@@ -25,7 +25,7 @@ import {
 	useDeleteAttachment,
 	useUploadAttachment,
 } from "@/hooks/useAttachments";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { formatFileSize } from "@/lib/file-size";
@@ -52,7 +52,7 @@ function AttachmentItem({
 }: {
 	transactionId: string;
 	attachment: Attachment;
-	/** `null` for a viewer, who opens and downloads a file and deletes none. */
+	/** `null` for a guest, who opens and downloads a file and deletes none. */
 	onDelete: (() => void) | null;
 }) {
 	const { t } = useTranslation();
@@ -116,12 +116,12 @@ function AttachmentItem({
  * file with its size, an open button (new tab) and a download button,
  * « Ajouter » and a delete with confirmation. Every action saves at once,
  * apart from the form, and never touches it, so none waits for its unsaved
- * edits. A viewer opens and downloads the files, and neither adds nor
+ * edits. A guest opens and downloads the files, and neither adds nor
  * deletes one.
  */
 export function TransactionAttachments({ transaction }: { transaction: TransactionData }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const attachments = useAttachments(transaction.id);
 	const upload = useUploadAttachment(transaction.id);
 	const remove = useDeleteAttachment(transaction.id);
@@ -192,7 +192,7 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 				</p>
 			) : count === 0 ? (
 				<p className="text-sm text-muted-foreground">
-					{t(admin ? "transactions.attachments.empty" : "transactions.attachments.none")}
+					{t(canWrite ? "transactions.attachments.empty" : "transactions.attachments.none")}
 				</p>
 			) : (
 				<ul
@@ -205,7 +205,7 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 							transactionId={transaction.id}
 							attachment={attachment}
 							onDelete={
-								admin
+								canWrite
 									? () => {
 											setDeleting(attachment);
 											setConfirming(true);
@@ -228,7 +228,7 @@ export function TransactionAttachments({ transaction }: { transaction: Transacti
 					))}
 				</ul>
 			)}
-			{admin && (
+			{canWrite && (
 				<>
 					<div className="flex flex-col items-start gap-1">
 						<Button

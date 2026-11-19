@@ -19,13 +19,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget } from "@/hooks/useBudget";
 import { errorCodeOf } from "@/lib/api";
-import { isAdmin } from "@/lib/auth-client";
+import { canWrite } from "@/lib/auth-client";
 import { ofBudgetPeriod } from "@/lib/dates";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
-	// A viewer reads the month: its allocation writes, and the server would refuse the save.
+	// A guest reads the month: its allocation writes, and the server would refuse the save.
 	beforeLoad: ({ context, params }) => {
-		if (!isAdmin(context.session)) {
+		if (!canWrite(context.session.user.role)) {
 			throw redirect({ to: "/budgets/$month", params: { month: params.month } });
 		}
 	},

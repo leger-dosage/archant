@@ -33,8 +33,8 @@ import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { useUncategorisedCount } from "@/hooks/useCategorize";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useRecurringEnabled } from "@/hooks/useRecurring";
 import { useSelection } from "@/hooks/useSelection";
@@ -184,10 +184,10 @@ function OperationsPage() {
 	const categories = useCategories();
 	const merchants = useMerchants();
 	const tags = useTags();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	// Sure shows the list without its tabs while recurring transactions are off.
 	const recurring = useRecurringEnabled();
-	const uncategorised = useUncategorisedCount(admin).data ?? 0;
+	const uncategorised = useUncategorisedCount(canWrite).data ?? 0;
 	const data = transactions.data;
 	const figures = totals.data;
 	// The previous filter's figures may stay in the strip while the new ones
@@ -269,7 +269,7 @@ function OperationsPage() {
 		<Page
 			title={t("operations.title")}
 			actions={
-				admin ? (
+				canWrite ? (
 					<>
 						{/* Sure's « Categorize (N) », in its page menu, while a line has no category. */}
 						{uncategorised > 0 && (
@@ -420,8 +420,8 @@ function OperationsPage() {
 								headingLevel={2}
 								onOpen={(transaction) => setSheet({ open: true, transaction })}
 								// The previous page's rows, shown while the next loads, cannot be ticked
-								// under the new filters. A viewer has no bulk action to tick rows for.
-								{...(transactions.isPlaceholderData || !admin ? {} : { selection })}
+								// under the new filters. A guest has no bulk action to tick rows for.
+								{...(transactions.isPlaceholderData || !canWrite ? {} : { selection })}
 							/>
 						)}
 
@@ -437,7 +437,7 @@ function OperationsPage() {
 				</TabsContent>
 			</Tabs>
 
-			{tab === undefined && admin && settled !== undefined && selection.target !== null && (
+			{tab === undefined && canWrite && settled !== undefined && selection.target !== null && (
 				<BulkBar
 					selection={selection}
 					target={selection.target}
@@ -446,7 +446,7 @@ function OperationsPage() {
 				/>
 			)}
 
-			{admin && choice !== null && (
+			{canWrite && choice !== null && (
 				<TransactionSheet
 					account={choice}
 					open={adding}

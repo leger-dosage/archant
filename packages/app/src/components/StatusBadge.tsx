@@ -58,7 +58,7 @@ const STATUSES = {
 	billDueSoon: { icon: ClockIcon, key: "bills.dueSoon", tone: "warning" },
 	// A paid occurrence in place in the month, under a check, as Sure's.
 	billPaid: { icon: CircleCheckIcon, key: "bills.paid", tone: "neutral" },
-	// What a viewer reads in place of a disabled rule's switch.
+	// What a guest reads in place of a disabled rule's switch.
 	ruleDisabled: { icon: CirclePauseIcon, key: "rules.disabledBadge", tone: "neutral" },
 	// A rule run's status, Sure's pills: pending a warning, failed an error.
 	rulePending: { icon: ClockIcon, key: "rules.runs.statuses.pending", tone: "warning" },

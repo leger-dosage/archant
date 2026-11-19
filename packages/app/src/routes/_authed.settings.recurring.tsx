@@ -10,7 +10,7 @@ import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import {
 	recurringSettingsQuery,
 	useCleanupRecurring,
@@ -32,7 +32,7 @@ const TRIGGERS = ["import", "sync", "daily"] as const;
  * Sure's `recurring_transactions#index`: « Activer les transactions
  * récurrentes », then, while it is on, what detection does and when it runs,
  * the possible bills it found, « Identifier les modèles » and « Nettoyer les
- * obsolètes », and the way to every bill. The settings layout keeps a viewer
+ * obsolètes », and the way to every bill. The settings layout keeps a guest
  * off this page; the switch would show them its state, disabled.
  */
 function RecurringSettingsPage() {
@@ -122,7 +122,7 @@ function RecurringSettingsPage() {
 						</div>
 					</Section>
 
-					{suggestions.length > 0 && <RecurringSuggestions items={suggestions} admin />}
+					{suggestions.length > 0 && <RecurringSuggestions items={suggestions} canWrite />}
 
 					<div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border bg-card p-4">
 						<div className="flex flex-col gap-0.5">

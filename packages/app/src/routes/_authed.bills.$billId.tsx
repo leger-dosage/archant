@@ -21,7 +21,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { recurringName, useBill } from "@/hooks/useRecurring";
 import { errorCodeOf } from "@/lib/api";
 import { formatTableDate } from "@/lib/balance-change";
@@ -470,7 +470,7 @@ function History({ detail }: { detail: BillDetailData }) {
  */
 function BillDrawer() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const { billId } = Route.useParams();
 	const navigate = Route.useNavigate();
 	const [open, setOpen] = useState(true);
@@ -499,7 +499,7 @@ function BillDrawer() {
 							? ""
 							: `${t(`recurring.billTypes.${record.billType}`)} · ${t(`recurring.frequencyPresets.${record.frequency.key}`)}`}
 					</SheetDescription>
-					{admin && record !== undefined && record.status !== "suggested" && (
+					{canWrite && record !== undefined && record.status !== "suggested" && (
 						// Beside the close button, as Sure's header menu.
 						<div className="absolute top-2 right-12">
 							<BillMenu bill={record} actions={actions} editLabel={t("bills.detail.edit")} />
@@ -518,7 +518,7 @@ function BillDrawer() {
 							<Summary
 								detail={data}
 								onAddLink={
-									admin && record.status !== "suggested" ? () => actions.edit(record) : null
+									canWrite && record.status !== "suggested" ? () => actions.edit(record) : null
 								}
 							/>
 
@@ -563,7 +563,7 @@ function BillDrawer() {
 								</Disclosure>
 							)}
 
-							{admin && record.status === "suggested" && (
+							{canWrite && record.status === "suggested" && (
 								// A suggestion the transaction sheet links to: added or dismissed, as its strip does.
 								<div className="flex flex-wrap gap-2 border-t pt-4">
 									<Button

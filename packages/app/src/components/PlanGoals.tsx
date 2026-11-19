@@ -16,7 +16,7 @@ import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useFundableAccounts, useGoalsSummary } from "@/hooks/useGoals";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { formatMoney } from "@/lib/format-money";
 import { percentOf } from "@/lib/plan-summary";
@@ -118,11 +118,11 @@ function NewGoal() {
 
 export function PlanGoals() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const summary = useGoalsSummary();
 
 	return (
-		<Section title={t("plan.goals.title")} action={admin ? <NewGoal /> : undefined}>
+		<Section title={t("plan.goals.title")} action={canWrite ? <NewGoal /> : undefined}>
 			<div className="flex flex-1 flex-col gap-4 p-4">
 				{summary.isPending && <Skeleton aria-hidden="true" className="h-20" />}
 				{summary.isError && summary.data === undefined && (

@@ -52,7 +52,7 @@ import {
 	SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import {
 	useAddPayment,
 	useBill,
@@ -101,7 +101,13 @@ function Action({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /** The matcher's suggestion, with « Appliquer » and « Pas cette facture » for an administrator. */
-function Suggestion({ suggestion, admin }: { suggestion: SuggestedPaymentData; admin: boolean }) {
+function Suggestion({
+	suggestion,
+	canWrite,
+}: {
+	suggestion: SuggestedPaymentData;
+	canWrite: boolean;
+}) {
 	const { t } = useTranslation();
 	return (
 		<InsetGroup level={3} title={t("bills.sheet.suggestion")}>
@@ -134,7 +140,7 @@ function Suggestion({ suggestion, admin }: { suggestion: SuggestedPaymentData; a
 					dueOn={suggestion.effectiveDueOn}
 					paidOn={suggestion.paidOn}
 				/>
-				{admin && <SuggestionActions paymentId={suggestion.id} />}
+				{canWrite && <SuggestionActions paymentId={suggestion.id} />}
 			</div>
 		</InsetGroup>
 	);
@@ -543,7 +549,7 @@ function OpenActions({
  * Sure's occurrence drawer: what is owed or paid, the payments that settle
  * it, the matcher's suggestion, then, for an administrator, Sure's
  * `recurring_occurrences` and `recurring_allocations` actions. A closed
- * occurrence offers only « Rouvrir ». A viewer reads it without any action,
+ * occurrence offers only « Rouvrir ». A guest reads it without any action,
  * and never asks for the candidates.
  */
 export function OccurrenceSheet({
@@ -556,7 +562,7 @@ export function OccurrenceSheet({
 	onOpenChange: (open: boolean) => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const detail = useOccurrence(occurrenceId);
 	const remove = useRemovePayment();
 	const reopen = useSetOccurrenceClosed(occurrenceId);
@@ -656,7 +662,7 @@ export function OccurrenceSheet({
 													</div>
 													<span className="flex shrink-0 items-center gap-2">
 														<Money amount={payment.amount} currency={occurrence.currency} />
-														{admin && (
+														{canWrite && (
 															<Button
 																size="sm"
 																variant="ghost"
@@ -678,10 +684,10 @@ export function OccurrenceSheet({
 							)}
 
 							{data.suggestion !== null && (
-								<Suggestion suggestion={data.suggestion} admin={admin} />
+								<Suggestion suggestion={data.suggestion} canWrite={canWrite} />
 							)}
 
-							{admin &&
+							{canWrite &&
 								(isClosed(occurrence) ? (
 									<Button
 										variant="outline"

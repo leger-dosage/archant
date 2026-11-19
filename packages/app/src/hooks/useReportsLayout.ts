@@ -11,7 +11,7 @@ import { queryKeys } from "@/lib/query-keys";
 
 export type ReportsLayoutData = InferResponseType<(typeof api.reports.layout)["$get"], 200>["data"];
 
-/** The signed-in user's section order and collapsed sections. Off for a viewer, who sees the default. */
+/** The signed-in user's section order and collapsed sections. Off for a guest, who sees the default. */
 export function useReportsLayout({ enabled }: { enabled: boolean }) {
 	return useQuery({
 		queryKey: queryKeys.reportsLayout,

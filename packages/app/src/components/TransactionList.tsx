@@ -28,8 +28,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCategories, useCategoryShown } from "@/hooks/useCategories";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { usePreferences } from "@/hooks/usePreferences";
 import { useTags } from "@/hooks/useTags";
 import { useSetTransactionCategory } from "@/hooks/useTransactions";
@@ -219,7 +219,7 @@ function OutflowCategoryChip({ categoryId }: { categoryId: string | null }) {
 }
 
 /**
- * The row's category for a viewer, who changes none: the pill alone, not a
+ * The row's category for a guest, who changes none: the pill alone, not a
  * button, letting a click through to the row as the transfer pill does.
  */
 function CategoryLabel({ categoryId }: { categoryId: string | null }) {
@@ -372,8 +372,8 @@ type RowContext = {
 	onOpen: (transaction: TransactionData) => void;
 	showAccount: boolean;
 	selection: Selection | undefined;
-	/** Whether the category chip opens its picker; a viewer's is a plain pill. */
-	admin: boolean;
+	/** Whether the category chip opens its picker; a guest's is a plain pill. */
+	canWrite: boolean;
 	/** Whether rows keep room after them for confirming a proposed transfer. */
 	matchActions: boolean;
 	columns: string;
@@ -580,7 +580,7 @@ function RowLine({
 					<OutflowCategoryChip categoryId={outflowCategory.id} />
 				) : item.transfer !== null && !categoryShown ? (
 					<TransferChip kind={item.transfer.kind} />
-				) : !context.admin ? (
+				) : !context.canWrite ? (
 					<CategoryLabel categoryId={item.categoryId} />
 				) : (
 					<CategoryChip
@@ -618,7 +618,7 @@ function RowLine({
 						<ReconciliationBadge
 							id={item.id}
 							status={item.reconciliationStatus}
-							editable={context.admin}
+							editable={context.canWrite}
 							compact
 						/>
 					)}
@@ -651,7 +651,7 @@ export function TransactionList({
 }: TransactionListProps) {
 	const { t } = useTranslation();
 	const categories = useCategories();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
 	const setCategory = useSetTransactionCategory();
 	const merchants = useMerchants();
@@ -662,9 +662,9 @@ export function TransactionList({
 		onOpen,
 		showAccount,
 		selection,
-		admin,
+		canWrite,
 		manualReconciliation,
-		matchActions: admin && items.some((item) => item.transfer?.status === "pending"),
+		matchActions: canWrite && items.some((item) => item.transfer?.status === "pending"),
 		columns,
 		categories: categories.data,
 		categoryOf: new Map((categories.data ?? []).map((category) => [category.id, category])),

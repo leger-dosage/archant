@@ -11,7 +11,7 @@ import { InsetGroup } from "@/components/InsetGroup";
 import { Money } from "@/components/Money";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { kindOf } from "@/lib/account-kinds";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
  */
 export function AccountGroups({ list }: { list: AccountListData }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 
 	return (
 		<div className="flex flex-col gap-6">
@@ -104,7 +104,7 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 												className="shrink-0"
 											/>
 										</Link>
-										{admin && (
+										{canWrite && (
 											<AccountRowMenu
 												account={account}
 												isDefault={account.id === list.defaultAccountId}

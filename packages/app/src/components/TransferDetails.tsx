@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useMarkTransferRecurring, useRecurringEnabled } from "@/hooks/useRecurring";
 import {
 	useSetTransferTags,
@@ -37,7 +37,7 @@ type Side = TransferDetailsData["outflow"];
  * A transfer's own drawer, Sure's `transfers/show.html.erb`, shown in the
  * transaction sheet for a transfer row: the amount and the name, « Aperçu »
  * with each side and its fee, « Détails » saving at once, and « Paramètres »
- * with « Marquer comme récurrent » and the deletion. A viewer reads it, every
+ * with « Marquer comme récurrent » and the deletion. A guest reads it, every
  * field disabled and « Paramètres » left out (AD-21).
  */
 export function TransferDetails({
@@ -84,7 +84,7 @@ function TransferDrawer({
 	onClose: () => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const { outflow, inflow } = transfer;
 	// Sure's `Transfer#name`: a payment into a liability, a transfer elsewhere.
 	const name = t(
@@ -127,11 +127,11 @@ function TransferDrawer({
 					</div>
 				</Disclosure>
 				<Disclosure title={t("transfers.show.details")}>
-					<fieldset disabled={!admin} className="flex min-w-0 flex-col gap-4">
+					<fieldset disabled={!canWrite} className="flex min-w-0 flex-col gap-4">
 						<DetailsFields transfer={transfer} />
 					</fieldset>
 				</Disclosure>
-				{admin && (
+				{canWrite && (
 					<Disclosure title={t("transfers.show.settings")}>
 						<Settings transferId={transfer.id} onClose={onClose} />
 					</Disclosure>

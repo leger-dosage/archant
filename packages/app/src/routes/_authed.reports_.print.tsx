@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { DEFAULT_BIGGEST_EXPENSES_LIMIT } from "@archant/data/reports-sections";
 
 import { ReportPrint } from "@/components/reports/ReportPrint";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useReportsLayout } from "@/hooks/useReportsLayout";
 import { useReportsPage } from "@/hooks/useReportsPage";
 import { errorCodeOf } from "@/lib/api";
@@ -23,11 +23,11 @@ export const Route = createFileRoute("/_authed/reports_/print")({
 function ReportPrintPage() {
 	const { t } = useTranslation();
 	const report = useReportsPage(settledSearch(Route.useSearch()));
-	const admin = useIsAdmin();
-	const layout = useReportsLayout({ enabled: admin });
-	const error = report.error ?? (admin ? layout.error : null);
+	const canWrite = useCanWrite();
+	const layout = useReportsLayout({ enabled: canWrite });
+	const error = report.error ?? (canWrite ? layout.error : null);
 
-	if (report.data !== undefined && (!admin || layout.data !== undefined)) {
+	if (report.data !== undefined && (!canWrite || layout.data !== undefined)) {
 		return (
 			<ReportPrint
 				data={report.data}

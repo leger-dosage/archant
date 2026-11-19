@@ -49,8 +49,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useAccounts } from "@/hooks/useAccounts";
 import { useCategories } from "@/hooks/useCategories";
 import { pageCountOf, useClampPage } from "@/hooks/useClampPage";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useCanWrite } from "@/hooks/usePermissions";
 import {
 	useApplyRules,
 	useDeleteAllRules,
@@ -145,7 +145,7 @@ function RunStatus({ run }: { run: RuleRunData }) {
 	);
 }
 
-/** A rule as a viewer reads it: no switch and no menu, « Désactivée » when it is. */
+/** A rule as a guest reads it: no switch and no menu, « Désactivée » when it is. */
 function RuleLine({ rule, summary }: { rule: RuleData; summary: string }) {
 	const title = rule.name ?? summary;
 	const { t } = useTranslation();
@@ -407,11 +407,11 @@ function RuleRuns({ page, names }: { page: number; names: SummaryNames }) {
  * After each sync or import the enabled ones run over every transaction, in
  * saved order, as Sure's post-sync; an application the user confirms runs
  * them at once, which a new rule offers once saved and which enables it, as
- * Sure's `rules#confirm`. A viewer reads the rules and their runs, and changes none.
+ * Sure's `rules#confirm`. A guest reads the rules and their runs, and changes none.
  */
 function RulesPage() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const {
 		runsPage = 1,
 		sortBy = "name",
@@ -492,7 +492,7 @@ function RulesPage() {
 			return;
 		}
 
-		if (admin && failed === undefined) {
+		if (canWrite && failed === undefined) {
 			setOpened({ action: "add", preset: presetValues(presetName, presetCategory) });
 			setOpen(true);
 		}
@@ -500,7 +500,7 @@ function RulesPage() {
 			replace: true,
 			search: ({ name: _name, categoryId: _categoryId, ...rest }) => rest,
 		});
-	}, [presetName, presetCategory, ready, failed, admin, navigate]);
+	}, [presetName, presetCategory, ready, failed, canWrite, navigate]);
 
 	useEffect(() => {
 		document.title = t("app.pageTitle", { page: t("rules.title"), app: t("app.name") });
@@ -548,7 +548,7 @@ function RulesPage() {
 			title={t("rules.title")}
 			description={t("rules.description")}
 			actions={
-				admin ? (
+				canWrite ? (
 					<>
 						{/* As Sure's index, only once a rule exists: its page menu, then « Appliquer tout ». */}
 						{list.length > 0 && (
@@ -623,7 +623,7 @@ function RulesPage() {
 						title={t("rules.empty.title")}
 						description={t("rules.empty.description")}
 						action={
-							admin ? (
+							canWrite ? (
 								<Button onClick={() => openDialog({ action: "add" })}>{t("rules.add")}</Button>
 							) : null
 						}
@@ -636,7 +636,7 @@ function RulesPage() {
 							count={list.length}
 							total={<RuleSortControls sortBy={sortBy} direction={direction} />}
 						>
-							{admin && list.length > 1 && (
+							{canWrite && list.length > 1 && (
 								<div className="px-4 pb-2">
 									<RuleOrderDialog rules={list} labelOf={(item) => item.name ?? summaryOf(item)} />
 								</div>
@@ -644,7 +644,7 @@ function RulesPage() {
 							<ul aria-label={t("rules.title")} className="divide-y divide-line">
 								{sorted.map((item) => (
 									<li key={item.id}>
-										{!admin ? (
+										{!canWrite ? (
 											<RuleLine rule={item} summary={summaryOf(item)} />
 										) : (
 											<RuleRow

@@ -15,7 +15,7 @@ import {
 	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 import { loggedFigures } from "../testing/logs.ts";
 
 useSignedInApp();
@@ -174,15 +174,15 @@ describe("POST /api/sure-imports", () => {
 		expect(await temp.db.all(sql`select id from accounts where name = 'Jamais écrit'`)).toEqual([]);
 	});
 
-	it("refuses a viewer FORBIDDEN, the preflight too", async () => {
+	it("refuses a guest FORBIDDEN, the preflight too", async () => {
 		const silent = createLogger("silent");
 		const auth = createTestAuth(temp.db, silent);
-		const cookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), cookie);
+		const cookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), cookie);
 
 		const responses = await Promise.all(
 			(["/api/sure-imports", "/api/sure-imports/preflight"] as const).map(async (path) =>
-				post(path, ndjson([checking]), { app: viewer }),
+				post(path, ndjson([checking]), { app: guest }),
 			),
 		);
 

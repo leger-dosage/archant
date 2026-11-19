@@ -12,7 +12,7 @@ Know its limits before you install it:
 
 - The interface comes in English and French. Each member picks theirs in « Réglages › Préférences », and a new member gets their browser's language. The household has its own language too, set at setup and changed in the same page, which names the default categories, the transfers, the labels an import or a bank sync gives a line with no name, and the sample household. The assistant's tool descriptions and the language of the bank's consent page stay French.
 - Totals and reports are in euros, the one reporting currency. An account in another currency keeps its own balance but stays out of the totals, with no exchange rates.
-- One household. There is no public sign-up: an administrator invites each other member by a link, as an administrator or as a read-only viewer, and every member sees the whole household, with no per-account sharing.
+- One household. There is no public sign-up: an administrator invites each other member by a link, as an administrator, a member who can edit the ledger, or a read-only guest. All three roles see every ledger account.
 - Bank synchronisation goes through [Enable Banking](https://enablebanking.com) only, which covers European banks and needs an application registered with it. File import works without it.
 
 ![The dashboard: accounts in the sidebar, net worth over six months, and the month's income and expenses by category, in English, all made-up data](docs/images/dashboard.png)
@@ -50,7 +50,7 @@ Everything below works without a bank connection except the last line. [docs/sur
 - Bills: recurring payments detected from history or declared by hand, with a schedule, due dates settled by the payments that match them, and a page of what is overdue, due and paid.
 - A dashboard with net worth over time and monthly income and expenses by category.
 - An export of every figure as one ZIP, in Sure's export format.
-- Members: an administrator created on first launch, others invited by a link as administrators or read-only viewers, two-factor sign-in, and a password reset from the server's shell.
+- Members: an administrator created on first launch, others invited by a link in any of the three roles, two-factor sign-in, and a password reset from the server's shell.
 - An AI assistant connected over MCP, the Model Context Protocol, which reads your finances and, if you allow it, writes rules, classifies, records, imports or deletes transactions, records balances, pairs transfers, sets budgets and bills, and creates one-off savings goals backed by depository accounts.
 - Bank synchronisation through Enable Banking: connect a bank, choose how far back the first sync reads, up to two years, link its accounts, sync transactions and balances on a schedule or on demand, keep pending card payments, renew or disconnect, and merge or dismiss a possible duplicate.
 

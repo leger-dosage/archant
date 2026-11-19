@@ -36,7 +36,7 @@ export function goalsRoutes(deps: ServiceDeps) {
 			.get("/:id/history", async (c) =>
 				c.json({ data: await getGoalHistory(deps, c.req.param("id")) }, 200),
 			)
-			.get("/:id/outflows", requireRole("admin"), async (c) =>
+			.get("/:id/outflows", requireRole("admin", "member"), async (c) =>
 				c.json({ data: await getGoalOutflows(deps, c.req.param("id")) }, 200),
 			)
 			.post("/:id/consume", validated("json", goalSpendSchema), async (c) =>

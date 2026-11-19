@@ -12,7 +12,7 @@ import { TransferDetails } from "@/components/TransferDetails";
 import { TransferForm } from "@/components/TransferForm";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { usePreferences } from "@/hooks/usePreferences";
 import { formatShortDate } from "@/lib/balance-change";
 
@@ -32,7 +32,7 @@ type TransactionSheetProps = {
 /**
  * Adds or edits one transaction. The form saves explicitly, and the edit
  * drawer saves notes on blur. Escape, Annuler and the close button ask before
- * throwing away unsaved changes. Focus goes back to what opened it. A viewer
+ * throwing away unsaved changes. Focus goes back to what opened it. A guest
  * reads it as « Opération », every field disabled: the sheet is the only
  * place a transaction's notes, tags and receipts show. A transfer row opens
  * the transfer's own drawer instead, as Sure's `open_path`.
@@ -44,7 +44,7 @@ export function TransactionSheet({
 	onOpenChange,
 }: TransactionSheetProps) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const manualReconciliation = usePreferences().data?.manualReconciliation === true;
 	const [confirmingDiscard, setConfirmingDiscard] = useState(false);
 	const [session, setSession] = useState(0);
@@ -91,7 +91,7 @@ export function TransactionSheet({
 				key={session}
 				id={transaction.id}
 				status={transaction.reconciliationStatus}
-				editable={admin}
+				editable={canWrite}
 			/>
 		) : null;
 	const close = () => {
@@ -156,7 +156,7 @@ export function TransactionSheet({
 									? "transfers.form.title"
 									: transaction === null
 										? "transactions.form.addTitle"
-										: admin
+										: canWrite
 											? "transactions.form.editTitle"
 											: "transactions.form.viewTitle",
 							)}
@@ -200,7 +200,7 @@ export function TransactionSheet({
 						key={session}
 						account={account}
 						transaction={transaction}
-						onTypeChange={admin && transaction === null ? setType : undefined}
+						onTypeChange={canWrite && transaction === null ? setType : undefined}
 						initialNature={type === "income" ? "income" : "expense"}
 						onClose={close}
 						onCloseFocusing={(rowId) => {

@@ -11,7 +11,7 @@ import { errorBody, ownDatabase, temp, template, useSignedInApp } from "../testi
 import {
 	ADMIN,
 	TEST_ORIGIN,
-	addViewer,
+	addTestUser,
 	buildTestApp,
 	createTestAuth,
 	withSession,
@@ -20,15 +20,15 @@ import {
 useSignedInApp();
 
 let auth: Auth;
-let viewerCookie: string;
+let guestCookie: string;
 let logLines: string[] = [];
 
 const logger = createLogger("info", { write: (line: string) => logLines.push(line) });
 
-// One Better Auth and one viewer sign-in for the file: the limit allows three per ten seconds.
+// One Better Auth and one guest sign-in for the file: the limit allows three per ten seconds.
 beforeAll(async () => {
 	auth = createTestAuth(temp.db, logger);
-	viewerCookie = await addViewer(buildTestApp(temp.db, logger, auth), auth);
+	guestCookie = await addTestUser(buildTestApp(temp.db, logger, auth), auth);
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -52,7 +52,7 @@ const listBody = z.object({
 const admin = (db = temp.db): TestApp =>
 	withSession(buildTestApp(db, logger, db === temp.db ? auth : undefined), template.cookie);
 
-const viewer = (): TestApp => withSession(buildTestApp(temp.db, logger, auth), viewerCookie);
+const guest = (): TestApp => withSession(buildTestApp(temp.db, logger, auth), guestCookie);
 
 /** No session: the person who opened the link. */
 const visitor = (network: TestNetwork = {}): TestApp =>
@@ -77,7 +77,7 @@ async function send(
 	return { response, body: z.unknown().parse(await response.json().catch(() => null)) };
 }
 
-async function invite(email: string, role = "viewer", app = admin()) {
+async function invite(email: string, role = "guest", app = admin()) {
 	const { response, body } = await send(app, "POST", "/api/invitations", { email, role });
 
 	expect(response.status, JSON.stringify(body)).toBe(201);
@@ -134,7 +134,7 @@ describe("POST /api/invitations", () => {
 
 		expect(created).toMatchObject({
 			email,
-			role: "viewer",
+			role: "guest",
 			expiresAt: Date.now() + 3 * DAY_MS,
 		});
 		expect(created.url).toMatch(/^http:\/\/localhost:5173\/invitations\/[\w-]{43}$/u);
@@ -162,7 +162,7 @@ describe("POST /api/invitations", () => {
 	it("refuses an email that has a user, whatever its case, and stores nothing", async () => {
 		const { response, body } = await send(admin(), "POST", "/api/invitations", {
 			email: ADMIN.email.toUpperCase(),
-			role: "viewer",
+			role: "guest",
 		});
 
 		expect(response.status).toBe(400);
@@ -212,8 +212,8 @@ describe("POST /api/invitations", () => {
 	});
 
 	it.each([
-		[{ email: "camille", role: "viewer" }, "email", "invalid_email"],
-		[{ email: " ", role: "viewer" }, "email", "too_small"],
+		[{ email: "camille", role: "guest" }, "email", "invalid_email"],
+		[{ email: " ", role: "guest" }, "email", "too_small"],
 		[{ email: "camille@example.test", role: "owner" }, "role", "invalid_value"],
 	])("refuses %j with its field code", async (json, path, code) => {
 		const { response, body } = await send(admin(), "POST", "/api/invitations", json);
@@ -228,7 +228,7 @@ describe("GET /api/invitations", () => {
 		const own = await ownDatabase();
 		const app = admin(own.db);
 		const create = async (email: string) => {
-			const { body } = await send(app, "POST", "/api/invitations", { email, role: "viewer" });
+			const { body } = await send(app, "POST", "/api/invitations", { email, role: "guest" });
 
 			return createdBody.parse(body).data;
 		};
@@ -245,8 +245,8 @@ describe("GET /api/invitations", () => {
 
 		expect(response.status).toBe(200);
 		expect(listBody.parse(body).data).toEqual([
-			{ id: older.id, email: "older@example.test", role: "viewer", expiresAt: older.expiresAt },
-			{ id: newer.id, email: "newer@example.test", role: "viewer", expiresAt: newer.expiresAt },
+			{ id: older.id, email: "older@example.test", role: "guest", expiresAt: older.expiresAt },
+			{ id: newer.id, email: "newer@example.test", role: "guest", expiresAt: newer.expiresAt },
 		]);
 		expect(expired.expiresAt).toBeLessThanOrEqual(Date.now());
 	});
@@ -292,13 +292,13 @@ describe("DELETE /api/invitations/:id", () => {
 });
 
 describe("an administrator's invitations", () => {
-	it("refuse a viewer to create, list or revoke", async () => {
+	it("refuse a guest to create, list or revoke", async () => {
 		const created = await invite(uniqueEmail("kept"));
 
 		const answers = await Promise.all([
-			send(viewer(), "POST", "/api/invitations", { email: uniqueEmail("x"), role: "admin" }),
-			send(viewer(), "GET", "/api/invitations"),
-			send(viewer(), "DELETE", `/api/invitations/${created.id}`),
+			send(guest(), "POST", "/api/invitations", { email: uniqueEmail("x"), role: "admin" }),
+			send(guest(), "GET", "/api/invitations"),
+			send(guest(), "DELETE", `/api/invitations/${created.id}`),
 		]);
 
 		expect(answers.map(({ response }) => response.status)).toEqual([403, 403, 403]);
@@ -338,7 +338,7 @@ describe("POST /api/invitations/preview", () => {
 		await own.db.run(sql`update users set name = 'Camille' where email = ${ADMIN.email}`);
 		const { body: created } = await send(admin(own.db), "POST", "/api/invitations", {
 			email: "dominique@example.test",
-			role: "viewer",
+			role: "guest",
 		});
 		const token = createdBody.parse(created).data.url.split("/").at(-1) ?? "";
 
@@ -347,7 +347,7 @@ describe("POST /api/invitations/preview", () => {
 		});
 
 		expect(body).toEqual({
-			data: { email: "dominique@example.test", role: "viewer", inviterName: "Camille" },
+			data: { email: "dominique@example.test", role: "guest", inviterName: "Camille" },
 		});
 	});
 
@@ -380,32 +380,35 @@ describe("POST /api/invitations/preview", () => {
 });
 
 describe("POST /api/invitations/accept", () => {
-	it("creates the user with the invitation's email and role, and signs them in", async () => {
-		logLines = [];
-		const created = await invite(uniqueEmail("accept"));
+	it.each(["guest", "member"] as const)(
+		"accepts a %s invitation and signs the user in",
+		async (role) => {
+			logLines = [];
+			const created = await invite(uniqueEmail("accept"), role);
 
-		const { response, body } = await accept(created.token, { name: " Camille " });
+			const { response, body } = await accept(created.token, { name: " Camille " });
 
-		expect(response.status).toBe(201);
-		expect(body).toEqual({ data: { signedIn: true } });
-		await expect(userOf(created.email)).resolves.toEqual({ name: "Camille", role: "viewer" });
-		await expect(invitationRows(created.email)).resolves.toEqual([
-			expect.objectContaining({ acceptedAt: Date.now() }),
-		]);
-		const cookie = response.headers
-			.getSetCookie()
-			.map((line) => line.split(";")[0])
-			.join("; ");
-		const accounts = await withSession(buildTestApp(temp.db, logger, auth), cookie).request(
-			"/api/accounts",
-		);
-		expect(accounts.status).toBe(200);
-		// Ids only: never the email, the token or the password.
-		const logs = logLines.join("\n");
-		expect(logs).toContain(created.id);
-		expect(logs).not.toContain(created.token);
-		expect(logs).not.toMatch(/accept-|un mot de passe/u);
-	});
+			expect(response.status).toBe(201);
+			expect(body).toEqual({ data: { signedIn: true } });
+			await expect(userOf(created.email)).resolves.toEqual({ name: "Camille", role });
+			await expect(invitationRows(created.email)).resolves.toEqual([
+				expect.objectContaining({ acceptedAt: Date.now() }),
+			]);
+			const cookie = response.headers
+				.getSetCookie()
+				.map((line) => line.split(";")[0])
+				.join("; ");
+			const accounts = await withSession(buildTestApp(temp.db, logger, auth), cookie).request(
+				"/api/accounts",
+			);
+			expect(accounts.status).toBe(200);
+			// Ids only: never the email, the token or the password.
+			const logs = logLines.join("\n");
+			expect(logs).toContain(created.id);
+			expect(logs).not.toContain(created.token);
+			expect(logs).not.toMatch(/accept-|un mot de passe/u);
+		},
+	);
 
 	it("creates an administrator from an administrator's invitation, with no name", async () => {
 		const created = await invite(uniqueEmail("admin"), "admin");
@@ -472,7 +475,7 @@ describe("POST /api/invitations/accept", () => {
 		expect(response.status).toBe(201);
 		expect(body).toEqual({ data: { signedIn: false } });
 		expect(response.headers.getSetCookie()).toEqual([]);
-		await expect(userOf(created.email)).resolves.toEqual({ name: "", role: "viewer" });
+		await expect(userOf(created.email)).resolves.toEqual({ name: "", role: "guest" });
 	});
 
 	it.each([

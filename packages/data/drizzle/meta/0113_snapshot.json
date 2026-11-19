@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d57dd7db-6af9-4fda-bc45-d46ef04675cc",
+  "id": "0b01e1d6-df48-4f0e-ab70-c83b5d3eb2b5",
   "prevId": "7c619a39-8d1a-4f44-819b-51a6db32e13b",
   "tables": {
     "accounts": {
@@ -953,7 +953,7 @@
       "checkConstraints": {
         "users_role_check": {
           "name": "users_role_check",
-          "value": "\"users\".\"role\" in ('admin', 'viewer')"
+          "value": "\"users\".\"role\" in ('admin', 'member', 'guest')"
         },
         "users_default_account_order_check": {
           "name": "users_default_account_order_check",
@@ -1514,20 +1514,6 @@
           "notNull": true,
           "autoincrement": false
         },
-        "start_date": {
-          "name": "start_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "end_date": {
-          "name": "end_date",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
         "currency": {
           "name": "currency",
           "type": "text",
@@ -1571,30 +1557,12 @@
             "month"
           ],
           "isUnique": true
-        },
-        "budgets_start_date_unique": {
-          "name": "budgets_start_date_unique",
-          "columns": [
-            "start_date"
-          ],
-          "isUnique": true
-        },
-        "budgets_end_date_unique": {
-          "name": "budgets_end_date_unique",
-          "columns": [
-            "end_date"
-          ],
-          "isUnique": true
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {
-        "budgets_dates_check": {
-          "name": "budgets_dates_check",
-          "value": "substr(\"budgets\".\"start_date\", 1, 7) = \"budgets\".\"month\" and \"budgets\".\"end_date\" >= \"budgets\".\"start_date\""
-        },
         "budgets_amounts_check": {
           "name": "budgets_amounts_check",
           "value": "\"budgets\".\"budgeted_spending\" >= 0 and \"budgets\".\"expected_income\" >= 0"
@@ -2986,7 +2954,7 @@
       "checkConstraints": {
         "invitations_role_check": {
           "name": "invitations_role_check",
-          "value": "\"invitations\".\"role\" in ('admin', 'viewer')"
+          "value": "\"invitations\".\"role\" in ('admin', 'member', 'guest')"
         }
       }
     },

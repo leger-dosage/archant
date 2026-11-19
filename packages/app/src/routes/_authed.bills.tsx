@@ -45,7 +45,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAccounts } from "@/hooks/useAccounts";
 import { useHouseholdPreferences } from "@/hooks/useHouseholdPreferences";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import {
 	recurringSettingsQuery,
 	useBills,
@@ -361,9 +361,15 @@ function Totals({ bills }: { bills: BillsData }) {
 /**
  * Sure's review queue: each suggested payment as « PRLV CREDIT AGRICOLE
  * ressemble à un paiement de Prêt immobilier », its amount, date, percentage
- * and signals, the surest first. A viewer reads it without its buttons.
+ * and signals, the surest first. A guest reads it without its buttons.
  */
-function ReviewQueue({ items, admin }: { items: readonly SuggestedPaymentData[]; admin: boolean }) {
+function ReviewQueue({
+	items,
+	canWrite,
+}: {
+	items: readonly SuggestedPaymentData[];
+	canWrite: boolean;
+}) {
 	const { t } = useTranslation();
 	const title = t("bills.review.title");
 
@@ -406,7 +412,7 @@ function ReviewQueue({ items, admin }: { items: readonly SuggestedPaymentData[];
 								paidOn={item.paidOn}
 							/>
 						</div>
-						{admin && <SuggestionActions paymentId={item.id} className="shrink-0" />}
+						{canWrite && <SuggestionActions paymentId={item.id} className="shrink-0" />}
 					</li>
 				))}
 			</ul>
@@ -428,7 +434,7 @@ function BillsPage() {
  */
 function AllBillsPage() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const actions = useBillActions();
@@ -455,7 +461,7 @@ function AllBillsPage() {
 					<Button variant="outline" asChild>
 						<Link to="/bills">{t("bills.overview")}</Link>
 					</Button>
-					{admin && (
+					{canWrite && (
 						<>
 							<Button variant="outline" onClick={() => actions.declare("income")}>
 								{t("recurring.addIncome")}
@@ -469,7 +475,7 @@ function AllBillsPage() {
 			<AllBills
 				query={{ q: search.q, status: search.status, type: search.type, sort: search.sort }}
 				onQuery={changeQuery}
-				admin={admin}
+				canWrite={canWrite}
 				actions={actions}
 			/>
 			{actions.dialogs}
@@ -483,12 +489,12 @@ function AllBillsPage() {
  * the series the totals leave out, the review queue, the possible bills
  * detection found, then « Requiert votre attention », « Ce mois-ci »,
  * « Après ce mois-ci » and « Inactive ». A row opens its occurrence's sheet.
- * A viewer reads it all without any action. A bill's drawer,
+ * A guest reads it all without any action. A bill's drawer,
  * `/bills/$billId`, opens over it.
  */
 function OverviewPage() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const { occurrence } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const bills = useBills();
@@ -550,7 +556,9 @@ function OverviewPage() {
 						</Link>
 					</Button>
 					{/* An empty page offers its own « Ajouter une facture ». */}
-					{admin && ready && !empty && <Button onClick={declare}>{t("recurring.addBill")}</Button>}
+					{canWrite && ready && !empty && (
+						<Button onClick={declare}>{t("recurring.addBill")}</Button>
+					)}
 				</>
 			}
 		>
@@ -576,8 +584,10 @@ function OverviewPage() {
 					{listed && <Totals bills={data} />}
 					<LeftOutNotice accounts={data.leftOut} />
 					<Notices notices={data.notices} />
-					{data.review.length > 0 && <ReviewQueue items={data.review} admin={admin} />}
-					{suggestions.length > 0 && <RecurringSuggestions items={suggestions} admin={admin} />}
+					{data.review.length > 0 && <ReviewQueue items={data.review} canWrite={canWrite} />}
+					{suggestions.length > 0 && (
+						<RecurringSuggestions items={suggestions} canWrite={canWrite} />
+					)}
 					{empty && (
 						<EmptyState
 							level={2}
@@ -587,7 +597,7 @@ function OverviewPage() {
 								data.hasTransactions ? "bills.empty.description" : "bills.empty.noTransactions",
 							)}
 							action={
-								admin ? (
+								canWrite ? (
 									<span className="flex flex-wrap justify-center gap-2">
 										{data.hasTransactions && (
 											<Button disabled={detect.isPending} onClick={runDetection}>

@@ -11,7 +11,7 @@ import { toMinorUnits } from "@archant/data/money";
 
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { ofBudgetPeriod } from "@/lib/dates";
 import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
@@ -54,7 +54,7 @@ function segmentsOf(budget: BudgetData, budgeted: MinorUnits): CashFlowSegment[]
  */
 export function BudgetDonut({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const budgeted = toMinorUnits(budget.budgetedSpending ?? 0);
 	const spent = budget.actual.spending;
 	const over = spent > budgeted;
@@ -92,7 +92,7 @@ export function BudgetDonut({ budget }: { budget: BudgetData }) {
 							currency={budget.currency}
 							className={cn("text-2xl", over && "text-destructive")}
 						/>
-						{admin ? (
+						{canWrite ? (
 							<Link
 								to="/budgets/$month/edit"
 								params={{ month: budget.month }}
