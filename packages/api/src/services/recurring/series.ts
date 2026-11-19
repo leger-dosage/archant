@@ -29,7 +29,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 import { direction } from "../../domain/cash-flow.ts";
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { classify } from "../../domain/recurring/classifier.ts";
-import { detectFrequency } from "../../domain/recurring/frequency.ts";
+import { detectFrequency, onceDateOf } from "../../domain/recurring/frequency.ts";
 import {
 	claimOf,
 	detectRecurring as detectPatterns,
@@ -141,7 +141,9 @@ export const nullableMinor = (amount: number | null) =>
 	amount === null ? null : toMinorUnits(amount);
 
 /** Every stored series, as the passes around detection read them. */
-async function loadSeries(tx: Pick<Transaction, "select">): Promise<StoredSeries[]> {
+async function loadSeries(
+	tx: Pick<Transaction, "select">,
+): Promise<(StoredSeries & { billType: BillType })[]> {
 	const rows = await tx
 		.select({
 			id: recurringTransactions.id,
@@ -164,6 +166,7 @@ async function loadSeries(tx: Pick<Transaction, "select">): Promise<StoredSeries
 			occurrenceCount: recurringTransactions.occurrenceCount,
 			anchorDate: recurringTransactions.anchorDate,
 			endAfterCount: recurringTransactions.endAfterCount,
+			billType: recurringTransactions.billType,
 			schedulePinnedAt: recurringTransactions.schedulePinnedAt,
 		})
 		.from(recurringTransactions)
@@ -282,7 +285,9 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 	const now = Date.now();
 	const patterns = detectPatterns(detectable, day);
 	// What the series stand as after each write, read by the passes that follow.
-	const current = new Map((await loadSeries(tx)).map((series) => [series.id, series]));
+	const loaded = await loadSeries(tx);
+	const current = new Map<string, StoredSeries>(loaded.map((series) => [series.id, series]));
+	const onceDates = new Map(loaded.map((series) => [series.id, onceDateOf(series.rules, series)]));
 	const claimed = new Set<string>();
 	const rulesMoved = new Set<string>();
 	let tombstoned = 0;
@@ -421,7 +426,7 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 					expectedAmountAvg: series.expectedAmountAvg,
 					expectedDayOfMonth: series.expectedDayOfMonth,
 					lastOccurrenceDate: series.lastOccurrenceDate,
-					nextExpectedDate: series.nextExpectedDate,
+					nextExpectedDate: onceDates.get(id) ?? series.nextExpectedDate,
 					occurrenceCount: series.occurrenceCount,
 					updatedAt: now,
 				})
@@ -455,7 +460,12 @@ export async function detectWithin(tx: Transaction, day: IsoDate): Promise<Detec
 
 		return tx
 			.update(recurringTransactions)
-			.set({ ...dates, ...band, updatedAt: now })
+			.set({
+				...dates,
+				...band,
+				nextExpectedDate: onceDates.get(series.id) ?? dates.nextExpectedDate,
+				updatedAt: now,
+			})
 			.where(eq(recurringTransactions.id, series.id));
 	});
 
@@ -560,7 +570,7 @@ export async function toRecords(
 			expectedAmountMin: nullableMinor(row.expectedAmountMin),
 			expectedAmountMax: nullableMinor(row.expectedAmountMax),
 			rules: own,
-			frequency: detectFrequency(own),
+			frequency: detectFrequency(own, row),
 			currentOccurrence: occurrences.get(row.id) ?? null,
 		};
 	});

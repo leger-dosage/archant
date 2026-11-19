@@ -38,6 +38,8 @@ function series(overrides: Partial<ScheduleFields> = {}): ScheduleFields {
 	return {
 		rules: [monthly(5)],
 		anchorDate: null,
+		endAfterCount: null,
+		billType: "bill",
 		lastOccurrenceDate: "2026-09-08",
 		expectedDayOfMonth: 5,
 		...overrides,

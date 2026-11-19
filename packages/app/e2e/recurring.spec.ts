@@ -447,6 +447,36 @@ async function choose(
 	await page.getByRole("option", { name: option, exact: true }).click();
 }
 
+test("a one-off bill keeps its overdue date until moved to its new date", async ({ page }) => {
+	const name = uniqueName("Frais d'inscription");
+	const original = daysAgo(8);
+	const moved = daysAgo(-4);
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une facture" }).click();
+	const dialog = billDialog(page, "Ajouter une facture");
+	await dialog.getByLabel("Nom").fill(name);
+	await dialog.getByLabel("Montant").fill("84,20");
+	await dialog.getByLabel("Prochaine échéance").fill(typed(original));
+	await choose(page, dialog, "Fréquence", "Une seule fois");
+	await dialog.getByRole("button", { name: "Enregistrer la facture" }).click();
+
+	await expect(row(page, name)).toContainText("Une seule fois");
+	await expect(row(page, name)).toContainText("retard");
+	await expect(row(page, name)).not.toContainText("/mois");
+
+	await openMenu(page, name);
+	await page.getByRole("menuitem", { name: "Modifier" }).click();
+	const edit = billDialog(page, `Modifier ${name}`);
+	const date = edit.getByLabel("Date d'échéance");
+	await expect(date).toHaveValue(typed(original));
+	await date.clear();
+	await date.pressSequentially(typed(moved));
+	await edit.getByRole("button", { name: "Enregistrer la facture" }).click();
+	await expect(edit).toBeHidden();
+	await expect(row(page, name)).toContainText(spelled(moved));
+	await expect(row(page, name)).not.toContainText(spelled(original));
+});
+
 test("« Ajouter une facture » declares a quarterly bill, listed active and manual, due on its first date", async ({
 	page,
 	api,
