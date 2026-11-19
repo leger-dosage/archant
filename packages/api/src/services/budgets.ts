@@ -29,6 +29,7 @@ import {
 	gte,
 	inArray,
 	isNotNull,
+	isNull,
 	lt,
 	lte,
 	min,
@@ -40,6 +41,7 @@ import {
 import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { parseAmount, toMinorUnits } from "@archant/data/money";
 import { shiftMonth } from "@archant/data/months";
+import { accounts } from "@archant/data/schema/accounts";
 import { budgetCategories as budgetCategoryRows, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 
@@ -67,6 +69,8 @@ import {
 	budgetSchema,
 } from "../schemas/budgets.ts";
 import { UNCATEGORISED } from "../schemas/transactions.ts";
+import { accountScope } from "./account-access.ts";
+import { assertBudgetWrite, budgetScope } from "./budget-access.ts";
 import { cashFlowByDay, oldestEntryDate } from "./ledger/queries.ts";
 import { budgetBillReservations } from "./recurring/budget-reservations.ts";
 import {
@@ -120,6 +124,7 @@ export type BudgetMonth = {
 	bounds: MonthBounds;
 	/** Active accounts included in reports but held in another currency, by name. */
 	leftOut: CashFlow["leftOut"];
+	canReadTransactions: boolean;
 };
 
 type Db = ServiceDeps["db"];
@@ -129,11 +134,11 @@ const notFound = () => new AppError("NOT_FOUND", "No budget can be set for this 
 const unknownCategory = () => new AppError("NOT_FOUND", "No category has this id.");
 
 /** The latest month before `month` that is set up, gaps skipped; `undefined` without one. */
-function latestSetUpBefore(db: Db, month: IsoMonth) {
+function latestSetUpBefore(db: Db, month: IsoMonth, ownerId?: string | null) {
 	return db
 		.select()
 		.from(budgets)
-		.where(and(lt(budgets.month, month), isNotNull(budgets.budgetedSpending)))
+		.where(and(budgetScope(ownerId), lt(budgets.month, month), isNotNull(budgets.budgetedSpending)))
 		.orderBy(desc(budgets.month))
 		.limit(1)
 		.get();
@@ -183,6 +188,7 @@ type ChainMonth = {
 async function setUpMonths(
 	db: Db,
 	range: { from?: IsoMonth; to?: IsoMonth },
+	ownerId?: string | null,
 ): Promise<ChainMonth[]> {
 	const rows = await db
 		.select({
@@ -203,6 +209,7 @@ async function setUpMonths(
 		.leftJoin(budgetCategoryRows, eq(budgetCategoryRows.budgetId, budgets.id))
 		.where(
 			and(
+				budgetScope(ownerId),
 				isNotNull(budgets.budgetedSpending),
 				range.from === undefined ? undefined : gte(budgets.month, range.from),
 				range.to === undefined ? undefined : lte(budgets.month, range.to),
@@ -308,6 +315,7 @@ export async function rolloverAmounts(deps: ServiceDeps): Promise<RolloverAmount
 		.innerJoin(budgetCategoryRows, eq(budgetCategoryRows.budgetId, budgets.id))
 		.where(
 			and(
+				budgetScope(deps.budgetOwnerId),
 				isNotNull(budgets.budgetedSpending),
 				or(
 					eq(budgetCategoryRows.rolloverEnabled, true),
@@ -322,7 +330,7 @@ export async function rolloverAmounts(deps: ServiceDeps): Promise<RolloverAmount
 		return [];
 	}
 
-	const months = await setUpMonths(deps.db, { from: first });
+	const months = await setUpMonths(deps.db, { from: first }, deps.budgetOwnerId);
 	const chain = await chainOf(deps, months, await treeCategories(deps.db));
 
 	return months.flatMap((month) =>
@@ -383,8 +391,12 @@ function writeAmount(
 }
 
 /** A month set up, read under the caller's write lock; `BUDGET_NOT_SET_UP` otherwise. */
-async function setUpBudget(db: Db, month: IsoMonth) {
-	const budget = await db.select().from(budgets).where(eq(budgets.month, month)).get();
+async function setUpBudget(db: Db, month: IsoMonth, ownerId?: string | null) {
+	const budget = await db
+		.select()
+		.from(budgets)
+		.where(and(eq(budgets.month, month), budgetScope(ownerId)))
+		.get();
 
 	if (budget === undefined || budget.budgetedSpending === null) {
 		throw new AppError("BUDGET_NOT_SET_UP", "Set this month's budget before its categories.");
@@ -408,11 +420,19 @@ async function budgetMonths(deps: ServiceDeps) {
 }
 
 /** Saved slugs remain usable when the bounds move. */
-async function budgetMonthAllowed(db: Db, month: IsoMonth, bounds: MonthBounds): Promise<boolean> {
+async function budgetMonthAllowed(
+	db: Db,
+	month: IsoMonth,
+	bounds: MonthBounds,
+	ownerId?: string | null,
+): Promise<boolean> {
 	return (
 		isBudgetMonth(month, bounds) ||
-		(await db.select({ id: budgets.id }).from(budgets).where(eq(budgets.month, month)).get()) !==
-			undefined
+		(await db
+			.select({ id: budgets.id })
+			.from(budgets)
+			.where(and(eq(budgets.month, month), budgetScope(ownerId)))
+			.get()) !== undefined
 	);
 }
 
@@ -432,7 +452,11 @@ export async function getBudget(
 ): Promise<BudgetMonth> {
 	const calendar = await budgetMonths(deps);
 	const month = requestedMonth ?? calendar.current;
-	const row = await deps.db.select().from(budgets).where(eq(budgets.month, month)).get();
+	const row = await deps.db
+		.select()
+		.from(budgets)
+		.where(and(eq(budgets.month, month), budgetScope(deps.budgetOwnerId)))
+		.get();
 
 	if (row === undefined && !isBudgetMonth(month, calendar.bounds)) {
 		throw notFound();
@@ -457,7 +481,10 @@ export async function getBudgetHistory(
 	const stored =
 		candidates.length === 0
 			? []
-			: await deps.db.select().from(budgets).where(inArray(budgets.month, candidates));
+			: await deps.db
+					.select()
+					.from(budgets)
+					.where(and(inArray(budgets.month, candidates), budgetScope(deps.budgetOwnerId)));
 	const rows = new Map(stored.map((row) => [row.month, row]));
 	const prior = earlier.filter((item) => rows.has(item));
 	const months = includeTarget ? [...prior, month] : prior;
@@ -478,19 +505,21 @@ async function readBudget(
 	row: typeof budgets.$inferSelect | undefined,
 ): Promise<BudgetMonth> {
 	const [chainMonths, source] = await Promise.all([
-		setUpMonths(deps.db, { to: month }),
-		latestSetUpBefore(deps.db, month),
+		setUpMonths(deps.db, { to: month }, deps.budgetOwnerId),
+		latestSetUpBefore(deps.db, month, deps.budgetOwnerId),
 	]);
 	const { startDate: from, endDate: to } = row ?? budgetPeriod(month, startDay);
 	const periodStartDay = Number(from.slice(8));
-	const [{ cashFlow, gross, rows, categories: allCategories, billReservations }, monthRows] =
-		await Promise.all([
-			getCashFlowWithRows(deps, month, { from, to }).then(async (view) => ({
-				...view,
-				billReservations: await budgetBillReservations(deps.db, view.cashFlow),
-			})),
-			getCashFlowMonths(deps, periodStartDay),
-		]);
+	const [
+		{ cashFlow, gross, rows, categories: allCategories, billReservations, accountIds },
+		monthRows,
+	] = await Promise.all([
+		getCashFlowWithRows(deps, month, { from, to }).then(async (view) => ({
+			...view,
+			billReservations: await budgetBillReservations(deps, view.cashFlow),
+		})),
+		getCashFlowMonths(deps, periodStartDay),
+	]);
 	const statistics = statisticsOf(monthRows);
 	const currentPeriod = budgetPeriod(current, startDay);
 	const budgetedSpending = row?.budgetedSpending ?? null;
@@ -505,6 +534,15 @@ async function readBudget(
 						?.rows.map((item) => [item.categoryId, item]),
 				);
 	const carried = (await chainOf(deps, chainMonths, allCategories)).get(month);
+	const sharedPersonal =
+		typeof deps.budgetOwnerId === "string" && deps.budgetOwnerId !== deps.actor?.id;
+	const readable = sharedPersonal
+		? new Set(
+				(await deps.db.select({ id: accounts.id }).from(accounts).where(accountScope(deps))).map(
+					({ id }) => id,
+				),
+			)
+		: null;
 	const envelopes = budgetCategories({
 		categories: allCategories,
 		amounts: new Map([...shown].map(([id, item]) => [id, item.budgetedSpending])),
@@ -543,7 +581,8 @@ async function readBudget(
 		},
 		...neighbours(month, bounds),
 		bounds,
-		leftOut: cashFlow.leftOut,
+		leftOut: cashFlow.leftOut.filter(({ id }) => readable === null || readable.has(id)),
+		canReadTransactions: accountIds.some((id) => readable === null || readable.has(id)),
 	};
 }
 
@@ -570,13 +609,17 @@ export async function saveBudget(
 
 	await deps.db.transaction(
 		async (tx) => {
+			await assertBudgetWrite(deps, tx);
 			const { bounds, startDay } = await budgetMonths({ ...deps, db: tx });
 
-			if (!(await budgetMonthAllowed(tx, month, bounds))) {
+			if (!(await budgetMonthAllowed(tx, month, bounds, deps.budgetOwnerId))) {
 				throw notFound();
 			}
 
-			await writeTotals(tx, month, startDay, { currency, ...parsed.data });
+			await writeTotals(tx, deps.budgetOwnerId ?? null, month, startDay, {
+				currency,
+				...parsed.data,
+			});
 			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
@@ -597,11 +640,16 @@ type BudgetTotals = {
  */
 async function writeTotals(
 	tx: Db,
+	ownerId: string | null,
 	month: IsoMonth,
 	startDay: number,
 	totals: BudgetTotals & { currency: CurrencyCode },
 ) {
-	const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+	const before = await tx
+		.select()
+		.from(budgets)
+		.where(and(eq(budgets.month, month), budgetScope(ownerId)))
+		.get();
 
 	if (
 		before !== undefined &&
@@ -624,17 +672,22 @@ async function writeTotals(
 		.insert(budgets)
 		.values({
 			id: crypto.randomUUID(),
+			ownerId,
 			month,
 			...budgetPeriod(month, startDay),
 			...amounts,
 			createdAt: now,
 		})
-		.onConflictDoUpdate({ target: budgets.month, set: amounts })
+		.onConflictDoUpdate(
+			ownerId === null
+				? { target: budgets.month, targetWhere: isNull(budgets.ownerId), set: amounts }
+				: { target: [budgets.ownerId, budgets.month], set: amounts },
+		)
 		.returning({ id: budgets.id })
 		.get();
 
 	if (totals.budgetedSpending !== undefined && (before?.budgetedSpending ?? null) === null) {
-		await inheritRollover(tx, month, budget.id, now);
+		await inheritRollover(tx, month, budget.id, now, ownerId);
 	}
 
 	return budget.id;
@@ -645,8 +698,14 @@ async function writeTotals(
  * category whose switch is on in the latest month set up before
  * `month`. Keep amounts saved by the assistant before the month was set up.
  */
-async function inheritRollover(tx: Db, month: IsoMonth, budgetId: string, now: number) {
-	const source = await latestSetUpBefore(tx, month);
+async function inheritRollover(
+	tx: Db,
+	month: IsoMonth,
+	budgetId: string,
+	now: number,
+	ownerId: string | null,
+) {
+	const source = await latestSetUpBefore(tx, month, ownerId);
 
 	if (source === undefined) {
 		return;
@@ -705,13 +764,14 @@ export async function saveCategoryBudget(
 
 	await deps.db.transaction(
 		async (tx) => {
+			await assertBudgetWrite(deps, tx);
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!(await budgetMonthAllowed(tx, month, bounds))) {
+			if (!(await budgetMonthAllowed(tx, month, bounds, deps.budgetOwnerId))) {
 				throw notFound();
 			}
 
-			const budget = await setUpBudget(tx, month);
+			const budget = await setUpBudget(tx, month, deps.budgetOwnerId);
 			const category = await tx
 				.select()
 				.from(categories)
@@ -809,6 +869,7 @@ export async function updateBudget(
 	const { month: savedMonth, updated } = await deps.db
 		.transaction(
 			async (tx) => {
+				await assertBudgetWrite(deps, tx);
 				const { bounds, current, startDay } = await budgetMonths({ ...deps, db: tx });
 				const month = requestedMonth ?? current;
 
@@ -816,7 +877,7 @@ export async function updateBudget(
 					throw notFound();
 				}
 
-				const budgetId = await writeTotals(tx, month, startDay, {
+				const budgetId = await writeTotals(tx, deps.budgetOwnerId ?? null, month, startDay, {
 					currency,
 					budgetedSpending,
 					expectedIncome,
@@ -896,19 +957,24 @@ export async function copyBudget(
 
 	const copiedFrom = await deps.db.transaction(
 		async (tx) => {
+			await assertBudgetWrite(deps, tx);
 			const { bounds, startDay } = await budgetMonths({ ...deps, db: tx });
 
-			if (!(await budgetMonthAllowed(tx, month, bounds))) {
+			if (!(await budgetMonthAllowed(tx, month, bounds, deps.budgetOwnerId))) {
 				throw notFound();
 			}
 
-			const target = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
+			const target = await tx
+				.select()
+				.from(budgets)
+				.where(and(eq(budgets.month, month), budgetScope(deps.budgetOwnerId)))
+				.get();
 
 			if (target !== undefined && target.budgetedSpending !== null) {
 				throw new AppError("BUDGET_ALREADY_SET_UP", "This month's budget is already set up.");
 			}
 
-			const source = await latestSetUpBefore(tx, month);
+			const source = await latestSetUpBefore(tx, month, deps.budgetOwnerId);
 
 			if (source === undefined) {
 				throw new AppError("NOT_FOUND", "No earlier month is set up to copy from.");
@@ -927,12 +993,17 @@ export async function copyBudget(
 				.insert(budgets)
 				.values({
 					id: crypto.randomUUID(),
+					ownerId: deps.budgetOwnerId ?? null,
 					month,
 					...budgetPeriod(month, startDay),
 					...amounts,
 					createdAt: now,
 				})
-				.onConflictDoUpdate({ target: budgets.month, set: amounts })
+				.onConflictDoUpdate(
+					typeof deps.budgetOwnerId !== "string"
+						? { target: budgets.month, targetWhere: isNull(budgets.ownerId), set: amounts }
+						: { target: [budgets.ownerId, budgets.month], set: amounts },
+				)
 				.returning({ id: budgets.id })
 				.get();
 			const copied = [...copiedRows({ categories: allCategories, source: sourceRows })];
@@ -1001,13 +1072,14 @@ export async function moveCategoryBudget(
 
 	await deps.db.transaction(
 		async (tx) => {
+			await assertBudgetWrite(deps, tx);
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!(await budgetMonthAllowed(tx, month, bounds))) {
+			if (!(await budgetMonthAllowed(tx, month, bounds, deps.budgetOwnerId))) {
 				throw notFound();
 			}
 
-			const budget = await setUpBudget(tx, month);
+			const budget = await setUpBudget(tx, month, deps.budgetOwnerId);
 			const allCategories = await tx
 				.select({ id: categories.id, parentId: categories.parentId })
 				.from(categories);
@@ -1074,13 +1146,14 @@ export async function setCategoryRollover(
 
 	await deps.db.transaction(
 		async (tx) => {
+			await assertBudgetWrite(deps, tx);
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!(await budgetMonthAllowed(tx, month, bounds))) {
+			if (!(await budgetMonthAllowed(tx, month, bounds, deps.budgetOwnerId))) {
 				throw notFound();
 			}
 
-			const budget = await setUpBudget(tx, month);
+			const budget = await setUpBudget(tx, month, deps.budgetOwnerId);
 			const category = await tx
 				.select({ id: categories.id })
 				.from(categories)
@@ -1094,7 +1167,13 @@ export async function setCategoryRollover(
 			const later = await tx
 				.select({ id: budgets.id })
 				.from(budgets)
-				.where(and(gt(budgets.month, month), isNotNull(budgets.budgetedSpending)));
+				.where(
+					and(
+						budgetScope(deps.budgetOwnerId),
+						gt(budgets.month, month),
+						isNotNull(budgets.budgetedSpending),
+					),
+				);
 			const budgetIds = [budget, ...later].map(({ id }) => id);
 			const now = Date.now();
 

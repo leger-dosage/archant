@@ -10,6 +10,7 @@ import type { RuleContext, Taxonomy } from "./sure-rules.ts";
 import { accounts } from "@archant/data/schema/accounts";
 
 import { ruleSchema } from "../schemas/rules.ts";
+import { accountScope } from "./account-access.ts";
 import { columnOf, csvIssue } from "./csv-import-format.ts";
 import { oneByOne } from "./ledger/shared.ts";
 import { createRule, listRules, updateRule } from "./rules.ts";
@@ -242,8 +243,11 @@ type ConditionShape = {
 };
 
 /** The household's accounts by id, which an account condition or action names. */
-async function accountsById(db: Pick<Transaction, "select">) {
-	const rows = await db.select({ id: accounts.id }).from(accounts);
+async function accountsById(db: Pick<Transaction, "select">, actor: ServiceDeps["actor"]) {
+	const rows = await db
+		.select({ id: accounts.id })
+		.from(accounts)
+		.where(accountScope({ db, actor }));
 
 	return new Map(rows.map((row) => [row.id, row]));
 }
@@ -263,11 +267,12 @@ export type RulesAnalysis = {
 export async function analyseRules(
 	db: Pick<Transaction, "select">,
 	sheet: { rows: readonly CsvRow[]; lookup: HeaderLookup; separator: string; edited: RuleEdits },
+	actor: ServiceDeps["actor"],
 ): Promise<RulesAnalysis> {
 	const errors: SureIssue[] = [];
 	const read: ReadRule[] = [];
 	const taxonomy = await taxonomyOf(db);
-	const household = await accountsById(db);
+	const household = await accountsById(db, actor);
 
 	for (const row of sheet.rows) {
 		const rule = ruleRowOf(row.line, ruleCellsOf(row, sheet.lookup, sheet.separator, sheet.edited));
@@ -353,7 +358,7 @@ const replacementsOf = (rule: RuleData): RuleInput["actions"] =>
 async function writeRules(tx: Transaction, deps: ServiceDeps, read: readonly ReadRule[]) {
 	const scoped = { ...deps, db: tx };
 	const taxonomy: Taxonomy = await taxonomyOf(tx);
-	const household = await accountsById(tx);
+	const household = await accountsById(tx, deps.actor);
 	const existing = await listRules(scoped);
 	const byName = new Map(
 		existing.flatMap((rule) => (rule.name === null ? [] : [[rule.name, rule]])),

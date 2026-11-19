@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useBudgetOwner } from "@/hooks/useBudget";
 import { MONTH_NAMES } from "@/lib/dates";
 
 type MonthBounds = BudgetData["bounds"];
@@ -17,6 +18,7 @@ const pad = (value: number) => String(value).padStart(2, "0");
 
 /** An arrow to a neighbouring month, or a disabled one past a bound. */
 function MonthArrow({ to, label, next }: { to: string | null; label: string; next: boolean }) {
+	const owner = useBudgetOwner();
 	const Icon = next ? ChevronRightIcon : ChevronLeftIcon;
 
 	if (to === null) {
@@ -29,7 +31,7 @@ function MonthArrow({ to, label, next }: { to: string | null; label: string; nex
 
 	return (
 		<Button variant="outline" size="icon-sm" asChild>
-			<Link to="/budgets/$month" params={{ month: to }} aria-label={label}>
+			<Link to="/budgets/$month" search={{ owner }} params={{ month: to }} aria-label={label}>
 				<Icon />
 			</Link>
 		</Button>
@@ -49,6 +51,7 @@ function YearOfMonths({
 	bounds: MonthBounds;
 	onPick: () => void;
 }) {
+	const owner = useBudgetOwner();
 	const { t } = useTranslation();
 	const [year, setYear] = useState(Number(month.slice(0, 4)));
 
@@ -95,7 +98,12 @@ function YearOfMonths({
 									className="w-full"
 									asChild
 								>
-									<Link to="/budgets/$month" params={{ month: value }} onClick={onPick}>
+									<Link
+										to="/budgets/$month"
+										search={{ owner }}
+										params={{ month: value }}
+										onClick={onPick}
+									>
 										{name}
 									</Link>
 								</Button>
@@ -127,6 +135,7 @@ export function BudgetMonthPicker({
 	nextMonth: string | null;
 	bounds: MonthBounds | null;
 }) {
+	const owner = useBudgetOwner();
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
 
@@ -155,7 +164,9 @@ export function BudgetMonthPicker({
 				</PopoverContent>
 			</Popover>
 			<Button variant="outline" size="sm" className="ml-auto" asChild>
-				<Link to="/budgets">{t("budgets.today")}</Link>
+				<Link to="/budgets" search={{ owner }}>
+					{t("budgets.today")}
+				</Link>
 			</Button>
 		</div>
 	);

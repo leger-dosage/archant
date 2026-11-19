@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
+import { users } from "./auth.ts";
 import { categories } from "./categories.ts";
 
 /**
@@ -14,6 +15,7 @@ export const budgets = sqliteTable(
 	{
 		id: text("id").primaryKey(),
 		/** `YYYY-MM`. */
+		ownerId: text("owner_id").references(() => users.id, { onDelete: "cascade" }),
 		month: text("month").notNull(),
 		startDate: text("start_date").notNull(),
 		endDate: text("end_date").notNull(),
@@ -24,9 +26,18 @@ export const budgets = sqliteTable(
 		updatedAt: integer("updated_at").notNull(),
 	},
 	(table) => [
-		uniqueIndex("budgets_month_unique").on(table.month),
-		uniqueIndex("budgets_start_date_unique").on(table.startDate),
-		uniqueIndex("budgets_end_date_unique").on(table.endDate),
+		uniqueIndex("budgets_month_unique")
+			.on(table.month)
+			.where(sql`${table.ownerId} is null`),
+		uniqueIndex("budgets_owner_month_unique").on(table.ownerId, table.month),
+		uniqueIndex("budgets_start_date_unique")
+			.on(table.startDate)
+			.where(sql`${table.ownerId} is null`),
+		uniqueIndex("budgets_owner_start_date_unique").on(table.ownerId, table.startDate),
+		uniqueIndex("budgets_end_date_unique")
+			.on(table.endDate)
+			.where(sql`${table.ownerId} is null`),
+		uniqueIndex("budgets_owner_end_date_unique").on(table.ownerId, table.endDate),
 		check(
 			"budgets_dates_check",
 			sql`substr(${table.startDate}, 1, 7) = ${table.month} and ${table.endDate} >= ${table.startDate}`,

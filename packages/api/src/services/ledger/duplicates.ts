@@ -36,6 +36,7 @@ import { addDays, daysBetween, minDate } from "../../domain/dates.ts";
 import { MATCH_WINDOW_DAYS } from "../../domain/keys.ts";
 import { AppError } from "../../lib/errors.ts";
 import { NOTES_MAX_LENGTH } from "../../schemas/transactions.ts";
+import { requireEntry } from "../account-access.ts";
 import { refreshCloseState } from "../recurring/payments.ts";
 import { moveAttachments } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
@@ -378,6 +379,7 @@ export async function mergeDuplicate(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, entryId, "edit");
 			const { source, candidates } = await duplicateCandidatesOf(tx, entryId);
 
 			await refuseSplit(tx, [entryId, intoId]);
@@ -573,6 +575,7 @@ export async function mergePending(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, entryId, "edit");
 			const source = await pendingSource(tx, entryId);
 
 			await refuseSplit(tx, [entryId, intoId]);

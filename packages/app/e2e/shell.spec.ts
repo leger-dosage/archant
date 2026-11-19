@@ -58,6 +58,7 @@ const summary = (
 	balance,
 	active: true,
 	excludedFromReports: false,
+	includeInFinances: true,
 	...overrides,
 });
 

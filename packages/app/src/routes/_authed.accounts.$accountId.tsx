@@ -25,6 +25,7 @@ import type { SurePeriod } from "@archant/data/periods";
 import { LOAN_WINDOW_PERIODS, SURE_PERIODS } from "@archant/data/periods";
 
 import { AccountMenu } from "@/components/AccountMenu";
+import { AccountSharing } from "@/components/AccountSharing";
 import { AssetOverview, AssetOverviewSkeleton } from "@/components/AssetOverview";
 import { EditAccountDialog } from "@/components/EditAccountDialog";
 import { EmptyNote, EmptyState } from "@/components/EmptyState";
@@ -164,7 +165,7 @@ type TransactionsPanelProps = {
 	accountId: string;
 	page: number;
 	canAdd: boolean;
-	/** `null` for a guest, who adds nothing: the empty state keeps its text alone. */
+	/** `null` when this viewer cannot add transactions to the account. */
 	onAdd: (() => void) | null;
 	onOpen: (transaction: TransactionData) => void;
 };
@@ -188,7 +189,7 @@ function TransactionsPanel({ accountId, page, canAdd, onAdd, onOpen }: Transacti
 			<EmptyState
 				icon={{ kind: "transfer", icon: ReceiptTextIcon }}
 				title={t("transactions.empty.title")}
-				description={t("transactions.empty.description")}
+				description={onAdd === null ? null : t("transactions.empty.description")}
 				action={
 					onAdd === null ? null : (
 						<Button onClick={onAdd} disabled={!canAdd}>
@@ -481,7 +482,9 @@ function AccountPage() {
 		importsPage = 1,
 	} = Route.useSearch();
 	const account = useAccount(accountId);
-	const canWrite = useCanWrite();
+	const canWriteHousehold = useCanWrite();
+	const permission = account.data?.permission;
+	const canWrite = canWriteHousehold && (permission === "owner" || permission === "full_control");
 	const [sheet, setSheet] = useState<SheetState>({ open: false, transaction: null });
 	const [snapshotDialog, setSnapshotDialog] = useState<SnapshotDialogState>({
 		open: false,
@@ -575,6 +578,7 @@ function AccountPage() {
 					currency,
 					type: account.data.type,
 					subtype: account.data.subtype,
+					permission: account.data.permission,
 				}
 			: undefined;
 	const canAddTransaction = account.data !== undefined;
@@ -657,18 +661,27 @@ function AccountPage() {
 			}
 			title={account.data?.name ?? t("accountDetail.title")}
 			actions={
-				account.data !== undefined && canWrite ? (
+				account.data !== undefined && canWriteHousehold ? (
 					<>
-						<Tooltip>
-							<TooltipTrigger asChild>
-								<Button variant="outline" onClick={() => setImporting(true)} disabled={!canImport}>
-									{t("imports.open")}
-								</Button>
-							</TooltipTrigger>
-							<TooltipContent side="bottom">{t("imports.title")}</TooltipContent>
-						</Tooltip>
-						<Button onClick={openNew}>{t("transactions.add")}</Button>
-						<AccountMenu account={account.data} />
+						<AccountSharing accountId={accountId} />
+						{canWrite && (
+							<>
+								<Tooltip>
+									<TooltipTrigger asChild>
+										<Button
+											variant="outline"
+											onClick={() => setImporting(true)}
+											disabled={!canImport}
+										>
+											{t("imports.open")}
+										</Button>
+									</TooltipTrigger>
+									<TooltipContent side="bottom">{t("imports.title")}</TooltipContent>
+								</Tooltip>
+								<Button onClick={openNew}>{t("transactions.add")}</Button>
+								<AccountMenu account={account.data} />
+							</>
+						)}
 					</>
 				) : undefined
 			}

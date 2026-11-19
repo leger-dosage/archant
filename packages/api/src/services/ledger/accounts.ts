@@ -19,6 +19,7 @@ import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 import type { Account } from "@archant/data/types";
 
+import { accountOwner, requireAccount, shareNewAccounts } from "../account-access.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { isSplitChild, rejectedOf, transferOf } from "./shared.ts";
@@ -52,7 +53,7 @@ export async function createAccount(
 	_options: { origin: Origin },
 ): Promise<Account> {
 	const now = Date.now();
-	const account: Account = {
+	const inputRow = {
 		id: crypto.randomUUID(),
 		name: input.name,
 		type: input.type,
@@ -69,9 +70,12 @@ export async function createAccount(
 		updatedAt: now,
 	};
 
-	await deps.db.transaction(
+	return deps.db.transaction(
 		async (tx) => {
+			const ownerId = await accountOwner(deps, tx);
+			const account: Account = { ...inputRow, ownerId };
 			await tx.insert(accounts).values(account);
+			await shareNewAccounts(tx, ownerId, [account.id]);
 			await tx.insert(entries).values({
 				id: crypto.randomUUID(),
 				accountId: account.id,
@@ -84,11 +88,10 @@ export async function createAccount(
 				updatedAt: now,
 			});
 			await recomputeBalances(tx, account, input.openingDate, deps.timeZone);
+			return account;
 		},
 		{ behavior: "immediate" },
 	);
-
-	return account;
 }
 
 /**
@@ -110,6 +113,7 @@ export async function deleteAccount(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			await accountWithOpeningDate(tx, accountId);
 
 			await tx.delete(entryKeys).where(eq(entryKeys.accountId, accountId));

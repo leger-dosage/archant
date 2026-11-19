@@ -9,6 +9,7 @@ import type { Transfer } from "@archant/data/types";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { newTransferSchema } from "../schemas/transfers.ts";
+import { requireAccount, requireEntry, requireTransfer } from "./account-access.ts";
 import { currencyOf } from "./accounts.ts";
 import { invalidField } from "./ledger/shared.ts";
 import {
@@ -31,17 +32,20 @@ export async function listTransferCandidates(
 	deps: ServiceDeps,
 	transactionId: string,
 ): Promise<TransferCandidate[]> {
+	await requireEntry(deps, transactionId);
 	return transferCandidates(deps, transactionId);
 }
 
 /** Links a transaction and the counterpart the user picked, on the user's behalf. */
 export async function createTransfer(deps: ServiceDeps, body: TransferRequest): Promise<Transfer> {
+	await requireEntry(deps, body.transactionId, "edit");
 	return matchTransfer(deps, body.transactionId, body.counterpartId, { origin: "user" });
 }
 
 /** The source account's currency, the amounts' unit; an unknown account is a field error. */
 async function sourceCurrency(deps: ServiceDeps, accountId: string): Promise<CurrencyCode> {
 	try {
+		await requireAccount(deps, accountId, "edit");
 		return await currencyOf(deps, accountId);
 	} catch (error) {
 		if (error instanceof AppError && error.code === "NOT_FOUND") {
@@ -81,26 +85,31 @@ export async function getTransferStatus(
 	deps: ServiceDeps,
 	id: string,
 ): Promise<Transfer["status"] | undefined> {
+	await requireTransfer(deps, id);
 	return transferStatusOf(deps, id);
 }
 
 /** Undoes a transfer, both sides becoming standard transactions again. */
 export async function deleteTransfer(deps: ServiceDeps, id: string): Promise<TransferOutcome> {
+	await requireTransfer(deps, id, "edit");
 	return { id, ...(await unmatchTransfer(deps, id, { origin: "user" })) };
 }
 
 /** Undoes a transfer and refuses its pair for good, on the user's behalf. */
 export async function rejectTransfer(deps: ServiceDeps, id: string): Promise<TransferOutcome> {
+	await requireTransfer(deps, id, "edit");
 	return { id, ...(await rejectLedgerTransfer(deps, id, { origin: "user" })) };
 }
 
 /** Confirms a transfer the matcher proposed, on the user's behalf. */
 export async function confirmTransfer(deps: ServiceDeps, id: string): Promise<TransferOutcome> {
+	await requireTransfer(deps, id, "edit");
 	return { id, ...(await confirmLedgerTransfer(deps, id, { origin: "user" })) };
 }
 
 /** What the transfer's drawer shows. Reads only. */
 export async function getTransfer(deps: ServiceDeps, id: string): Promise<TransferDetails> {
+	await requireTransfer(deps, id);
 	return transferDetails(deps, id);
 }
 
@@ -110,6 +119,7 @@ export async function updateTransfer(
 	id: string,
 	patch: TransferPatch,
 ): Promise<TransferDetails> {
+	await requireTransfer(deps, id, "annotate");
 	await updateTransferDetails(deps, id, patch, { origin: "user" });
 
 	return transferDetails(deps, id);
@@ -121,6 +131,7 @@ export async function setTransferTags(
 	id: string,
 	tagIds: readonly string[],
 ): Promise<TransferDetails> {
+	await requireTransfer(deps, id, "annotate");
 	await setLedgerTransferTags(deps, id, tagIds, { origin: "user" });
 
 	return transferDetails(deps, id);

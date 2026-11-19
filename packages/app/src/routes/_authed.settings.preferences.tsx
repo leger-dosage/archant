@@ -183,6 +183,32 @@ function PreferencesPage() {
 					</div>
 				</Section>
 			)}
+			{admin && preferences.data !== undefined && (
+				<Section title={t("sharing.settings")}>
+					<div className="flex flex-col gap-4 p-4">
+						<ChoiceField
+							id="default-account-sharing"
+							label={t("sharing.defaultAccount")}
+							value={preferences.data.defaultAccountSharing}
+							options={[
+								{ value: "shared", label: t("sharing.sharedByDefault") },
+								{ value: "private", label: t("sharing.privateByDefault") },
+							]}
+							disabled={update.isPending}
+							onChange={(defaultAccountSharing) => save({ defaultAccountSharing })}
+						/>
+						<div className="flex items-center justify-between gap-4">
+							<Label htmlFor="personal-budgets">{t("sharing.personalBudgets")}</Label>
+							<Switch
+								id="personal-budgets"
+								checked={preferences.data.personalBudgets}
+								disabled={update.isPending}
+								onCheckedChange={(personalBudgets) => save({ personalBudgets })}
+							/>
+						</div>
+					</div>
+				</Section>
+			)}
 			<Section title={t("preferences.transactions.title")}>
 				<div className="flex flex-col gap-4 p-4">
 					<p className="text-sm text-muted-foreground">{t("preferences.transactions.subtitle")}</p>

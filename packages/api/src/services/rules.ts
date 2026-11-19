@@ -12,7 +12,7 @@ import type {
 import type { ServiceDeps } from "./deps.ts";
 import type { ReadRule, Reference } from "./rule-reader.ts";
 
-import { and, asc, count, desc, eq, max } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, max } from "drizzle-orm";
 
 import type { ActivityLabel } from "@archant/data/activity-labels";
 import type { MinorUnits } from "@archant/data/money";
@@ -24,6 +24,7 @@ import type {
 	RuleSnapshot,
 } from "@archant/data/rules";
 import { tagIdsOf } from "@archant/data/rules";
+import { users } from "@archant/data/schema/auth";
 import { ruleActions, ruleConditions, ruleRuns, rules } from "@archant/data/schema/rules";
 import type {
 	RuleAction as RuleActionRow,
@@ -35,6 +36,7 @@ import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
+import { accountIds, accountScope } from "./account-access.ts";
 import { applyRulePlan, ruleCandidates } from "./ledger/rule-plans.ts";
 import { inSequence, KEYS_PER_LOOKUP, oneByOne } from "./ledger/shared.ts";
 import { matchTransfers } from "./ledger/transfers.ts";
@@ -44,6 +46,7 @@ import {
 	knownReferences,
 	readRules,
 	toRule,
+	visibleRules,
 } from "./rule-reader.ts";
 
 /**
@@ -103,13 +106,13 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 	};
 }
 
-/** Every rule, in application order. */
+/** The rules available to the current member, in application order. */
 export async function listRules(deps: ServiceDeps): Promise<RuleData[]> {
-	return (await readRules(deps.db)).map(toData);
+	return (await visibleRules(deps.db, deps.actor)).map(toData);
 }
 
-async function getRule(db: Pick<Db, "select">, id: string): Promise<RuleData> {
-	const [found] = await readRules(db, { id });
+async function getRule(db: Pick<Db, "select">, id: string, actor?: ServiceDeps["actor"]) {
+	const [found] = await visibleRules(db, actor, { id });
 
 	if (found === undefined) {
 		throw notFound();
@@ -140,7 +143,11 @@ const ACTION_REFERENCES: Partial<Record<RuleActionType, Reference>> = {
  * value that names it. Checked on save only: one deleted later leaves the
  * rule inert.
  */
-async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest): Promise<void> {
+async function assertReferencesExist(
+	db: Pick<Db, "select">,
+	rule: RuleRequest,
+	actor?: ServiceDeps["actor"],
+): Promise<void> {
 	const named: { reference: Reference; id: string; path: string }[] = [];
 	const name = (reference: Reference | undefined, id: string | null, path: string) => {
 		if (reference !== undefined && id !== null) {
@@ -184,6 +191,7 @@ async function assertReferencesExist(db: Pick<Db, "select">, rule: RuleRequest):
 					db,
 					reference,
 					wanted.map((item) => item.id),
+					actor,
 				);
 
 				return wanted.filter((item) => !found.has(item.id)).map((item) => item.path);
@@ -271,7 +279,7 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 
 	await deps.db.transaction(
 		async (tx) => {
-			await assertReferencesExist(tx, rule);
+			await assertReferencesExist(tx, rule, deps.actor);
 			const now = Date.now();
 			const last = await tx
 				.select({ position: max(rules.position) })
@@ -280,6 +288,7 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 
 			await tx.insert(rules).values({
 				id,
+				authorId: deps.actor?.id,
 				name: rule.name,
 				enabled: input.enabled ?? false,
 				position: (last?.position ?? -1) + 1,
@@ -301,30 +310,27 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 export async function reorderRules(deps: ServiceDeps, ids: string[]): Promise<RuleData[]> {
 	return deps.db.transaction(
 		async (tx) => {
-			const existingIds = new Set(
-				(await tx.select({ id: rules.id }).from(rules)).map(({ id }) => id),
-			);
+			const visible = await visibleRules(tx, deps.actor);
+			const existingIds = new Set(visible.map(({ row }) => row.id));
+			const total = await tx.select({ count: count() }).from(rules).get();
 
 			if (ids.length !== existingIds.size || !ids.every((id) => existingIds.delete(id))) {
 				throw new AppError("RULE_ORDER_STALE", "Reload the rules before reordering them.");
 			}
 
 			await oneByOne([...ids.entries()], ([position, id]) =>
-				tx.update(rules).set({ position }).where(eq(rules.id, id)),
+				tx
+					.update(rules)
+					.set({
+						position: total?.count === visible.length ? position : visible[position]!.row.position,
+					})
+					.where(eq(rules.id, id)),
 			);
 
-			return (await readRules(tx)).map(toData);
+			return (await visibleRules(tx, deps.actor)).map(toData);
 		},
 		{ behavior: "immediate" },
 	);
-}
-
-async function assertExists(db: Pick<Db, "select">, id: string): Promise<void> {
-	const row = await db.select({ id: rules.id }).from(rules).where(eq(rules.id, id)).get();
-
-	if (row === undefined) {
-		throw notFound();
-	}
 }
 
 /**
@@ -341,12 +347,13 @@ export async function updateRule(
 
 	await deps.db.transaction(
 		async (tx) => {
-			await assertExists(tx, id);
-			await assertReferencesExist(tx, rule);
+			await getRule(tx, id, deps.actor);
+			await assertReferencesExist(tx, rule, deps.actor);
 			await tx
 				.update(rules)
 				.set({
 					name: rule.name,
+					...(deps.actor === undefined ? {} : { authorId: deps.actor.id }),
 					effectiveDate: rule.effectiveDate,
 					...(input.enabled === undefined ? {} : { enabled: input.enabled }),
 					...(input.stopProcessing === undefined ? {} : { stopProcessing: input.stopProcessing }),
@@ -377,8 +384,15 @@ export async function setRuleEnabled(
 
 	await deps.db.transaction(
 		async (tx) => {
-			await assertExists(tx, id);
-			await tx.update(rules).set({ enabled, updatedAt: Date.now() }).where(eq(rules.id, id));
+			await getRule(tx, id, deps.actor);
+			await tx
+				.update(rules)
+				.set({
+					enabled,
+					...(enabled && deps.actor !== undefined ? { authorId: deps.actor.id } : {}),
+					updatedAt: Date.now(),
+				})
+				.where(eq(rules.id, id));
 		},
 		{ behavior: "immediate" },
 	);
@@ -390,7 +404,7 @@ export async function setRuleEnabled(
 export async function deleteRule(deps: ServiceDeps, id: string): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
-			await assertExists(tx, id);
+			await getRule(tx, id, deps.actor);
 			await tx.delete(rules).where(eq(rules.id, id));
 
 			return { id };
@@ -407,7 +421,8 @@ export async function deleteRule(deps: ServiceDeps, id: string): Promise<{ id: s
 export async function deleteAllRules(deps: ServiceDeps): Promise<{ deleted: number }> {
 	return deps.db.transaction(
 		async (tx) => {
-			const result = await tx.delete(rules);
+			const ids = (await visibleRules(tx, deps.actor)).map(({ row }) => row.id);
+			const result = await tx.delete(rules).where(inArray(rules.id, ids));
 
 			return { deleted: result.rowsAffected };
 		},
@@ -416,29 +431,64 @@ export async function deleteAllRules(deps: ServiceDeps): Promise<{ deleted: numb
 }
 
 /** A rule as the evaluator reads it, beside the snapshot a run keeps of it. */
-type Applied = { rule: Rule; snapshot: RuleSnapshot };
+type Applied = {
+	rule: Rule;
+	snapshot: RuleSnapshot;
+	authorId: string | null;
+	applyImmediately: boolean;
+};
+
+function editableTransferTargets(rule: Rule, editable: ReadonlySet<string> | undefined): Rule {
+	if (editable === undefined) {
+		return rule;
+	}
+	return {
+		...rule,
+		actions: rule.actions.map((action) =>
+			action.type === "set_as_transfer_or_payment" &&
+			action.accountId !== null &&
+			!editable.has(action.accountId)
+				? { ...action, accountId: null }
+				: action,
+		),
+	};
+}
 
 /** Each rule as the evaluator reads it, beside its snapshot. */
-async function appliedOf(db: Pick<Db, "select">, found: readonly ReadRule[]): Promise<Applied[]> {
+async function appliedOf(
+	db: Pick<Db, "select">,
+	found: readonly ReadRule[],
+	actor?: ServiceDeps["actor"],
+): Promise<Applied[]> {
 	if (found.length === 0) {
 		return [];
 	}
 
-	const known = await knownReferences(db);
+	const [known, accountIdsToEdit] = await Promise.all([
+		knownReferences(db),
+		accountIds({ db, actor }, "edit"),
+	]);
+	const editable = accountIdsToEdit === undefined ? undefined : new Set(accountIdsToEdit);
 
 	return found.map((read) => {
 		const { name, conditions, actions } = toData(read);
 
-		return { rule: toRule(read, known), snapshot: { name, conditions, actions } };
+		return {
+			rule: editableTransferTargets(toRule(read, known), editable),
+			snapshot: { name, conditions, actions },
+			authorId: read.row.authorId,
+			applyImmediately: read.row.applyImmediately,
+		};
 	});
 }
 
 /** All rules for apply-all, or the selected rule and its enabled predecessors. */
-async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Promise<Applied[]> {
-	const found = await readRules(db);
+async function rulesToApply(deps: ServiceDeps, id: string | undefined): Promise<Applied[]> {
+	const { db, actor } = deps;
+	const found = await visibleRules(db, actor);
 
 	if (id === undefined) {
-		return appliedOf(db, found);
+		return appliedOf(db, found, actor);
 	}
 
 	const position = found.findIndex(({ row }) => row.id === id);
@@ -450,6 +500,7 @@ async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Pro
 	return appliedOf(
 		db,
 		found.slice(0, position + 1).filter(({ row }) => row.enabled || row.id === id),
+		actor,
 	);
 }
 
@@ -457,13 +508,15 @@ async function rulesToApply(db: Pick<Db, "select">, id: string | undefined): Pro
  * A rule not saved yet, checked as a save checks it, then read as the
  * evaluator reads a stored one: a preview refuses what a save would.
  */
-async function draftToApply(db: Pick<Db, "select">, input: RuleInput): Promise<Applied[]> {
+async function draftToApply(deps: ServiceDeps, input: RuleInput): Promise<Applied[]> {
+	const { db, actor } = deps;
 	const rule = parse(input);
-	await assertReferencesExist(db, rule);
+	await assertReferencesExist(db, rule, actor);
 	const id = crypto.randomUUID();
 	const now = Date.now();
 	const row = {
 		id,
+		authorId: actor?.id ?? null,
 		name: rule.name,
 		enabled: true,
 		position: 0,
@@ -474,7 +527,7 @@ async function draftToApply(db: Pick<Db, "select">, input: RuleInput): Promise<A
 		updatedAt: now,
 	};
 
-	return appliedOf(db, [{ row, ...partsOf(id, rule) }]);
+	return appliedOf(db, [{ row, ...partsOf(id, rule) }], actor);
 }
 
 /**
@@ -492,10 +545,11 @@ function earliestStart(reached: readonly Rule[]): IsoDate | null {
 }
 
 /** The plan and per-rule tallies of `applied` over the transactions it reaches, and those. */
-async function planOver(db: Pick<Db, "select">, applied: readonly Applied[]) {
+async function planOver(deps: ServiceDeps, applied: readonly Applied[]) {
 	const evaluated = applied.map(({ rule }) => rule);
-	const candidates = await ruleCandidates(db, earliestStart(evaluated), {
+	const candidates = await ruleCandidates(deps.db, earliestStart(evaluated), {
 		activeAccountsOnly: true,
+		accountFilter: accountScope(deps, "edit"),
 	});
 
 	return {
@@ -618,14 +672,14 @@ export async function previewRules(
 ): Promise<RulePreview> {
 	const applied =
 		typeof target === "object"
-			? await draftToApply(deps.db, target)
-			: await rulesToApply(deps.db, target);
+			? await draftToApply(deps, target)
+			: await rulesToApply(deps, target);
 
 	if (applied.length === 0) {
 		return { matched: 0, changed: 0, samples: [] };
 	}
 
-	const { plan, matched, candidates } = await planOver(deps.db, applied);
+	const { plan, matched, candidates } = await planOver(deps, applied);
 
 	return { matched, changed: plan.size, samples: samplesOf(candidates, plan) };
 }
@@ -653,6 +707,15 @@ type RuleRunData = {
 /** What an application answers: the rows it changed, and one run per rule. */
 export type RuleApplication = { changed: number; runs: RuleRunData[] };
 
+async function authorScope(tx: Transaction, authorId: string) {
+	const author = await tx
+		.select({ id: users.id, role: users.role })
+		.from(users)
+		.where(eq(users.id, authorId))
+		.get();
+	return new Set(author === undefined ? [] : await accountIds({ db: tx, actor: author }, "edit"));
+}
+
 /**
  * Runs `applied` in turn over `candidates`, as Sure's `RuleJob` runs one rule
  * after another, and records one run per rule. Each rule, in a savepoint,
@@ -669,6 +732,7 @@ async function runInTurn(
 	applied: readonly Applied[],
 	candidates: readonly RuleCandidate[],
 	executionType: RuleRunExecutionType,
+	actor?: ServiceDeps["actor"],
 ): Promise<RuleApplication> {
 	const executedAt = Date.now();
 	const changed = new Set<string>();
@@ -676,8 +740,29 @@ async function runInTurn(
 	const runs: RuleRunData[] = [];
 	let rows = candidates;
 	const precedence: Parameters<typeof planRuleRow>[2] = new Map();
+	const authors =
+		executionType === "manual"
+			? []
+			: [...new Set(applied.flatMap(({ authorId }) => (authorId === null ? [] : [authorId])))];
+	const scopes = new Map(
+		await Promise.all(authors.map(async (id) => [id, await authorScope(tx, id)] as const)),
+	);
+	const limits = new Map(
+		executionType === "immediate"
+			? [...new Set(candidates.map(({ accountId }) => accountId))].map(
+					(id) =>
+						[
+							id,
+							applied.findLastIndex(
+								({ authorId, applyImmediately }) =>
+									applyImmediately && (authorId === null || scopes.get(authorId)!.has(id)),
+							),
+						] as const,
+				)
+			: [],
+	);
 
-	await applied.reduce<Promise<void>>(async (previous, { rule, snapshot }, position) => {
+	await applied.reduce<Promise<void>>(async (previous, { rule, snapshot, authorId }, position) => {
 		await previous;
 
 		const run = {
@@ -687,14 +772,21 @@ async function runInTurn(
 			executionType,
 			executedAt,
 			position,
+			actorId: actor?.id ?? authorId,
 		};
 		let queued = 0;
 
 		try {
 			const plan = new Map<string, RowPlan>();
+			const editable = authorId === null ? undefined : scopes.get(authorId);
+			const evaluated = editableTransferTargets(rule, editable);
 
-			for (const row of rows) {
-				const step = planRuleRow(rule, row, precedence, MAX_TAGS_PER_TRANSACTION);
+			for (const row of rows.filter(
+				({ accountId }) =>
+					(editable === undefined || editable.has(accountId)) &&
+					(executionType !== "immediate" || position <= (limits.get(accountId) ?? -1)),
+			)) {
+				const step = planRuleRow(evaluated, row, precedence, MAX_TAGS_PER_TRANSACTION);
 
 				if (step !== null) {
 					queued += 1;
@@ -751,7 +843,12 @@ async function runInTurn(
 	}
 
 	if (executionType !== "immediate" || transferIds.size > 0) {
-		await matchTransfers(tx, Date.now(), executionType === "immediate" ? transferIds : undefined);
+		await matchTransfers(
+			tx,
+			Date.now(),
+			executionType === "immediate" ? transferIds : undefined,
+			await accountIds({ db: tx, actor }, "edit"),
+		);
 	}
 
 	return { changed: changed.size, runs };
@@ -777,12 +874,12 @@ export async function applyRules(
 ): Promise<RuleApplication> {
 	return deps.db.transaction(
 		async (tx) => {
-			const applied = await rulesToApply(tx, id);
+			const applied = await rulesToApply({ ...deps, db: tx }, id);
 
 			if (id !== undefined) {
 				await tx
 					.update(rules)
-					.set({ enabled: true, updatedAt: Date.now() })
+					.set({ enabled: true, authorId: deps.actor?.id, updatedAt: Date.now() })
 					.where(and(eq(rules.id, id), eq(rules.enabled, false)));
 			}
 
@@ -795,6 +892,7 @@ export async function applyRules(
 			const evaluated = applied.map(({ rule }) => rule);
 			const candidates = await ruleCandidates(tx, earliestStart(evaluated), {
 				activeAccountsOnly: true,
+				accountFilter: accountScope({ ...deps, db: tx }, "edit"),
 			});
 
 			if (expectedChanged !== undefined) {
@@ -804,7 +902,7 @@ export async function applyRules(
 				);
 			}
 
-			return runInTurn(tx, applied, candidates, "manual");
+			return runInTurn(tx, applied, candidates, "manual", deps.actor);
 		},
 		{ behavior: "immediate" },
 	);
@@ -835,7 +933,12 @@ export async function runImmediateRules(
 
 		await deps.db.transaction(
 			async (tx) => {
-				const applied = await appliedOf(tx, await readRules(tx, { immediate: true }));
+				const { actor } = deps;
+				const applied = await appliedOf(
+					tx,
+					await visibleRules(tx, actor, { immediate: true }),
+					actor,
+				);
 
 				if (applied.length === 0) {
 					return;
@@ -848,12 +951,13 @@ export async function runImmediateRules(
 					const rows = await ruleCandidates(tx, from, {
 						activeAccountsOnly: true,
 						entryIds: chunk,
+						accountFilter: accountScope({ db: tx, actor }, "edit"),
 					});
 
 					candidates.push(...rows);
 				});
 
-				await runInTurn(tx, applied, candidates, "immediate");
+				await runInTurn(tx, applied, candidates, "immediate", actor);
 			},
 			{ behavior: "immediate" },
 		);
@@ -921,13 +1025,15 @@ export async function listRuleRuns(
 	deps: ServiceDeps,
 	page: { page: number; pageSize: number },
 ): Promise<RuleRunPage> {
+	const scope = deps.actor === undefined ? undefined : eq(ruleRuns.actorId, deps.actor.id);
 	const items = await deps.db
 		.select()
 		.from(ruleRuns)
+		.where(scope)
 		.orderBy(desc(ruleRuns.executedAt), asc(ruleRuns.position), desc(ruleRuns.id))
 		.limit(page.pageSize)
 		.offset((page.page - 1) * page.pageSize);
-	const totals = await deps.db.select({ total: count() }).from(ruleRuns).get();
+	const totals = await deps.db.select({ total: count() }).from(ruleRuns).where(scope).get();
 
 	return { items, page: page.page, pageSize: page.pageSize, total: totals?.total ?? 0 };
 }

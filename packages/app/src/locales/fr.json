@@ -1,4 +1,30 @@
 {
+	"sharing": {
+		"account": "Partage de compte",
+		"budget": "Partage de budget",
+		"settings": "Partage",
+		"include": "Inclure dans mes budgets et rapports",
+		"none": "Aucun accès",
+		"noMembers": "Aucun autre membre dans le foyer.",
+		"chooseBudget": "Choisir un budget",
+		"mine": "Mon budget",
+		"household": "Budget commun",
+		"personalBudgets": "Budgets personnels",
+		"defaultAccount": "Partage par défaut pour les nouveaux comptes",
+		"sharedByDefault": "Partager avec le foyer",
+		"privateByDefault": "Garder privé",
+		"loading": "Chargement…",
+		"readOnlyBudget": "Revenir au budget en lecture seule",
+		"accountPermission": {
+			"full_control": "Contrôle total",
+			"read_write": "Peut annoter",
+			"read_only": "Lecture seule"
+		},
+		"budgetPermission": {
+			"read_write": "Peut modifier",
+			"read_only": "Lecture seule"
+		}
+	},
 	"app": {
 		"name": "Archant",
 		"pageTitle": "{{page}} · {{app}}"
@@ -918,6 +944,7 @@
 		"noMatch": "Aucune opération ne correspond à ces filtres.",
 		"clearFilters": "Effacer les filtres",
 		"chips": {
+			"budgetAccounts": "Comptes du budget",
 			"unknownAccount": "Compte inconnu",
 			"uncategorised": "Sans catégorie",
 			"unknownCategory": "Catégorie inconnue",

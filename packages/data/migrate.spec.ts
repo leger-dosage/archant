@@ -59,6 +59,50 @@ const insertEntry = (
 	);
 
 describe("runMigrations", () => {
+	it("backfills ownership and shares while preserving every saved budget period", async () => {
+		await migrateBefore(url, "0116");
+		db = await createDb(url);
+		await db.run(sql`insert into users (id, name, email, role, created_at, updated_at) values
+			('older-member', 'Member', 'm@example.test', 'member', 1, 1),
+			('oldest-admin', 'Owner', 'o@example.test', 'admin', 2, 2),
+			('newer-admin', 'Admin', 'a@example.test', 'admin', 3, 3),
+			('guest', 'Guest', 'g@example.test', 'guest', 4, 4)`);
+		await insertAccount(db, "a1", "depository", "checking");
+		await insertEntry(db, "e1", "valuation", "opening_anchor");
+		await db.run(sql`insert into budgets (id, month, start_date, end_date, currency, budgeted_spending, created_at, updated_at)
+			values ('common', '2026-09', '2026-09-12', '2026-10-11', 'EUR', 10000, 0, 0)`);
+		db.$client.close();
+		db = undefined;
+
+		const upgraded = await migrated();
+		await expect(upgraded.all(sql`select id, owner_id from accounts`)).resolves.toEqual([
+			{ id: "a1", owner_id: "oldest-admin" },
+		]);
+		await expect(
+			upgraded.all(
+				sql`select user_id, permission, include_in_finances from account_shares order by user_id`,
+			),
+		).resolves.toEqual([
+			{ user_id: "guest", permission: "read_only", include_in_finances: 1 },
+			{ user_id: "newer-admin", permission: "read_write", include_in_finances: 1 },
+			{ user_id: "older-member", permission: "read_write", include_in_finances: 1 },
+		]);
+		await expect(upgraded.all(sql`select id, account_id from entries`)).resolves.toEqual([
+			{ id: "e1", account_id: "a1" },
+		]);
+		await expect(
+			upgraded.all(sql`select owner_id, start_date, end_date, budgeted_spending from budgets`),
+		).resolves.toEqual([
+			{
+				owner_id: null,
+				start_date: "2026-09-12",
+				end_date: "2026-10-11",
+				budgeted_spending: 10000,
+			},
+		]);
+		await expect(upgraded.all(sql`pragma foreign_key_check`)).resolves.toEqual([]);
+	});
+
 	it("gives existing budgets their calendar dates and keeps their category allocations", async () => {
 		await migrateBefore(url, "0107");
 		db = await createDb(url);

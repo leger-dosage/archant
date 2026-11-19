@@ -45,6 +45,7 @@ import type { LockedFields, PostedMatchConfidence } from "@archant/data/schema/t
 import { EXPENSE_TRANSFER_KINDS } from "@archant/data/transfer-kinds";
 import type { TransferKind, TransferStatus } from "@archant/data/transfer-kinds";
 
+import { entryScope } from "../account-access.ts";
 import { both, filterCondition, joinedTransferSide, needsTransactionColumns } from "./filter.ts";
 import { tagIdsByEntry, tagIdsOf } from "./patch.ts";
 import {
@@ -295,10 +296,16 @@ export async function findTransaction(
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
+		.leftJoin(
+			counterpartEntry,
+			and(
+				eq(counterpartEntry.id, counterpartIdOf),
+				entryScope(deps, "read", counterpartEntry.accountId),
+			),
+		)
 		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
 		.leftJoin(counterpartTransaction, eq(counterpartTransaction.entryId, counterpartEntry.id))
-		.where(eq(entries.id, entryId))
+		.where(and(eq(entries.id, entryId), entryScope(deps)))
 		.get();
 
 	if (row === undefined) {
@@ -312,8 +319,8 @@ export async function findTransaction(
  * The list's select: each transaction with its transfer and its account's
  * name and type. `listTransactionPage` and `listTransactionsById` narrow it.
  */
-function listSelect(db: Pick<Transaction, "select">) {
-	return db
+function listSelect(deps: ServiceDeps) {
+	return deps.db
 		.select({
 			...transactionColumns,
 			...transferColumns,
@@ -325,7 +332,13 @@ function listSelect(db: Pick<Transaction, "select">) {
 		.innerJoin(accounts, eq(accounts.id, entries.accountId))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.leftJoin(counterpartEntry, eq(counterpartEntry.id, counterpartIdOf))
+		.leftJoin(
+			counterpartEntry,
+			and(
+				eq(counterpartEntry.id, counterpartIdOf),
+				entryScope(deps, "read", counterpartEntry.accountId),
+			),
+		)
 		.leftJoin(counterpartAccount, eq(counterpartAccount.id, counterpartEntry.accountId))
 		.leftJoin(counterpartTransaction, eq(counterpartTransaction.entryId, counterpartEntry.id))
 		.$dynamic();
@@ -428,14 +441,14 @@ export async function listTransactionPage(
 
 	if (page.sort?.by === "amount") {
 		const ids = await idsBySize(deps, filter, where, { ...page, order: page.sort.order });
-		const rows = await listSelect(deps.db)
+		const rows = await listSelect(deps)
 			.where(inArray(entries.id, ids))
 			.orderBy(...bySize(page.sort.order));
 
 		return listRecordsOf(deps.db, rows);
 	}
 
-	const rows = await listSelect(deps.db)
+	const rows = await listSelect(deps)
 		.where(where)
 		.orderBy(...(page.sort?.order === "asc" ? oldestFirst : listOrder))
 		.limit(page.pageSize)
@@ -458,8 +471,8 @@ export async function listTransactionsById(
 		return [];
 	}
 
-	const rows = await listSelect(deps.db)
-		.where(inArray(entries.id, [...ids]))
+	const rows = await listSelect(deps)
+		.where(and(inArray(entries.id, [...ids]), entryScope(deps)))
 		.orderBy(...listOrder);
 
 	return listRecordsOf(deps.db, rows);
@@ -533,7 +546,7 @@ export async function uncategorisedLines(deps: ServiceDeps): Promise<Uncategoris
 		.leftJoin(merchants, eq(merchants.id, transactions.merchantId))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.where(uncategorisedWhere)
+		.where(and(uncategorisedWhere, entryScope(deps, "annotate")))
 		.orderBy(...listOrder);
 
 	return rows.map(toRecord);
@@ -547,7 +560,7 @@ export async function countUncategorised(deps: ServiceDeps): Promise<number> {
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.where(uncategorisedWhere);
+		.where(and(uncategorisedWhere, entryScope(deps, "annotate")));
 
 	return rows.reduce((total, row) => total + row.total, 0);
 }
@@ -976,7 +989,7 @@ export async function hasAnyTransaction(deps: ServiceDeps): Promise<boolean> {
 	const row = await deps.db
 		.select({ id: entries.id })
 		.from(entries)
-		.where(eq(entries.kind, "transaction"))
+		.where(and(eq(entries.kind, "transaction"), entryScope(deps, "finance")))
 		.limit(1)
 		.get();
 
@@ -991,6 +1004,7 @@ export async function oldestEntryDate(deps: ServiceDeps): Promise<IsoDate | null
 	const [oldest] = await deps.db
 		.select({ date: entries.date })
 		.from(entries)
+		.where(entryScope(deps, "finance"))
 		.orderBy(entries.date)
 		.limit(1);
 

@@ -13,6 +13,7 @@ import { BudgetAvailableCash } from "@/components/BudgetAvailableCash";
 import { BUDGET_FILTERS, BudgetCategories } from "@/components/BudgetCategories";
 import { BudgetDonut } from "@/components/BudgetDonut";
 import { BudgetMonthPicker, BudgetOutOfRange } from "@/components/BudgetMonthPicker";
+import { BudgetSharing } from "@/components/BudgetSharing";
 import { BudgetSummary } from "@/components/BudgetSummary";
 import { EmptyState } from "@/components/EmptyState";
 import { LeftOutNotice } from "@/components/LeftOutNotice";
@@ -21,13 +22,13 @@ import { Section } from "@/components/Section";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget, useCopyBudget } from "@/hooks/useBudget";
-import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { budgetPeriodLabel, monthLabel, ofBudgetPeriod, ofMonth } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 
 // Absent means « Toutes »; a value from an old or hand-edited link falls back to it.
 const searchSchema = z.object({
+	owner: z.string().optional().catch(undefined),
 	filter: z.enum(BUDGET_FILTERS).optional().catch(undefined),
 });
 
@@ -43,7 +44,8 @@ export const Route = createFileRoute("/_authed/budgets/$month")({
  */
 function OverAllocation({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
-	const canWrite = useCanWrite();
+	const { owner } = Route.useSearch();
+	const canWrite = budget.canWrite;
 
 	return (
 		<Section title={t("budgets.donut.title")}>
@@ -55,7 +57,11 @@ function OverAllocation({ budget }: { budget: BudgetData }) {
 				</p>
 				{canWrite && (
 					<Button variant="outline" size="sm" asChild>
-						<Link to="/budgets/$month/categories" params={{ month: budget.month }}>
+						<Link
+							to="/budgets/$month/categories"
+							params={{ month: budget.month }}
+							search={{ owner }}
+						>
 							{t("budgets.donut.overAllocated.action")}
 							<PencilIcon aria-hidden="true" />
 						</Link>
@@ -74,7 +80,8 @@ function OverAllocation({ budget }: { budget: BudgetData }) {
  */
 function NotSetUp({ budget }: { budget: BudgetData }) {
 	const { t } = useTranslation();
-	const canWrite = useCanWrite();
+	const { owner } = Route.useSearch();
+	const canWrite = budget.canWrite;
 	const navigate = useNavigate();
 	const copy = useCopyBudget(budget.month);
 	const source = budget.copySource;
@@ -84,7 +91,11 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 			// The month the server copied, which can be later than the one offered.
 			onSuccess: ({ copiedFrom }) => {
 				toast.success(t("budgets.copy.copied", { month: monthLabel(copiedFrom) }));
-				void navigate({ to: "/budgets/$month/categories", params: { month: budget.month } });
+				void navigate({
+					to: "/budgets/$month/categories",
+					params: { month: budget.month },
+					search: { owner },
+				});
 			},
 			onError: (error) => showErrorToast(errorCodeOf(error)),
 		});
@@ -101,7 +112,7 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 			action={
 				!canWrite ? null : source === null ? (
 					<Button asChild>
-						<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
+						<Link to="/budgets/$month/edit" params={{ month: budget.month }} search={{ owner }}>
 							{t("budgets.notSetUp.action")}
 						</Link>
 					</Button>
@@ -112,7 +123,7 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 							{t("budgets.copy.action", { month: monthLabel(source) })}
 						</Button>
 						<Button variant="outline" asChild>
-							<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
+							<Link to="/budgets/$month/edit" params={{ month: budget.month }} search={{ owner }}>
 								{t("budgets.copy.fresh")}
 							</Link>
 						</Button>
@@ -132,7 +143,7 @@ function NotSetUp({ budget }: { budget: BudgetData }) {
 function BudgetMonthPage() {
 	const { t } = useTranslation();
 	const { month } = Route.useParams();
-	const { filter } = Route.useSearch();
+	const { filter, owner } = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const budget = useBudget(month);
 	const data = budget.data;
@@ -153,6 +164,10 @@ function BudgetMonthPage() {
 
 	return (
 		<Page title={title}>
+			<BudgetSharing
+				owner={owner}
+				changeOwner={(next) => void navigate({ search: { owner: next }, replace: true })}
+			/>
 			<BudgetMonthPicker
 				month={month}
 				label={label}
@@ -199,7 +214,11 @@ function BudgetMonthPage() {
 								budget={data}
 								filter={filter}
 								onFilterChange={(next) =>
-									void navigate({ search: { filter: next }, replace: true, resetScroll: false })
+									void navigate({
+										search: { filter: next, owner },
+										replace: true,
+										resetScroll: false,
+									})
 								}
 							/>
 						</>

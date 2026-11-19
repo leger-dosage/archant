@@ -15,6 +15,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addMonths, today } from "../../domain/dates.ts";
 import { cyclesOverdue } from "../../domain/recurring/bills.ts";
+import { recurringScope } from "./access.ts";
 import { priceChangesWhere } from "./all-bills.ts";
 import { candidatePatterns } from "./bill-candidates.ts";
 import { loadBillViews } from "./bill-reads.ts";
@@ -67,7 +68,7 @@ const normalisedName = (name: string) =>
  */
 export async function billAudit(deps: ServiceDeps, lookbackMonths: number): Promise<BillAudit> {
 	const day = today(deps.timeZone);
-	const active = await loadBillViews(deps.db, day, eq(recurringTransactions.status, "active"));
+	const active = await loadBillViews(deps, day, eq(recurringTransactions.status, "active"));
 	const groups = new Map<string, BillView[]>();
 
 	for (const bill of active) {
@@ -98,7 +99,7 @@ export async function billAudit(deps: ServiceDeps, lookbackMonths: number): Prom
 		.filter((row) => row.cyclesOverdue >= 1)
 		.toSorted((a, b) => b.cyclesOverdue - a.cyclesOverdue);
 	const dormant = await loadBillViews(
-		deps.db,
+		deps,
 		day,
 		and(
 			eq(recurringTransactions.status, "inactive"),
@@ -115,18 +116,17 @@ export async function billAudit(deps: ServiceDeps, lookbackMonths: number): Prom
 			),
 		),
 	);
-	const suggested = await loadBillViews(
-		deps.db,
-		day,
-		eq(recurringTransactions.status, "suggested"),
-	);
+	const suggested = await loadBillViews(deps, day, eq(recurringTransactions.status, "suggested"));
 
 	return {
 		possibleDuplicates: section(duplicates),
 		priceChanges: section(
 			await priceChangesWhere(
 				deps.db,
-				gte(recurringPriceChanges.effectiveOn, addMonths(day, -lookbackMonths)),
+				and(
+					gte(recurringPriceChanges.effectiveOn, addMonths(day, -lookbackMonths)),
+					recurringScope(deps),
+				),
 			),
 		),
 		longOverdue: section(overdue),

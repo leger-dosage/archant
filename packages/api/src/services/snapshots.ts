@@ -12,6 +12,7 @@ import type {
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createSnapshotSchema, updateSnapshotSchema } from "../schemas/snapshots.ts";
+import { requireAccount, requireEntry } from "./account-access.ts";
 import { currencyOf, getAccount } from "./accounts.ts";
 import {
 	deleteSnapshot as deleteLedgerSnapshot,
@@ -59,6 +60,7 @@ export async function listAccountSnapshots(
 	accountId: string,
 	page: { page: number; pageSize: number },
 ): Promise<SnapshotPage> {
+	await requireAccount(deps, accountId, "read");
 	await getAccount(deps, accountId);
 	const { items, total } = await listSnapshots(deps, accountId, page);
 
@@ -95,6 +97,7 @@ export async function createSnapshot(
 	input: SnapshotInput,
 	assistant: { source?: string; afterToday?: boolean } = {},
 ): Promise<RecordedSnapshot> {
+	await requireAccount(deps, accountId, "edit");
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createSnapshotSchema(currency).safeParse(input);
 
@@ -129,6 +132,7 @@ export async function dryRunSnapshot(
 	accountId: string,
 	input: SnapshotInput,
 ): Promise<ReconciliationDryRun> {
+	await requireAccount(deps, accountId, "edit");
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createSnapshotSchema(currency).safeParse(input);
 
@@ -145,6 +149,7 @@ export async function updateSnapshot(
 	id: string,
 	input: SnapshotPatchInput,
 ): Promise<SnapshotRecord> {
+	await requireEntry(deps, id, "edit");
 	const current = await found(deps, id);
 	const currency = await currencyOf(deps, current.accountId);
 	const parsed = updateSnapshotSchema(currency).safeParse(input);
@@ -164,6 +169,7 @@ export async function updateSnapshot(
 
 /** Deletes a snapshot for good. */
 export async function deleteSnapshot(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	await requireEntry(deps, id, "edit");
 	await deleteLedgerSnapshot(deps, id, { origin: "user" });
 
 	return { id };

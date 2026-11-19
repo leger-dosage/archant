@@ -42,6 +42,7 @@ import {
 } from "../../domain/recurring/occurrences.ts";
 import { cycleFor, occurrencesBetween } from "../../domain/recurring/schedule.ts";
 import { AppError } from "../../lib/errors.ts";
+import { accountIdFilter } from "../account-access.ts";
 import { matchableTransactions } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, oneByOne } from "../ledger/shared.ts";
 import { allocateMatched } from "./payments.ts";
@@ -212,7 +213,15 @@ export async function pinAmountsAlreadyDue(
 export async function matchOccurrences(
 	tx: Writer,
 	day: IsoDate,
-	{ backfill }: { backfill: boolean },
+	{
+		backfill,
+		ids,
+		accountIds,
+	}: {
+		backfill: boolean;
+		ids?: readonly string[] | undefined;
+		accountIds?: readonly string[] | undefined;
+	},
 ): Promise<void> {
 	const open = await tx
 		.select({
@@ -223,20 +232,25 @@ export async function matchOccurrences(
 			expectedAmount: recurringOccurrences.expectedAmount,
 		})
 		.from(recurringOccurrences)
-		.where(eq(recurringOccurrences.status, "scheduled"))
+		.where(
+			and(
+				eq(recurringOccurrences.status, "scheduled"),
+				accountIdFilter(recurringOccurrences.recurringTransactionId, ids),
+			),
+		)
 		.orderBy(recurringOccurrences.dueOn, recurringOccurrences.id);
 	const occurrences = open.map((row) => ({
 		...row,
 		expectedAmount: row.expectedAmount === null ? null : toMinorUnits(row.expectedAmount),
 	}));
-	const series = await seriesWithSchedules(tx);
+	const series = await seriesWithSchedules(tx, ids);
 	const window = entryWindow(series, occurrences, day, backfill);
 
 	if (window === null) {
 		return;
 	}
 
-	const found = await matchableTransactions(tx, window);
+	const found = await matchableTransactions(tx, window, accountIds);
 	const rejected = await tx
 		.select({
 			seriesId: recurringMatchRejections.recurringTransactionId,
@@ -280,6 +294,7 @@ export async function backfillOccurrences(
 	tx: Writer,
 	day: IsoDate,
 	ids?: readonly string[],
+	accountIds?: readonly string[],
 ): Promise<void> {
 	const now = Date.now();
 	const active = [...(await seriesWithSchedules(tx, ids)).values()].filter(
@@ -294,7 +309,7 @@ export async function backfillOccurrences(
 			now,
 		),
 	);
-	await matchOccurrences(tx, day, { backfill: true });
+	await matchOccurrences(tx, day, { backfill: true, ids, accountIds });
 	await oneByOne(active, async (series) => {
 		const cycle = cycleFor(series.schedule, day);
 

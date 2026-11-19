@@ -9,7 +9,7 @@ import { z } from "zod";
 import { toMinorUnits } from "@archant/data/money";
 import type { SurePeriod } from "@archant/data/periods";
 import { accounts } from "@archant/data/schema/accounts";
-import { rateLimits } from "@archant/data/schema/auth";
+import { rateLimits, users } from "@archant/data/schema/auth";
 import { bankAccounts } from "@archant/data/schema/bank-accounts";
 import { bankConnections } from "@archant/data/schema/bank-connections";
 import { securities } from "@archant/data/schema/securities";
@@ -4581,6 +4581,20 @@ describe("the default account for new transactions", () => {
 		const card = await openAccount({ name: "Carte", type: "credit_card", subtype: null });
 
 		await setDefault(checking.id);
+		const reader = await temp.db
+			.select({ id: users.id })
+			.from(users)
+			.where(eq(users.email, SECOND_ADMIN.email))
+			.get();
+		expect(reader).toBeDefined();
+		expect(
+			(
+				await request("PUT", `/api/accounts/${card.id}/sharing`, {
+					userId: reader?.id,
+					permission: "full_control",
+				})
+			).status,
+		).toBe(200);
 		await setDefault(card.id, second());
 
 		await expect(defaultOf()).resolves.toBe(checking.id);

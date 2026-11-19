@@ -1,4 +1,5 @@
 import type { Logger } from "../lib/logger.ts";
+import type { AccountActor } from "./account-access.ts";
 
 import type { Database } from "@archant/data/client";
 
@@ -7,6 +8,8 @@ import type { Database } from "@archant/data/client";
  * so a spec can hand each file its own temporary database.
  */
 export type ServiceDeps = {
+	actor?: AccountActor | undefined;
+	budgetOwnerId?: string | null | undefined;
 	/**
 	 * The query methods only, which a transaction offers too: a service can
 	 * then run another's work inside its own transaction, where the other's

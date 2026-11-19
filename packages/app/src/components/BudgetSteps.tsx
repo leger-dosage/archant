@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 import { CheckIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+import { useBudgetOwner } from "@/hooks/useBudget";
 import { cn } from "@/lib/utils";
 
 type Step = "budget" | "categories";
@@ -23,6 +24,7 @@ export function BudgetSteps({
 	current: Step;
 }) {
 	const { t } = useTranslation();
+	const owner = useBudgetOwner();
 	const month = budget?.month;
 	const done = {
 		budget: budget?.setUp === true,
@@ -54,6 +56,7 @@ export function BudgetSteps({
 							<Link
 								to={to}
 								params={{ month }}
+								search={{ owner }}
 								aria-label={isDone ? t("budgets.steps.done", { step: name }) : undefined}
 								className="flex items-center gap-2 rounded-sm text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring"
 							>

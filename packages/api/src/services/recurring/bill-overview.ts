@@ -35,6 +35,7 @@ import {
 import { hasTransactions, paymentEntries } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence } from "../ledger/shared.ts";
 import { getReportingCurrency } from "../settings.ts";
+import { allocationScope, recurringScope } from "./access.ts";
 import { parseSignals } from "./hints.ts";
 import { notFound, nullableMinor, selectRecords, toRecords } from "./series.ts";
 
@@ -195,10 +196,11 @@ type LoadedRow = BillRow & {
  * payment of them.
  */
 export async function loadBills(
-	db: Reader,
+	deps: Pick<ServiceDeps, "actor" | "budgetOwnerId"> & { db: Reader },
 	where: SQL | undefined,
 	day: IsoDate,
 ): Promise<{ rows: LoadedRow[]; allocations: Allocation[] }> {
+	const { db } = deps;
 	const found = await db
 		.select({
 			occurrenceId: recurringOccurrences.id,
@@ -228,7 +230,7 @@ export async function loadBills(
 		)
 		.leftJoin(accounts, eq(accounts.id, recurringTransactions.accountId))
 		.leftJoin(merchants, eq(merchants.id, recurringTransactions.merchantId))
-		.where(where)
+		.where(and(where, recurringScope(deps)))
 		.orderBy(recurringOccurrences.dueOn, recurringOccurrences.id);
 	const allocations: Allocation[] = [];
 
@@ -250,7 +252,9 @@ export async function loadBills(
 					createdAt: recurringAllocations.createdAt,
 				})
 				.from(recurringAllocations)
-				.where(inArray(recurringAllocations.recurringOccurrenceId, chunk));
+				.where(
+					and(inArray(recurringAllocations.recurringOccurrenceId, chunk), allocationScope(deps)),
+				);
 
 			allocations.push(
 				...rows.map((row) => ({
@@ -381,7 +385,8 @@ function payable(db: Reader) {
  * store: the price changes of the active payable series effective from 30
  * days ago, the urgent first, then the nearest today either way.
  */
-async function priceNotices(db: Reader, day: IsoDate): Promise<PriceNotice[]> {
+async function priceNotices(deps: ServiceDeps, day: IsoDate): Promise<PriceNotice[]> {
+	const { db } = deps;
 	const rows = await db
 		.select({
 			id: recurringPriceChanges.id,
@@ -404,6 +409,7 @@ async function priceNotices(db: Reader, day: IsoDate): Promise<PriceNotice[]> {
 			and(
 				eq(recurringTransactions.status, "active"),
 				payable(db),
+				recurringScope(deps),
 				gte(recurringPriceChanges.effectiveOn, addDays(day, -NOTICE_DAYS)),
 			),
 		)
@@ -448,7 +454,7 @@ export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 	const { from: monthStart, to: monthEnd } = monthRange(day.slice(0, 7));
 	const currency = await getReportingCurrency(deps.db);
 	const { rows, allocations } = await loadBills(
-		deps.db,
+		deps,
 		and(
 			inArray(recurringTransactions.status, ["active", "inactive"]),
 			payable(deps.db),
@@ -512,7 +518,7 @@ export async function billsOverview(deps: ServiceDeps): Promise<BillsOverview> {
 		},
 		leftOut: [...leftOut].map(([id, name]) => ({ id, name })),
 		review: await suggestionsOf(deps.db, [...open, ...paid], allocations),
-		notices: await priceNotices(deps.db, day),
+		notices: await priceNotices(deps, day),
 		hasTransactions: await hasTransactions(deps.db),
 	};
 }
@@ -541,7 +547,7 @@ export type OccurrenceDetail = {
  */
 export async function occurrenceDetail(deps: ServiceDeps, id: string): Promise<OccurrenceDetail> {
 	const day = today(deps.timeZone);
-	const { rows, allocations } = await loadBills(deps.db, eq(recurringOccurrences.id, id), day);
+	const { rows, allocations } = await loadBills(deps, eq(recurringOccurrences.id, id), day);
 	const [row] = rows;
 
 	if (row === undefined) {
@@ -592,6 +598,7 @@ export type UpcomingRecord = RecurringRecord & {
 export async function upcomingRecurring(deps: ServiceDeps): Promise<UpcomingRecord[]> {
 	const day = today(deps.timeZone);
 	const window = and(
+		recurringScope(deps),
 		eq(recurringTransactions.status, "active"),
 		gte(recurringTransactions.nextExpectedDate, day),
 		lte(recurringTransactions.nextExpectedDate, addDays(day, UPCOMING_DAYS)),

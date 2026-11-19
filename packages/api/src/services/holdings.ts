@@ -16,6 +16,7 @@ import { today } from "../domain/dates.ts";
 import { positionFigures, weightOf } from "../domain/holdings/positions.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { costBasisSchema } from "../schemas/holdings.ts";
+import { accountScope, requireAccount } from "./account-access.ts";
 import { getAccount } from "./accounts.ts";
 import { balanceOn } from "./ledger/balances.ts";
 import {
@@ -77,6 +78,7 @@ const percent = (value: Micros | null) => (value === null ? null : formatMicros(
  * nothing and its balance is all cash.
  */
 export async function listPositions(deps: ServiceDeps, accountId: string): Promise<HoldingsData> {
+	await requireAccount(deps, accountId, "read");
 	const account = await getAccount(deps, accountId);
 	const held = await currentHoldings(deps.db, accountId, today(deps.timeZone));
 	const total = toMinorUnits(
@@ -162,7 +164,13 @@ export async function listHoldings(
 				currency: accounts.currency,
 			})
 			.from(accounts)
-			.where(and(eq(accounts.active, true), ...ids.map((list) => inArray(accounts.id, [...list]))))
+			.where(
+				and(
+					accountScope(deps),
+					eq(accounts.active, true),
+					...ids.map((list) => inArray(accounts.id, [...list])),
+				),
+			)
 	)
 		.filter((account) => holdsSecurities(account.type))
 		.map(({ type: _type, ...account }) => account);
@@ -244,6 +252,7 @@ export async function setCostBasis(
 	securityId: string,
 	input: CostBasisInput,
 ): Promise<PositionData> {
+	await requireAccount(deps, accountId, "edit");
 	const parsed = costBasisSchema.safeParse(input);
 
 	if (!parsed.success) {
@@ -261,6 +270,7 @@ export async function unlockCostBasis(
 	accountId: string,
 	securityId: string,
 ): Promise<PositionData> {
+	await requireAccount(deps, accountId, "edit");
 	await unlockLedgerCostBasis(deps, accountId, securityId, { origin: "user" });
 
 	return positionOf(deps, accountId, securityId);
@@ -275,6 +285,7 @@ export async function deletePosition(
 	accountId: string,
 	securityId: string,
 ): Promise<{ securityId: string }> {
+	await requireAccount(deps, accountId, "edit");
 	await deleteLedgerPosition(deps, accountId, securityId, { origin: "user" });
 
 	return { securityId };
@@ -290,5 +301,6 @@ export async function remapPosition(
 	securityId: string,
 	body: RemapBody,
 ): Promise<{ securityId: string }> {
+	await requireAccount(deps, accountId, "edit");
 	return remapLedgerPosition(deps, accountId, securityId, body.security);
 }

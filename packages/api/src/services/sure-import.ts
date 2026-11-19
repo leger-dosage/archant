@@ -23,6 +23,7 @@ import { monthlyOn } from "../domain/recurring/schedule.ts";
 import { DEFAULT_SURE_IMPORT_MAX_ROWS, DEFAULT_SURE_IMPORT_MAX_SIZE_MB } from "../env.ts";
 import { AppError } from "../lib/errors.ts";
 import { ruleSchema } from "../schemas/rules.ts";
+import { budgetScope } from "./budget-access.ts";
 import { oneByOne } from "./ledger/shared.ts";
 import { insertSureAccounts, insertSureEntries } from "./ledger/sure-import.ts";
 import { runAutomaticRecurring } from "./recurring/pipeline.ts";
@@ -300,7 +301,7 @@ async function importBudgets(
 		const existing = await tx
 			.select({ id: budgets.id })
 			.from(budgets)
-			.where(eq(budgets.month, budget.month))
+			.where(and(eq(budgets.month, budget.month), budgetScope()))
 			.get();
 		const totals = {
 			budgetedSpending: budget.budgetedSpending,
@@ -415,7 +416,7 @@ export async function writeArchive(
 	plan: SurePlan,
 ): Promise<ReadonlyMap<string, ImportedAccount>> {
 	const now = Date.now();
-	const accounts = await insertSureAccounts(tx, plan.accounts, now);
+	const accounts = await insertSureAccounts(tx, plan.accounts, now, deps.actor?.id);
 	const taxonomy = await taxonomyOf(tx);
 
 	await importCategories(tx, plan.categories, taxonomy, now);

@@ -22,6 +22,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 import { ruleRuns, rules } from "@archant/data/schema/rules";
 import { securities, securityPrices } from "@archant/data/schema/securities";
 import { settings } from "@archant/data/schema/settings";
+import { accountShares } from "@archant/data/schema/sharing";
 import { transactions } from "@archant/data/schema/transactions";
 
 import { createLogger } from "../../lib/logger.ts";
@@ -47,6 +48,7 @@ useLedgerDatabase();
  * mapped to Archant's tables.
  */
 const RESET = [
+	"account_shares",
 	"accounts",
 	"balances",
 	"bank_accounts",
@@ -86,6 +88,7 @@ const RESET = [
 
 /** What it keeps: the users and their sign-in, the instance's settings, goals and the global securities. */
 const KEPT = [
+	"budget_shares",
 	"__drizzle_migrations",
 	"assistant_calls",
 	"auth_accounts",
@@ -526,6 +529,14 @@ describe("resetFinancialData", () => {
 
 	it("empties each reset table and leaves each kept one as it was, users without a default account", async () => {
 		const { userId } = await household();
+		const readerId = crypto.randomUUID();
+		const [account] = await temp.db.select({ id: accounts.id }).from(accounts).limit(1);
+		await temp.db
+			.insert(users)
+			.values({ id: readerId, name: "Reader", email: `${readerId}@example.test`, role: "guest" });
+		await temp.db
+			.insert(accountShares)
+			.values({ accountId: account!.id, userId: readerId, permission: "read_only" });
 		const before = await counts(RESET);
 
 		// Fails if the seed stops reaching a table, rather than passing on an empty one.

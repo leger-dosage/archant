@@ -52,7 +52,9 @@ export function accountTypeGroups(list: AccountListData, tab: AccountTab): Accou
 					const counted = accounts.filter((account) =>
 						countsInReports(account, list.reportingCurrency),
 					);
-					const reported = accounts.filter((account) => !account.excludedFromReports);
+					const reported = accounts.filter(
+						(account) => !account.excludedFromReports && account.includeInFinances,
+					);
 
 					return [
 						{

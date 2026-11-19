@@ -27,7 +27,9 @@ import {
 	seriesKeyOf,
 } from "../../domain/recurring/identifier.ts";
 import { PICKER_SHOWN } from "../../schemas/bills.ts";
+import { accountIds, accountScope } from "../account-access.ts";
 import { pickerTransactions } from "../ledger/recurring.ts";
+import { recurringScope } from "./access.ts";
 import { loadCandidates, merchantNames } from "./series.ts";
 
 // Sure's `first(8)`: the dialog offers a few starting points, never a list to page.
@@ -70,6 +72,7 @@ export async function billPicker(
 	q = "",
 ): Promise<PickerEntry[]> {
 	const rows = await pickerTransactions(deps.db, {
+		accountIds: await accountIds(deps, "edit"),
 		sign: kind === "income" ? "inflow" : "outflow",
 		q: q.trim(),
 		limit: PICKER_SHOWN,
@@ -97,6 +100,7 @@ export async function billPicker(
 					.where(
 						and(
 							eq(recurringAllocations.state, "confirmed"),
+							recurringScope(deps),
 							inArray(
 								recurringAllocations.entryId,
 								rows.map((row) => row.entryId),
@@ -137,9 +141,12 @@ export async function candidatePatterns(
 	const { detectable: all } = await loadCandidates(deps.db, day);
 	// The dialog offers active accounts only, as the account it would fill.
 	const active = new Set(
-		(await deps.db.select({ id: accounts.id }).from(accounts).where(eq(accounts.active, true))).map(
-			(row) => row.id,
-		),
+		(
+			await deps.db
+				.select({ id: accounts.id })
+				.from(accounts)
+				.where(and(eq(accounts.active, true), accountScope(deps, "edit")))
+		).map((row) => row.id),
 	);
 	const detectable = all.filter((row) => active.has(row.accountId));
 	const names = await merchantNames(deps.db);

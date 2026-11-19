@@ -34,6 +34,7 @@ import { monthlyEquivalent, monthlyRollup } from "../../domain/recurring/schedul
 import { paymentEntries } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence } from "../ledger/shared.ts";
 import { getReportingCurrency } from "../settings.ts";
+import { allocationScope, recurringScope, requireSeries } from "./access.ts";
 import { estimatedRange } from "./bill-overview.ts";
 import { getRecord, nullableMinor, selectRecords, toRecords } from "./series.ts";
 
@@ -113,9 +114,10 @@ const sumOf = (amounts: readonly MinorUnits[]) =>
  * expected amount, the sum of its confirmed payments and what they leave.
  */
 export async function withAmounts(
-	db: Reader,
+	deps: Pick<ServiceDeps, "actor" | "budgetOwnerId"> & { db: Reader },
 	records: readonly RecurringRecord[],
 ): Promise<BillRecord[]> {
+	const { db } = deps;
 	const ids = records.flatMap((record) =>
 		record.currentOccurrence === null ? [] : [record.currentOccurrence.id],
 	);
@@ -137,6 +139,7 @@ export async function withAmounts(
 				and(
 					inArray(recurringAllocations.recurringOccurrenceId, chunk),
 					eq(recurringAllocations.state, "confirmed"),
+					allocationScope(deps),
 				),
 			);
 
@@ -335,10 +338,12 @@ async function subscriptionRollup(
 export async function allBills(deps: ServiceDeps, query: AllBillsQuery): Promise<AllBills> {
 	const day = today(deps.timeZone);
 	const rows = await withAmounts(
-		deps.db,
+		deps,
 		await toRecords(
 			deps.db,
-			await selectRecords(deps.db).where(ne(recurringTransactions.status, "suggested")),
+			await selectRecords(deps.db).where(
+				and(ne(recurringTransactions.status, "suggested"), recurringScope(deps)),
+			),
 			day,
 		),
 	);
@@ -444,8 +449,9 @@ export type BillDetail = {
  * twelve latest closed occurrences with what paid them.
  */
 export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDetail> {
+	await requireSeries(deps, id);
 	const day = today(deps.timeZone);
-	const [record] = await withAmounts(deps.db, [await getRecord(deps.db, id, day)]);
+	const [record] = await withAmounts(deps, [await getRecord(deps.db, id, day)]);
 	const occurrences = await deps.db
 		.select({
 			id: recurringOccurrences.id,
@@ -481,6 +487,7 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 				and(
 					eq(recurringOccurrences.recurringTransactionId, id),
 					eq(recurringAllocations.state, "confirmed"),
+					allocationScope(deps),
 				),
 			)
 	).map((payment) => ({ ...payment, amount: toMinorUnits(payment.amount) }));

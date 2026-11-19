@@ -39,6 +39,7 @@ import { MAX_IDENTICAL_LINES, absorbPending, assignIdentical } from "../../domai
 import { rejectionFor } from "../../domain/statement.ts";
 import { mergeExtra } from "../../domain/transaction-extra.ts";
 import { AppError } from "../../lib/errors.ts";
+import { accountIds, requireAccount } from "../account-access.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 import { creditCardBalanceOf, rotateCurrentAnchor, writeAvailableCredit } from "./bank-link.ts";
 import { attachKeys, entriesByKey, pairCandidates } from "./entry-keys.ts";
@@ -938,8 +939,10 @@ export async function ingest(
 	source: IngestSource,
 	options: IngestOptions,
 ): Promise<IngestResult> {
+	const scoped = "connectionId" in source ? { ...deps, actor: undefined } : deps;
 	const ingested = await deps.db.transaction(
 		async (tx) => {
+			await requireAccount({ ...scoped, db: tx }, accountId, "edit");
 			const account = await accountWithOpeningDate(tx, accountId);
 			const target =
 				"importId" in source
@@ -1297,7 +1300,9 @@ export async function ingest(
 
 			// 5. Transfer matching, once every new row exists, over every unmatched
 			// line of the household as Sure's family sync (AD-11).
-			const transferInflows = new Set(await matchTransfers(tx, now));
+			const transferInflows = new Set(
+				await matchTransfers(tx, now, undefined, await accountIds({ ...scoped, db: tx }, "edit")),
+			);
 
 			// 6. The statement balance (AD-8). A sync's earlier bank figure stays
 			// as a reconciliation, so one missing line cannot shift the whole past.

@@ -10,6 +10,7 @@ import { settings } from "@archant/data/schema/settings";
 
 import { createPriceProvider } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
+import { securityScope } from "./account-access.ts";
 import { tradedSecurities } from "./ledger/trades.ts";
 
 /** What the price routes and the daily fetch need. */
@@ -80,7 +81,7 @@ const folded = (text: string) =>
  * few dozen, and SQLite's `like` folds the case of ASCII letters only.
  */
 async function knownSecurities(
-	deps: Pick<PriceDeps, "db">,
+	deps: Pick<PriceDeps, "db" | "actor">,
 	query: string,
 ): Promise<KnownSecurity[]> {
 	const needle = folded(query.trim());
@@ -94,6 +95,7 @@ async function knownSecurities(
 			currency: securities.currency,
 		})
 		.from(securities)
+		.where(securityScope(deps))
 		.orderBy(asc(securities.name), asc(securities.id));
 
 	return rows
@@ -115,7 +117,7 @@ const listingKey = (ticker: string, mic: string | null) => `${ticker.toUpperCase
  * known part still answers, with `unavailable` set.
  */
 export async function searchSecurities(
-	deps: Pick<PriceDeps, "db" | "priceApiUrl">,
+	deps: Pick<PriceDeps, "db" | "priceApiUrl" | "actor">,
 	query: string,
 ): Promise<{
 	enabled: boolean;

@@ -1,7 +1,7 @@
 import type { Condition, LeafCondition, Rule, RuleAction } from "../domain/rules/matching.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { isActivityLabel } from "@archant/data/activity-labels";
 import { parseUnsignedDecimal } from "@archant/data/money";
@@ -24,6 +24,7 @@ import type {
 
 import { DIRECTIONS } from "../domain/cash-flow.ts";
 import { compileLabelPattern } from "../domain/rules/label-pattern.ts";
+import { accountScope } from "./account-access.ts";
 
 type Db = ServiceDeps["db"];
 
@@ -94,13 +95,19 @@ export async function existing(
 	db: Pick<Db, "select">,
 	reference: Reference,
 	ids?: string[],
+	actor?: ServiceDeps["actor"],
 ): Promise<Set<string>> {
 	const rows = await {
 		account: () =>
 			db
 				.select({ id: accounts.id })
 				.from(accounts)
-				.where(ids === undefined ? undefined : inArray(accounts.id, ids)),
+				.where(
+					and(
+						ids === undefined ? undefined : inArray(accounts.id, ids),
+						accountScope({ db, actor }),
+					),
+				),
 		merchant: () =>
 			db
 				.select({ id: merchants.id })
@@ -119,6 +126,34 @@ export async function existing(
 	}[reference]();
 
 	return new Set(rows.map((row) => row.id));
+}
+
+export async function visibleRules(
+	db: Pick<Db, "select">,
+	actor: ServiceDeps["actor"],
+	only?: Parameters<typeof readRules>[1],
+) {
+	const found = await readRules(db, only);
+	if (actor === undefined) {
+		return found;
+	}
+	const references = found.map(({ conditions, actions }) =>
+		[
+			...conditions.filter(({ conditionType }) => conditionType === "transaction_account"),
+			...actions.filter(({ actionType }) => actionType === "set_as_transfer_or_payment"),
+		].flatMap(({ value }) => (value === null ? [] : [value])),
+	);
+	const ids = [...new Set(references.flat())];
+	if (ids.length === 0) {
+		return found;
+	}
+	const [present, readable] = await Promise.all([
+		existing(db, "account", ids),
+		existing(db, "account", ids, actor),
+	]);
+	return found.filter((_, index) =>
+		references[index]!.every((id) => !present.has(id) || readable.has(id)),
+	);
 }
 
 function malformed(): Error {

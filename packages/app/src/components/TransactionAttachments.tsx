@@ -25,7 +25,6 @@ import {
 	useDeleteAttachment,
 	useUploadAttachment,
 } from "@/hooks/useAttachments";
-import { useCanWrite } from "@/hooks/usePermissions";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 import { formatFileSize } from "@/lib/file-size";
@@ -119,9 +118,15 @@ function AttachmentItem({
  * edits. A guest opens and downloads the files, and neither adds nor
  * deletes one.
  */
-export function TransactionAttachments({ transaction }: { transaction: TransactionData }) {
+export function TransactionAttachments({
+	transaction,
+	editable,
+}: {
+	transaction: TransactionData;
+	editable: boolean;
+}) {
 	const { t } = useTranslation();
-	const canWrite = useCanWrite();
+	const canWrite = editable;
 	const attachments = useAttachments(transaction.id);
 	const upload = useUploadAttachment(transaction.id);
 	const remove = useDeleteAttachment(transaction.id);

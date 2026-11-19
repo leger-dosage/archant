@@ -18,6 +18,7 @@ import {
 	surePeriodRange,
 } from "../domain/balances/sure-periods.ts";
 import { addDays, maxDate, minDate, today } from "../domain/dates.ts";
+import { requireAccount } from "./account-access.ts";
 import { getAccount, listAccounts } from "./accounts.ts";
 import { balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { oldestEntryDate } from "./ledger/queries.ts";
@@ -53,6 +54,7 @@ export async function getBalanceHistory(
 	accountId: string,
 	query: ChartQuery,
 ): Promise<BalanceHistory> {
+	await requireAccount(deps, accountId, "read");
 	const account = await getAccount(deps, accountId);
 	const asOf = today(deps.timeZone);
 	const startDate = await historyStartOf(deps.db, accountId, account.openingDate);

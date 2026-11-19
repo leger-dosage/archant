@@ -10,6 +10,8 @@ import { goalAccounts, goalPledges, goals } from "@archant/data/schema/goals";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { amountIn } from "../schemas/budgets.ts";
+import { accountScope, requireAccount } from "./account-access.ts";
+import { goalScope } from "./goal-access.ts";
 import { invalidField } from "./ledger/shared.ts";
 
 const DAY = 86_400_000;
@@ -47,9 +49,12 @@ export async function readGoalPledges(deps: ServiceDeps, now: number) {
 			),
 		)
 		.where(
-			or(
-				eq(goalPledges.status, "matched"),
-				and(eq(goalPledges.status, "open"), eq(goalAccounts.accountId, goalPledges.accountId)),
+			and(
+				accountScope(deps),
+				or(
+					eq(goalPledges.status, "matched"),
+					and(eq(goalPledges.status, "open"), eq(goalAccounts.accountId, goalPledges.accountId)),
+				),
 			),
 		)
 		.orderBy(desc(goalPledges.createdAt), desc(goalPledges.id));
@@ -90,7 +95,11 @@ export async function createGoalPledge(
 ) {
 	return deps.db.transaction(
 		async (tx) => {
-			const goal = await tx.select().from(goals).where(eq(goals.id, goalId)).get();
+			const goal = await tx
+				.select()
+				.from(goals)
+				.where(and(eq(goals.id, goalId), goalScope({ ...deps, db: tx }, "edit")))
+				.get();
 
 			if (goal === undefined) {
 				throw new AppError("NOT_FOUND", "No goal has this id.");
@@ -99,6 +108,7 @@ export async function createGoalPledge(
 				throw invalidField("amount", "pledge_goal_inactive");
 			}
 
+			await requireAccount({ ...deps, db: tx }, input.accountId, "edit");
 			const account = await tx
 				.select({ name: accounts.name })
 				.from(goalAccounts)
@@ -179,6 +189,7 @@ async function changePledge(
 				throw new AppError("NOT_FOUND", "No pledge has this id on the goal.");
 			}
 
+			await requireAccount({ ...deps, db: tx }, pledge.accountId, "edit");
 			const now = Date.now();
 
 			if (!pledgeIsOpen(pledge, now)) {

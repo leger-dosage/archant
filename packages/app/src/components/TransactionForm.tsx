@@ -1,5 +1,6 @@
 import type { TransferLink } from "@/components/TransactionLinks";
 import type { TransactionType } from "@/components/TransactionTypeTabs";
+import type { AccountSummaryData } from "@/hooks/useAccounts";
 import type { TransactionData } from "@/hooks/useTransactions";
 import type { Nature } from "@/lib/amount-sign";
 import type { FormEvent } from "react";
@@ -79,6 +80,7 @@ const FIELD_NAMES = [
 type FieldName = (typeof FIELD_NAMES)[number];
 
 export type SheetAccount = {
+	permission?: AccountSummaryData["permission"];
 	id: string;
 	currency: CurrencyCode;
 	/** An investment account's or a crypto exchange's lines can be converted into trades. */
@@ -154,12 +156,17 @@ export function TransactionForm({
 }: TransactionFormProps) {
 	const { t } = useTranslation();
 	// A guest reads every field, disabled, and saves nothing.
-	const canWrite = useCanWrite();
+	const canWriteHousehold = useCanWrite();
 	const choice = isAccountChoice(account) ? account : null;
 	const [chosenId, setChosenId] = useState(choice?.initialAccountId ?? null);
 	const [accountMissing, setAccountMissing] = useState(false);
 	const [noteDirty, setNoteDirty] = useState(false);
 	const { chosen, currency } = accountOf(account, chosenId);
+	const permission = chosen?.permission;
+	const canWrite =
+		canWriteHousehold &&
+		(transaction === null || permission === "owner" || permission === "full_control");
+	const canAnnotate = canWrite || (canWriteHousehold && permission === "read_write");
 	const accountId = chosen?.id ?? "";
 	const createTransaction = useCreateTransaction(accountId);
 	const updateTransaction = useUpdateTransaction(accountId);
@@ -217,7 +224,7 @@ export function TransactionForm({
 		resolver: zodResolver(schema, undefined, { raw: true }),
 		defaultValues: {
 			...valuesOf(transaction),
-			...(canWrite && transaction !== null ? { notes: "" } : {}),
+			...(canAnnotate && transaction !== null ? { notes: "" } : {}),
 		},
 	});
 	const { errors, isSubmitting, isDirty, dirtyFields } = form.formState;
@@ -288,10 +295,10 @@ export function TransactionForm({
 					excluded: excludedValue,
 				} = values;
 				const input = {
-					...(dirtyFields.date === true ? { date: savedDate } : {}),
-					...(dirtyFields.amount === true ? { amount: savedAmount } : {}),
-					...(dirtyFields.label === true ? { label } : {}),
-					...(dirtyFields.excluded === true ? { excluded: excludedValue } : {}),
+					...(canWrite && dirtyFields.date === true ? { date: savedDate } : {}),
+					...(canWrite && dirtyFields.amount === true ? { amount: savedAmount } : {}),
+					...(canWrite && dirtyFields.label === true ? { label } : {}),
+					...(canWrite && dirtyFields.excluded === true ? { excluded: excludedValue } : {}),
 					// Hidden once a transfer the dashboard does not count is matched in
 					// this sheet: not the user's to save.
 					...(dirtyFields.categoryId === true && showsCategory(transaction.amount, transfer)
@@ -299,7 +306,7 @@ export function TransactionForm({
 						: {}),
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
 					// Pairing a transfer in this sheet clears it: an untouched switch never sets it back.
-					...(dirtyFields.oneTime === true ? { oneTime: oneTimeValue } : {}),
+					...(canWrite && dirtyFields.oneTime === true ? { oneTime: oneTimeValue } : {}),
 					...(sameTags(tags, startingTags.current)
 						? {}
 						: { tagIds: tags, previousTagIds: startingTags.current }),
@@ -367,7 +374,7 @@ export function TransactionForm({
 						return;
 					}
 
-					if (!canWrite) {
+					if (!canAnnotate) {
 						event.preventDefault();
 						return;
 					}
@@ -479,7 +486,7 @@ export function TransactionForm({
 					<RecurringBlock transaction={transaction} dirty={dirty} />
 				)}
 
-				<fieldset disabled={!canWrite} className="flex min-w-0 flex-col gap-4">
+				<fieldset disabled={!canAnnotate} className="flex min-w-0 flex-col gap-4">
 					<div className="flex flex-col gap-1.5">
 						<Label htmlFor="transaction-date">{t("transactions.form.date")}</Label>
 						<DateField
@@ -487,7 +494,7 @@ export function TransactionForm({
 							value={date.field.value}
 							onChange={date.field.onChange}
 							onBlur={date.field.onBlur}
-							disabled={inSplit}
+							disabled={!canWrite || inSplit}
 							invalid={errors.date !== undefined}
 							{...(errors.date === undefined ? {} : { describedBy: "transaction-date-error" })}
 						/>
@@ -502,7 +509,7 @@ export function TransactionForm({
 							aria-invalid={errors.label !== undefined}
 							{...describedBy("label")}
 							{...form.register("label")}
-							disabled={splitChild}
+							disabled={!canWrite || splitChild}
 						/>
 						<FieldMessage id="transaction-label-error" error={errors.label} />
 					</div>
@@ -548,7 +555,7 @@ export function TransactionForm({
 							value={amount.field.value}
 							onChange={amount.field.onChange}
 							onBlur={amount.field.onBlur}
-							disabled={inSplit}
+							disabled={!canWrite || inSplit}
 							{...(tabs ? { nature, onNatureChange: setNature } : {})}
 							invalid={errors.amount !== undefined}
 							{...(errors.amount === undefined ? {} : { describedBy: "transaction-amount-error" })}
@@ -556,7 +563,7 @@ export function TransactionForm({
 						<FieldMessage id="transaction-amount-error" error={errors.amount} />
 					</div>
 
-					{transaction === null || !canWrite ? (
+					{transaction === null || !canAnnotate ? (
 						<div className="flex flex-col gap-1.5">
 							<Label htmlFor="transaction-notes">{t("transactions.form.notes")}</Label>
 							<textarea
@@ -644,7 +651,7 @@ export function TransactionForm({
 						</div>
 					)}
 
-					{transaction !== null && !inSplit && (
+					{transaction !== null && canWrite && !inSplit && (
 						<div className="flex items-center justify-between gap-4">
 							<Label htmlFor="transaction-excluded">{t("transactions.form.excluded")}</Label>
 							<Switch
@@ -668,7 +675,7 @@ export function TransactionForm({
 							/>
 						)}
 
-					{transaction !== null && !inSplit && (
+					{transaction !== null && canWrite && !inSplit && (
 						<div className="flex items-start justify-between gap-4">
 							<div className="flex flex-col gap-1">
 								<Label htmlFor="transaction-one-time">
@@ -695,7 +702,9 @@ export function TransactionForm({
 					)}
 				</fieldset>
 
-				{transaction !== null && <TransactionAttachments transaction={transaction} />}
+				{transaction !== null && (
+					<TransactionAttachments transaction={transaction} editable={canAnnotate} />
+				)}
 			</form>
 
 			<SheetFooter className="shrink-0 flex-row items-center justify-between border-t">
@@ -708,9 +717,9 @@ export function TransactionForm({
 				)}
 				<div className="flex gap-2">
 					<Button type="button" variant="outline" onClick={onCancel}>
-						{canWrite ? t("common.cancel") : t("common.close")}
+						{canAnnotate ? t("common.cancel") : t("common.close")}
 					</Button>
-					{canWrite && (
+					{canAnnotate && (
 						<Button type="submit" form="transaction-form" disabled={isSubmitting}>
 							{t("transactions.form.save")}
 						</Button>

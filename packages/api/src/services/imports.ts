@@ -33,6 +33,7 @@ import { qifDateOrder } from "../connectors/qif/qif.ts";
 import { detectFileSource, fileSource } from "../connectors/registry.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_IMPORT_BYTES, csvMappingSchema } from "../schemas/imports.ts";
+import { requireAccount } from "./account-access.ts";
 import { currencyOf, getAccount } from "./accounts.ts";
 import { reconcileGoalDeposits } from "./ledger/goal-deposits.ts";
 import { removableOf, revertImport as revertLedgerImport } from "./ledger/import-revert.ts";
@@ -135,6 +136,7 @@ async function previewedImport(deps: ServiceDeps, id: string): Promise<Import> {
 		throw new AppError("NOT_FOUND", "No previewed import has this id.");
 	}
 
+	await requireAccount(deps, row.accountId, "edit");
 	return row;
 }
 
@@ -275,6 +277,7 @@ export async function createImport(
 	file: { name: string; bytes: Uint8Array },
 	{ maxBytes = MAX_IMPORT_BYTES }: { maxBytes?: number } = {},
 ): Promise<ImportPreview> {
+	await requireAccount(deps, accountId, "edit");
 	// Each preview holds up to 5 MB of bank data; a server that runs for weeks
 	// would otherwise keep every abandoned one until its next start.
 	await purgeStalePreviews(deps);
@@ -386,6 +389,7 @@ export async function confirmImport(
 				// one that is a savepoint, so the mapping below commits with the
 				// lines or not at all.
 				const inner: ServiceDeps = { ...deps, db: tx };
+				await requireAccount(inner, row.accountId, "edit");
 				const ingested = await ingest(
 					inner,
 					row.accountId,
@@ -470,6 +474,7 @@ export async function listImports(
 	accountId: string,
 	page: { page: number; pageSize: number },
 ): Promise<ImportHistoryPage> {
+	await requireAccount(deps, accountId, "read");
 	await getAccount(deps, accountId);
 	const where = and(
 		eq(imports.accountId, accountId),

@@ -36,6 +36,8 @@ import {
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { goalSchema } from "../schemas/goals.ts";
+import { accountScope } from "./account-access.ts";
+import { goalScope } from "./goal-access.ts";
 import { readGoalPledges } from "./goal-pledges.ts";
 import { monthlyExpenses } from "./goal-reserve-targets.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
@@ -105,7 +107,7 @@ const RELEASED: readonly GoalState[] = RELEASED_GOAL_STATES;
  */
 async function loadGoals(deps: ServiceDeps) {
 	const [goalRows, linkRows] = await Promise.all([
-		deps.db.select().from(goals),
+		deps.db.select().from(goals).where(goalScope(deps)),
 		deps.db
 			.select({
 				goalId: goalAccounts.goalId,
@@ -118,7 +120,8 @@ async function loadGoals(deps: ServiceDeps) {
 				bankAccountId: accounts.bankAccountId,
 			})
 			.from(goalAccounts)
-			.innerJoin(accounts, eq(accounts.id, goalAccounts.accountId)),
+			.innerJoin(accounts, eq(accounts.id, goalAccounts.accountId))
+			.where(accountScope(deps)),
 	]);
 	const holding = new Set(
 		goalRows.filter((goal) => !RELEASED.includes(goal.state)).map((goal) => goal.id),
@@ -441,7 +444,9 @@ export async function goalAccountChoices(deps: ServiceDeps): Promise<GoalAccount
 		deps.db
 			.select({ id: accounts.id, name: accounts.name, currency: accounts.currency })
 			.from(accounts)
-			.where(and(eq(accounts.active, true), eq(accounts.type, "depository"))),
+			.where(
+				and(accountScope(deps, "edit"), eq(accounts.active, true), eq(accounts.type, "depository")),
+			),
 		deps.db
 			.select({ accountId: goalAccounts.accountId, allocatedAmount: goalAccounts.allocatedAmount })
 			.from(goalAccounts)
@@ -525,11 +530,12 @@ async function wholeTakenElsewhere(
  * account whole.
  */
 async function assertFundable(
-	db: Db,
+	deps: ServiceDeps,
 	goalId: string | null,
 	currency: string,
 	links: GoalRequest["accounts"],
 ): Promise<void> {
+	const { db } = deps;
 	const ids = links.map((link) => link.accountId);
 	const [rows, takenWhole, ownLinks] = await Promise.all([
 		db
@@ -540,7 +546,7 @@ async function assertFundable(
 				active: accounts.active,
 			})
 			.from(accounts)
-			.where(inArray(accounts.id, ids)),
+			.where(and(inArray(accounts.id, ids), accountScope(deps, "edit"))),
 		wholeTakenElsewhere(db, goalId, ids),
 		goalId === null
 			? []
@@ -645,9 +651,10 @@ async function insertLinks(db: Db, goalId: string, links: GoalRequest["accounts"
  * refused on its own, and does not turn valid ones into currency mismatches.
  */
 async function firstFundableCurrency(
-	db: Db,
+	deps: ServiceDeps,
 	links: GoalInput["accounts"],
 ): Promise<string | undefined> {
+	const { db } = deps;
 	const ids = links.map((link) => link.accountId);
 
 	if (ids.length === 0) {
@@ -662,7 +669,7 @@ async function firstFundableCurrency(
 			active: accounts.active,
 		})
 		.from(accounts)
-		.where(inArray(accounts.id, ids));
+		.where(and(inArray(accounts.id, ids), accountScope(deps, "edit")));
 	const fit = new Map(rows.filter(canBackGoal).map((row) => [row.id, row.currency]));
 
 	return ids.map((id) => fit.get(id)).find((currency) => currency !== undefined);
@@ -678,11 +685,14 @@ export async function createGoal(deps: ServiceDeps, input: GoalInput): Promise<G
 
 	await deps.db.transaction(
 		async (tx) => {
-			const currency = await currencyCode(tx, await firstFundableCurrency(tx, input.accounts));
+			const currency = await currencyCode(
+				tx,
+				await firstFundableCurrency({ ...deps, db: tx }, input.accounts),
+			);
 			const goal = parse(input, currency);
 			const now = Date.now();
 
-			await assertFundable(tx, null, currency, goal.accounts);
+			await assertFundable({ ...deps, db: tx }, null, currency, goal.accounts);
 			const targetAmount = await storedTarget({ ...deps, db: tx }, currency, goal.target);
 			await tx.insert(goals).values({
 				id,
@@ -717,7 +727,11 @@ export async function updateGoal(
 ): Promise<GoalSummary> {
 	await deps.db.transaction(
 		async (tx) => {
-			const existing = await tx.select().from(goals).where(eq(goals.id, id)).get();
+			const existing = await tx
+				.select()
+				.from(goals)
+				.where(and(eq(goals.id, id), goalScope({ ...deps, db: tx }, "edit")))
+				.get();
 
 			if (existing === undefined) {
 				throw notFound();
@@ -734,8 +748,7 @@ export async function updateGoal(
 			if (progressBasis !== existing.progressBasis && existing.completedAmount !== null) {
 				throw fieldError("progressBasis", "progress_basis_locked");
 			}
-
-			await assertFundable(tx, id, existing.currency, goal.accounts);
+			await assertFundable({ ...deps, db: tx }, id, existing.currency, goal.accounts);
 			const unchanged =
 				existing.targetMode === "months_of_expenses" &&
 				goal.target.mode === "months_of_expenses" &&
@@ -774,7 +787,10 @@ export async function updateGoal(
 
 /** Deletes a goal and its links; its accounts and their history stay as they are. */
 export async function deleteGoal(deps: ServiceDeps, id: string): Promise<{ id: string }> {
-	const deleted = await deps.db.delete(goals).where(eq(goals.id, id)).returning({ id: goals.id });
+	const deleted = await deps.db
+		.delete(goals)
+		.where(and(eq(goals.id, id), goalScope(deps, "edit")))
+		.returning({ id: goals.id });
 
 	if (deleted.length === 0) {
 		throw notFound();
@@ -856,7 +872,7 @@ export async function transitionGoal(
 					progressBasis: goals.progressBasis,
 				})
 				.from(goals)
-				.where(eq(goals.id, id))
+				.where(and(eq(goals.id, id), goalScope({ ...deps, db: tx }, "edit")))
 				.get();
 
 			if (existing === undefined) {
@@ -918,7 +934,11 @@ function spendRefused(reason: keyof typeof SPEND_REFUSALS) {
 }
 
 export async function getGoalOutflows(deps: ServiceDeps, id: string) {
-	const goal = await deps.db.select().from(goals).where(eq(goals.id, id)).get();
+	const goal = await deps.db
+		.select()
+		.from(goals)
+		.where(and(eq(goals.id, id), goalScope(deps)))
+		.get();
 
 	if (goal === undefined) {
 		throw notFound();
@@ -943,6 +963,14 @@ export async function getGoalOutflows(deps: ServiceDeps, id: string) {
 export async function spendGoal(deps: ServiceDeps, id: string, input: GoalSpend) {
 	await deps.db.transaction(
 		async (tx) => {
+			const allowed = await tx
+				.select({ id: goals.id })
+				.from(goals)
+				.where(and(eq(goals.id, id), goalScope({ ...deps, db: tx }, "edit")))
+				.get();
+			if (allowed === undefined) {
+				throw notFound();
+			}
 			const { goalRows, linkRows, competing } = await loadGoals({ ...deps, db: tx });
 			const goal = goalRows.find((row) => row.id === id);
 

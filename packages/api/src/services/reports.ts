@@ -48,6 +48,7 @@ import { returnOf, topHoldings } from "../domain/holdings/portfolio.ts";
 import { classificationSeries, netWorthSeries } from "../domain/net-worth.ts";
 import { categoryStats, familyStats } from "../domain/statistics.ts";
 import { AppError } from "../lib/errors.ts";
+import { accountScope } from "./account-access.ts";
 import { balanceOn, balancesBetween, historyStartOf } from "./ledger/balances.ts";
 import { currentHoldings } from "./ledger/holdings.ts";
 import {
@@ -105,7 +106,7 @@ export async function reportedAccounts(
 	kept: (row: Account) => boolean = () => true,
 ) {
 	const currency = await getReportingCurrency(deps.db);
-	const rows = await deps.db.select().from(accounts);
+	const rows = await deps.db.select().from(accounts).where(accountScope(deps, "finance"));
 	const reported = rows.filter((row) => row.active && !row.excludedFromReports && kept(row));
 	const counted: Account[] = reported.filter((row) => row.currency === currency);
 	const leftOut: LeftOutAccount[] = reported
@@ -295,6 +296,7 @@ export type CashFlow = {
 
 /** A month's cash flow beside its gross view, and the rows and categories it was built from. */
 type CashFlowWithRows = {
+	accountIds: string[];
 	cashFlow: CashFlow;
 	gross: CashFlowBreakdown;
 	rows: CashFlowRow[];
@@ -718,14 +720,16 @@ export async function getCashFlowWithRows(
 	{ from, to }: DateRange,
 ): Promise<CashFlowWithRows> {
 	const { currency, counted, leftOut } = await cashFlowAccounts(deps);
+	const accountIds = counted.map((row) => row.id);
 	const [rows, allCategories] = await Promise.all([
-		cashFlowByCategory(deps, { from, to, accountIds: counted.map((row) => row.id) }),
+		cashFlowByCategory(deps, { from, to, accountIds }),
 		breakdownCategories(deps),
 	]);
 	const { income, expenses, lines } = grossCashFlow(rows, allCategories);
 	const gross = { income, expenses, lines };
 
 	return {
+		accountIds,
 		cashFlow: { month, from, to, currency, ...netCashFlow(gross), leftOut },
 		gross,
 		rows,

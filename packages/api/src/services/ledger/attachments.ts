@@ -10,6 +10,7 @@ import { transactionAttachments } from "@archant/data/schema/transaction-attachm
 import { transactions } from "@archant/data/schema/transactions";
 
 import { AppError } from "../../lib/errors.ts";
+import { requireEntry } from "../account-access.ts";
 
 /** An attachment as its transaction's sheet lists it, without its bytes. */
 export type AttachmentItem = {
@@ -74,6 +75,7 @@ export async function addAttachment(
 ): Promise<AttachmentItem> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, transactionId, "annotate");
 			await requireTransaction(tx, transactionId);
 
 			// Ten rows at most: reading their ids costs no more than counting them.
@@ -163,6 +165,7 @@ export async function deleteAttachment(
 ): Promise<void> {
 	await deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, transactionId, "annotate");
 			const deleted = await tx
 				.delete(transactionAttachments)
 				.where(

@@ -1,14 +1,17 @@
 import type { Logger } from "../lib/logger.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { and, asc, count, eq, gt, isNull, ne, or } from "drizzle-orm";
+import { and, inArray, asc, count, eq, gt, isNull, ne, or } from "drizzle-orm";
 
+import { accounts } from "@archant/data/schema/accounts";
 import { users } from "@archant/data/schema/auth";
 import { invitations } from "@archant/data/schema/invitations";
 import { oauthAccessTokens, oauthConsents, oauthRefreshTokens } from "@archant/data/schema/oauth";
+import { accountShares } from "@archant/data/schema/sharing";
 import type { UserRole } from "@archant/data/user-roles";
 
 import { AppError } from "../lib/errors.ts";
+import { firstAdmin } from "./account-access.ts";
 
 export type MemberDeps = Pick<ServiceDeps, "db"> & { logger: Logger };
 
@@ -151,6 +154,22 @@ export async function removeMember(
 		async (tx) => {
 			const current = await memberOrNotFound(tx, memberId);
 
+			const successor = await firstAdmin(tx, memberId);
+			if (successor === null) {
+				throw lastAdmin();
+			}
+			await tx
+				.delete(accountShares)
+				.where(
+					and(
+						eq(accountShares.userId, successor),
+						inArray(
+							accountShares.accountId,
+							tx.select({ id: accounts.id }).from(accounts).where(eq(accounts.ownerId, memberId)),
+						),
+					),
+				);
+			await tx.update(accounts).set({ ownerId: successor }).where(eq(accounts.ownerId, memberId));
 			await tx.delete(invitations).where(eq(invitations.email, current.email));
 
 			const removed = await tx

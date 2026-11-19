@@ -22,6 +22,7 @@ import type { Account } from "@archant/data/types";
 import { minDate } from "../../domain/dates.ts";
 import { transferKindOf } from "../../domain/transfer-matching.ts";
 import { AppError } from "../../lib/errors.ts";
+import { firstAdmin, shareNewAccounts } from "../account-access.ts";
 import { recomputeBalances } from "./balances.ts";
 import { ROWS_PER_INSERT, inSequence, lockedBy, oneByOne } from "./shared.ts";
 import { clearOneTime } from "./transfers.ts";
@@ -61,7 +62,9 @@ export async function insertSureAccounts(
 	tx: Transaction,
 	plan: readonly PlanAccount[],
 	now: number,
+	creatorId?: string,
 ): Promise<Map<string, ImportedAccount>> {
+	const ownerId = creatorId ?? (await firstAdmin(tx));
 	const stamp = clock(now);
 	const rows = plan.map((account) => {
 		const at = stamp();
@@ -72,6 +75,7 @@ export async function insertSureAccounts(
 			row: {
 				id: crypto.randomUUID(),
 				name: account.name,
+				ownerId,
 				type: account.type,
 				subtype: account.subtype,
 				currency: account.currency,
@@ -89,6 +93,11 @@ export async function insertSureAccounts(
 	});
 
 	await insertAll(rows, (chunk) => tx.insert(accounts).values(chunk.map(({ row }) => row)));
+	await shareNewAccounts(
+		tx,
+		ownerId,
+		rows.map(({ row }) => row.id),
+	);
 	await insertAll(rows, (chunk) =>
 		tx.insert(entries).values(
 			chunk.map(({ row, opening }) => ({

@@ -11,6 +11,7 @@ import { invitations } from "@archant/data/schema/invitations";
 import type { UserRole } from "@archant/data/user-roles";
 
 import { AppError } from "../lib/errors.ts";
+import { shareExistingAccounts } from "./account-access.ts";
 
 export type InvitationDeps = Pick<ServiceDeps, "db"> & {
 	auth: Pick<Auth, "api">;
@@ -251,6 +252,9 @@ export async function acceptInvitation(
 		throw error;
 	}
 
+	await deps.db.transaction((tx) => shareExistingAccounts(tx, { id: userId, role: claimed.role }), {
+		behavior: "immediate",
+	});
 	deps.logger.info({ invitationId: claimed.id, userId }, "invitation accepted");
 
 	try {

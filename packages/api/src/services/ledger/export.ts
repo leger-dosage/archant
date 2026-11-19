@@ -364,9 +364,22 @@ const POSTED_MATCH_LEFT_OUT =
  * TypeScript key, or one for a whole table under its SQL name.
  */
 export const LEFT_OUT = {
+	account_shares:
+		"Account permissions reference users of this instance and are kept by database backups.",
+	budget_shares:
+		"Personal budget permissions reference users of this instance and are kept by database backups.",
+	budgets: {
+		ownerId:
+			"The interchange archive contains the shared budget. Personal budgets are kept by database backups.",
+	},
+	rules: {
+		authorId:
+			"The author belongs to this instance. Imported rules run with the importing user's permissions.",
+	},
 	__drizzle_migrations: "Drizzle's record of the migrations applied, not the household's data.",
 	accounts: {
 		bankAccountId: "The link to a bank connection, which is never exported.",
+		ownerId: "Ownership references a user of this instance and is kept by database backups.",
 	},
 	assistant_calls: "The log of what assistants did, with their client ids: not money.",
 	auth_accounts: SECRETS,
@@ -843,7 +856,11 @@ export function exportedValuations(db: Reader) {
 }
 
 export function exportedBudgets(db: Reader) {
-	return db.select(EXPORTED_COLUMNS.budgets).from(budgets).orderBy(asc(budgets.month));
+	return db
+		.select(EXPORTED_COLUMNS.budgets)
+		.from(budgets)
+		.where(isNull(budgets.ownerId))
+		.orderBy(asc(budgets.month));
 }
 
 /** Every category amount of every month, with its month and that budget's currency. */
@@ -856,6 +873,7 @@ export function exportedBudgetCategories(db: Reader) {
 		})
 		.from(budgetCategories)
 		.innerJoin(budgets, eq(budgets.id, budgetCategories.budgetId))
+		.where(isNull(budgets.ownerId))
 		.orderBy(asc(budgets.month), asc(budgetCategories.createdAt), asc(budgetCategories.id));
 }
 

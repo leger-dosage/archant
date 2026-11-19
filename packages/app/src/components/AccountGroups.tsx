@@ -104,12 +104,13 @@ export function AccountGroups({ list }: { list: AccountListData }) {
 												className="shrink-0"
 											/>
 										</Link>
-										{canWrite && (
-											<AccountRowMenu
-												account={account}
-												isDefault={account.id === list.defaultAccountId}
-											/>
-										)}
+										{canWrite &&
+											(account.permission === "owner" || account.permission === "full_control") && (
+												<AccountRowMenu
+													account={account}
+													isDefault={account.id === list.defaultAccountId}
+												/>
+											)}
 									</li>
 								))}
 							</ul>
