@@ -20,7 +20,6 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 
 | Story | Change                                                                                                                                          | Prerequisite       |
 | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| 36.3  | [Guests open on the assistant](changes/guests-open-on-the-assistant/proposal.md)                                                                | [36.2][story-36-2] |
 | 36.4  | [Share each account with chosen members, and personal budgets](changes/share-each-account-with-chosen-members-and-personal-budgets/proposal.md) | [36.2][story-36-2] |
 
 [35.9]: changes/archive/2026-11-18-a-goals-pace-and-history-as-sure/proposal.md
@@ -28,6 +27,8 @@ Use `pnpm exec openspec list` for current status. The table maps story numbers f
 ## Completed changes
 
 - Story 36.8: [Sign in through OpenID Connect](changes/archive/2026-11-19-sign-in-through-openid-connect/proposal.md).
+
+- Story 36.3. [Guests open on the assistant](changes/archive/2026-11-19-guests-open-on-the-assistant/proposal.md).
 
 - 35.1 [Start the month on the household's chosen day](changes/archive/2026-11-18-start-the-month-on-the-households-chosen-day/proposal.md).
 

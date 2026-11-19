@@ -83,8 +83,8 @@ test("an invited person opens the link signed out, sets a password and lands sig
 	await page.getByLabel("Confirmer le mot de passe").fill("mot de passe de Dominique");
 	await page.getByRole("button", { name: "Créer mon compte" }).click();
 
-	await expect(page).toHaveURL(`${WEB_URL}/`);
-	await expect(page.getByRole("heading", { level: 1, name: "Bonjour Dominique" })).toBeVisible();
+	await expect(page).toHaveURL(`${WEB_URL}/intro`);
+	await expect(page.getByRole("heading", { level: 1, name: "Bienvenue !" })).toBeVisible();
 
 	await page.context().clearCookies();
 	await expectInvalid(page, link);

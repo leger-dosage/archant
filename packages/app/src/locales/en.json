@@ -23,6 +23,7 @@
 	"nav": {
 		"main": "Main navigation",
 		"dashboard": "Home",
+		"intro": "Intro",
 		"accounts": "Accounts",
 		"operations": "Transactions",
 		"budgets": "Budgets",
@@ -37,6 +38,11 @@
 		"breadcrumbs": "Breadcrumb",
 		"more": "More",
 		"moreMenu": "Other pages"
+	},
+	"intro": {
+		"welcome": "Welcome!",
+		"comingSoon": "Intro experience coming soon",
+		"guestOnly": "Intro is only available to guest users."
 	},
 	"accountsColumn": {
 		"label": "Account list",
