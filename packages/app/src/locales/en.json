@@ -3969,6 +3969,16 @@
 		"signedIn": "You are signed in as {{email}}. Sign out to accept this invitation.",
 		"signOut": "Sign out"
 	},
+	"openidConnect": {
+		"signIn": "Sign in with OpenID Connect",
+		"signInFailure": "OpenID Connect sign-in failed. To link an existing account, sign in and open your security settings.",
+		"invitationUnavailable": "No sign-in method can accept this invitation. Contact the person who invited you.",
+		"linked": "Your OpenID Connect account is linked.",
+		"linkPassword": "Password to link your account",
+		"link": "Link OpenID Connect",
+		"unlink": "Unlink OpenID Connect",
+		"manageFailure": "Could not update the link. Check your password and available sign-in methods."
+	},
 	"signIn": {
 		"title": "Sign in",
 		"email": "Email address",

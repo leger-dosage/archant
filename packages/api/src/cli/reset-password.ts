@@ -21,6 +21,7 @@ const MESSAGES = {
 	password_mismatch: "Les mots de passe ne correspondent pas.",
 	password_too_short: `Le mot de passe doit contenir au moins ${PASSWORD_MIN_LENGTH} caractères.`,
 	password_too_long: `Le mot de passe ne peut pas dépasser ${PASSWORD_MAX_LENGTH} caractères.`,
+	no_local_password: "Ce compte n’a pas de mot de passe local.",
 	unknown_user: "Aucun utilisateur avec cette adresse.",
 	two_factor_disabled: "La double authentification a été désactivée.",
 } as const;

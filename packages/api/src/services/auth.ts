@@ -1,5 +1,6 @@
 import type { Logger } from "../lib/logger.ts";
 import type { SendPasswordReset } from "./email-password-reset.ts";
+import type { OpenIdConnectConfig } from "./openid-provider.ts";
 import type { ClientMetadataResourceFetch } from "@better-auth/oauth-provider";
 
 import { cimd } from "@better-auth/cimd";
@@ -19,8 +20,10 @@ import {
 	sessions,
 	twoFactors,
 	users,
+	ssoAuditLogs,
 	verifications,
 } from "@archant/data/schema/auth";
+import { invitations } from "@archant/data/schema/invitations";
 import {
 	jwks,
 	oauthAccessTokens,
@@ -34,7 +37,10 @@ import {
 
 import { firstNameSchema } from "../schemas/setup.ts";
 import { emailPasswordReset } from "./email-password-reset.ts";
+import { localLoginPolicy } from "./local-login-policy.ts";
 import { oneTimeTotp } from "./one-time-totp.ts";
+import { openIdConnect } from "./openid-connect.ts";
+import { openIdProvider } from "./openid-provider.ts";
 import { passkeyCeremonies, passkeyConfiguration, passkeyManagement } from "./passkeys.ts";
 
 export type AuthOptions = {
@@ -50,6 +56,9 @@ export type AuthOptions = {
 	webauthnRpId?: string | undefined;
 	webauthnAllowedOrigins?: string[] | undefined;
 	sendPasswordReset?: SendPasswordReset;
+	openIdConnect?: OpenIdConnectConfig;
+	localLoginEnabled?: boolean;
+	localAdminOverrideEnabled?: boolean;
 	/**
 	 * How a Client ID Metadata Document is fetched: `@better-auth/cimd/node`'s,
 	 * which resolves the name once, refuses every non-public address and
@@ -194,6 +203,8 @@ export const AUTH_SCHEMA = {
 	sessions,
 	auth_accountss: authAccounts,
 	verifications,
+	invitations,
+	ssoAuditLogs,
 	rateLimits,
 	twoFactors,
 	passkeys,
@@ -222,6 +233,9 @@ export function createAuth({
 	webauthnRpId,
 	webauthnAllowedOrigins,
 	sendPasswordReset,
+	openIdConnect: oidc,
+	localLoginEnabled = true,
+	localAdminOverrideEnabled = false,
 	fetchClientMetadataResource: fetchMetadata = fetchClientMetadataResource,
 }: AuthOptions) {
 	const passkeysConfig = passkeyConfiguration(
@@ -230,6 +244,8 @@ export function createAuth({
 		webauthnRpId,
 		webauthnAllowedOrigins,
 	);
+	const policy = { localLoginEnabled, localAdminOverrideEnabled };
+	const emailRecovery = localLoginEnabled ? sendPasswordReset : undefined;
 	const auth = betterAuth({
 		baseURL,
 		secret,
@@ -239,7 +255,11 @@ export function createAuth({
 			transaction: true,
 			schema: AUTH_SCHEMA,
 		}),
-		account: { modelName: "auth_accounts" },
+		account: {
+			modelName: "auth_accounts",
+			accountLinking: { disableImplicitLinking: true },
+			updateAccountOnSignIn: false,
+		},
 		// No public sign-up: setup creates the administrator.
 		emailAndPassword: { enabled: true, disableSignUp: true },
 		plugins: [
@@ -260,7 +280,9 @@ export function createAuth({
 			oneTimeTotp(),
 			passkeyManagement(),
 			passkeyCeremonies(passkeysConfig),
-			...(sendPasswordReset ? [emailPasswordReset(baseURL, sendPasswordReset, logger)] : []),
+			...(emailRecovery ? [emailPasswordReset(baseURL, emailRecovery, logger)] : []),
+			localLoginPolicy(policy),
+			...(oidc ? [openIdProvider(oidc), openIdConnect(db, baseURL, oidc, policy)] : []),
 			...(assistantsAvailable(baseURL) ? assistantPlugins(baseURL, fetchMetadata) : []),
 		],
 		databaseHooks: {
@@ -291,7 +313,8 @@ export function createAuth({
 		disabledPaths: [
 			...ADMIN_PATHS,
 			...OAUTH_CLIENT_PATHS,
-			...(sendPasswordReset ? [] : PASSWORD_RESET_PATHS),
+			...(emailRecovery ? [] : PASSWORD_RESET_PATHS),
+			...(oidc ? ["/unlink-account", "/get-access-token", "/refresh-token", "/account-info"] : []),
 			// Replacing the set requires a fresh enrolment, as in Sure.
 			"/two-factor/generate-backup-codes",
 		],
@@ -309,6 +332,8 @@ export function createAuth({
 				"/request-password-reset": { window: 60, max: 3 },
 				"/reset-password": { window: 60, max: 5 },
 				"/check-password-reset": { window: 60, max: 10 },
+				"/link-social": { window: 60, max: 5 },
+				"/sign-in/social": { window: 10, max: 10 },
 			},
 		},
 		telemetry: { enabled: false },
@@ -328,7 +353,14 @@ export function createAuth({
 	// `await auth.$context` still sees the failure.
 	auth.$context.catch(() => undefined);
 
-	return auth;
+	return Object.assign(auth, {
+		signInOptions: {
+			password: localLoginEnabled || localAdminOverrideEnabled,
+			passwordAdminOnly: !localLoginEnabled && localAdminOverrideEnabled,
+			openIdConnect: oidc !== undefined,
+			openIdConnectInvitation: oidc?.jitMode === "create_and_link",
+		},
+	});
 }
 
 export type Auth = ReturnType<typeof createAuth>;

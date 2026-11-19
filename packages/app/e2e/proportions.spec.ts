@@ -232,15 +232,15 @@ test("security: the forms fill the 896 px column, their buttons at their content
 	await page.goto("/settings/security");
 
 	const widths = await Promise.all(
-		["Profil", "Mot de passe", "Double authentification"].map(
+		["Profil", "Mot de passe", "OpenID Connect", "Double authentification"].map(
 			async (name) => (await page.getByRole("region", { name, exact: true }).boundingBox())?.width,
 		),
 	);
-	expect(widths).toEqual([896, 896, 896]);
+	expect(widths).toEqual([896, 896, 896, 896]);
 
 	// Every submit button at its content's width, well short of the column.
 	const submits = page.getByRole("main").locator('button[type="submit"]');
-	await expect(submits).toHaveCount(3);
+	await expect(submits).toHaveCount(4);
 	const buttonWidths = await submits.evaluateAll((buttons) =>
 		buttons.map((button) => button.getBoundingClientRect().width),
 	);

@@ -16,6 +16,7 @@ const PUBLIC_PATHS = new Set([
 	"/api/auth",
 	"/api/setup",
 	"/api/password-reset",
+	"/api/sign-in-options",
 	"/api/health",
 	"/api/sync",
 	"/api/mcp",

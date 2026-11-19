@@ -106,6 +106,7 @@ const KEPT = [
 	"sessions",
 	"settings",
 	"sign_in_failures",
+	"sso_audit_logs",
 	"two_factors",
 	"users",
 	"verifications",

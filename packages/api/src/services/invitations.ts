@@ -13,7 +13,7 @@ import type { UserRole } from "@archant/data/user-roles";
 import { AppError } from "../lib/errors.ts";
 
 export type InvitationDeps = Pick<ServiceDeps, "db"> & {
-	auth: Pick<Auth, "api">;
+	auth: Pick<Auth, "api" | "signInOptions">;
 	logger: Logger;
 	/** `BETTER_AUTH_URL`: the address the household reaches, so the one a link names. */
 	trustedOrigin: string;
@@ -36,7 +36,8 @@ const fieldError = (code: "user_exists" | "invitation_pending") =>
 
 const invalid = () => new AppError("INVITATION_INVALID", "This invitation is no longer valid.");
 
-const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
+export const hashInvitationToken = (token: string) =>
+	createHash("sha256").update(token).digest("hex");
 
 /** Not accepted, and not expired at `now`: a revoked one no longer exists. */
 const pendingAt = (now: number) =>
@@ -104,7 +105,7 @@ export async function createInvitation(
 				id,
 				email,
 				role: input.role,
-				tokenHash: hashToken(token),
+				tokenHash: hashInvitationToken(token),
 				inviterId,
 				expiresAt,
 				createdAt: now,
@@ -171,7 +172,7 @@ export async function previewInvitation(
 		})
 		.from(invitations)
 		.innerJoin(users, eq(users.id, invitations.inviterId))
-		.where(and(eq(invitations.tokenHash, hashToken(token)), pendingAt(Date.now())))
+		.where(and(eq(invitations.tokenHash, hashInvitationToken(token)), pendingAt(Date.now())))
 		.get();
 
 	if (row === undefined) {
@@ -201,11 +202,22 @@ export async function acceptInvitation(
 	input: AcceptInvitationInput,
 	headers: Headers,
 ): Promise<{ cookies: string[] }> {
+	const { password, passwordAdminOnly } = deps.auth.signInOptions;
+	if (!password) {
+		throw new AppError("FORBIDDEN", "Password sign-in is disabled.");
+	}
+
 	const now = Date.now();
 	const [claimed] = await deps.db
 		.update(invitations)
 		.set({ acceptedAt: now })
-		.where(and(eq(invitations.tokenHash, hashToken(input.token)), pendingAt(now)))
+		.where(
+			and(
+				eq(invitations.tokenHash, hashInvitationToken(input.token)),
+				pendingAt(now),
+				passwordAdminOnly ? eq(invitations.role, "admin") : undefined,
+			),
+		)
 		.returning({ id: invitations.id, email: invitations.email, role: invitations.role });
 
 	if (claimed === undefined) {

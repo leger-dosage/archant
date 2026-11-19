@@ -30,7 +30,15 @@ Neither secret lives in the database, so a copy of the file alone does not open 
 
 ## What leaves the server
 
-With a local SQLite file, the default, the server calls at most two hosts, each only once the owner sets it up: Enable Banking for the banks, and Yahoo Finance for security prices, [below](#security-prices).
+With a local SQLite file, the server contacts configured services for bank sync, security prices,
+mail recovery and OpenID Connect. Each integration needs its own configuration.
+
+For OpenID Connect, the provider receives the authorization code, proof key and client credentials
+at its configured token endpoint. Archant fetches the public keys for signature verification and
+may send the access token to the advertised UserInfo endpoint to obtain a verified email. Archant
+keeps only the issuer-and-subject account key. The audit table stores event names, time and local
+user IDs. Financial data resets preserve this security history, and financial exports omit it.
+Neither the audit table nor the credential table stores the provider's tokens.
 
 Enable Banking is at `ENABLE_BANKING_API_URL`, `https://api.enablebanking.com` by default, and called only once a bank connector is configured. Each request carries a JSON Web Token signed with the application's private key. The calls, all in `packages/api/src/connectors/enable-banking/client.ts`, are:
 

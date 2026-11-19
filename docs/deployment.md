@@ -125,6 +125,39 @@ party hostname requires registering the keys again.
 Set `AUTH_PASSKEY_LOGIN_ENABLED=false` to require a password before a passkey. Turning off
 two-factor authentication or resetting the user's password from the terminal revokes their keys.
 
+### OpenID Connect
+
+Register Archant as a confidential client using the authorization code flow. The provider must
+support the SHA-256 proof key (PKCE), sign ID tokens with a public-key algorithm, and return a
+verified email in the ID token or UserInfo. The provider enforces any second factor on this path.
+Register
+`${BETTER_AUTH_URL}/api/auth/callback/openid-connect` as the redirect address. Use the public
+browser origin for `BETTER_AUTH_URL`. If you set `OIDC_REDIRECT_URI` explicitly, it must match that
+address exactly.
+
+Set `OIDC_ISSUER` to the issuer in the provider's discovery document, and set `OIDC_CLIENT_ID`
+and `OIDC_CLIENT_SECRET` to the assigned credentials. Archant fetches discovery at startup.
+Issuer and endpoint URLs must use HTTPS, except for local tests on loopback.
+
+An existing member signs in to Archant, enters their current password under **Settings → Security
+→ OpenID Connect**, and chooses the identity with the same verified email. Afterwards they can use
+**Sign in with OpenID Connect**. To replace an identity or change issuer, first ensure local
+password sign-in works, then unlink the old identity and link the new one.
+
+New members open their household invitation and choose **Sign in with OpenID Connect**. Archant
+matches the invitation to the verified email, assigns the invited role, and creates the member
+without a local password. `AUTH_JIT_MODE=link_only` turns off this creation. In the default
+`create_and_link` mode, `ALLOWED_OIDC_DOMAINS` optionally limits creation to a comma-separated
+list of exact email domains.
+
+Test the administrator's OpenID Connect sign-in before setting `AUTH_LOCAL_LOGIN_ENABLED=false`.
+That setting turns off password sign-in and email recovery. Set
+`AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED=true` for emergency administrator password sign-in, with the
+same second-factor checks. Email recovery stays off. Password acceptance of invitations follows
+the same policy as password sign-in. If the provider becomes unavailable, restore
+local sign-in in the server configuration. The terminal password reset remains available for
+accounts that already have a local password.
+
 ## Upgrading
 
 Pin the release you run with `ARCHANT_VERSION` in the `.env` next to `docker-compose.yml`, so that an upgrade is a decision rather than whatever `latest` points at. Set it there rather than with `export`: a new shell forgets an exported variable, and the next `up` from it would return to `latest`. To upgrade, change the line in `.env` to the new release:

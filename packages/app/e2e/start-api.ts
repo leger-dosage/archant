@@ -6,6 +6,12 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 
 import { startFakeEnableBanking } from "./fake-enable-banking.ts";
+import {
+	OPENID_CLIENT_ID,
+	OPENID_CLIENT_SECRET,
+	OPENID_ORIGIN_FILE,
+	startFakeOpenIdConnect,
+} from "./fake-openid-connect.ts";
 import { startFakeSmtp } from "./fake-smtp.ts";
 import {
 	BANK_APPLICATION_ID,
@@ -43,6 +49,9 @@ const bank = await startFakeEnableBanking({
 });
 
 const smtp = await startFakeSmtp();
+const oidcCallback = `${WEB_URL}/api/auth/callback/openid-connect`;
+const oidc = await startFakeOpenIdConnect(oidcCallback);
+await writeFile(OPENID_ORIGIN_FILE, oidc.issuer);
 
 // A token left by an earlier run would be refused: each start prints a new one.
 await rm(SETUP_TOKEN_FILE, { force: true });
@@ -69,6 +78,14 @@ const api = spawn(process.execPath, [entrypoint], {
 		// The origin the browser sends: Better Auth and the upload origin check
 		// refuse any other.
 		BETTER_AUTH_URL: WEB_URL,
+		OIDC_ISSUER: oidc.issuer,
+		OIDC_CLIENT_ID: OPENID_CLIENT_ID,
+		OIDC_CLIENT_SECRET: OPENID_CLIENT_SECRET,
+		OIDC_REDIRECT_URI: oidcCallback,
+		AUTH_LOCAL_LOGIN_ENABLED: "true",
+		AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED: "false",
+		AUTH_JIT_MODE: "create_and_link",
+		ALLOWED_OIDC_DOMAINS: "archant.test",
 		WEBAUTHN_RP_ID: "",
 		WEBAUTHN_ALLOWED_ORIGINS: "",
 		// All mail stays on loopback. Shell credentials must never reach the fake.
@@ -126,6 +143,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
 api.on("exit", (code) => {
 	bank.close();
 	smtp.close();
+	oidc.close();
 	void rm(directory, { recursive: true, force: true }).finally(() => {
 		// Stopped by Playwright is a clean end; the API crashing or being killed
 		// on its own is not.

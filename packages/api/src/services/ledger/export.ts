@@ -439,6 +439,7 @@ export const LEFT_OUT = {
 	settings:
 		"Instance settings, the saved Enable Banking credentials and « Inclure les transactions en attente » among them.",
 	sign_in_failures: "Sign-in throttling.",
+	sso_audit_logs: "OpenID Connect sign-in history for this instance.",
 	transactions: {
 		expectedTransferAccountId:
 			"A rule's « Virement avec » waiting for its other side, read once by the next matching.",

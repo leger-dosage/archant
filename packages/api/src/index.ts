@@ -16,6 +16,7 @@ import { bankDepsFromEnv } from "./services/bank-connections.ts";
 import { purgeStalePreviews } from "./services/imports.ts";
 import { recomputeLinkedBalances, recomputeNonCashBalances } from "./services/ledger/balances.ts";
 import { recomputeFeeCostBases } from "./services/ledger/holdings.ts";
+import { OPENID_CALLBACK } from "./services/openid-provider.ts";
 import { passwordResetMailer } from "./services/password-reset-mailer.ts";
 import { seedDefaults } from "./services/seed.ts";
 import { backfillHouseholdPreferences, householdTimeZone } from "./services/settings.ts";
@@ -162,6 +163,20 @@ const auth = createAuth({
 	db,
 	secret: env.BETTER_AUTH_SECRET,
 	baseURL: env.BETTER_AUTH_URL,
+	localLoginEnabled: env.AUTH_LOCAL_LOGIN_ENABLED,
+	localAdminOverrideEnabled: env.AUTH_LOCAL_ADMIN_OVERRIDE_ENABLED,
+	...(env.OIDC_ISSUER && env.OIDC_CLIENT_ID && env.OIDC_CLIENT_SECRET
+		? {
+				openIdConnect: {
+					issuer: env.OIDC_ISSUER,
+					clientId: env.OIDC_CLIENT_ID,
+					clientSecret: env.OIDC_CLIENT_SECRET,
+					redirectUri: env.OIDC_REDIRECT_URI ?? new URL(OPENID_CALLBACK, env.BETTER_AUTH_URL).href,
+					domains: env.ALLOWED_OIDC_DOMAINS,
+					jitMode: env.AUTH_JIT_MODE,
+				},
+			}
+		: {}),
 	passkeyLoginEnabled: env.AUTH_PASSKEY_LOGIN_ENABLED,
 	webauthnRpId: env.WEBAUTHN_RP_ID,
 	webauthnAllowedOrigins: env.WEBAUTHN_ALLOWED_ORIGINS,

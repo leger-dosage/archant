@@ -3969,6 +3969,16 @@
 		"signedIn": "Vous êtes connecté en tant que {{email}}. Déconnectez-vous pour accepter cette invitation.",
 		"signOut": "Se déconnecter"
 	},
+	"openidConnect": {
+		"signIn": "Se connecter avec OpenID Connect",
+		"signInFailure": "La connexion OpenID Connect a échoué. Pour associer un compte existant, ouvrez les réglages de sécurité après vous être connecté.",
+		"invitationUnavailable": "Aucune méthode de connexion ne permet d’accepter cette invitation. Contactez la personne qui vous a invité.",
+		"linked": "Votre compte OpenID Connect est associé.",
+		"linkPassword": "Mot de passe pour associer le compte",
+		"link": "Associer OpenID Connect",
+		"unlink": "Dissocier OpenID Connect",
+		"manageFailure": "Impossible de modifier cette association. Vérifiez votre mot de passe et les méthodes de connexion disponibles."
+	},
 	"signIn": {
 		"title": "Connexion",
 		"email": "Adresse e-mail",

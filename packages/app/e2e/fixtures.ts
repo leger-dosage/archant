@@ -2,6 +2,7 @@ import type { APIRequestContext, APIResponse, Locator, Page } from "@playwright/
 
 import { test as base, expect } from "@playwright/test";
 import { randomInt, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 
 import type {
@@ -31,6 +32,7 @@ import type { CsvMapping } from "@archant/data/schema/imports";
 import type { UserRole } from "@archant/data/user-roles";
 
 import { ACCOUNT_KINDS } from "../src/lib/account-kinds.ts";
+import { OPENID_ORIGIN_FILE } from "./fake-openid-connect.ts";
 import { PORT, TIME_ZONE, WEB_URL } from "./settings.ts";
 
 export { expect };
@@ -846,10 +848,14 @@ export const test = base.extend<{
 	outsideRequestGuard: [
 		async ({ context }, use) => {
 			const outside: string[] = [];
+			const openIdOrigin = await readFile(OPENID_ORIGIN_FILE, "utf8");
 
 			await context.route(
-				// `127.0.0.1` on the suite's port is its own server under a foreign origin.
-				(url) => url.hostname !== "localhost" && url.host !== `127.0.0.1:${PORT}`,
+				// The fake provider uses a separate host so it does not receive the app's cookies.
+				(url) =>
+					url.hostname !== "localhost" &&
+					url.host !== `127.0.0.1:${PORT}` &&
+					url.origin !== openIdOrigin,
 				async (route) => {
 					outside.push(route.request().url());
 					await route.abort("blockedbyclient");

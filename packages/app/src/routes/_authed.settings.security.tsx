@@ -12,6 +12,7 @@ import { firstNameSchema, setupSchema } from "@archant/api/schemas/setup";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { FieldMessage } from "@/components/FieldMessage";
+import { OpenIdConnectSection } from "@/components/OpenIdConnectSection";
 import { Page } from "@/components/Page";
 import { PasskeySection } from "@/components/PasskeySection";
 import { Section } from "@/components/Section";
@@ -26,6 +27,7 @@ import { showErrorToast } from "@/lib/error-toast";
 import { queryKeys } from "@/lib/query-keys";
 
 export const Route = createFileRoute("/_authed/settings/security")({
+	validateSearch: z.object({ oidc: z.literal("failed").optional().catch(undefined) }),
 	component: SecurityPage,
 });
 
@@ -123,6 +125,7 @@ function ProfileSection() {
 function SecurityPage() {
 	const { t } = useTranslation();
 	const isAdmin = useIsAdmin();
+	const { oidc } = Route.useSearch();
 	const twoFactorEnabled = Route.useRouteContext({
 		select: (context) => context.session.user.twoFactorEnabled === true,
 	});
@@ -135,6 +138,7 @@ function SecurityPage() {
 		<Page centred title={t("security.title")}>
 			<ProfileSection />
 			<PasswordSection />
+			<OpenIdConnectSection callbackFailed={oidc === "failed"} />
 			<TwoFactorSection />
 			<PasskeySection enabled={twoFactorEnabled} />
 			{isAdmin && <DangerZoneSection />}

@@ -20,6 +20,7 @@ import { ApiError, errorCodeOf } from "@/lib/api";
 import { authClient, sessionQuery } from "@/lib/auth-client";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
+import { signInOptionsQuery, signInWithOpenIdConnect } from "@/lib/openid-connect-client";
 import { queryKeys } from "@/lib/query-keys";
 
 // The API's schema without the token, which the address carries, plus the
@@ -148,6 +149,7 @@ function InvitationPage() {
 		<AcceptForm
 			token={token}
 			email={preview.data.email}
+			role={preview.data.role}
 			intro={t("invitation.intro", {
 				inviter: preview.data.inviterName,
 				role: t(`invitation.roles.${preview.data.role}`),
@@ -161,12 +163,14 @@ function InvitationPage() {
 function AcceptForm({
 	token,
 	email,
+	role,
 	intro,
 	onSpent,
 	onAccepted,
 }: {
 	token: string;
 	email: string;
+	role: string;
 	intro: string;
 	onSpent: () => void;
 	onAccepted: () => void;
@@ -175,6 +179,10 @@ function AcceptForm({
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 	const accept = useAcceptInvitation();
+	const { data: options } = useQuery(signInOptionsQuery);
+	const [oidcFailure, setOidcFailure] = useState(false);
+	const canUsePassword =
+		options?.password !== false && (!options?.passwordAdminOnly || role === "admin");
 	const form = useForm<AcceptFormValues>({
 		resolver: zodResolver(acceptFormSchema),
 		defaultValues: { name: "", password: "", confirmPassword: "" },
@@ -239,57 +247,80 @@ function AcceptForm({
 				<h1 className="page-title">{t("invitation.title")}</h1>
 				<p className="text-sm text-muted-foreground">{intro}</p>
 			</div>
-			<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="email">{t("invitation.email")}</Label>
-					{/* The invitation's: the account takes this email, and nobody edits it. */}
-					<Input id="email" type="email" autoComplete="username" readOnly value={email} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="name">{t("invitation.firstName")}</Label>
-					<Input
-						id="name"
-						autoComplete="given-name"
-						aria-invalid={errors.name !== undefined}
-						{...describedBy("name", "name-hint")}
-						{...form.register("name")}
-					/>
-					<p id="name-hint" className="text-xs text-muted-foreground">
-						{t("invitation.firstNameHint")}
-					</p>
-					<FieldMessage id="name-error" error={errors.name} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="password">{t("invitation.password")}</Label>
-					<Input
-						id="password"
-						type="password"
-						autoComplete="new-password"
-						aria-invalid={errors.password !== undefined}
-						{...describedBy("password", "password-hint")}
-						{...form.register("password")}
-					/>
-					<p id="password-hint" className="text-xs text-muted-foreground">
-						{t("invitation.passwordHint")}
-					</p>
-					<FieldMessage id="password-error" error={errors.password} />
-				</div>
-				<div className="flex flex-col gap-1.5">
-					<Label htmlFor="confirmPassword">{t("invitation.confirmPassword")}</Label>
-					<Input
-						id="confirmPassword"
-						type="password"
-						autoComplete="new-password"
-						aria-invalid={errors.confirmPassword !== undefined}
-						{...describedBy("confirmPassword")}
-						{...form.register("confirmPassword")}
-					/>
-					<FieldMessage id="confirmPassword-error" error={errors.confirmPassword} />
-				</div>
-				<Button type="submit" disabled={isSubmitting}>
-					{t("invitation.submit")}
+			{canUsePassword && (
+				<form noValidate className="flex flex-col gap-4" onSubmit={(event) => void submit(event)}>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="email">{t("invitation.email")}</Label>
+						{/* The invitation's: the account takes this email, and nobody edits it. */}
+						<Input id="email" type="email" autoComplete="username" readOnly value={email} />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="name">{t("invitation.firstName")}</Label>
+						<Input
+							id="name"
+							autoComplete="given-name"
+							aria-invalid={errors.name !== undefined}
+							{...describedBy("name", "name-hint")}
+							{...form.register("name")}
+						/>
+						<p id="name-hint" className="text-xs text-muted-foreground">
+							{t("invitation.firstNameHint")}
+						</p>
+						<FieldMessage id="name-error" error={errors.name} />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="password">{t("invitation.password")}</Label>
+						<Input
+							id="password"
+							type="password"
+							autoComplete="new-password"
+							aria-invalid={errors.password !== undefined}
+							{...describedBy("password", "password-hint")}
+							{...form.register("password")}
+						/>
+						<p id="password-hint" className="text-xs text-muted-foreground">
+							{t("invitation.passwordHint")}
+						</p>
+						<FieldMessage id="password-error" error={errors.password} />
+					</div>
+					<div className="flex flex-col gap-1.5">
+						<Label htmlFor="confirmPassword">{t("invitation.confirmPassword")}</Label>
+						<Input
+							id="confirmPassword"
+							type="password"
+							autoComplete="new-password"
+							aria-invalid={errors.confirmPassword !== undefined}
+							{...describedBy("confirmPassword")}
+							{...form.register("confirmPassword")}
+						/>
+						<FieldMessage id="confirmPassword-error" error={errors.confirmPassword} />
+					</div>
+					<Button type="submit" disabled={isSubmitting}>
+						{t("invitation.submit")}
+					</Button>
+				</form>
+			)}
+			{!canUsePassword && options && !options.openIdConnectInvitation && (
+				<p role="alert">{t("openidConnect.invitationUnavailable")}</p>
+			)}
+			{options?.openIdConnectInvitation && (
+				<Button
+					type="button"
+					variant="outline"
+					onClick={() => {
+						void signInWithOpenIdConnect("/", token)
+							.then(({ error }) => setOidcFailure(error !== null))
+							.catch(() => setOidcFailure(true));
+					}}
+				>
+					{t("openidConnect.signIn")}
 				</Button>
-			</form>
+			)}
+			{oidcFailure && (
+				<p role="alert" className="text-sm text-destructive">
+					{t("openidConnect.signInFailure")}
+				</p>
+			)}
 		</OutsideShell>
 	);
 }

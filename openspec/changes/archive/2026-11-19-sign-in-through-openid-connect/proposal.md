@@ -2,7 +2,7 @@
 
 ## Why
 
-The household uses one login, as Sure.
+Let household members use their identity provider, while the administrator controls who can join.
 
 ## What changes
 
