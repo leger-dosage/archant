@@ -2,7 +2,7 @@
 
 ## Why
 
-I land where Sure lands a guest, as Sure.
+Guests need a dedicated landing page that matches the reduced navigation they see in Sure.
 
 ## What changes
 

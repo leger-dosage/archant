@@ -141,9 +141,7 @@ test("an administrator demoted while their page is open leaves it at their next 
 		await page.getByRole("dialog").getByRole("button", { name: "Ajouter une étiquette" }).click();
 
 		await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
-		await expect(
-			page.getByRole("navigation", { name: "Réglages" }).getByRole("listitem"),
-		).toHaveText(["Sécurité"]);
+		await expect(page.getByRole("heading", { level: 1, name: "Sécurité" })).toBeVisible();
 		await expect(page.getByRole("button", { name: "Ajouter un compte" })).toHaveCount(0);
 	} finally {
 		await context.close();

@@ -160,16 +160,19 @@ export function Page({
 	children,
 }: PageProps) {
 	const admin = useIsAdmin();
+	const shell = useShell();
 
 	return (
 		<>
-			<div
-				data-slot="top-bar"
-				className="sticky top-0 z-20 hidden h-[69px] shrink-0 items-center gap-2 border-b border-line bg-background px-3 lg:flex lg:px-10"
-			>
-				<FoldButton />
-				<Breadcrumbs title={title} />
-			</div>
+			{shell?.intro !== true && (
+				<div
+					data-slot="top-bar"
+					className="sticky top-0 z-20 hidden h-[69px] shrink-0 items-center gap-2 border-b border-line bg-background px-3 lg:flex lg:px-10"
+				>
+					<FoldButton />
+					<Breadcrumbs title={title} />
+				</div>
+			)}
 			<div className="flex flex-col px-3 py-6 lg:px-10">
 				{/* The padding stays outside the column: 896 px is the content's width. */}
 				<div className={cn("flex w-full min-w-0 flex-col gap-6", centred && "mx-auto max-w-4xl")}>

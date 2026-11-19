@@ -49,6 +49,7 @@
 	"nav": {
 		"main": "Navigation principale",
 		"dashboard": "Accueil",
+		"intro": "Intro",
 		"accounts": "Comptes",
 		"operations": "Opérations",
 		"budgets": "Budgets",
@@ -63,6 +64,11 @@
 		"breadcrumbs": "Fil d'Ariane",
 		"more": "Plus",
 		"moreMenu": "Autres pages"
+	},
+	"intro": {
+		"welcome": "Bienvenue !",
+		"comingSoon": "Expérience d'introduction à venir",
+		"guestOnly": "L'intro n'est disponible que pour les utilisateurs invités."
 	},
 	"accountsColumn": {
 		"label": "Liste des comptes",

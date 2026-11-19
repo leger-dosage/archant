@@ -10,11 +10,13 @@ import {
 	CompassIcon,
 	EllipsisIcon,
 	FunnelIcon,
+	HouseIcon,
 	LayoutDashboardIcon,
 	MenuIcon,
 	PlusIcon,
 	ReceiptIcon,
 	SettingsIcon,
+	SparklesIcon,
 	WalletIcon,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useId, useState } from "react";
@@ -49,6 +51,7 @@ import { cn } from "@/lib/utils";
 export const ACCOUNTS_COLUMN_ID = "accounts-column";
 
 type ShellState = {
+	intro: boolean;
 	/** Whether the page has the accounts column: settings put their navigation there. */
 	hasAccountsColumn: boolean;
 	columnOpen: boolean;
@@ -82,7 +85,13 @@ const DESTINATIONS = [
 	phone: boolean;
 }[];
 
+const INTRO_DESTINATIONS = [
+	{ to: "/", label: "nav.dashboard", icon: HouseIcon, exact: true },
+	{ to: "/intro", label: "nav.intro", icon: SparklesIcon, exact: true },
+] as const;
+
 type Destination = (typeof DESTINATIONS)[number];
+type NavDestination = Destination | (typeof INTRO_DESTINATIONS)[number];
 
 /**
  * The destinations this household has: no « Factures » while recurring
@@ -114,7 +123,7 @@ export function isPlanChild(pathname: string): boolean {
 	return /^\/(budgets|goals)(?:\/|$)/u.test(pathname);
 }
 
-function DestinationLink({ destination }: { destination: Destination }) {
+function DestinationLink({ destination }: { destination: NavDestination }) {
 	const { t } = useTranslation();
 	const { to, label, icon, exact } = destination;
 	const planChild = useRouterState({
@@ -142,9 +151,14 @@ function isAt(pathname: string, { to, exact }: Destination): boolean {
  * The rail: every destination. The router's `Link` sets `aria-current="page"`
  * on the current one; the search params never decide it.
  */
-function MainNav({ className }: { className?: string }) {
+function MainNav({
+	className,
+	destinations,
+}: {
+	className: string;
+	destinations: readonly NavDestination[];
+}) {
 	const { t } = useTranslation();
-	const destinations = useDestinations();
 
 	return (
 		<nav aria-label={t("nav.main")} className={className}>
@@ -153,6 +167,10 @@ function MainNav({ className }: { className?: string }) {
 			))}
 		</nav>
 	);
+}
+
+function DashboardNav({ className }: { className: string }) {
+	return <MainNav className={className} destinations={useDestinations()} />;
 }
 
 /**
@@ -339,7 +357,7 @@ function AccountsColumn({ id }: { id?: string }) {
  * then the page; below, a top bar, a bottom navigation and the column in a
  * full-screen sheet. The page draws its own top bar and header through `Page`.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, intro }: { children: ReactNode; intro: boolean }) {
 	const { t } = useTranslation();
 	const router = useRouter();
 	const location = useRouterState({ select: (state) => state.location });
@@ -382,26 +400,32 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 	const isWide = useMediaQuery("(min-width: 1024px)");
 
-	// Past 1024 px the rail and the column take over from the sheet.
+	// The sheet has no trigger in the guest layout or past 1024 px.
 	useEffect(() => {
-		if (isWide) {
+		if (intro || isWide) {
 			setMenuOpen(false);
 		}
-	}, [isWide]);
+	}, [intro, isWide]);
 
 	return (
-		<ShellContext.Provider value={{ hasAccountsColumn: !isSettings, columnOpen, setColumnOpen }}>
+		<ShellContext.Provider
+			value={{ intro, hasAccountsColumn: !intro && !isSettings, columnOpen, setColumnOpen }}
+		>
 			{/* Around the whole frame, so the menu button is the sheet's trigger and gets the focus back. */}
 			<Sheet open={menuOpen} onOpenChange={setMenuOpen}>
 				<div className="flex min-h-svh bg-background">
 					<div className="sticky top-0 hidden h-svh w-[84px] shrink-0 flex-col items-center gap-4 border-r py-4 lg:flex">
 						<ArchLogo label={t("app.name")} className="size-7" />
-						<MainNav className="flex w-full flex-col gap-1" />
+						{intro ? (
+							<MainNav className="flex w-full flex-col gap-1" destinations={INTRO_DESTINATIONS} />
+						) : (
+							<DashboardNav className="flex w-full flex-col gap-1" />
+						)}
 						<div className="mt-auto">
 							<UserMenu side="right" />
 						</div>
 					</div>
-					{(isSettings || columnOpen) && (
+					{!intro && (isSettings || columnOpen) && (
 						<div
 							className={cn(
 								"sticky top-0 hidden h-svh shrink-0 overflow-y-auto border-r lg:block",
@@ -413,11 +437,13 @@ export function AppShell({ children }: { children: ReactNode }) {
 					)}
 					<div className="flex min-w-0 flex-1 flex-col">
 						<header className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-2 border-b border-line bg-background px-3 lg:hidden">
-							<SheetTrigger asChild>
-								<Button variant="ghost" size="icon" aria-label={t("nav.openMenu")}>
-									<MenuIcon />
-								</Button>
-							</SheetTrigger>
+							{!intro && (
+								<SheetTrigger asChild>
+									<Button variant="ghost" size="icon" aria-label={t("nav.openMenu")}>
+										<MenuIcon />
+									</Button>
+								</SheetTrigger>
+							)}
 							<ArchLogo label={t("app.name")} className="size-7" />
 							<div className="ml-auto">
 								<UserMenu side="bottom" />
@@ -428,23 +454,32 @@ export function AppShell({ children }: { children: ReactNode }) {
 							{children}
 						</main>
 					</div>
-					<BottomNav className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background px-1 pb-[env(safe-area-inset-bottom)] lg:hidden" />
-					<SheetContent
-						side="left"
-						aria-describedby={undefined}
-						// A link in the sheet, even to the current page, has done its job.
-						onClick={(event) => {
-							if (event.target instanceof Element && event.target.closest("a") !== null) {
-								setMenuOpen(false);
-							}
-						}}
-						className="overflow-y-auto bg-background pt-12 motion-reduce:transition-none data-[side=left]:w-full data-[side=left]:border-r-0 data-[side=left]:sm:max-w-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
-					>
-						<SheetTitle className="sr-only">
-							{isSettings ? t("settings.title") : t("accountsColumn.label")}
-						</SheetTitle>
-						{column()}
-					</SheetContent>
+					{intro ? (
+						<MainNav
+							className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background px-1 pb-[env(safe-area-inset-bottom)] lg:hidden"
+							destinations={INTRO_DESTINATIONS}
+						/>
+					) : (
+						<BottomNav className="fixed inset-x-0 bottom-0 z-30 flex border-t bg-background px-1 pb-[env(safe-area-inset-bottom)] lg:hidden" />
+					)}
+					{!intro && (
+						<SheetContent
+							side="left"
+							aria-describedby={undefined}
+							// A link in the sheet, even to the current page, has done its job.
+							onClick={(event) => {
+								if (event.target instanceof Element && event.target.closest("a") !== null) {
+									setMenuOpen(false);
+								}
+							}}
+							className="overflow-y-auto bg-background pt-12 motion-reduce:transition-none data-[side=left]:w-full data-[side=left]:border-r-0 data-[side=left]:sm:max-w-none motion-reduce:data-open:animate-none motion-reduce:data-closed:animate-none"
+						>
+							<SheetTitle className="sr-only">
+								{isSettings ? t("settings.title") : t("accountsColumn.label")}
+							</SheetTitle>
+							{column()}
+						</SheetContent>
+					)}
 				</div>
 			</Sheet>
 		</ShellContext.Provider>
