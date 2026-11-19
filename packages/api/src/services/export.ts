@@ -451,6 +451,7 @@ function sureRule(rule: Rule, operands: Operands) {
 		active: rule.enabled,
 		position: rule.position,
 		stop_processing: rule.stopProcessing,
+		apply_immediately: rule.applyImmediately,
 		effective_date: rule.effectiveDate,
 		conditions: rule.conditions
 			.filter((condition) => condition.parentId === null)

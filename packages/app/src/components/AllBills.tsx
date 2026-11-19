@@ -333,17 +333,17 @@ export function AllBills({
 										<TableCell className="text-right">
 											<span className="flex flex-col items-end">
 												<Money amount={bill.amount} currency={bill.currency} signed />
-												{/* A monthly bill's equivalent is its own amount: said only when it differs. */}
-												{bill.monthlyEquivalent !== Math.abs(bill.amount) && (
-													<span className="text-xs text-muted-foreground tabular-nums">
-														{t("bills.allView.perMonth", {
-															amount: formatMoney({
-																amount: bill.monthlyEquivalent,
-																currency: bill.currency,
-															}),
-														})}
-													</span>
-												)}
+												{bill.frequency.key !== "once" &&
+													bill.monthlyEquivalent !== Math.abs(bill.amount) && (
+														<span className="text-xs text-muted-foreground tabular-nums">
+															{t("bills.allView.perMonth", {
+																amount: formatMoney({
+																	amount: bill.monthlyEquivalent,
+																	currency: bill.currency,
+																}),
+															})}
+														</span>
+													)}
 											</span>
 										</TableCell>
 										<TableCell className="whitespace-nowrap">

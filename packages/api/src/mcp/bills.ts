@@ -18,7 +18,12 @@ import {
 
 import { today } from "../domain/dates.ts";
 import { displayName, nextDueDateOf, nextDueDates } from "../domain/recurring/bills.ts";
-import { CUSTOM_PRESET, FREQUENCY_PRESETS, applyFrequency } from "../domain/recurring/frequency.ts";
+import {
+	CUSTOM_PRESET,
+	FREQUENCY_PRESETS,
+	ONCE_PRESET,
+	applyFrequency,
+} from "../domain/recurring/frequency.ts";
 import { derivedState } from "../domain/recurring/occurrences.ts";
 import { monthlyEquivalent } from "../domain/recurring/schedule.ts";
 import { AppError } from "../lib/errors.ts";
@@ -290,7 +295,12 @@ function billOf(
 						name: bill.destinationAccountName ?? "",
 					},
 				}),
-		monthly_equivalent: magnitudeOf(monthlyEquivalent(bill.rules, bill.amount), bill.currency),
+		monthly_equivalent: magnitudeOf(
+			bill.frequency.key === ONCE_PRESET
+				? toMinorUnits(0)
+				: monthlyEquivalent(bill.rules, bill.amount),
+			bill.currency,
+		),
 		...(bill.paymentUrl === null ? {} : { payment_url: bill.paymentUrl }),
 	};
 }

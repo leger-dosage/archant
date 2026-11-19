@@ -41,8 +41,9 @@ export const transactionPatchBodySchema = transactionBodySchema.partial().extend
 	categoryId: z.string().nullable().optional(),
 	// `null` clears it; the ledger checks that the id names a merchant.
 	merchantId: z.string().nullable().optional(),
-	// The whole set; the ledger checks that every id names a tag.
+	// The whole set, or the editor's selection when it also supplies its starting set.
 	tagIds: z.array(z.string()).optional(),
+	previousTagIds: z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION).optional(),
 	// Sure's `investment_activity_label`; `null` clears it. A rule also sets it.
 	investmentActivityLabel: z.enum(ACTIVITY_LABELS).nullable().optional(),
 });
@@ -144,7 +145,12 @@ export function updateTransactionSchema(currency: CurrencyCode) {
 				.transform((ids) => [...new Set(ids)])
 				.pipe(z.array(z.string()).max(MAX_TAGS_PER_TRANSACTION))
 				.optional(),
+			previousTagIds: z.array(z.string().min(1)).max(MAX_TAGS_PER_TRANSACTION).optional(),
 			investmentActivityLabel: z.enum(ACTIVITY_LABELS).nullable().optional(),
+		})
+		.refine(({ tagIds, previousTagIds }) => previousTagIds === undefined || tagIds !== undefined, {
+			path: ["tagIds"],
+			message: "required",
 		})
 		.superRefine(amountIn(currency))
 		.transform(({ amount: text, notes, ...rest }) => {

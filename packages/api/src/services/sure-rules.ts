@@ -337,6 +337,8 @@ export function ruleInputOf(context: RuleContext, data: Data): RuleInput | null 
 	return {
 		name: typeof data.name === "string" ? data.name : null,
 		stopProcessing: data.stop_processing === true,
+		applyImmediately:
+			typeof data.apply_immediately === "boolean" ? data.apply_immediately : undefined,
 		effectiveDate:
 			typeof data.effective_date === "string" && data.effective_date !== ""
 				? data.effective_date.slice(0, 10)

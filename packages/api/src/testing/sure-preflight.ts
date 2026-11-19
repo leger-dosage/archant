@@ -591,6 +591,7 @@ const SCHEMAS = {
 		active: z.boolean(),
 		position: z.number().int().optional(),
 		stop_processing: z.boolean().optional(),
+		apply_immediately: z.boolean().optional(),
 		effective_date: date.nullable(),
 		conditions: z
 			.array(condition)

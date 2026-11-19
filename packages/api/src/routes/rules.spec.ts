@@ -40,6 +40,8 @@ const ruleLeaf = (conditionType: string, operator: string, value: string | null)
 	value,
 });
 
+const tagAction = (value: string) => ({ actionType: "set_transaction_tags", value });
+
 const categoryAction = (value: string) => ({ actionType: "set_transaction_category", value });
 
 /** What the household's next sync or import runs once it is done. */
@@ -113,6 +115,10 @@ describe("rules", () => {
 		await temp.db.run(sql`delete from rules`);
 	});
 
+	const transactionBody = z.object({
+		data: z.object({ id: z.string(), tagIds: z.array(z.string()) }),
+	});
+
 	const ruleBody = z.object({
 		data: z.object({
 			id: z.string(),
@@ -134,6 +140,218 @@ describe("rules", () => {
 		return ruleBody.parse(created).data;
 	}
 
+	async function transferLine(accountId: string, label: string, amount: string) {
+		return transactionBody.parse(
+			(await postTransaction(accountId, { ...expense, label, amount })).body,
+		).data.id;
+	}
+
+	it("runs the enabled ordered prefix on creation, preserves opt-out and skips no-op edits", async () => {
+		const account = await openAccount();
+		const category = await createCategory(uniqueCategory("Immediate"));
+		const other = await createCategory(uniqueCategory("Other"));
+		const tag = await createTag("Immediate tag");
+		const rule = labelRule("Immediate", category.id);
+
+		const first = await createRule({ ...rule, name: "Prefix" });
+		const earlier = await postTransaction(account.id, { ...expense, label: "Immediate old" });
+		expect(earlier.body).toMatchObject({ data: { categoryId: null } });
+
+		const immediate = await createRule({
+			...labelRule("Immediate", other.id),
+			name: "Immediate",
+			applyImmediately: true,
+			actions: [categoryAction(other.id), tagAction(tag.id)],
+		});
+		await createRule({ ...rule, name: "Later", actions: [{ actionType: "exclude_transaction" }] });
+		await createRule({
+			...rule,
+			enabled: false,
+			applyImmediately: true,
+		});
+
+		expect(
+			(
+				await request("PUT", `/api/rules/${immediate.id}`, {
+					...rule,
+					name: "Immediate",
+					actions: [categoryAction(other.id), tagAction(tag.id)],
+				})
+			).body,
+		).toMatchObject({ data: { applyImmediately: true } });
+
+		const saved = await postTransaction(account.id, { ...expense, label: "Immediate new" });
+		const { id } = z.object({ data: z.object({ id: z.string() }) }).parse(saved.body).data;
+		expect(saved.body).toMatchObject({
+			data: { categoryId: category.id, tagIds: [tag.id], excluded: false },
+		});
+		await request("PATCH", `/api/transactions/${id}`, { label: "Immediate new" });
+		expect((await request("GET", "/api/rules/runs")).body).toMatchObject({
+			data: {
+				items: [
+					{ ruleId: first.id, executionType: "immediate" },
+					{ ruleId: immediate.id, executionType: "immediate" },
+				],
+			},
+		});
+		const optedOut = await request("PUT", `/api/rules/${immediate.id}`, {
+			...rule,
+			applyImmediately: false,
+		});
+		expect(optedOut.body).toMatchObject({ data: { applyImmediately: false } });
+		await postTransaction(account.id, { ...expense, label: "Immediate opted out" });
+		expect(await categoriesOf(account.id)).toEqual([
+			{ label: "Immediate new", category: category.id, origin: "rule" },
+			{ label: "Immediate old", category: null, origin: null },
+			{ label: "Immediate opted out", category: null, origin: null },
+		]);
+	});
+
+	it("runs after individual edits, bulk edits and categorisation only on changed rows", async () => {
+		const account = await openAccount();
+		const category = await createCategory(uniqueCategory("Assigned"));
+		const other = await createCategory(uniqueCategory("Rule category"));
+		const tag = await createTag("Bulk immediate tag");
+		const idOf = async (label: string) =>
+			z
+				.object({ data: z.object({ id: z.string() }) })
+				.parse((await postTransaction(account.id, { ...expense, label })).body).data.id;
+		await idOf("Manual bulk stopped");
+		const untouched = await idOf("Manual bulk untouched");
+		const edited = await idOf("Manual edited");
+		const group = await idOf("Manual group");
+		await request("PATCH", `/api/transactions/${untouched}`, { notes: "trigger" });
+
+		await createRule({
+			...labelRule("stopped", other.id),
+			stopProcessing: true,
+		});
+		await createRule({
+			applyImmediately: true,
+			conditions: [
+				{
+					...ruleLeaf("compound", "or", null),
+					conditions: [
+						ruleLeaf("transaction_notes", "like", "trigger"),
+						ruleLeaf("transaction_category", "=", category.id),
+					],
+				},
+			],
+			actions: [{ actionType: "set_transaction_tags", value: tag.id }],
+		});
+
+		const patch = await request("PATCH", `/api/transactions/${edited}`, { notes: "trigger" });
+		expect(patch.body).toMatchObject({ data: { tagIds: [tag.id] } });
+		const bulk = await request("POST", "/api/transactions/bulk-update", {
+			filter: { q: "Manual bulk" },
+			patch: { notes: "trigger" },
+		});
+		expect(bulk.body).toEqual({ data: { updated: 2, changed: 1 } });
+		const categorized = await request("POST", "/api/transactions/categorize", {
+			ids: [group],
+			categoryId: category.id,
+		});
+		expect(categorized.status).toBe(200);
+		expect(await detailsOf(account.id)).toEqual([
+			expect.objectContaining({ label: "Manual bulk stopped", category: other.id, tags: null }),
+			expect.objectContaining({ label: "Manual bulk untouched", tags: null }),
+			expect.objectContaining({ label: "Manual edited", tags: tag.id }),
+			expect.objectContaining({ label: "Manual group", category: category.id, tags: tag.id }),
+		]);
+	});
+
+	it("keeps the user write when an immediate action fails", async () => {
+		const account = await openAccount();
+		const category = await createCategory(uniqueCategory("Refused category"));
+		const tag = await createTag("After immediate failure");
+		await temp.db.run(
+			sql`create trigger refuse_immediate_category before update of category_id on transactions when new.category_id is not null begin select raise(abort, 'refused'); end`,
+		);
+
+		try {
+			await createRule({ ...labelRule("Immediate failure", category.id), applyImmediately: true });
+			await createRule({
+				applyImmediately: true,
+				conditions: [ruleLeaf("transaction_name", "like", "Immediate failure")],
+				actions: [tagAction(tag.id)],
+			});
+			const saved = await postTransaction(account.id, { ...expense, label: "Immediate failure" });
+			expect(saved.status).toBe(201);
+			expect(saved.body).toMatchObject({
+				data: { label: "Immediate failure", categoryId: null, tagIds: [tag.id] },
+			});
+			expect((await request("GET", "/api/rules/runs")).body).toMatchObject({
+				data: {
+					items: [
+						{ executionType: "immediate", status: "failed", errorMessage: "INTERNAL_ERROR" },
+						{ executionType: "immediate", status: "success" },
+					],
+				},
+			});
+		} finally {
+			await temp.db.run(sql`drop trigger refuse_immediate_category`);
+		}
+	});
+
+	it("preserves rule-added tags when the editor saves its own tag changes", async () => {
+		const account = await openAccount();
+		const initial = await createTag("Immediate picker initial");
+		const automatic = await createTag("Immediate picker rule");
+		const added = await createTag("Immediate picker new");
+		await createRule({
+			applyImmediately: true,
+			conditions: [ruleLeaf("transaction_name", "like", "Immediate picker")],
+			actions: [tagAction(initial.id)],
+		});
+		const saved = await postTransaction(account.id, { ...expense, label: "Immediate picker" });
+		const { id } = transactionBody.parse(saved.body).data;
+
+		await createRule({
+			applyImmediately: true,
+			conditions: [ruleLeaf("transaction_notes", "like", "trigger picker")],
+			actions: [tagAction(automatic.id)],
+		});
+		const noted = await request("PATCH", `/api/transactions/${id}`, { notes: "trigger picker" });
+		expect(transactionBody.parse(noted.body).data.tagIds.toSorted()).toEqual(
+			[initial.id, automatic.id].toSorted(),
+		);
+
+		const selected = await request("PATCH", `/api/transactions/${id}`, {
+			tagIds: [added.id],
+			previousTagIds: [initial.id],
+		});
+		const { tagIds } = transactionBody.parse(selected.body).data;
+		expect(tagIds.toSorted()).toEqual([added.id, automatic.id].toSorted());
+	});
+
+	it("matches transfers changed by an immediate rule without pairing unrelated rows", async () => {
+		const source = await openAccount();
+		const target = await openAccount({ name: "Transfer target", subtype: "savings" });
+		await transferLine(target.id, "Rule inflow", "271,38");
+		const changed = await transferLine(source.id, "Rule outflow", "-271,38");
+
+		const other = await openAccount({ name: "Unrelated source" });
+		await transferLine(target.id, "Unrelated inflow", "391,46");
+		const untouched = await transferLine(other.id, "Unrelated outflow", "-391,46");
+
+		await temp.db.run(
+			sql`delete from transfers where outflow_transaction_id in (${changed}, ${untouched})`,
+		);
+		await createRule({
+			applyImmediately: true,
+			conditions: [ruleLeaf("transaction_notes", "like", "trigger transfer")],
+			actions: [{ actionType: "set_as_transfer_or_payment", value: target.id }],
+		});
+		const saved = await request("PATCH", `/api/transactions/${changed}`, {
+			notes: "trigger transfer",
+		});
+		expect(saved.status).toBe(200);
+		await expect(pairedAccounts(changed)).resolves.toEqual([
+			{ outflow: source.id, inflow: target.id },
+		]);
+		await expect(pairedAccounts(untouched)).resolves.toEqual([]);
+	});
+
 	it("creates a rule disabled, lists, replaces, switches on and deletes it", async () => {
 		const groceries = await createCategory(uniqueCategory("Courses"));
 		const leisure = await createCategory(uniqueCategory("Loisirs"));
@@ -149,6 +367,7 @@ describe("rules", () => {
 			enabled: false,
 			position: 0,
 			stopProcessing: false,
+			applyImmediately: false,
 			effectiveDate: null,
 			updatedAt: rule.updatedAt,
 			conditions: [

@@ -25,6 +25,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { displayName, nextDueDateOf, nextDueDates } from "../../domain/recurring/bills.ts";
+import { ONCE_PRESET } from "../../domain/recurring/frequency.ts";
 import { annualizedAverage, monthlyRollup } from "../../domain/recurring/schedule.ts";
 import { billStatusSchema } from "../../schemas/bills.ts";
 import { paymentEntries } from "../ledger/recurring.ts";
@@ -179,7 +180,11 @@ export async function findBills(deps: ServiceDeps, query: FindBillsQuery): Promi
 
 	// Sure's `spend_series?`: an income is no spend, and a transfer only moves money.
 	for (const bill of bills.filter(
-		(one) => one.status === "active" && one.billType !== "income" && one.billType !== "transfer",
+		(one) =>
+			one.status === "active" &&
+			one.billType !== "income" &&
+			one.billType !== "transfer" &&
+			one.frequency.key !== ONCE_PRESET,
 	)) {
 		spending.set(bill.currency, [...(spending.get(bill.currency) ?? []), bill]);
 	}
@@ -308,13 +313,14 @@ function analyticsOf(
 	}
 
 	const total = sumOf(sums);
+	const once = view.frequency.key === ONCE_PRESET;
 
 	return {
 		averagePaid: averageOf(total, sums.length),
 		lowestPaid: toMinorUnits(Math.min(...sums)),
 		highestPaid: toMinorUnits(Math.max(...sums)),
-		annualizedCost: annualizedAverage(view.rules, total, sums.length),
-		annualizedDeclared: monthlyRollup([view]).annual,
+		annualizedCost: once ? toMinorUnits(0) : annualizedAverage(view.rules, total, sums.length),
+		annualizedDeclared: once ? toMinorUnits(0) : monthlyRollup([view]).annual,
 		paidThisYear: sumOf(
 			confirmed
 				.filter((one) => one.paidOn !== null && one.paidOn >= yearStart)
@@ -360,6 +366,8 @@ export async function billHistory(deps: ServiceDeps, id: string): Promise<BillHi
 		currency: row.currency,
 	});
 	const closed = rows.filter((row) => row.status !== "scheduled");
+	const onceOn = view.frequency.onceOn;
+	const onceClosed = onceOn !== undefined && closed.some((row) => row.originalDueOn === onceOn);
 	const shown = closed.toReversed().slice(0, HISTORY_LIMIT);
 	const shownIds = new Set(shown.map((row) => row.occurrenceId));
 	const paid = allocations
@@ -398,7 +406,7 @@ export async function billHistory(deps: ServiceDeps, id: string): Promise<BillHi
 				})),
 		})),
 		closedCount: closed.length,
-		nextDueDates: nextDueDates(view, addDays(day, 1)),
+		nextDueDates: onceClosed ? [] : nextDueDates(view, addDays(day, 1)),
 		priceChanges: await priceChangesWhere(
 			deps.db,
 			and(

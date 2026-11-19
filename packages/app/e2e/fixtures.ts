@@ -549,6 +549,7 @@ export function apiHelpers(request: APIRequestContext) {
 		 */
 		async createRule(input: {
 			name?: string;
+			applyImmediately?: boolean;
 			conditions: { conditionType: string; operator: string; value: string | null }[];
 			actions: { actionType: string; value: string | null; replacement?: string }[];
 		}): Promise<string> {
@@ -557,6 +558,7 @@ export function apiHelpers(request: APIRequestContext) {
 					data: {
 						name: input.name ?? null,
 						enabled: true,
+						applyImmediately: input.applyImmediately,
 						conditions: input.conditions,
 						actions: input.actions,
 					},

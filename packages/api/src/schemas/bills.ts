@@ -15,6 +15,7 @@ import {
 	CUSTOM_PRESET,
 	FREQUENCY_PRESETS,
 	INTERVAL_PRESET,
+	ONCE_PRESET,
 	isValidInterval,
 } from "../domain/recurring/frequency.ts";
 import { monthlyOn, nextOccurrenceFromToday } from "../domain/recurring/schedule.ts";
@@ -29,6 +30,7 @@ export {
 	INTERVAL_PRESET,
 	INTERVAL_UNITS,
 	MAX_INTERVAL,
+	ONCE_PRESET,
 } from "../domain/recurring/frequency.ts";
 export type { Frequency, FrequencyKey } from "../domain/recurring/frequency.ts";
 
@@ -73,6 +75,7 @@ export const pickerQuerySchema = z.object({
 // number never rounds an amount. The service parses it with the account's
 // currency by the schemas below.
 const frequencyBody = z.object({
+	onceOn: z.string().optional(),
 	preset: z.string(),
 	interval: z.string().optional(),
 	unit: z.string().optional(),
@@ -209,6 +212,7 @@ function frequencySchema(presets: readonly [string, ...string[]]) {
 	return z
 		.object({
 			preset: z.enum(presets),
+			onceOn: z.string().optional(),
 			interval: z.string().trim().default(""),
 			unit: z.string().default("monthly"),
 			dayOfMonth: dayOfMonth.optional(),
@@ -217,6 +221,14 @@ function frequencySchema(presets: readonly [string, ...string[]]) {
 			monthOfYear: wholeNumber(1, 12, "invalid_value").optional(),
 		})
 		.superRefine((value, context) => {
+			if (
+				value.preset === ONCE_PRESET &&
+				value.onceOn !== undefined &&
+				!z.iso.date().safeParse(value.onceOn).success
+			) {
+				context.addIssue({ code: "invalid_format", format: "date", path: ["onceOn"] });
+			}
+
 			if (value.preset !== INTERVAL_PRESET) {
 				return;
 			}
@@ -231,6 +243,9 @@ function frequencySchema(presets: readonly [string, ...string[]]) {
 		})
 		.transform((value): FrequencyChoice => {
 			const days = {
+				...(value.preset === ONCE_PRESET && value.onceOn !== undefined
+					? { onceOn: value.onceOn }
+					: {}),
 				dayOfMonth: value.dayOfMonth ?? null,
 				secondDayOfMonth: value.secondDayOfMonth ?? null,
 				weekday: value.weekday ?? null,

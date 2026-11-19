@@ -501,7 +501,7 @@ export const updateRuleTool = defineTool({
 export const setRuleEnabledTool = defineTool({
 	name: "set_rule_enabled",
 	title: "Enable or disable a rule",
-	description: `Turns a rule on or off. Off, it no longer runs after a sync or an import; what it wrote stays. It answers { success, rule, message }. ${BANK_TEXT}`,
+	description: `Turns a rule on or off. Off, it no longer runs automatically; what it wrote stays. It answers { success, rule, message }. ${BANK_TEXT}`,
 	scope: "archant:write",
 	annotations: SETS,
 	input: setRuleEnabledInput,

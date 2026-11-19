@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e180a8f6-fdbd-4df8-9743-5926f9d1a95e",
+  "id": "a9097609-1fee-418f-84a9-1d7db516dc73",
   "prevId": "c4c7f69c-d528-4e73-9a4f-f51f3bf087e6",
   "tables": {
     "accounts": {
@@ -315,23 +315,6 @@
             "user_id"
           ],
           "isUnique": false
-        },
-        "auth_accounts_openid_identity": {
-          "name": "auth_accounts_openid_identity",
-          "columns": [
-            "provider_id",
-            "account_id"
-          ],
-          "isUnique": true,
-          "where": "\"auth_accounts\".\"provider_id\" = 'openid-connect'"
-        },
-        "auth_accounts_openid_user": {
-          "name": "auth_accounts_openid_user",
-          "columns": [
-            "user_id"
-          ],
-          "isUnique": true,
-          "where": "\"auth_accounts\".\"provider_id\" = 'openid-connect'"
         }
       },
       "foreignKeys": {
@@ -690,64 +673,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "sso_audit_logs": {
-      "name": "sso_audit_logs",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "event_type": {
-          "name": "event_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "sso_audit_logs_user_id_users_id_fk": {
-          "name": "sso_audit_logs_user_id_users_id_fk",
-          "tableFrom": "sso_audit_logs",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "sso_audit_logs_event_type_check": {
-          "name": "sso_audit_logs_event_type_check",
-          "value": "\"sso_audit_logs\".\"event_type\" in ('login', 'login_failed', 'link', 'unlink', 'jit_account_created')"
-        }
-      }
     },
     "two_factors": {
       "name": "two_factors",
@@ -5641,7 +5566,7 @@
       "checkConstraints": {
         "rule_runs_execution_type_check": {
           "name": "rule_runs_execution_type_check",
-          "value": "\"rule_runs\".\"execution_type\" in ('manual', 'scheduled')"
+          "value": "\"rule_runs\".\"execution_type\" in ('manual', 'scheduled', 'immediate')"
         },
         "rule_runs_status_check": {
           "name": "rule_runs_status_check",
@@ -5688,6 +5613,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
+        },
+        "apply_immediately": {
+          "name": "apply_immediately",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": false
         },
         "stop_processing": {
           "name": "stop_processing",

@@ -136,9 +136,9 @@ export type RuleSnapshot = {
 
 /**
  * Sure's `RuleRun.execution_type`: `manual` for an application the owner
- * confirmed, `scheduled` for the run after a sync or an import.
+ * confirmed, `scheduled` after a sync or import, and `immediate` after a transaction write.
  */
-export const RULE_RUN_EXECUTION_TYPES = ["manual", "scheduled"] as const;
+export const RULE_RUN_EXECUTION_TYPES = ["manual", "scheduled", "immediate"] as const;
 
 export type RuleRunExecutionType = (typeof RULE_RUN_EXECUTION_TYPES)[number];
 

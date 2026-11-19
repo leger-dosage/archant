@@ -78,6 +78,7 @@ export function RuleDialog({
 	const { errors, isSubmitting } = form.formState;
 	const conditions = useFieldArray({ control: form.control, name: "conditions" });
 	const actions = useFieldArray({ control: form.control, name: "actions" });
+	const applyImmediately = useController({ control: form.control, name: "applyImmediately" });
 	const stopProcessing = useController({ control: form.control, name: "stopProcessing" });
 	const effectiveDate = useController({ control: form.control, name: "effectiveDate" });
 	const actionsError = errorAt(errors, "actions");
@@ -194,6 +195,22 @@ export function RuleDialog({
 							aria-describedby="rule-stop-description"
 							checked={stopProcessing.field.value ?? false}
 							onCheckedChange={stopProcessing.field.onChange}
+						/>
+					</div>
+
+					<div className="flex items-center justify-between gap-3">
+						<div className="space-y-1">
+							<Label htmlFor="rule-apply-immediately">{t("rules.form.applyImmediately")}</Label>
+							<p id="rule-immediate-description" className="text-xs text-muted-foreground">
+								{t("rules.form.applyImmediatelyHint")}
+							</p>
+						</div>
+						<Switch
+							id="rule-apply-immediately"
+							className="shrink-0"
+							aria-describedby="rule-immediate-description"
+							checked={applyImmediately.field.value ?? false}
+							onCheckedChange={applyImmediately.field.onChange}
 						/>
 					</div>
 

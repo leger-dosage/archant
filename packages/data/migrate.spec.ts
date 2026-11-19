@@ -4407,10 +4407,12 @@ it("preserves existing rule order by creation date and id on upgrade", async () 
 
 	const database = await migrated();
 	await expect(
-		database.all(sql`select id, position, stop_processing from rules order by position`),
+		database.all(
+			sql`select id, position, stop_processing, apply_immediately from rules order by position`,
+		),
 	).resolves.toEqual([
-		{ id: "c", position: 0, stop_processing: 0 },
-		{ id: "a", position: 1, stop_processing: 0 },
-		{ id: "b", position: 2, stop_processing: 0 },
+		{ id: "c", position: 0, stop_processing: 0, apply_immediately: 0 },
+		{ id: "a", position: 1, stop_processing: 0, apply_immediately: 0 },
+		{ id: "b", position: 2, stop_processing: 0, apply_immediately: 0 },
 	]);
 });

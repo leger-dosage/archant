@@ -23,6 +23,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addDays, daysBetween, monthRange, today } from "../../domain/dates.ts";
 import { displayName } from "../../domain/recurring/bills.ts";
+import { ONCE_PRESET } from "../../domain/recurring/frequency.ts";
 import {
 	effectiveDueOn,
 	isMaterialShift,
@@ -183,6 +184,7 @@ type Allocation = {
 };
 
 type LoadedRow = BillRow & {
+	originalDueOn: IsoDate;
 	status: (typeof recurringOccurrences.$inferSelect)["status"];
 	seriesStatus: (typeof recurringTransactions.$inferSelect)["status"];
 };
@@ -201,6 +203,7 @@ export async function loadBills(
 		.select({
 			occurrenceId: recurringOccurrences.id,
 			seriesId: recurringOccurrences.recurringTransactionId,
+			originalDueOn: recurringOccurrences.originalDueOn,
 			dueOn: recurringOccurrences.dueOn,
 			snoozedUntil: recurringOccurrences.snoozedUntil,
 			status: recurringOccurrences.status,
@@ -309,7 +312,12 @@ export async function loadBills(
 
 const remainingOfRow = (row: BillRow) => row.remaining;
 
-const toRow = ({ status: _status, seriesStatus: _seriesStatus, ...row }: LoadedRow): BillRow => row;
+const toRow = ({
+	status: _status,
+	seriesStatus: _seriesStatus,
+	originalDueOn: _originalDueOn,
+	...row
+}: LoadedRow): BillRow => row;
 
 /** The suggestions of `rows`, in the queue's order, named by their transactions. */
 async function suggestionsOf(
@@ -591,21 +599,42 @@ export async function upcomingRecurring(deps: ServiceDeps): Promise<UpcomingReco
 	const rows = await selectRecords(deps.db)
 		.where(window)
 		.orderBy(recurringTransactions.nextExpectedDate, recurringTransactions.id);
-	const averages = new Map(
+	const projections = new Map(
 		(
 			await deps.db
-				.select({ id: recurringTransactions.id, average: recurringTransactions.expectedAmountAvg })
+				.select({
+					id: recurringTransactions.id,
+					average: recurringTransactions.expectedAmountAvg,
+					anchorStatus: recurringOccurrences.status,
+				})
 				.from(recurringTransactions)
-				.where(and(window, eq(recurringTransactions.manual, true)))
-		).map(({ id, average }) => [id, average]),
+				.leftJoin(
+					recurringOccurrences,
+					and(
+						eq(recurringOccurrences.recurringTransactionId, recurringTransactions.id),
+						eq(recurringOccurrences.originalDueOn, recurringTransactions.anchorDate),
+						eq(recurringTransactions.endAfterCount, 1),
+					),
+				)
+				.where(window)
+		).map(({ id, ...projection }) => [id, projection]),
 	);
 
-	return (await toRecords(deps.db, rows, day)).map((record) => {
-		const average = averages.get(record.id) ?? null;
+	return (await toRecords(deps.db, rows, day)).flatMap((record) => {
+		const projection = projections.get(record.id);
+		const once = record.frequency.key === ONCE_PRESET;
 
-		return {
-			...record,
-			projectedAmount: average === null ? record.amount : toMinorUnits(average),
-		};
+		if (once && projection?.anchorStatus !== "scheduled") {
+			return [];
+		}
+
+		const average = record.manual && !once ? (projection?.average ?? null) : null;
+
+		return [
+			{
+				...record,
+				projectedAmount: average === null ? record.amount : toMinorUnits(average),
+			},
+		];
 	});
 }

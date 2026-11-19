@@ -33,19 +33,24 @@ type ActionRow = typeof ruleActions.$inferSelect;
 /** The rules with their conditions and actions, in application order. */
 export async function readRules(
 	db: Pick<Db, "select">,
-	only: { enabled?: boolean; id?: string } = {},
+	only: { enabled?: boolean; id?: string; immediate?: true } = {},
 ) {
+	const enabled = only.immediate === true ? true : only.enabled;
 	const filter =
 		only.id === undefined
-			? only.enabled === undefined
+			? enabled === undefined
 				? undefined
-				: eq(rules.enabled, only.enabled)
+				: eq(rules.enabled, enabled)
 			: eq(rules.id, only.id);
-	const rows = await db
+	const saved = await db
 		.select()
 		.from(rules)
 		.where(filter)
 		.orderBy(asc(rules.position), asc(rules.createdAt), asc(rules.id));
+	const rows =
+		only.immediate === true
+			? saved.slice(0, saved.findLastIndex((row) => row.applyImmediately) + 1)
+			: saved;
 	const ids = rows.map((row) => row.id);
 
 	if (ids.length === 0) {

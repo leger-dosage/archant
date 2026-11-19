@@ -12,16 +12,140 @@ import {
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 
 import { account, addRows, bill, monthly, query, refusal, stored } from "../../testing/bills.ts";
-import { deps, temp, useRecurringDatabase } from "../../testing/recurring.ts";
+import {
+	deps,
+	occurrencesOf,
+	setToday,
+	temp,
+	useRecurringDatabase,
+} from "../../testing/recurring.ts";
 import { createAccount } from "../ledger/accounts.ts";
 import { findTransaction } from "../ledger/queries.ts";
 import { allBills, billDetail } from "./all-bills.ts";
-import { billsOverview } from "./bill-overview.ts";
+import { billsOverview, upcomingRecurring } from "./bill-overview.ts";
 import { declareBill, editBill, markTransferRecurring, updateBill } from "./bills.ts";
+import { budgetBillReservations } from "./budget-reservations.ts";
+import { generateOccurrences } from "./occurrences.ts";
+import { markPaid, recordBillPayment } from "./payments.ts";
 import { runRecurring } from "./pipeline.ts";
 import { addRecurringFromEntry, setRecurringStatus } from "./series.ts";
 
 useRecurringDatabase("2026-09-21T10:00:00Z");
+
+describe("one-off schedules", () => {
+	it("shows a dated bill and income in planning, reserves only the unpaid expense, and never repeats", async () => {
+		const accountId = await account();
+		await temp.db.insert(categories).values({
+			id: "fees",
+			name: "Frais",
+			color: "#e99537",
+			icon: "tv",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		const fee = await declareBill(
+			deps(),
+			bill(accountId, {
+				firstDueOn: "2026-09-21",
+				frequency: { preset: "once" },
+				categoryId: "fees",
+			}),
+		);
+		const bonus = await declareBill(
+			deps(),
+			bill(accountId, {
+				kind: "income",
+				name: "Prime",
+				firstDueOn: "2026-09-24",
+				frequency: { preset: "once" },
+			}),
+		);
+
+		expect(bonus.amount).toBe(8420);
+		expect(fee).toMatchObject({
+			frequency: { key: "once" },
+			anchorDate: "2026-09-21",
+			endAfterCount: 1,
+			rules: [{ frequency: "yearly", interval: 1, dayOfMonth: 21, monthOfYear: 9 }],
+			currentOccurrence: { dueOn: "2026-09-21", state: "due" },
+		});
+		expect((await upcomingRecurring(deps())).map(({ id }) => id)).toEqual([fee.id, bonus.id]);
+		const period = { from: "2026-09-15", to: "2026-10-14", currency: "EUR" };
+		const reservations = () => budgetBillReservations(temp.db, period);
+		await expect(reservations()).resolves.toEqual({
+			fees: { amount: 8420, unconvertibleCount: 0 },
+		});
+
+		const move = () =>
+			editBill(deps(), fee.id, { frequency: { preset: "once", onceOn: "2026-09-23" } });
+		await recordBillPayment(deps(), fee.id, { amount: "20" });
+		await expect(reservations()).resolves.toMatchObject({ fees: { amount: 6420 } });
+		await expect(refusal(move())).resolves.toMatchObject({
+			fields: [{ path: "frequency.onceOn", code: "once_date_locked" }],
+		});
+		await markPaid(deps(), fee.currentOccurrence!.id);
+		await expect(reservations()).resolves.toEqual({});
+		expect((await upcomingRecurring(deps())).map(({ id }) => id)).toEqual([bonus.id]);
+		await expect(refusal(move())).resolves.toMatchObject({
+			fields: [{ path: "frequency.onceOn", code: "once_date_locked" }],
+		});
+
+		setToday("2027-09-21");
+		await generateOccurrences(temp.db, "2027-09-21");
+		await expect(occurrencesOf(fee.id)).resolves.toMatchObject([
+			{ dueOn: "2026-09-21", status: "paid" },
+		]);
+		await expect(occurrencesOf(bonus.id)).resolves.toMatchObject([
+			{ dueOn: "2026-09-24", status: "scheduled" },
+		]);
+		await expect(upcomingRecurring(deps())).resolves.toEqual([]);
+	});
+
+	it("moves only the one-off date, keeping earlier overdue obligations on conversion", async () => {
+		const regular = await declareBill(deps(), bill(null, { firstDueOn: "2026-09-05" }));
+		const once = await editBill(deps(), regular.id, { frequency: { preset: "once" } });
+		expect(once).toMatchObject({ frequency: { key: "once" }, anchorDate: "2026-09-05" });
+
+		await editBill(deps(), regular.id, { frequency: { preset: "once", onceOn: "2026-09-12" } });
+		await expect(occurrencesOf(regular.id)).resolves.toMatchObject([
+			{ dueOn: "2026-09-12", status: "scheduled" },
+		]);
+		const repeating = await editBill(deps(), regular.id, { frequency: { preset: "monthly" } });
+		expect(repeating).toMatchObject({ endAfterCount: null, frequency: { key: "monthly" } });
+		await editBill(deps(), regular.id, { frequency: { preset: "once", onceOn: "2026-09-17" } });
+		await editBill(deps(), regular.id, { frequency: { preset: "once", onceOn: "2026-09-26" } });
+		await expect(occurrencesOf(regular.id)).resolves.toMatchObject([
+			{ dueOn: "2026-09-12", status: "scheduled" },
+			{ dueOn: "2026-09-26", status: "scheduled" },
+		]);
+	});
+
+	it("keeps the fixed due date through late matching and a history rebuild", async () => {
+		const accountId = await account();
+		const created = await declareBill(
+			deps(),
+			bill(accountId, { firstDueOn: "2026-09-14", frequency: { preset: "once" } }),
+		);
+		await addRows(accountId, ["2026-09-16"], created.label, -8420);
+		await runRecurring(deps(), { backfill: true });
+
+		const detail = await billDetail(deps(), created.id);
+		expect(detail.record.nextExpectedDate).toBe("2026-09-14");
+		expect(detail.history).toMatchObject([{ dueOn: "2026-09-14", status: "paid", payments: 1 }]);
+		expect(detail.upcoming).toEqual([]);
+	});
+
+	it("materializes a newly declared overdue bill and retains its cap during metadata edits", async () => {
+		const created = await declareBill(
+			deps(),
+			bill(null, { firstDueOn: "2025-02-20", frequency: { preset: "once" } }),
+		);
+		expect(created.currentOccurrence).toMatchObject({ dueOn: "2025-02-20", state: "overdue" });
+		const edited = await editBill(deps(), created.id, { notes: "À vérifier", endAfterCount: "" });
+		expect(edited).toMatchObject({ endAfterCount: 1, frequency: { key: "once" } });
+		await expect(occurrencesOf(created.id)).resolves.toHaveLength(1);
+	});
+});
 
 describe("declareBill", () => {
 	it("stores an active manual bill, negative, anchored, last seen and due on its first date", async () => {

@@ -212,7 +212,7 @@ const NO_SUCH_RECORD = {
 	error: "No such record, or it is not one you have access to",
 	hint: "That record was not found. List valid options first (for example get_accounts or get_categories) and retry once with an exact match.",
 };
-const PRESETS = "monthly, weekly, biweekly, semimonthly, quarterly, semiannual, annual";
+const PRESETS = "once, monthly, weekly, biweekly, semimonthly, quarterly, semiannual, annual";
 const UNKNOWN_ID = "00000000-0000-4000-8000-000000000000";
 
 function calls() {
@@ -1100,6 +1100,36 @@ describe("create_bill", () => {
 			{ tool: "create_bill", outcome: "OK", changedRows: 1 },
 			{ tool: "create_bill", outcome: "OK", changedRows: 1 },
 		]);
+	});
+
+	it("takes one dated occurrence on create and on conversion", async () => {
+		await household();
+		const tools = await assistants();
+		const created = await tools.write("create_bill", {
+			name: "Prime",
+			amount: "250.00",
+			is_income: true,
+			first_due_on: "2026-09-27",
+			frequency: "once",
+		});
+		expect(created).toMatchObject({
+			bill: { frequency: "once", bill_type: "income", next_due_date: "2026-09-27" },
+			upcoming_due_dates: ["2026-09-27"],
+		});
+
+		const repeating = await tools.write("create_bill", {
+			name: "Inscription",
+			amount: "25.00",
+			first_due_on: "2026-07-17",
+		});
+		const changed = await tools.write("update_bill", {
+			bill_id: textAt(repeating, "bill", "id"),
+			frequency: "once",
+		});
+		expect(changed).toMatchObject({
+			bill: { frequency: "once", next_due_date: "2026-09-17" },
+			changed_fields: ["schedule"],
+		});
 	});
 
 	it("creates a bill paid from any account without account_name, in the reporting currency", async () => {

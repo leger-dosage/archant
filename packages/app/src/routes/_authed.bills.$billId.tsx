@@ -344,7 +344,12 @@ function Overview({ detail }: { detail: BillDetailData }) {
 				{(analytics !== null || detail.yearly.length > 0 || detail.lastAccount !== null) && (
 					<div className="flex flex-col gap-3 p-3">
 						{analytics !== null && (
-							<dl className="grid grid-cols-3 gap-2">
+							<dl
+								className={cn(
+									"grid gap-2",
+									record.frequency.key === "once" ? "grid-cols-2" : "grid-cols-3",
+								)}
+							>
 								<Figure label={t("bills.detail.average")}>
 									<dd className="text-sm font-medium tabular-nums">{money(analytics.average)}</dd>
 									<dd className="text-xs text-muted-foreground tabular-nums">
@@ -354,11 +359,13 @@ function Overview({ detail }: { detail: BillDetailData }) {
 										})}
 									</dd>
 								</Figure>
-								<Figure label={t("bills.detail.annualized")}>
-									<dd className="text-sm font-medium tabular-nums">
-										{money(analytics.annualized)}
-									</dd>
-								</Figure>
+								{record.frequency.key !== "once" && (
+									<Figure label={t("bills.detail.annualized")}>
+										<dd className="text-sm font-medium tabular-nums">
+											{money(analytics.annualized)}
+										</dd>
+									</Figure>
+								)}
 								<Figure label={t("bills.detail.ytd")}>
 									<dd className="text-sm font-medium tabular-nums">
 										{money(analytics.paidThisYear)}

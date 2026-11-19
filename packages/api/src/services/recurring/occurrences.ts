@@ -4,7 +4,21 @@ import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
 import type { LoadedSeries } from "./rules.ts";
 
-import { and, eq, inArray, isNotNull, isNull, lt, lte, gte, notExists, sql } from "drizzle-orm";
+import {
+	and,
+	eq,
+	inArray,
+	isNotNull,
+	isNull,
+	lt,
+	lte,
+	gte,
+	ne,
+	not,
+	notExists,
+	or,
+	sql,
+} from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import { toMinorUnits } from "@archant/data/money";
@@ -18,6 +32,7 @@ import type { RecurringStatus } from "@archant/data/schema/recurring-transaction
 import { settings } from "@archant/data/schema/settings";
 
 import { addMonths, daysBetween, maxDate, today } from "../../domain/dates.ts";
+import { onceDateOf } from "../../domain/recurring/frequency.ts";
 import { entryWindow, matchPayments, rejectionKey } from "../../domain/recurring/matcher.ts";
 import {
 	BACKFILL_MONTHS,
@@ -26,6 +41,7 @@ import {
 	occurrenceState,
 } from "../../domain/recurring/occurrences.ts";
 import { cycleFor, occurrencesBetween } from "../../domain/recurring/schedule.ts";
+import { AppError } from "../../lib/errors.ts";
 import { matchableTransactions } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, oneByOne } from "../ledger/shared.ts";
 import { allocateMatched } from "./payments.ts";
@@ -77,6 +93,15 @@ export async function generateOccurrences(
 	);
 
 	await oneByOne(active, async (series) => {
+		const onceOn = onceDateOf(series.schedule.rules, series);
+
+		if (onceOn !== null) {
+			// A one-off is payable even when its only date precedes the window.
+			await insertOccurrences(tx, series, [onceOn], now);
+
+			return;
+		}
+
 		const cycle = cycleFor(series.schedule, day);
 		const start = cycle?.start ?? day;
 		// A declared bill's anchor is its first due date: no debt before it.
@@ -97,6 +122,31 @@ const unallocated = notExists(
 	sql`(select 1 from ${recurringAllocations} where ${recurringAllocations.recurringOccurrenceId} = ${recurringOccurrences.id})`,
 );
 
+/** A moved one-off must leave its old occurrence and allocations intact on refusal. */
+export async function assertOneOffCanMove(
+	tx: Pick<Transaction, "select">,
+	id: string,
+	from: IsoDate,
+): Promise<void> {
+	const locked = await tx
+		.select({ id: recurringOccurrences.id })
+		.from(recurringOccurrences)
+		.where(
+			and(
+				eq(recurringOccurrences.recurringTransactionId, id),
+				eq(recurringOccurrences.originalDueOn, from),
+				or(ne(recurringOccurrences.status, "scheduled"), not(unallocated)),
+			),
+		)
+		.get();
+
+	if (locked !== undefined) {
+		throw new AppError("VALIDATION_ERROR", "This occurrence is closed or has a payment.", [
+			{ path: "frequency.onceOn", code: "once_date_locked" },
+		]);
+	}
+}
+
 /**
  * Sure's `regenerate_future!`: the open occurrences of `ids` due today or
  * later that carry no payment go, and the schedule rebuilds them. A paid,
@@ -106,6 +156,7 @@ export async function regenerateFuture(
 	tx: Writer,
 	ids: readonly string[],
 	day: IsoDate,
+	movedFrom?: IsoDate,
 ): Promise<void> {
 	if (ids.length === 0) {
 		return;
@@ -118,7 +169,10 @@ export async function regenerateFuture(
 				and(
 					inArray(recurringOccurrences.recurringTransactionId, chunk),
 					eq(recurringOccurrences.status, "scheduled"),
-					gte(recurringOccurrences.dueOn, day),
+					or(
+						gte(recurringOccurrences.dueOn, day),
+						movedFrom === undefined ? undefined : eq(recurringOccurrences.originalDueOn, movedFrom),
+					),
 					unallocated,
 				),
 			),

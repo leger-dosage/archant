@@ -21,6 +21,7 @@ import {
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { exportArchive } from "./export.ts";
+import { listRecurring } from "./recurring/series.ts";
 import { seedDefaults } from "./seed.ts";
 import {
 	DEFAULT_SURE_IMPORT_LIMITS,
@@ -230,6 +231,7 @@ async function household() {
 	const firstRule = await created("/api/rules", {
 		name: "Boulangerie",
 		stopProcessing: true,
+		applyImmediately: true,
 		enabled: true,
 		conditions: [
 			{ conditionType: "transaction_name", operator: "like", value: "BOULANGERIE" },
@@ -307,7 +309,7 @@ async function snapshotOf(db: Database) {
 				(select group_concat(x.frequency || ':' || x.interval || ':' || coalesce(x.day_of_month, '')) from recurrence_rules x where x.recurring_transaction_id = r.id) as rules
 			from recurring_transactions r left join accounts a on a.id = r.account_id where r.manual = 1 order by r.amount`),
 		rules: await rows(
-			sql`select name, enabled, effective_date as effectiveDate, position, stop_processing from rules order by position`,
+			sql`select name, enabled, effective_date as effectiveDate, position, stop_processing, apply_immediately from rules order by position`,
 		),
 		// An id stored in a value reads as the name of the row it names.
 		actions: await rows(sql`
@@ -447,6 +449,31 @@ describe("importSureArchive", () => {
 		});
 	});
 
+	it("round-trips an overdue one-off as one dated occurrence", async () => {
+		await ownDatabase();
+		await created("/api/recurring/declare", {
+			kind: "bill",
+			name: "Inscription",
+			amount: "25",
+			accountId: null,
+			firstDueOn: "2026-09-10",
+			frequency: { preset: "once" },
+		});
+		const { target } = await intoNewDatabase(await allNdjson());
+
+		await disposed(target, async () => {
+			const records = await listRecurring({ db: target.db, timeZone: "Europe/Paris" });
+			expect(records).toMatchObject([
+				{
+					frequency: { key: "once", onceOn: "2026-09-10" },
+					anchorDate: "2026-09-10",
+					endAfterCount: 1,
+					currentOccurrence: { dueOn: "2026-09-10", state: "overdue" },
+				},
+			]);
+		});
+	});
+
 	it("merges an archive into the household it came from, reusing every name", async () => {
 		await household();
 		const bytes = await allNdjson();
@@ -468,7 +495,7 @@ describe("importSureArchive", () => {
 		expect(after.budgetCategories).toEqual(before.budgetCategories);
 	});
 
-	it("appends legacy rules in file order with stop disabled", async () => {
+	it("appends legacy rules in file order with stop and immediate execution disabled", async () => {
 		await ownDatabase();
 		await importLines(
 			["Z règle ancienne", "A règle ancienne"].map((name) =>
@@ -482,10 +509,12 @@ describe("importSureArchive", () => {
 		);
 
 		await expect(
-			source().all(sql`select name, stop_processing from rules order by position`),
+			source().all(
+				sql`select name, stop_processing, apply_immediately from rules order by position`,
+			),
 		).resolves.toEqual([
-			{ name: "Z règle ancienne", stop_processing: 0 },
-			{ name: "A règle ancienne", stop_processing: 0 },
+			{ name: "Z règle ancienne", stop_processing: 0, apply_immediately: 0 },
+			{ name: "A règle ancienne", stop_processing: 0, apply_immediately: 0 },
 		]);
 	});
 

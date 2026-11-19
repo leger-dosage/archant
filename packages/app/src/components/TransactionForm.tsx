@@ -220,7 +220,8 @@ export function TransactionForm({
 			...(canWrite && transaction !== null ? { notes: "" } : {}),
 		},
 	});
-	const { errors, isSubmitting, isDirty } = form.formState;
+	const { errors, isSubmitting, isDirty, dirtyFields } = form.formState;
+	const startingTags = useRef(transaction?.tagIds ?? []);
 	const date = useController({ control: form.control, name: "date" });
 	const amount = useController({ control: form.control, name: "amount" });
 	const excluded = useController({ control: form.control, name: "excluded" });
@@ -281,12 +282,16 @@ export function TransactionForm({
 					merchantId,
 					oneTime: oneTimeValue,
 					tagIds: tags,
-					notes: _notes,
-					...rest
+					date: savedDate,
+					amount: savedAmount,
+					label,
+					excluded: excludedValue,
 				} = values;
-				const { dirtyFields } = form.formState;
 				const input = {
-					...rest,
+					...(dirtyFields.date === true ? { date: savedDate } : {}),
+					...(dirtyFields.amount === true ? { amount: savedAmount } : {}),
+					...(dirtyFields.label === true ? { label } : {}),
+					...(dirtyFields.excluded === true ? { excluded: excludedValue } : {}),
 					// Hidden once a transfer the dashboard does not count is matched in
 					// this sheet: not the user's to save.
 					...(dirtyFields.categoryId === true && showsCategory(transaction.amount, transfer)
@@ -295,7 +300,9 @@ export function TransactionForm({
 					...(dirtyFields.merchantId === true ? { merchantId } : {}),
 					// Pairing a transfer in this sheet clears it: an untouched switch never sets it back.
 					...(dirtyFields.oneTime === true ? { oneTime: oneTimeValue } : {}),
-					...(sameTags(tags, transaction.tagIds) ? {} : { tagIds: tags }),
+					...(sameTags(tags, startingTags.current)
+						? {}
+						: { tagIds: tags, previousTagIds: startingTags.current }),
 				};
 				const saved = await updateTransaction.mutateAsync({ id: transaction.id, input });
 

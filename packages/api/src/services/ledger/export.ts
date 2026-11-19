@@ -329,6 +329,7 @@ export const EXPORTED_COLUMNS = {
 		enabled: rules.enabled,
 		position: rules.position,
 		stopProcessing: rules.stopProcessing,
+		applyImmediately: rules.applyImmediately,
 		effectiveDate: rules.effectiveDate,
 		createdAt: rules.createdAt,
 		updatedAt: rules.updatedAt,
