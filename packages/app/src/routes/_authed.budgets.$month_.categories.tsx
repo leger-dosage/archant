@@ -3,6 +3,7 @@ import type { BudgetData } from "@/hooks/useBudget";
 import { Link, createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 import { monthSchema } from "@archant/api/schemas/reports";
 import type { CurrencyCode } from "@archant/data/money";
@@ -23,6 +24,7 @@ import { canWrite } from "@/lib/auth-client";
 import { ofBudgetPeriod } from "@/lib/dates";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
+	validateSearch: z.object({ owner: z.string().optional().catch(undefined) }),
 	// A guest reads the month: its allocation writes, and the server would refuse the save.
 	beforeLoad: ({ context, params }) => {
 		if (!canWrite(context.session.user.role)) {
@@ -41,6 +43,7 @@ export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
 function Allocation({ budget, currency }: { budget: BudgetData; currency: CurrencyCode }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const { owner } = Route.useSearch();
 	const overAllocated = budget.allocated > (budget.budgetedSpending ?? 0);
 	const nameOf = new Map(budget.categories.map((line) => [line.categoryId, line.name]));
 
@@ -84,7 +87,11 @@ function Allocation({ budget, currency }: { budget: BudgetData; currency: Curren
 						disabled={overAllocated}
 						aria-describedby={overAllocated ? "budget-confirm-hint" : undefined}
 						onClick={() =>
-							void navigate({ to: "/budgets/$month", params: { month: budget.month } })
+							void navigate({
+								to: "/budgets/$month",
+								params: { month: budget.month },
+								search: { owner },
+							})
 						}
 					>
 						{t("budgets.allocation.confirm")}
@@ -104,6 +111,7 @@ function Allocation({ budget, currency }: { budget: BudgetData; currency: Curren
 function BudgetCategoriesPage() {
 	const { t } = useTranslation();
 	const { month } = Route.useParams();
+	const { owner } = Route.useSearch();
 	const budget = useBudget(month);
 	const valid = monthSchema.safeParse(month).success;
 	const data = budget.data;
@@ -130,10 +138,18 @@ function BudgetCategoriesPage() {
 				<BudgetOutOfRange
 					action={
 						<Button variant="outline" asChild>
-							<Link to="/budgets">{t("budgets.today")}</Link>
+							<Link to="/budgets" search={{ owner }}>
+								{t("budgets.today")}
+							</Link>
 						</Button>
 					}
 				/>
+			)}
+
+			{data?.canWrite === false && (
+				<Link to="/budgets/$month" params={{ month }} search={{ owner }}>
+					{t("sharing.readOnlyBudget")}
+				</Link>
 			)}
 
 			{failed && (
@@ -145,20 +161,21 @@ function BudgetCategoriesPage() {
 				</div>
 			)}
 
-			{data !== undefined && !data.setUp && (
+			{data?.canWrite === true && !data.setUp && (
 				<div className="flex flex-col items-start gap-3 rounded-xl border p-8">
 					<p className="text-muted-foreground">{t("budgets.allocation.notSetUp")}</p>
 					<Button asChild>
-						<Link to="/budgets/$month/edit" params={{ month }}>
+						<Link to="/budgets/$month/edit" params={{ month }} search={{ owner }}>
 							{t("budgets.notSetUp.action")}
 						</Link>
 					</Button>
 				</div>
 			)}
 
-			{data !== undefined && data.setUp && currency !== undefined && isCurrencyCode(currency) && (
-				<Allocation key={month} budget={data} currency={currency} />
-			)}
+			{data?.canWrite === true &&
+				data.setUp &&
+				currency !== undefined &&
+				isCurrencyCode(currency) && <Allocation key={month} budget={data} currency={currency} />}
 		</Page>
 	);
 }

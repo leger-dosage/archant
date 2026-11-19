@@ -24,8 +24,10 @@ import { isKept, nextDateFrom, nextExpectedDate } from "../../domain/recurring/s
 import { AppError } from "../../lib/errors.ts";
 import { validationError } from "../../lib/zod-error.ts";
 import { declareBillSchema, editBillSchema } from "../../schemas/bills.ts";
+import { requireAccount, requireTransfer } from "../account-access.ts";
 import { transferPair } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
+import { requireSeries } from "./access.ts";
 import { assertOneOffCanMove, pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules } from "./rules.ts";
 import { getRecord, invalid, notFound, setRecurringStatus, setStatusWithin } from "./series.ts";
@@ -143,6 +145,9 @@ export async function declareBill(
 	deps: ServiceDeps,
 	input: DeclareInput,
 ): Promise<RecurringRecord> {
+	if (input.accountId !== null) {
+		await requireAccount(deps, input.accountId, "edit");
+	}
 	const currency =
 		input.accountId === null
 			? currencyWithoutAccount(await getReportingCurrency(deps.db))
@@ -198,6 +203,9 @@ export async function declareBill(
 
 	return deps.db.transaction(
 		async (tx) => {
+			if (bill.accountId !== null) {
+				await requireAccount({ ...deps, db: tx }, bill.accountId, "edit");
+			}
 			if (await taken(tx, row)) {
 				throw alreadyExists();
 			}
@@ -258,6 +266,7 @@ export async function markTransferRecurring(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireTransfer({ ...deps, db: tx }, transferId, "edit");
 			const pair = await transferPair(tx, transferId);
 
 			if (pair === null) {
@@ -363,6 +372,10 @@ export async function editBill(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireSeries({ ...deps, db: tx }, id, "edit");
+			if (typeof input.accountId === "string") {
+				await requireAccount({ ...deps, db: tx }, input.accountId, "edit");
+			}
 			await editWithin(tx, id, input, day);
 
 			return getRecord(tx, id, day);
@@ -386,12 +399,16 @@ export async function updateBill(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireSeries({ ...deps, db: tx }, id, "edit");
+			if (typeof edit.accountId === "string") {
+				await requireAccount({ ...deps, db: tx }, edit.accountId, "edit");
+			}
 			if (Object.values(edit).some((value) => value !== undefined)) {
 				await editWithin(tx, id, edit, day);
 			}
 
 			if (status !== undefined && (await getRecord(tx, id, day)).status !== status) {
-				await setStatusWithin(tx, id, status, day);
+				await setStatusWithin(tx, id, status, day, deps.actor);
 			}
 
 			return getRecord(tx, id, day);

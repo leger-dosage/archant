@@ -3,7 +3,7 @@ import type { SetupInput } from "../schemas/setup.ts";
 import type { Auth } from "./auth.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { eq } from "drizzle-orm";
+import { eq, isNull } from "drizzle-orm";
 
 import {
 	DEFAULT_HOUSEHOLD_COUNTRY,
@@ -11,6 +11,7 @@ import {
 	currencyForCountry,
 	defaultDateFormat,
 } from "@archant/data/household-preferences";
+import { accounts } from "@archant/data/schema/accounts";
 import { users } from "@archant/data/schema/auth";
 import { settings } from "@archant/data/schema/settings";
 
@@ -127,6 +128,8 @@ export async function completeSetup(deps: SetupDeps, input: SetupInput): Promise
 		throw error;
 	}
 
+	// A database populated before setup has no user to assign its accounts to.
+	await deps.db.update(accounts).set({ ownerId: administrator.id }).where(isNull(accounts.ownerId));
 	deps.logger.info({ userId: administrator.id }, "administrator created");
 	if (deps.seedAtSetup === true) {
 		await seedDefaults(deps);

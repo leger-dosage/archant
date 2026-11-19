@@ -8,6 +8,7 @@ import { accounts } from "@archant/data/schema/accounts";
 import { entries } from "@archant/data/schema/entries";
 
 import { AppError } from "../../lib/errors.ts";
+import { requireEntry } from "../account-access.ts";
 import { manualReconciliationEnabled } from "../manual-reconciliation.ts";
 import { notSplitParent } from "./shared.ts";
 
@@ -24,6 +25,7 @@ export function setReconciliationStatus(
 ): Promise<ReconciliationStatus> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, id, "edit");
 			const unavailable = new AppError("NOT_FOUND", "No reconcilable transaction has this id.");
 
 			if (!(await manualReconciliationEnabled(tx))) {

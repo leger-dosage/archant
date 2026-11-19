@@ -26,6 +26,7 @@ import { merchants } from "@archant/data/schema/merchants";
 import { transactions } from "@archant/data/schema/transactions";
 import { transfers } from "@archant/data/schema/transfers";
 
+import { accountIdFilter } from "../account-access.ts";
 import { contains } from "./filter.ts";
 import {
 	KEYS_PER_LOOKUP,
@@ -51,6 +52,7 @@ type Reader = Pick<Transaction, "select">;
 export async function matchableTransactions(
 	db: Reader,
 	window: { start: IsoDate; end: IsoDate },
+	accountIds?: readonly string[],
 ): Promise<MatchEntry[]> {
 	const rows = await db
 		.select({
@@ -71,8 +73,20 @@ export async function matchableTransactions(
 		.innerJoin(transactions, eq(transactions.entryId, entries.id))
 		.leftJoin(asOutflow, eq(asOutflow.outflowTransactionId, entries.id))
 		.leftJoin(asInflow, eq(asInflow.inflowTransactionId, entries.id))
-		.leftJoin(counterpartEntry, eq(counterpartEntry.id, asOutflow.inflowTransactionId))
-		.where(and(eq(entries.kind, "transaction"), between(entries.date, window.start, window.end)))
+		.leftJoin(
+			counterpartEntry,
+			and(
+				eq(counterpartEntry.id, asOutflow.inflowTransactionId),
+				accountIdFilter(counterpartEntry.accountId, accountIds),
+			),
+		)
+		.where(
+			and(
+				eq(entries.kind, "transaction"),
+				between(entries.date, window.start, window.end),
+				accountIdFilter(entries.accountId, accountIds),
+			),
+		)
 		.orderBy(entries.date, entries.createdAt, entries.id);
 
 	return rows.map(({ transferKind, intoAccountId, splitParent, ...row }) => ({
@@ -103,7 +117,12 @@ export type PickerTransaction = {
  */
 export async function pickerTransactions(
 	db: Reader,
-	{ sign, q, limit }: { sign: "outflow" | "inflow"; q: string; limit: number },
+	{
+		sign,
+		q,
+		limit,
+		accountIds,
+	}: { accountIds?: string[] | undefined; sign: "outflow" | "inflow"; q: string; limit: number },
 ): Promise<PickerTransaction[]> {
 	const rows = await db
 		.select({
@@ -125,6 +144,7 @@ export async function pickerTransactions(
 		.where(
 			and(
 				eq(entries.kind, "transaction"),
+				accountIdFilter(entries.accountId, accountIds),
 				sign === "outflow" ? lt(entries.amount, 0) : gt(entries.amount, 0),
 				eq(transactions.excluded, false),
 				notSplitParent,
@@ -168,6 +188,7 @@ export async function occurrenceTransactions(
 	db: Reader,
 	scope: {
 		accountId: string | null;
+		accountIds?: string[] | undefined;
 		currency: string;
 		sign: "outflow" | "inflow";
 		transfers: boolean;
@@ -196,6 +217,7 @@ export async function occurrenceTransactions(
 		.where(
 			and(
 				eq(entries.kind, "transaction"),
+				accountIdFilter(entries.accountId, scope.accountIds),
 				scope.accountId === null ? undefined : eq(entries.accountId, scope.accountId),
 				eq(entries.currency, scope.currency),
 				scope.sign === "outflow" ? lt(entries.amount, 0) : gt(entries.amount, 0),
@@ -226,13 +248,20 @@ export async function occurrenceTransactions(
 export async function transferDestinations(
 	db: Reader,
 	from: IsoDate,
+	accountIds?: readonly string[],
 ): Promise<Map<string, string>> {
 	const rows = await db
 		.select({ id: transfers.outflowTransactionId, intoAccountId: counterpartEntry.accountId })
 		.from(transfers)
 		.innerJoin(entries, eq(entries.id, transfers.outflowTransactionId))
 		.innerJoin(counterpartEntry, eq(counterpartEntry.id, transfers.inflowTransactionId))
-		.where(gte(entries.date, from));
+		.where(
+			and(
+				gte(entries.date, from),
+				accountIdFilter(entries.accountId, accountIds),
+				accountIdFilter(counterpartEntry.accountId, accountIds),
+			),
+		);
 
 	return new Map(rows.map((row) => [row.id, row.intoAccountId]));
 }

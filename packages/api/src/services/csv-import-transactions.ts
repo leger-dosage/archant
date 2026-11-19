@@ -3,6 +3,7 @@ import type { NormalizedTransaction } from "../domain/statement.ts";
 import type { CsvRow } from "./csv-import-format.ts";
 import type { Analysis, Mappings, Sheet, ValueMapping } from "./csv-import-sheet.ts";
 import type { AmountTerm } from "./csv-import-tools.ts";
+import type { ServiceDeps } from "./deps.ts";
 import type { CsvStatement } from "./ledger/csv-transactions.ts";
 import type { Transaction } from "./ledger/shared.ts";
 import type { SureIssue } from "./sure-import-preflight.ts";
@@ -26,6 +27,7 @@ import {
 	MAX_TAGS_PER_TRANSACTION,
 	NOTES_MAX_LENGTH,
 } from "../schemas/transactions.ts";
+import { accountScope } from "./account-access.ts";
 import { csvIssue, splitTags } from "./csv-import-format.ts";
 import { cellOf, currencyOf, dateOf, keysOf, lineOf, valueMappings } from "./csv-import-sheet.ts";
 import { amountTermsOf, categoryOf, rawLabelOf } from "./csv-import-tools.ts";
@@ -359,6 +361,7 @@ export async function analyseTransactions(
 	sheet: Sheet,
 	mappings: Mappings | undefined,
 	locale: Locale = "fr",
+	actor?: ServiceDeps["actor"],
 ): Promise<Analysis> {
 	const errors: SureIssue[] = [];
 	const { amountTypeStrategy, amountTypeIdentifier, amountTypeInflow, accountId } =
@@ -371,7 +374,8 @@ export async function analyseTransactions(
 			active: accounts.active,
 			bankAccountId: accounts.bankAccountId,
 		})
-		.from(accounts);
+		.from(accounts)
+		.where(accountScope({ db, actor }, "edit"));
 	const single =
 		accountId === null ? undefined : stored.find((account) => account.id === accountId);
 

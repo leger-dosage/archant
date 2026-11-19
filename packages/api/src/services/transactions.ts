@@ -46,7 +46,9 @@ import {
 	splitTransactionSchema,
 	updateTransactionSchema,
 } from "../schemas/transactions.ts";
+import { accountIds, accountScope, requireAccount, requireEntry } from "./account-access.ts";
 import { currencyOf, getAccount } from "./accounts.ts";
+import { budgetDeps } from "./budget-access.ts";
 import { withChildren } from "./categories.ts";
 import {
 	dismissDuplicate as dismissLedgerDuplicate,
@@ -84,6 +86,7 @@ import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.
 import { manualReconciliationEnabled } from "./manual-reconciliation.ts";
 import { categoryFilterNamed, idsNamed } from "./names.ts";
 import { recurringEntryIds } from "./recurring/series.ts";
+import { cashFlowAccounts } from "./reports.ts";
 import { runImmediateRules } from "./rules.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { getTrade, tradeCurrency } from "./trades.ts";
@@ -273,6 +276,7 @@ export async function listAccountTransactions(
 	page: { page: number; pageSize: number },
 	options: ListOptions = GROUPED,
 ): Promise<TransactionPage> {
+	await requireAccount(deps, accountId, "read");
 	await getAccount(deps, accountId);
 	const { items, total } = await listTransactions(
 		deps,
@@ -303,7 +307,10 @@ async function amountsFor(
 		return undefined;
 	}
 
-	const rows = await deps.db.selectDistinct({ currency: accounts.currency }).from(accounts);
+	const rows = await deps.db
+		.selectDistinct({ currency: accounts.currency })
+		.from(accounts)
+		.where(accountScope(deps));
 
 	return rows.flatMap(({ currency }) => {
 		const range = isCurrencyCode(currency) ? amountBoundsFor(amountMin, amountMax, currency) : null;
@@ -341,15 +348,25 @@ async function filterOf(deps: ServiceDeps, query: NamedFilterRequest): Promise<T
 			{ path: "reconciliationStatus", code: "invalid_value" },
 		]);
 	}
-	const [account, category, merchant, tag] = await Promise.all([
+	const [account, category, merchant, tag, readable, budget] = await Promise.all([
 		idsNamed(deps, "accounts", names.accounts),
 		categoryFilterNamed(deps, names.categories),
 		idsNamed(deps, "merchants", names.merchants),
 		idsNamed(deps, "tags", names.tags),
+		accountIds(deps),
+		query.budgetOwner === undefined
+			? undefined
+			: budgetDeps(deps, query.budgetOwner).then(cashFlowAccounts),
 	]);
 
 	return {
-		accountIds: both(query.account, account),
+		accountIds: both(
+			both(query.account, account),
+			both(
+				readable,
+				budget?.counted.map(({ id }) => id),
+			),
+		),
 		from: query.from,
 		to: query.to,
 		amounts: await amountsFor(deps, query),
@@ -568,6 +585,7 @@ export async function createTransaction(
 	input: TransactionInput,
 	options: CreateTransactionOptions = {},
 ): Promise<CreatedTransaction> {
+	await requireAccount(deps, accountId, "edit");
 	const currency = await currencyOf(deps, accountId);
 	const parsed = createTransactionSchema(currency).safeParse(input);
 
@@ -638,6 +656,14 @@ export async function updateTransaction(
 	id: string,
 	input: TransactionPatchInput,
 ): Promise<TransactionItem> {
+	const accountAccess = Object.entries(input).some(
+		([key, value]) =>
+			value !== undefined &&
+			!["categoryId", "merchantId", "tagIds", "previousTagIds", "notes"].includes(key),
+	)
+		? "edit"
+		: "annotate";
+	await requireEntry(deps, id, accountAccess);
 	const current = await getTransaction(deps, id);
 	const currency = await currencyOf(deps, current.accountId);
 	const parsed = updateTransactionSchema(currency).safeParse(input);
@@ -646,7 +672,10 @@ export async function updateTransaction(
 		throw validationError(parsed.error);
 	}
 
-	const result = await updateLedgerTransaction(deps, id, parsed.data, { origin: "user" });
+	const result = await updateLedgerTransaction(deps, id, parsed.data, {
+		origin: "user",
+		accountAccess,
+	});
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);
@@ -678,6 +707,7 @@ export async function deleteTransaction(
 	id: string,
 	shown?: ShownValues,
 ): Promise<DeletedTransaction> {
+	await requireEntry(deps, id, "edit");
 	const transaction = await getTransaction(deps, id);
 	let expected: ShownTransaction | undefined;
 
@@ -721,6 +751,7 @@ export async function listDuplicateCandidates(
 	deps: ServiceDeps,
 	id: string,
 ): Promise<DuplicateCandidate[]> {
+	await requireEntry(deps, id, "read");
 	return duplicateCandidates(deps, id);
 }
 
@@ -733,6 +764,8 @@ export async function mergeDuplicate(
 	id: string,
 	body: MergeDuplicateRequest,
 ): Promise<TransactionItem> {
+	await requireEntry(deps, body.into, "edit");
+	await requireEntry(deps, id, "edit");
 	await mergeLedgerDuplicate(deps, id, body.into);
 
 	return getTransaction(deps, body.into);
@@ -740,6 +773,7 @@ export async function mergeDuplicate(
 
 /** Clears a possible-duplicate flag: « Ce n'est pas un doublon ». */
 export async function dismissDuplicate(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await requireEntry(deps, id, "edit");
 	await dismissLedgerDuplicate(deps, id);
 
 	return getTransaction(deps, id);
@@ -751,6 +785,7 @@ export async function listPendingMergeCandidates(
 	id: string,
 	query: PendingMergeCandidatesQuery,
 ): Promise<{ candidates: DuplicateCandidate[]; hasMore: boolean }> {
+	await requireEntry(deps, id, "read");
 	return pendingMergeCandidates(deps, id, query.offset);
 }
 
@@ -759,6 +794,7 @@ export async function getPostedMatch(
 	deps: ServiceDeps,
 	id: string,
 ): Promise<DuplicateCandidate | null> {
+	await requireEntry(deps, id, "read");
 	return postedMatchOf(deps, id);
 }
 
@@ -771,6 +807,8 @@ export async function mergePending(
 	id: string,
 	body: MergeDuplicateRequest,
 ): Promise<TransactionItem> {
+	await requireEntry(deps, body.into, "edit");
+	await requireEntry(deps, id, "edit");
 	await mergeLedgerPending(deps, id, body.into);
 
 	return getTransaction(deps, body.into);
@@ -778,6 +816,7 @@ export async function mergePending(
 
 /** « Non, gardez les deux »: the suggestion never shows again. */
 export async function dismissPostedMatch(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await requireEntry(deps, id, "edit");
 	await dismissLedgerPostedMatch(deps, id);
 
 	return getTransaction(deps, id);
@@ -788,6 +827,7 @@ export async function dismissPostedMatch(deps: ServiceDeps, id: string): Promise
  * returns the transaction as it now stands.
  */
 export async function unlockTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await requireEntry(deps, id, "edit");
 	await unlockLedgerTransaction(deps, id);
 
 	return getTransaction(deps, id);
@@ -869,6 +909,7 @@ async function parsedSplitLines(deps: ServiceDeps, id: string, input: SplitInput
 
 /** The split `id` belongs to, from its parent or a child; `NOT_FOUND` for an unsplit one. */
 export async function getSplit(deps: ServiceDeps, id: string): Promise<SplitItem> {
+	await requireEntry(deps, id, "read");
 	return splitItemOf(deps, await splitOf(deps, id));
 }
 
@@ -878,6 +919,7 @@ export async function splitTransaction(
 	id: string,
 	input: SplitInput,
 ): Promise<SplitItem> {
+	await requireEntry(deps, id, "edit");
 	const lines = await parsedSplitLines(deps, id, input);
 
 	return splitItemOf(deps, await splitLedgerTransaction(deps, id, lines, { origin: "user" }));
@@ -889,6 +931,7 @@ export async function editSplit(
 	id: string,
 	input: SplitInput,
 ): Promise<SplitItem> {
+	await requireEntry(deps, id, "edit");
 	const lines = await parsedSplitLines(deps, id, input);
 
 	return splitItemOf(deps, await editLedgerSplit(deps, id, lines, { origin: "user" }));
@@ -896,6 +939,7 @@ export async function editSplit(
 
 /** Undoes a split on the user's behalf, and returns its parent as it now stands. */
 export async function unsplitTransaction(deps: ServiceDeps, id: string): Promise<TransactionItem> {
+	await requireEntry(deps, id, "edit");
 	return getTransaction(deps, await unsplitLedgerTransaction(deps, id, { origin: "user" }));
 }
 
@@ -911,6 +955,7 @@ export async function convertTransaction(
 	id: string,
 	input: ConvertTradeInput,
 ): Promise<TradeData> {
+	await requireEntry(deps, id, "edit");
 	const current = await getTransaction(deps, id);
 	const currency = await tradeCurrency(deps, current.accountId);
 	// The sign and the fee are the ledger's to check, after a line it cannot

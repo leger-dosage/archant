@@ -19,7 +19,12 @@ export const TYPE_ORDER: readonly AccountType[] = CLASSIFICATIONS.flatMap((class
  * included in reports, and held in the reporting currency.
  */
 export function countsInReports(account: AccountSummaryData, reportingCurrency: string): boolean {
-	return account.active && !account.excludedFromReports && account.currency === reportingCurrency;
+	return (
+		account.active &&
+		!account.excludedFromReports &&
+		account.includeInFinances &&
+		account.currency === reportingCurrency
+	);
 }
 
 type BalanceSheetType = {

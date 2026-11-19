@@ -1,11 +1,12 @@
 import type { IsoDate } from "../../domain/dates.ts";
+import type { AccountAccess } from "../account-access.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { TransactionFilter } from "./filter.ts";
 import type { EditableRow, TransactionDetail, TransactionPatch, UpdateResult } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
 import type { SQL } from "drizzle-orm";
 
-import { and, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, isNull, not, sql } from "drizzle-orm";
 
 import type { MinorUnits } from "@archant/data/money";
 import type { ReconciliationStatus } from "@archant/data/reconciliation";
@@ -22,6 +23,7 @@ import { minDate, today } from "../../domain/dates.ts";
 import { isTooFarAhead, rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
+import { accountScope, forbidden, requireEntry, transactionScope } from "../account-access.ts";
 import { manualReconciliationEnabled } from "../manual-reconciliation.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
@@ -91,10 +93,11 @@ export async function updateTransaction(
 	deps: ServiceDeps,
 	entryId: string,
 	patch: TransactionPatch,
-	options: { origin: Origin },
+	options: { accountAccess?: AccountAccess; origin: Origin },
 ): Promise<UpdateResult> {
 	return deps.db.transaction(
 		async (tx): Promise<UpdateResult> => {
+			await requireEntry({ ...deps, db: tx }, entryId, options.accountAccess ?? "edit");
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
 			const { tagIds, previousTagIds } = patch;
@@ -260,6 +263,7 @@ export async function deleteTransaction(
 ): Promise<DeleteResult> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireEntry({ ...deps, db: tx }, entryId, "edit");
 			const current = await transactionRow(tx, entryId);
 			const changed = options.shown === undefined ? [] : changedFrom(current, options.shown);
 
@@ -313,7 +317,12 @@ export type BulkPatch = {
  * otherwise lose the rows a later chunk still had to lock. An id naming no
  * transaction fails the call on `ids`.
  */
-async function selectedRows(tx: Transaction, selection: BulkSelection) {
+async function selectedRows(
+	deps: ServiceDeps,
+	tx: Transaction,
+	selection: BulkSelection,
+	access: AccountAccess,
+) {
 	const query = (where: SQL | undefined) =>
 		tx
 			.select({
@@ -328,7 +337,9 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 			.from(entries)
 			.innerJoin(transactions, eq(transactions.entryId, entries.id))
 			.innerJoin(accounts, eq(accounts.id, entries.accountId))
-			.where(and(eq(entries.kind, "transaction"), where));
+			.where(
+				and(eq(entries.kind, "transaction"), accountScope({ ...deps, db: tx }, access), where),
+			);
 
 	if ("filter" in selection) {
 		const where = filterCondition(selection.filter, correlatedTransferSide);
@@ -400,7 +411,11 @@ export async function bulkUpdateTransactions(
 				throw invalidField("patch.reconciliationStatus");
 			}
 
-			const selected = await selectedRows(tx, selection);
+			const access =
+				date === undefined && label === undefined && reconciliationStatus === undefined
+					? "annotate"
+					: "edit";
+			const selected = await selectedRows(deps, tx, selection, access);
 			// One time for every row, so rows locking the same fields share a write.
 			const now = Date.now();
 
@@ -554,7 +569,9 @@ export async function bulkDeleteTransactions(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
-			const rows = (await selectedRows(tx, selection)).filter((row) => row.parentEntryId === null);
+			const rows = (await selectedRows(deps, tx, selection, "edit")).filter(
+				(row) => row.parentEntryId === null,
+			);
 			const ids = rows.map((row) => row.id);
 			const earliest = new Map<string, IsoDate>();
 
@@ -614,6 +631,26 @@ export async function unlockTransaction(deps: ServiceDeps, entryId: string): Pro
 	}
 }
 
+async function assertCanReassign(
+	deps: ServiceDeps,
+	table: typeof transactions | typeof taggings,
+	selected?: SQL,
+) {
+	const entry = table === transactions ? transactions.entryId : taggings.transactionId;
+	const allowed = transactionScope(deps, entry, "annotate");
+	if (allowed === undefined) {
+		return;
+	}
+	const blocked = await deps.db
+		.select({ entry })
+		.from(table)
+		.where(and(selected, not(allowed)))
+		.get();
+	if (blocked !== undefined) {
+		throw forbidden();
+	}
+}
+
 /**
  * Moves every transaction of category `from` to `to`, or leaves them
  * uncategorised with `null`, and returns how many moved. Called by a
@@ -634,10 +671,12 @@ export async function recategorise(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
+			const selected = eq(transactions.categoryId, from);
+			await assertCanReassign({ ...deps, db: tx }, transactions, selected);
 			const result = await tx
 				.update(transactions)
 				.set(to === null ? { categoryId: null, categoryOrigin: null } : { categoryId: to })
-				.where(eq(transactions.categoryId, from));
+				.where(selected);
 
 			return result.rowsAffected;
 		},
@@ -651,10 +690,12 @@ export async function recategorise(
  * many rows lost their category.
  */
 export async function uncategoriseAll(deps: ServiceDeps): Promise<number> {
+	const selected = isNotNull(transactions.categoryId);
+	await assertCanReassign(deps, transactions, selected);
 	const result = await deps.db
 		.update(transactions)
 		.set({ categoryId: null, categoryOrigin: null })
-		.where(isNotNull(transactions.categoryId));
+		.where(selected);
 
 	return result.rowsAffected;
 }
@@ -672,7 +713,7 @@ export async function countByCategory(deps: ServiceDeps): Promise<Map<string, nu
 			count: count(),
 		})
 		.from(transactions)
-		.where(isNotNull(transactions.categoryId))
+		.where(and(isNotNull(transactions.categoryId), transactionScope(deps, transactions.entryId)))
 		.groupBy(transactions.categoryId);
 
 	return new Map(rows.map((row) => [row.categoryId, row.count]));
@@ -694,10 +735,9 @@ export async function moveMerchant(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
-			const result = await tx
-				.update(transactions)
-				.set({ merchantId: to })
-				.where(eq(transactions.merchantId, from));
+			const selected = eq(transactions.merchantId, from);
+			await assertCanReassign({ ...deps, db: tx }, transactions, selected);
+			const result = await tx.update(transactions).set({ merchantId: to }).where(selected);
 
 			return result.rowsAffected;
 		},
@@ -714,7 +754,7 @@ export async function countByMerchant(deps: ServiceDeps): Promise<Map<string, nu
 			count: count(),
 		})
 		.from(transactions)
-		.where(isNotNull(transactions.merchantId))
+		.where(and(isNotNull(transactions.merchantId), transactionScope(deps, transactions.entryId)))
 		.groupBy(transactions.merchantId);
 
 	return new Map(rows.map((row) => [row.merchantId, row.count]));
@@ -733,7 +773,9 @@ export async function removeTag(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
-			const result = await tx.delete(taggings).where(eq(taggings.tagId, tagId));
+			const selected = eq(taggings.tagId, tagId);
+			await assertCanReassign({ ...deps, db: tx }, taggings, selected);
+			const result = await tx.delete(taggings).where(selected);
 
 			return result.rowsAffected;
 		},
@@ -756,6 +798,8 @@ export async function replaceTag(
 ): Promise<number> {
 	return deps.db.transaction(
 		async (tx) => {
+			const selected = eq(taggings.tagId, from);
+			await assertCanReassign({ ...deps, db: tx }, taggings, selected);
 			await tx
 				.insert(taggings)
 				.select(
@@ -765,10 +809,10 @@ export async function replaceTag(
 							tagId: sql<string>`${to}`.as("tag_id"),
 						})
 						.from(taggings)
-						.where(eq(taggings.tagId, from)),
+						.where(selected),
 				)
 				.onConflictDoNothing();
-			const result = await tx.delete(taggings).where(eq(taggings.tagId, from));
+			const result = await tx.delete(taggings).where(selected);
 
 			return result.rowsAffected;
 		},
@@ -781,6 +825,7 @@ export async function replaceTag(
  * Maintenance only, as `removeTag`: locks stay.
  */
 export async function removeAllTags(deps: ServiceDeps): Promise<void> {
+	await assertCanReassign(deps, taggings);
 	await deps.db.delete(taggings);
 }
 
@@ -789,6 +834,7 @@ export async function countByTag(deps: ServiceDeps): Promise<Map<string, number>
 	const rows = await deps.db
 		.select({ tagId: taggings.tagId, count: count() })
 		.from(taggings)
+		.where(transactionScope(deps, taggings.transactionId))
 		.groupBy(taggings.tagId);
 
 	return new Map(rows.map((row) => [row.tagId, row.count]));

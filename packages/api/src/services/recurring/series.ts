@@ -8,6 +8,7 @@ import type { RecurringView } from "../../schemas/recurring.ts";
 import type { ServiceDeps } from "../deps.ts";
 import type { Transaction } from "../ledger/shared.ts";
 import type { CurrentOccurrence } from "./occurrences.ts";
+import type { SQL } from "drizzle-orm";
 
 import { and, asc, between, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/sqlite-core";
@@ -47,9 +48,11 @@ import {
 	syncMonthlyRuleDay,
 } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
+import { accountIdFilter, limitedEditableAccounts, requireEntry } from "../account-access.ts";
 import { findTransaction } from "../ledger/queries.ts";
 import { transferDestinations } from "../ledger/recurring.ts";
 import { ruleCandidates } from "../ledger/rule-plans.ts";
+import { recurringProcessingScope, recurringScope, requireSeries } from "./access.ts";
 import { backfillOccurrences, currentOccurrences, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules, rulesBySeries } from "./rules.ts";
 
@@ -143,6 +146,7 @@ export const nullableMinor = (amount: number | null) =>
 /** Every stored series, as the passes around detection read them. */
 async function loadSeries(
 	tx: Pick<Transaction, "select">,
+	scope?: SQL,
 ): Promise<(StoredSeries & { billType: BillType })[]> {
 	const rows = await tx
 		.select({
@@ -170,6 +174,7 @@ async function loadSeries(
 			schedulePinnedAt: recurringTransactions.schedulePinnedAt,
 		})
 		.from(recurringTransactions)
+		.where(scope)
 		.orderBy(asc(recurringTransactions.createdAt), asc(recurringTransactions.id));
 	const rules = await rulesBySeries(tx);
 
@@ -199,10 +204,14 @@ type Candidate = Omit<Awaited<ReturnType<typeof ruleCandidates>>[number], "trans
 export async function loadCandidates(
 	tx: Pick<Transaction, "select">,
 	day: IsoDate,
+	accountIds?: readonly string[],
 ): Promise<{ candidates: Candidate[]; detectable: Candidate[]; creditCards: Set<string> }> {
 	const from = addMonths(day, -MANUAL_LOOKBACK_MONTHS);
-	const rows = await ruleCandidates(tx, from, { activeAccountsOnly: false });
-	const destinations = await transferDestinations(tx, from);
+	const rows = await ruleCandidates(tx, from, {
+		activeAccountsOnly: false,
+		accountFilter: accountIdFilter(accounts.id, accountIds),
+	});
+	const destinations = await transferDestinations(tx, from, accountIds);
 	const candidates = rows.map((row): Candidate => ({
 		...row,
 		transfer:
@@ -279,13 +288,17 @@ async function clean(
  * `runRecurring`, inside its immediate transaction, so two detections racing
  * each other cannot insert the same pattern twice.
  */
-export async function detectWithin(tx: Transaction, day: IsoDate): Promise<DetectionResult> {
-	const { candidates, detectable, creditCards } = await loadCandidates(tx, day);
+export async function detectWithin(
+	tx: Transaction,
+	day: IsoDate,
+	accountIds?: readonly string[],
+): Promise<DetectionResult> {
+	const { candidates, detectable, creditCards } = await loadCandidates(tx, day, accountIds);
 	const names = await merchantNames(tx);
 	const now = Date.now();
 	const patterns = detectPatterns(detectable, day);
 	// What the series stand as after each write, read by the passes that follow.
-	const loaded = await loadSeries(tx);
+	const loaded = await loadSeries(tx, recurringProcessingScope(accountIds));
 	const current = new Map<string, StoredSeries>(loaded.map((series) => [series.id, series]));
 	const onceDates = new Map(loaded.map((series) => [series.id, onceDateOf(series.rules, series)]));
 	const claimed = new Set<string>();
@@ -484,9 +497,11 @@ export async function cleanupRecurring(deps: ServiceDeps): Promise<CleanupResult
 
 	return deps.db.transaction(
 		async (tx) => {
-			const { candidates } = await loadCandidates(tx, day);
+			const ids = await limitedEditableAccounts({ ...deps, db: tx });
+			const { candidates } = await loadCandidates(tx, day, ids);
+			const stored = await loadSeries(tx, recurringProcessingScope(ids));
 
-			return { inactive: await clean(tx, await loadSeries(tx), candidates, day, Date.now()) };
+			return { inactive: await clean(tx, stored, candidates, day, Date.now()) };
 		},
 		{ behavior: "immediate" },
 	);
@@ -614,6 +629,7 @@ export async function listRecurring(
 	const rows = await selectRecords(deps.db)
 		.where(
 			and(
+				recurringScope(deps),
 				filter === undefined
 					? ne(recurringTransactions.status, "ended")
 					: filter.status === "all"
@@ -649,7 +665,8 @@ export async function setRecurringStatus(
 
 	return deps.db.transaction(
 		async (tx) => {
-			await setStatusWithin(tx, id, status, day);
+			await requireSeries({ ...deps, db: tx }, id, "edit");
+			await setStatusWithin(tx, id, status, day, deps.actor);
 
 			return getRecord(tx, id, day);
 		},
@@ -663,6 +680,7 @@ export async function setStatusWithin(
 	id: string,
 	status: RecurringStatus,
 	day: IsoDate,
+	actor?: ServiceDeps["actor"],
 ): Promise<void> {
 	const current = await getRecord(tx, id, day);
 
@@ -682,7 +700,8 @@ export async function setStatusWithin(
 	await regenerateFuture(tx, [id], day);
 
 	if (current.status === "suggested" && status === "active") {
-		await backfillOccurrences(tx, day, [id]);
+		const allowed = await limitedEditableAccounts({ db: tx, actor });
+		await backfillOccurrences(tx, day, [id], allowed);
 	}
 }
 
@@ -696,6 +715,7 @@ export async function deleteRecurring(deps: ServiceDeps, id: string): Promise<{ 
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireSeries({ ...deps, db: tx }, id, "edit");
 			const current = await getRecord(tx, id, day);
 
 			if (current.manual) {
@@ -854,6 +874,7 @@ export async function recurringOfEntry(
 	deps: ServiceDeps,
 	entryId: string,
 ): Promise<EntryRecurring | null> {
+	await requireEntry(deps, entryId);
 	const transaction = await transactionOf(deps, entryId);
 	const day = today(deps.timeZone);
 	const paid = await deps.db
@@ -873,7 +894,14 @@ export async function recurringOfEntry(
 		.orderBy(asc(recurringOccurrences.dueOn), asc(recurringOccurrences.id))
 		.get();
 
-	if (paid !== undefined) {
+	if (
+		paid !== undefined &&
+		(await deps.db
+			.select({ id: recurringTransactions.id })
+			.from(recurringTransactions)
+			.where(and(eq(recurringTransactions.id, paid.seriesId), recurringScope(deps)))
+			.get()) !== undefined
+	) {
 		return {
 			...(await getRecord(deps.db, paid.seriesId, day)),
 			pays: { id: paid.id, dueOn: paid.dueOn },
@@ -900,6 +928,7 @@ export async function addRecurringFromEntry(
 	deps: ServiceDeps,
 	entryId: string,
 ): Promise<RecurringRecord> {
+	await requireEntry(deps, entryId, "edit");
 	const transaction = await transactionOf(deps, entryId);
 
 	// Sure's `create_from_transaction` is for a charge or a deposit: a transfer

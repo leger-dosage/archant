@@ -17,7 +17,12 @@ const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: tru
 export function accountChoiceOf(list: AccountListData): AccountChoice {
 	const accounts = list.groups
 		.flatMap((group) => group.accounts)
-		.filter((account) => account.active && !account.linked)
+		.filter(
+			(account) =>
+				account.active &&
+				!account.linked &&
+				(account.permission === "owner" || account.permission === "full_control"),
+		)
 		.toSorted((a, b) => byName.compare(a.name, b.name))
 		.flatMap(({ id, name, currency, type, subtype }) =>
 			isCurrencyCode(currency) ? [{ id, name, currency, type, subtype }] : [],

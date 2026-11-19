@@ -361,6 +361,7 @@ export const tagFilterSchema = repeated(MAX_TAG_FILTER)
 
 export const filterFields = {
 	account: repeated(MAX_ACCOUNT_FILTER),
+	budgetOwner: z.string().min(1).max(200).optional(),
 	// Repeats are dropped rather than refused: « Revenus » twice is still « Revenus ».
 	direction: z
 		.union([directionSchema, z.array(directionSchema)])

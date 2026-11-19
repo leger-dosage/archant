@@ -5,12 +5,14 @@ import { eq, inArray } from "drizzle-orm";
 
 import { sampleCategoryColor } from "@archant/data/category-presets";
 import { merchants } from "@archant/data/schema/merchants";
+import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
 import type { Merchant } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
 import { countByMerchant, moveMerchant } from "./ledger/edits.ts";
 import { oneByOne } from "./ledger/shared.ts";
 import { assertNameFree } from "./names.ts";
+import { requireMatchingSeriesEditable } from "./recurring/access.ts";
 
 export type MerchantSummary = {
 	id: string;
@@ -138,7 +140,9 @@ export async function deleteMerchant(
 				throw notFound();
 			}
 
-			const unlinked = await moveMerchant({ ...deps, db: tx }, id, null, {
+			const scoped = { ...deps, db: tx };
+			await requireMatchingSeriesEditable(scoped, eq(recurringTransactions.merchantId, id));
+			const unlinked = await moveMerchant(scoped, id, null, {
 				origin: "maintenance",
 			});
 			await tx.delete(merchants).where(eq(merchants.id, id));
@@ -182,9 +186,9 @@ export async function mergeMerchants(
 				throw invalid("sourceIds", "invalid_value");
 			}
 
-			await oneByOne(ids, async (id) =>
-				moveMerchant({ ...deps, db: tx }, id, targetId, { origin: "maintenance" }),
-			);
+			const scoped = { ...deps, db: tx };
+			await requireMatchingSeriesEditable(scoped, inArray(recurringTransactions.merchantId, ids));
+			await oneByOne(ids, (id) => moveMerchant(scoped, id, targetId, { origin: "maintenance" }));
 			await tx.delete(merchants).where(inArray(merchants.id, ids));
 		},
 		{ behavior: "immediate" },

@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { InferResponseType } from "hono/client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearch } from "@tanstack/react-router";
 
 import type {
 	BudgetCategoryInput,
@@ -21,14 +22,22 @@ export type BudgetCategoryData = BudgetData["categories"][number];
 /** « Sans catégorie »'s envelope, what the total leaves unallocated. */
 export type UncategorisedData = BudgetData["uncategorised"];
 
-async function fetchBudget(month: string) {
-	return (await unwrap(api.budgets[":month"].$get({ param: { month } }))).data;
+export function useBudgetOwner() {
+	return useSearch({
+		strict: false,
+		select: (search) => (typeof search.owner === "string" ? search.owner : undefined),
+	});
+}
+
+async function fetchBudget(month: string, owner?: string) {
+	return (await unwrap(api.budgets[":month"].$get({ param: { month }, query: { owner } }))).data;
 }
 
 export function useBudget(month: string) {
+	const owner = useBudgetOwner();
 	return useQuery({
-		queryKey: queryKeys.transactions.budget(month),
-		queryFn: async () => fetchBudget(month),
+		queryKey: queryKeys.transactions.budget(month, owner),
+		queryFn: async () => fetchBudget(month, owner),
 		// A month out of bounds stays out: retrying would only delay saying so.
 		retry: (failureCount, error) =>
 			!["NOT_FOUND", "VALIDATION_ERROR", "UNAUTHORIZED"].includes(errorCodeOf(error)) &&
@@ -48,20 +57,27 @@ export function useCurrentBudget() {
 }
 
 export function useBudgetCash() {
+	const owner = useBudgetOwner();
 	return useQuery({
-		queryKey: queryKeys.accounts.budgetCash,
-		queryFn: async () => (await unwrap(api.budgets["available-cash"].$get())).data,
+		queryKey: [...queryKeys.accounts.budgetCash, owner],
+		queryFn: async () =>
+			(await unwrap(api.budgets["available-cash"].$get({ query: { owner } }))).data,
 	});
 }
 
 export function useSaveBudget(month: string) {
+	const owner = useBudgetOwner();
 	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: async (input: BudgetInput) =>
-			(await unwrap(api.budgets[":month"].$put({ param: { month }, json: input }))).data,
+			(
+				await unwrap(
+					api.budgets[":month"].$put({ param: { month }, query: { owner }, json: input }),
+				)
+			).data,
 		// The answer is the month as it now reads: the page shows it at once.
-		onSuccess: (budget) => showMonth(queryClient, month, budget),
+		onSuccess: (budget) => showMonth(queryClient, month, owner, budget),
 	});
 }
 
@@ -70,12 +86,21 @@ export function useSaveBudget(month: string) {
  * now offer to copy this one rather than an older one, and what each later
  * month receives from the months before it may have changed.
  */
-function showMonth(queryClient: QueryClient, month: string, budget: BudgetData) {
+function showMonth(
+	queryClient: QueryClient,
+	month: string,
+	owner: string | undefined,
+	budget: Omit<BudgetData, "ownerId" | "canWrite">,
+) {
 	void queryClient.invalidateQueries({
 		queryKey: queryKeys.transactions.budgets,
-		predicate: (query) => query.queryKey[2] !== month,
+		predicate: (query) => query.queryKey[2] !== month || query.queryKey[3] !== owner,
 	});
-	queryClient.setQueryData(queryKeys.transactions.budget(month), budget);
+	queryClient.setQueryData<BudgetData>(queryKeys.transactions.budget(month, owner), (previous) => ({
+		...budget,
+		ownerId: previous?.ownerId ?? null,
+		canWrite: previous?.canWrite ?? true,
+	}));
 }
 
 /**
@@ -87,6 +112,7 @@ const categoriesScope = (month: string) => ({ id: `budget-categories-${month}` }
 
 /** Saves one category's amount; the answer is the whole month, its parent's new amount included. */
 export function useSaveCategoryBudget(month: string) {
+	const owner = useBudgetOwner();
 	const queryClient = useQueryClient();
 
 	return useMutation({
@@ -96,40 +122,47 @@ export function useSaveCategoryBudget(month: string) {
 				await unwrap(
 					api.budgets[":month"].categories[":categoryId"].$put({
 						param: { month, categoryId },
+						query: { owner },
 						json: input,
 					}),
 				)
 			).data,
-		onSuccess: (budget) => showMonth(queryClient, month, budget),
+		onSuccess: (budget) => showMonth(queryClient, month, owner, budget),
 	});
 }
 
 /** Sets a month up from the latest earlier one set up, as Sure's « Copier ». */
 export function useCopyBudget(month: string) {
+	const owner = useBudgetOwner();
 	const queryClient = useQueryClient();
 
 	return useMutation({
 		mutationFn: async () =>
-			(await unwrap(api.budgets[":month"].copy.$post({ param: { month } }))).data,
-		onSuccess: (budget) => showMonth(queryClient, month, budget),
+			(await unwrap(api.budgets[":month"].copy.$post({ param: { month }, query: { owner } }))).data,
+		onSuccess: (budget) => showMonth(queryClient, month, owner, budget),
 		// Set up in another tab, or its source changed: the page reads the month again.
 		onError: () =>
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month, owner) }),
 	});
 }
 
 /** Moves money between two categories; the answer is the whole month, both parents included. */
 export function useMoveBudget(month: string) {
+	const owner = useBudgetOwner();
 	const queryClient = useQueryClient();
 
 	return useMutation({
 		scope: categoriesScope(month),
 		mutationFn: async (input: BudgetMoveInput) =>
-			(await unwrap(api.budgets[":month"].move.$post({ param: { month }, json: input }))).data,
-		onSuccess: (budget) => showMonth(queryClient, month, budget),
+			(
+				await unwrap(
+					api.budgets[":month"].move.$post({ param: { month }, query: { owner }, json: input }),
+				)
+			).data,
+		onSuccess: (budget) => showMonth(queryClient, month, owner, budget),
 		// Changed in another tab: the dialog's figures and destinations read the month again.
 		onError: () =>
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month, owner) }),
 	});
 }
 
@@ -138,6 +171,7 @@ export function useMoveBudget(month: string) {
  * up; the answer is the whole month, what came in included.
  */
 export function useSetCategoryRollover(month: string) {
+	const owner = useBudgetOwner();
 	const queryClient = useQueryClient();
 
 	return useMutation({
@@ -147,13 +181,14 @@ export function useSetCategoryRollover(month: string) {
 				await unwrap(
 					api.budgets[":month"].categories[":categoryId"].rollover.$put({
 						param: { month, categoryId },
+						query: { owner },
 						json: input,
 					}),
 				)
 			).data,
-		onSuccess: (budget) => showMonth(queryClient, month, budget),
+		onSuccess: (budget) => showMonth(queryClient, month, owner, budget),
 		// Deleted, or turned into income, in another tab: the page reads the month again.
 		onError: () =>
-			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month) }),
+			queryClient.invalidateQueries({ queryKey: queryKeys.transactions.budget(month, owner) }),
 	});
 }

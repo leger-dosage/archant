@@ -30,6 +30,7 @@ import {
 } from "../domain/loans/payoff-chart.ts";
 import { payoffProjection } from "../domain/loans/payoff-projection.ts";
 import { rateResolver } from "../domain/loans/rate-resolver.ts";
+import { requireAccount } from "./account-access.ts";
 import { getAccount } from "./accounts.ts";
 import { balancesBetween, openingAnchorOf } from "./ledger/balances.ts";
 
@@ -152,6 +153,7 @@ export async function loanSchedule(
 	deps: ServiceDeps,
 	accountId: string,
 ): Promise<LoanScheduleData | null> {
+	await requireAccount(deps, accountId, "read");
 	const account = await getAccount(deps, accountId);
 	const contract =
 		account.type === "loan" ? contractOf(account, await openingOf(deps, accountId)) : null;
@@ -317,6 +319,7 @@ export async function loanPayoffChart(
 	accountId: string,
 	query: ChartQuery,
 ): Promise<LoanPayoffChartData | null> {
+	await requireAccount(deps, accountId, "read");
 	const account = await getAccount(deps, accountId);
 	const contract =
 		account.type === "loan" ? contractOf(account, await openingOf(deps, accountId)) : null;

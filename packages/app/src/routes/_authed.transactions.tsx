@@ -1,6 +1,6 @@
 import type { FilterAccount, FilterChange } from "@/components/TransactionFilters";
 import type { TransactionData } from "@/hooks/useTransactions";
-import type { FilterKind, OperationsSearch } from "@/lib/transaction-filters";
+import type { FilterChip, OperationsSearch } from "@/lib/transaction-filters";
 
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { SearchIcon } from "lucide-react";
@@ -154,6 +154,7 @@ function OperationSheet({
 			account={{
 				id: data.id,
 				currency: data.currency,
+				permission: data.permission,
 				type: data.type,
 				subtype: data.subtype,
 			}}
@@ -251,7 +252,7 @@ function OperationsPage() {
 
 	const change = (next: FilterChange) =>
 		void navigate({ search: (previous) => ({ ...previous, ...next, page: undefined }) });
-	const remove = (kind: FilterKind) =>
+	const remove = (kind: FilterChip["kind"]) =>
 		void navigate({ search: (previous) => withoutFilter(previous, kind) });
 	const clear = () => void navigate({ search: {} });
 	const changeTab = (next: string) => {

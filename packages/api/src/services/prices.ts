@@ -20,6 +20,7 @@ import { fillPrices, priceWindow } from "../domain/prices.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { typedPriceSchema } from "../schemas/prices.ts";
+import { assertSecurityWritable } from "./account-access.ts";
 import { LEASE_MS, codeOf } from "./bank-connections.ts";
 import { revalueHoldings } from "./ledger/holdings.ts";
 import { PRICE_PROVIDER_SETTING, enabledProvider, heldSecurities } from "./securities.ts";
@@ -554,6 +555,7 @@ export async function typePrice(
 	// back online would otherwise see its price shadowed by this one.
 	const currency = await deps.db.transaction(
 		async (tx) => {
+			await assertSecurityWritable({ ...deps, db: tx }, securityId);
 			const security = await tx
 				.select({
 					currency: securities.currency,

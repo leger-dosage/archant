@@ -5,11 +5,15 @@ import { eq } from "drizzle-orm";
 
 import type { AccountOrder } from "@archant/data/account-orders";
 import { DEFAULT_ACCOUNT_ORDER } from "@archant/data/account-orders";
+import type { AccountSharingDefault } from "@archant/data/account-sharing";
 import type { Locale } from "@archant/data/locales";
 import type { SurePeriod } from "@archant/data/periods";
 import { DEFAULT_PERIOD } from "@archant/data/periods";
 import { users } from "@archant/data/schema/auth";
+import { settings } from "@archant/data/schema/settings";
 
+import { sharingDefault } from "./account-access.ts";
+import { personalBudgetsEnabled } from "./budget-access.ts";
 import { householdLocale, saveHouseholdLocale } from "./household-locale.ts";
 import { manualReconciliationEnabled, saveManualReconciliation } from "./manual-reconciliation.ts";
 
@@ -50,7 +54,12 @@ export async function getPreferences(deps: ServiceDeps, userId: string): Promise
 	};
 }
 
-type PreferencesPage = Preferences & { householdLocale: Locale; manualReconciliation: boolean };
+type PreferencesPage = Preferences & {
+	householdLocale: Locale;
+	manualReconciliation: boolean;
+	defaultAccountSharing: AccountSharingDefault;
+	personalBudgets: boolean;
+};
 
 /**
  * Saves the user's preferences, as Sure's `PATCH /users/:id` from
@@ -84,6 +93,22 @@ export async function updatePreferences(
 		await saveManualReconciliation(deps.db, input.manualReconciliation);
 	}
 
+	const sharingChanges = [
+		["default_account_sharing", input.defaultAccountSharing],
+		["personal_budgets", input.personalBudgets],
+	] as const;
+	await Promise.all(
+		sharingChanges.map(async ([key, value]) => {
+			if (value !== undefined) {
+				const row = { key, value: String(value), updatedAt: Date.now() };
+				await deps.db
+					.insert(settings)
+					.values(row)
+					.onConflictDoUpdate({ target: settings.key, set: row });
+			}
+		}),
+	);
+
 	return getPreferencesPage(deps, userId);
 }
 
@@ -96,11 +121,20 @@ export async function getPreferencesPage(
 	deps: ServiceDeps,
 	userId: string,
 ): Promise<PreferencesPage> {
-	const [preferences, locale, manualReconciliation] = await Promise.all([
-		getPreferences(deps, userId),
-		householdLocale(deps.db),
-		manualReconciliationEnabled(deps.db),
-	]);
+	const [preferences, locale, manualReconciliation, defaultAccountSharing, personalBudgets] =
+		await Promise.all([
+			getPreferences(deps, userId),
+			householdLocale(deps.db),
+			manualReconciliationEnabled(deps.db),
+			sharingDefault(deps.db),
+			personalBudgetsEnabled(deps.db),
+		]);
 
-	return { ...preferences, householdLocale: locale, manualReconciliation };
+	return {
+		...preferences,
+		householdLocale: locale,
+		manualReconciliation,
+		defaultAccountSharing,
+		personalBudgets,
+	};
 }

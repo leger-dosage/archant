@@ -23,7 +23,9 @@ import { seriesDates, seriesPointCount } from "../domain/balances/sure-periods.t
 import { grossCashFlow } from "../domain/cash-flow.ts";
 import { minDate, monthRange, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
+import { accountScope } from "./account-access.ts";
 import { listAccounts } from "./accounts.ts";
+import { budgetDeps } from "./budget-access.ts";
 import { getBudget } from "./budgets.ts";
 import { csv, textCell } from "./export.ts";
 import {
@@ -153,7 +155,7 @@ async function budgetPercent(
 	}
 
 	try {
-		const budget = await getBudget(deps, undefined);
+		const budget = await getBudget(await budgetDeps(deps), undefined);
 
 		return budget.allocated === 0 ? 0 : percentOneDecimal(budget.actual.spending, budget.allocated);
 	} catch (error) {
@@ -371,7 +373,12 @@ async function netWorthOf(
 async function hasAny(deps: ServiceDeps) {
 	const [hasTransactions, account] = await Promise.all([
 		hasAnyTransaction(deps),
-		deps.db.select({ id: accounts.id }).from(accounts).limit(1).get(),
+		deps.db
+			.select({ id: accounts.id })
+			.from(accounts)
+			.where(accountScope(deps, "finance"))
+			.limit(1)
+			.get(),
 	]);
 
 	return { hasTransactions, hasAccounts: account !== undefined };

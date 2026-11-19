@@ -5,6 +5,7 @@ import { MAX_ATTACHMENT_BYTES } from "@archant/data/attachments";
 
 import { attachmentFileName, attachmentTypeOf } from "../domain/attachment-files.ts";
 import { AppError } from "../lib/errors.ts";
+import { requireEntry } from "./account-access.ts";
 import {
 	addAttachment,
 	deleteAttachment,
@@ -30,6 +31,7 @@ export async function uploadAttachment(
 	transactionId: string,
 	file: { name: string; bytes: Uint8Array },
 ): Promise<AttachmentItem> {
+	await requireEntry(deps, transactionId, "annotate");
 	if (file.bytes.byteLength > MAX_ATTACHMENT_BYTES) {
 		throw refusedFile("attachment_too_large");
 	}
@@ -52,6 +54,7 @@ export async function listTransactionAttachments(
 	deps: ServiceDeps,
 	transactionId: string,
 ): Promise<AttachmentItem[]> {
+	await requireEntry(deps, transactionId, "read");
 	return listAttachments(deps, transactionId);
 }
 
@@ -60,6 +63,7 @@ export async function getAttachmentFile(
 	transactionId: string,
 	attachmentId: string,
 ): Promise<AttachmentFile> {
+	await requireEntry(deps, transactionId, "read");
 	return readAttachment(deps, transactionId, attachmentId);
 }
 
@@ -68,6 +72,7 @@ export async function removeAttachment(
 	transactionId: string,
 	attachmentId: string,
 ): Promise<{ id: string }> {
+	await requireEntry(deps, transactionId, "annotate");
 	await deleteAttachment(deps, transactionId, attachmentId, { origin: "user" });
 
 	return { id: attachmentId };

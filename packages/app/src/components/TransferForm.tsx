@@ -53,7 +53,10 @@ const byName = new Intl.Collator(intlLocale, { sensitivity: "base", numeric: tru
 const activeAccounts = (list: AccountListData) =>
 	list.groups
 		.flatMap((group) => group.accounts)
-		.filter((account) => account.active)
+		.filter(
+			(account) =>
+				account.active && (account.permission === "owner" || account.permission === "full_control"),
+		)
 		.toSorted((a, b) => byName.compare(a.name, b.name));
 
 type TransferFormProps = {

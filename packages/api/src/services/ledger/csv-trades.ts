@@ -84,9 +84,9 @@ export async function insertCsvTrades(
 		newAccounts: readonly PlanAccount[];
 		trades: readonly CsvTrade[];
 	},
-	options: { now: number; timeZone: string },
+	options: { now: number; timeZone: string; creatorId?: string | undefined },
 ): Promise<void> {
-	const created = await insertSureAccounts(tx, input.newAccounts, options.now);
+	const created = await insertSureAccounts(tx, input.newAccounts, options.now, options.creatorId);
 	const accounts = new Map([...input.existing, ...created]);
 	const stamp = clock(options.now + input.newAccounts.length);
 	const resolve = securityResolver(

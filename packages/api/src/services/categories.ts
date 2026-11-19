@@ -1,20 +1,23 @@
 import type { CreateCategoryRequest, UpdateCategoryRequest } from "../schemas/categories.ts";
 import type { ServiceDeps } from "./deps.ts";
 
-import { and, eq, inArray, isNotNull, ne } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, notExists } from "drizzle-orm";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
 import { sampleCategoryColor } from "@archant/data/category-presets";
-import { budgetCategories } from "@archant/data/schema/budgets";
+import { budgetCategories, budgets } from "@archant/data/schema/budgets";
 import { categories } from "@archant/data/schema/categories";
 import { recurringTransactions } from "@archant/data/schema/recurring-transactions";
+import { budgetShares } from "@archant/data/schema/sharing";
 import type { Category } from "@archant/data/types";
 
 import { AppError } from "../lib/errors.ts";
+import { forbidden } from "./account-access.ts";
 import { defaultCategoriesFor } from "./default-categories.ts";
 import { householdLocale } from "./household-locale.ts";
 import { countByCategory, recategorise, uncategoriseAll } from "./ledger/edits.ts";
 import { assertNameFree } from "./names.ts";
+import { requireMatchingSeriesEditable } from "./recurring/access.ts";
 
 export type CategorySummary = {
 	id: string;
@@ -209,6 +212,44 @@ export async function updateCategory(
 	return getCategory(deps, id);
 }
 
+async function requireCategoryUsesEditable(deps: ServiceDeps, ids?: string[]) {
+	const { db, actor } = deps;
+	if (actor === undefined) {
+		return;
+	}
+	const grant = db
+		.select({ id: budgetShares.ownerId })
+		.from(budgetShares)
+		.where(
+			and(
+				eq(budgetShares.ownerId, budgets.ownerId),
+				eq(budgetShares.viewerId, actor.id),
+				eq(budgetShares.permission, "read_write"),
+			),
+		);
+	const blocked = await db
+		.select({ id: budgetCategories.id })
+		.from(budgetCategories)
+		.innerJoin(budgets, eq(budgetCategories.budgetId, budgets.id))
+		.where(
+			and(
+				ids === undefined ? undefined : inArray(budgetCategories.categoryId, ids),
+				ne(budgets.ownerId, actor.id),
+				notExists(grant),
+			),
+		)
+		.get();
+	if (blocked !== undefined) {
+		throw forbidden();
+	}
+	await requireMatchingSeriesEditable(
+		deps,
+		ids === undefined
+			? isNotNull(recurringTransactions.categoryId)
+			: inArray(recurringTransactions.categoryId, ids),
+	);
+}
+
 /**
  * Deletes a category. Its transactions move to `replacementId`, or become
  * uncategorised without one; its children become top-level and keep their
@@ -232,7 +273,9 @@ export async function deleteCategory(
 				throw invalid("replacementId", "invalid_value");
 			}
 
-			const moved = await recategorise({ ...deps, db: tx }, id, replacementId ?? null, {
+			const scoped = { ...deps, db: tx };
+			await requireCategoryUsesEditable(scoped, [id]);
+			const moved = await recategorise(scoped, id, replacementId ?? null, {
 				origin: "maintenance",
 			});
 			await tx
@@ -340,9 +383,9 @@ export async function mergeCategories(
 				throw invalid("targetId", "invalid_parent");
 			}
 
-			await inOrder(ids, (id) =>
-				recategorise({ ...deps, db: tx }, id, target.id, { origin: "maintenance" }),
-			);
+			const scoped = { ...deps, db: tx };
+			await requireCategoryUsesEditable(scoped, ids);
+			await inOrder(ids, (id) => recategorise(scoped, id, target.id, { origin: "maintenance" }));
 			await mergeBudgetLines(tx, ids, target.id);
 			// Archant's own: a recurring series keeps a category Sure's has not,
 			// and follows it into the target rather than losing it on delete.
@@ -371,7 +414,9 @@ export async function mergeCategories(
 export async function deleteAllCategories(deps: ServiceDeps): Promise<{ deleted: number }> {
 	return deps.db.transaction(
 		async (tx) => {
-			await uncategoriseAll({ ...deps, db: tx });
+			const scoped = { ...deps, db: tx };
+			await requireCategoryUsesEditable(scoped);
+			await uncategoriseAll(scoped);
 			const children = await tx.delete(categories).where(isNotNull(categories.parentId));
 			const parents = await tx.delete(categories);
 

@@ -40,12 +40,14 @@ import {
 	resolvedExpected,
 } from "../../domain/recurring/occurrences.ts";
 import { AppError } from "../../lib/errors.ts";
+import { accountIds, requireEntry } from "../account-access.ts";
 import {
 	matchableTransactions,
 	occurrenceTransactions,
 	paymentTransaction,
 } from "../ledger/recurring.ts";
 import { KEYS_PER_LOOKUP, inSequence, invalidField } from "../ledger/shared.ts";
+import { requireOccurrence, requirePayment, requireSeries } from "./access.ts";
 import { parseAliases } from "./hints.ts";
 import { seriesWithSchedules } from "./rules.ts";
 
@@ -305,6 +307,7 @@ async function paymentOf(tx: Reader, id: string): Promise<PaymentRecord> {
 export async function confirmPayment(deps: ServiceDeps, id: string): Promise<PaymentRecord> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requirePayment({ ...deps, db: tx }, id, "edit");
 			const payment = await paymentOf(tx, id);
 			const occurrence = (await occurrenceOf(tx, payment.occurrenceId))!;
 			const now = Date.now();
@@ -329,6 +332,7 @@ export async function confirmPayment(deps: ServiceDeps, id: string): Promise<Pay
 export async function rejectPayment(deps: ServiceDeps, id: string): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requirePayment({ ...deps, db: tx }, id, "edit");
 			const payment = await paymentOf(tx, id);
 			const occurrence = (await occurrenceOf(tx, payment.occurrenceId))!;
 			const now = Date.now();
@@ -426,6 +430,8 @@ async function attachEntry(
 ): Promise<PaymentRecord> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, occurrenceId, "edit");
+			await requireEntry({ ...deps, db: tx }, entryId, "edit");
 			const occurrence = await occurrenceOf(tx, occurrenceId);
 
 			if (occurrence === undefined) {
@@ -606,6 +612,7 @@ export async function addPayment(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, occurrenceId, "edit");
 			const occurrence = await occurrenceOf(tx, occurrenceId);
 
 			if (occurrence === undefined) {
@@ -666,6 +673,7 @@ export async function recordBillPayment(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireSeries({ ...deps, db: tx }, seriesId, "edit");
 			const series = await tx
 				.select({
 					status: recurringTransactions.status,
@@ -815,6 +823,7 @@ export async function markPaid(
 
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, id, "edit");
 			const occurrence = await existingOccurrence(tx, id);
 			mustBeOpen(occurrence);
 			await settle(tx, occurrence, paidOn ?? day);
@@ -829,6 +838,7 @@ export async function markPaid(
 export async function skipOccurrence(deps: ServiceDeps, id: string): Promise<OccurrenceRecord> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, id, "edit");
 			const occurrence = await existingOccurrence(tx, id);
 			mustBeOpen(occurrence);
 			const now = Date.now();
@@ -853,6 +863,7 @@ export async function skipOccurrence(deps: ServiceDeps, id: string): Promise<Occ
 export async function reopenOccurrence(deps: ServiceDeps, id: string): Promise<OccurrenceRecord> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, id, "edit");
 			const occurrence = await existingOccurrence(tx, id);
 
 			if (occurrence.status === "scheduled") {
@@ -882,6 +893,7 @@ export async function editOccurrence(
 ): Promise<OccurrenceRecord> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requireOccurrence({ ...deps, db: tx }, id, "edit");
 			const occurrence = await existingOccurrence(tx, id);
 			const now = Date.now();
 			const change =
@@ -913,6 +925,7 @@ export async function editOccurrence(
 export async function removePayment(deps: ServiceDeps, id: string): Promise<{ id: string }> {
 	return deps.db.transaction(
 		async (tx) => {
+			await requirePayment({ ...deps, db: tx }, id, "edit");
 			const payment = await paymentOf(tx, id);
 
 			await tx.delete(recurringAllocations).where(eq(recurringAllocations.id, id));
@@ -950,6 +963,7 @@ export async function paymentCandidates(
 	deps: ServiceDeps,
 	occurrenceId: string,
 ): Promise<PaymentCandidate[]> {
+	await requireOccurrence(deps, occurrenceId);
 	const day = today(deps.timeZone);
 	const row = await deps.db
 		.select({
@@ -974,7 +988,10 @@ export async function paymentCandidates(
 	const series = (await seriesWithSchedules(deps.db, [occurrence.seriesId])).get(
 		occurrence.seriesId,
 	)!;
-	const found = await matchableTransactions(deps.db, windowOf(series, occurrence, day));
+	const allowed = await accountIds(deps, "edit");
+	const found = (await matchableTransactions(deps.db, windowOf(series, occurrence, day))).filter(
+		(entry) => allowed === undefined || allowed.includes(entry.accountId),
+	);
 	const rejected = await deps.db
 		.select({ entryId: recurringMatchRejections.entryId })
 		.from(recurringMatchRejections)
@@ -1057,6 +1074,7 @@ export async function otherPaymentCandidates(
 	occurrenceId: string,
 	q = "",
 ): Promise<OccurrenceTransaction[]> {
+	await requireOccurrence(deps, occurrenceId);
 	const day = today(deps.timeZone);
 	const occurrence = await occurrenceOf(deps.db, occurrenceId);
 
@@ -1074,6 +1092,7 @@ export async function otherPaymentCandidates(
 		(await paymentCandidates(deps, occurrenceId)).map((candidate) => candidate.entryId),
 	);
 	const found = await occurrenceTransactions(deps.db, {
+		accountIds: await accountIds(deps, "edit"),
 		accountId: occurrence.accountId,
 		currency: occurrence.currency,
 		sign: occurrence.seriesAmount < 0 ? "outflow" : "inflow",

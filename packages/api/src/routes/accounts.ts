@@ -12,9 +12,16 @@ import { createAccountSchema, updateAccountSchema } from "../schemas/accounts.ts
 import { balanceQuerySchema } from "../schemas/balances.ts";
 import { costBasisBodySchema, remapBodySchema } from "../schemas/holdings.ts";
 import { MAX_IMPORT_BODY_BYTES, importUploadSchema } from "../schemas/imports.ts";
+import { accountShareSchema, financeInclusionSchema } from "../schemas/sharing.ts";
 import { snapshotBodySchema } from "../schemas/snapshots.ts";
 import { tradeBodySchema, tradePageQuerySchema } from "../schemas/trades.ts";
 import { pageQuerySchema, transactionBodySchema } from "../schemas/transactions.ts";
+import {
+	accountSharing,
+	requireAccount,
+	saveAccountShare,
+	saveFinanceInclusion,
+} from "../services/account-access.ts";
 import { accountOverview } from "../services/account-overview.ts";
 import {
 	createAccount,
@@ -65,6 +72,28 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		.post("/", validated("json", createAccountSchema), async (c) =>
 			c.json({ data: await createAccount(deps, c.req.valid("json")) }, 201),
 		)
+		.get("/:id/sharing", async (c) =>
+			c.json({ data: await accountSharing(deps, c.req.param("id")) }, 200),
+		)
+		.put("/:id/sharing", validated("json", accountShareSchema), async (c) => {
+			const { userId, permission } = c.req.valid("json");
+			return c.json(
+				{ data: await saveAccountShare(deps, c.req.param("id"), userId, permission) },
+				200,
+			);
+		})
+		.patch("/:id/finance-inclusion", validated("json", financeInclusionSchema), async (c) =>
+			c.json(
+				{
+					data: await saveFinanceInclusion(
+						deps,
+						c.req.param("id"),
+						c.req.valid("json").includeInFinances,
+					),
+				},
+				200,
+			),
+		)
 		.get("/:id", async (c) => c.json({ data: await getAccount(deps, c.req.param("id")) }, 200))
 		.patch("/:id", validated("json", updateAccountSchema), async (c) => {
 			const input = c.req.valid("json");
@@ -79,9 +108,10 @@ export function accountsRoutes(deps: ImportDeps & BankConnectionDeps) {
 		.delete("/:id", async (c) =>
 			c.json({ data: await deleteAccount(deps, c.req.param("id")) }, 200),
 		)
-		.delete("/:id/unlink", requireRole("admin"), async (c) =>
-			c.json({ data: await unlinkAccount(deps, c.req.param("id")) }, 200),
-		)
+		.delete("/:id/unlink", requireRole("admin"), async (c) => {
+			await requireAccount(deps, c.req.param("id"), "edit");
+			return c.json({ data: await unlinkAccount(deps, c.req.param("id")) }, 200);
+		})
 		.put("/:id/default", async (c) =>
 			c.json({ data: await setDefaultAccount(deps, signedInUser(c).id, c.req.param("id")) }, 200),
 		)

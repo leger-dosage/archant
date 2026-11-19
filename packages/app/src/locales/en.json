@@ -1,4 +1,30 @@
 {
+	"sharing": {
+		"account": "Account sharing",
+		"budget": "Budget sharing",
+		"settings": "Sharing",
+		"include": "Include in my budgets and reports",
+		"none": "No access",
+		"noMembers": "No other household members.",
+		"chooseBudget": "Choose a budget",
+		"mine": "My budget",
+		"household": "Shared budget",
+		"personalBudgets": "Personal budgets",
+		"defaultAccount": "Default sharing for new accounts",
+		"sharedByDefault": "Share with household",
+		"privateByDefault": "Keep private",
+		"loading": "Loading…",
+		"readOnlyBudget": "Back to the read-only budget",
+		"accountPermission": {
+			"full_control": "Full control",
+			"read_write": "Can annotate",
+			"read_only": "Read only"
+		},
+		"budgetPermission": {
+			"read_write": "Can edit",
+			"read_only": "Read only"
+		}
+	},
 	"app": {
 		"name": "Archant",
 		"pageTitle": "{{page}} · {{app}}"
@@ -912,6 +938,7 @@
 		"noMatch": "No transactions match these filters.",
 		"clearFilters": "Clear filters",
 		"chips": {
+			"budgetAccounts": "Budget accounts",
 			"unknownAccount": "Unknown account",
 			"uncategorised": "Uncategorized",
 			"unknownCategory": "Unknown category",

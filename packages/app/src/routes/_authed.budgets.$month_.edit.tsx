@@ -6,6 +6,7 @@ import { SparklesIcon } from "lucide-react";
 import { useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { z } from "zod";
 
 import type { BudgetFormInput } from "@archant/api/schemas/budgets";
 import { budgetSchema } from "@archant/api/schemas/budgets";
@@ -32,6 +33,7 @@ import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/edit")({
+	validateSearch: z.object({ owner: z.string().optional().catch(undefined) }),
 	// A guest reads the month: its form writes, and the server would refuse the save.
 	beforeLoad: ({ context, params }) => {
 		if (!canWrite(context.session.user.role)) {
@@ -54,6 +56,7 @@ const textOf = (amount: MinorUnits | null, currency: string) =>
 function BudgetForm({ budget, currency }: { budget: BudgetData; currency: CurrencyCode }) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
+	const { owner } = Route.useSearch();
 	const saveBudget = useSaveBudget(budget.month);
 	const schema = useMemo(() => budgetSchema(currency), [currency]);
 	const form = useForm<BudgetFormInput>({
@@ -85,7 +88,11 @@ function BudgetForm({ budget, currency }: { budget: BudgetData; currency: Curren
 			await saveBudget.mutateAsync(values);
 			// On to the second step, as Sure's `BudgetsController#update`; no
 			// success toast, the step's allocation bar says it.
-			await navigate({ to: "/budgets/$month/categories", params: { month: budget.month } });
+			await navigate({
+				to: "/budgets/$month/categories",
+				params: { month: budget.month },
+				search: { owner },
+			});
 		} catch (error) {
 			const apiError = error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR");
 			const unplaced = applyFieldErrors(apiError.fields, FIELD_NAMES, form.setError);
@@ -143,7 +150,7 @@ function BudgetForm({ budget, currency }: { budget: BudgetData; currency: Curren
 				<LeftOutNotice accounts={budget.leftOut} />
 				<div className="flex justify-end gap-2">
 					<Button variant="outline" asChild>
-						<Link to="/budgets/$month" params={{ month: budget.month }}>
+						<Link to="/budgets/$month" params={{ month: budget.month }} search={{ owner }}>
 							{t("common.cancel")}
 						</Link>
 					</Button>
@@ -160,6 +167,7 @@ function BudgetForm({ budget, currency }: { budget: BudgetData; currency: Curren
 function BudgetEditPage() {
 	const { t } = useTranslation();
 	const { month } = Route.useParams();
+	const { owner } = Route.useSearch();
 	const budget = useBudget(month);
 	const valid = monthSchema.safeParse(month).success;
 	const data = budget.data;
@@ -188,10 +196,18 @@ function BudgetEditPage() {
 				<BudgetOutOfRange
 					action={
 						<Button variant="outline" asChild>
-							<Link to="/budgets">{t("budgets.today")}</Link>
+							<Link to="/budgets" search={{ owner }}>
+								{t("budgets.today")}
+							</Link>
 						</Button>
 					}
 				/>
+			)}
+
+			{data?.canWrite === false && (
+				<Link to="/budgets/$month" params={{ month }} search={{ owner }}>
+					{t("sharing.readOnlyBudget")}
+				</Link>
 			)}
 
 			{failed && (
@@ -203,7 +219,7 @@ function BudgetEditPage() {
 				</div>
 			)}
 
-			{data !== undefined && currency !== undefined && isCurrencyCode(currency) && (
+			{data?.canWrite === true && currency !== undefined && isCurrencyCode(currency) && (
 				<BudgetForm key={month} budget={data} currency={currency} />
 			)}
 		</Page>

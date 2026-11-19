@@ -2,6 +2,7 @@ import type { IsoDate } from "../../domain/dates.ts";
 import type { RowPlan, RuleCandidate } from "../../domain/rules/matching.ts";
 import type { EditableRow, TransactionDetail } from "./patch.ts";
 import type { Origin, Transaction } from "./shared.ts";
+import type { SQL } from "drizzle-orm";
 
 import { and, eq, gte, inArray } from "drizzle-orm";
 
@@ -221,7 +222,11 @@ export async function applyRulePlan(
 export async function ruleCandidates(
 	db: Pick<Transaction, "select">,
 	from: IsoDate | null,
-	{ activeAccountsOnly, entryIds }: { activeAccountsOnly: boolean; entryIds?: string[] },
+	{
+		activeAccountsOnly,
+		entryIds,
+		accountFilter,
+	}: { activeAccountsOnly: boolean; entryIds?: string[]; accountFilter?: SQL | undefined },
 ): Promise<RuleCandidate[]> {
 	const rows = await db
 		.select({
@@ -239,6 +244,7 @@ export async function ruleCandidates(
 		.where(
 			and(
 				eq(entries.kind, "transaction"),
+				accountFilter,
 				notSplitParent,
 				activeAccountsOnly ? eq(accounts.active, true) : undefined,
 				from === null ? undefined : gte(entries.date, from),

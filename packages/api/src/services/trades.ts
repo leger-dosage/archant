@@ -9,6 +9,7 @@ import { isCurrencyCode } from "@archant/data/money";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import { createTradeSchema, updateTradeSchema } from "../schemas/trades.ts";
+import { requireAccount, requireEntry, requireEntry as readEntry } from "./account-access.ts";
 import { getAccount } from "./accounts.ts";
 import {
 	deleteTrade as deleteLedgerTrade,
@@ -52,6 +53,7 @@ export async function tradeCurrency(
 
 /** One trade as the API answers it; `NOT_FOUND` when the id names none. */
 export async function getTrade(deps: ServiceDeps, id: string): Promise<TradeData> {
+	await readEntry(deps, id);
 	const record = await findTrade(deps, id);
 
 	if (record === null) {
@@ -71,6 +73,7 @@ export async function listAccountTrades(
 	accountId: string,
 	page: { page: number; pageSize: number; securityId?: string | undefined },
 ): Promise<TradePage> {
+	await requireAccount(deps, accountId, "read");
 	await getAccount(deps, accountId);
 	const { items, total } = await listTrades(deps, accountId, page);
 
@@ -83,6 +86,7 @@ export async function createTrade(
 	accountId: string,
 	input: TradeInput,
 ): Promise<TradeData> {
+	await requireAccount(deps, accountId, "edit");
 	const currency = await tradeCurrency(deps, accountId);
 	const parsed = createTradeSchema(currency).safeParse(input);
 
@@ -104,6 +108,7 @@ export async function updateTrade(
 	id: string,
 	input: TradePatchInput,
 ): Promise<TradeData> {
+	await requireEntry(deps, id, "edit");
 	const current = await getTrade(deps, id);
 	const currency = await tradeCurrency(deps, current.accountId, { held: true });
 	const parsed = updateTradeSchema(currency).safeParse(input);
@@ -119,6 +124,7 @@ export async function updateTrade(
 
 /** Deletes a trade for good; a converted one gives its transaction back. */
 export async function deleteTrade(deps: ServiceDeps, id: string): Promise<{ id: string }> {
+	await requireEntry(deps, id, "edit");
 	await deleteLedgerTrade(deps, id, { origin: "user" });
 
 	return { id };

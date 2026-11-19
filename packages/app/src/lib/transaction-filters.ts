@@ -28,6 +28,7 @@ const isoDate = z.iso.date();
 export const operationsSearchSchema = z
 	.object({
 		page: z.number().int().min(1).optional().catch(undefined),
+		budgetOwner: z.string().min(1).max(200).optional().catch(undefined),
 		// A hand-written `?account=<id>` reaches the router as a lone string, a form
 		// the API accepts too.
 		account: z
@@ -135,8 +136,9 @@ export const OPERATOR_OPTIONS = [
 
 export type FilterKind = (typeof FILTER_KINDS)[number];
 
-const PARAMS_OF: Record<FilterKind | "q", readonly (keyof TransactionFilters)[]> = {
+const PARAMS_OF: Record<FilterChip["kind"] | "q", readonly (keyof TransactionFilters)[]> = {
 	account: ["account"],
+	budgetOwner: ["budgetOwner"],
 	category: ["category"],
 	tag: ["tag"],
 	merchant: ["merchant"],
@@ -157,7 +159,10 @@ export function hasFilters(filters: TransactionFilters): boolean {
 }
 
 /** The search without one filter, back on the first page. */
-export function withoutFilter(search: OperationsSearch, kind: FilterKind | "q"): OperationsSearch {
+export function withoutFilter(
+	search: OperationsSearch,
+	kind: FilterChip["kind"] | "q",
+): OperationsSearch {
 	const next: OperationsSearch = { ...search, page: undefined };
 
 	for (const param of PARAMS_OF[kind]) {
@@ -176,6 +181,7 @@ export function toApiQuery(filters: TransactionFilters, page: number) {
 export function toTotalsQuery(filters: TransactionFilters) {
 	return {
 		...(filters.account === undefined ? {} : { account: filters.account }),
+		...(filters.budgetOwner === undefined ? {} : { budgetOwner: filters.budgetOwner }),
 		...(filters.category === undefined ? {} : { category: filters.category }),
 		...(filters.merchant === undefined ? {} : { merchant: filters.merchant }),
 		...(filters.tag === undefined ? {} : { tag: filters.tag }),
@@ -195,6 +201,7 @@ export function toTotalsQuery(filters: TransactionFilters) {
 type ChipKey =
 	| `operations.chips.${
 			| "unknownAccount"
+			| "budgetAccounts"
 			| "unknownCategory"
 			| "uncategorised"
 			| "unknownMerchant"
@@ -215,7 +222,7 @@ type ChipKey =
 /** i18next's `t`, narrowed to the chip labels so a test can stand in for it. */
 export type Translate = (key: ChipKey, values?: Record<string, string>) => string;
 
-export type FilterChip = { kind: FilterKind; label: string };
+export type FilterChip = { kind: FilterKind | "budgetOwner"; label: string };
 
 /** The names the chips show, looked up in the lists the page already holds. */
 export type FilterNames = {
@@ -286,6 +293,9 @@ export function filterChips(
 	t: Translate,
 ): FilterChip[] {
 	const chips: FilterChip[] = [];
+	if (filters.budgetOwner !== undefined) {
+		chips.push({ kind: "budgetOwner", label: t("operations.chips.budgetAccounts") });
+	}
 
 	if (filters.account !== undefined) {
 		chips.push({ kind: "account", label: accountLabel(filters.account, names, t) });

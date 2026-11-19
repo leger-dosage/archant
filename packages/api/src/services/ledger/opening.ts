@@ -10,6 +10,7 @@ import { entries } from "@archant/data/schema/entries";
 
 import { minDate, today } from "../../domain/dates.ts";
 import { isTooFarAhead } from "../../domain/statement.ts";
+import { requireAccount } from "../account-access.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
 
 export type OpeningBalanceInput = {
@@ -134,6 +135,7 @@ export async function setOpeningBalance(
 ): Promise<OpeningBalanceResult> {
 	return deps.db.transaction(
 		async (tx): Promise<OpeningBalanceResult> => {
+			await requireAccount({ ...deps, db: tx }, accountId, "edit");
 			const account = await accountWithOpeningDate(tx, accountId);
 
 			// The sheet always sends the date: unchanged, it moves nothing to check.
