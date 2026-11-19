@@ -5,4 +5,4 @@
 ## 2. Verification
 
 - [x] 2.1 Vitest covers the layout chosen per role and on promotion; Playwright signs in as a guest and lands on the « Intro » page.
-- [ ] 2.2 Run the repository verification commands.
+- [x] 2.2 Run the repository verification commands.
