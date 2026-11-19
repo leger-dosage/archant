@@ -341,11 +341,14 @@ const expecting = (side: { id: string; accountId: string; expectedAccountId: str
  * written, so the result depends neither on line order nor on which account
  * synced first. No balance, lock or tag moves; a contribution's outflow
  * without a category takes « Contributions aux investissements », as Sure's.
+ * An immediate rule run gives the entries whose expected counterpart changed.
+ * Rank all pairs as usual, then write only pairs that involve those entries.
  * Returns the inflow ids so ingestion can identify deposits booked in this write.
  */
 export async function matchTransfers(
 	tx: Pick<Transaction, "select" | "insert" | "update">,
 	now: number,
+	only?: ReadonlySet<string>,
 ): Promise<string[]> {
 	const rows = accepted(await proposalCandidateQuery(tx), PROPOSAL);
 	// Each line with what it sees of the other side of each of its pairs.
@@ -378,7 +381,11 @@ export async function matchTransfers(
 				days: Math.abs(daysBetween(row.source.date, row.candidate.date)),
 				row,
 			})),
-	).map(({ row }) => transferBetween(row.source, row.candidate, "pending", now));
+	)
+		.filter(
+			({ outflowId, inflowId }) => only === undefined || only.has(outflowId) || only.has(inflowId),
+		)
+		.map(({ row }) => transferBetween(row.source, row.candidate, "pending", now));
 
 	await inSequence(links, ROWS_PER_INSERT, (chunk) => tx.insert(transfers).values(chunk));
 	await clearOneTime(tx, links.flatMap(sidesOf));

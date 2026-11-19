@@ -18,13 +18,19 @@ const DISMISSED_FOR_MS = 24 * 60 * 60 * 1000;
  * only, as Sure's `matching_resources_scope` reads visible transactions.
  */
 async function eligibleForCategoryRule(deps: ServiceDeps, entryId: string): Promise<boolean> {
-	const [stored] = await ruleCandidates(deps.db, null, { activeAccountsOnly: false, entryId });
+	const [stored] = await ruleCandidates(deps.db, null, {
+		activeAccountsOnly: false,
+		entryIds: [entryId],
+	});
 
 	if (stored === undefined || stored.categoryId === null) {
 		return false;
 	}
 
-	const [line] = await ruleCandidates(deps.db, null, { activeAccountsOnly: true, entryId });
+	const [line] = await ruleCandidates(deps.db, null, {
+		activeAccountsOnly: true,
+		entryIds: [entryId],
+	});
 
 	if (line === undefined) {
 		return true;

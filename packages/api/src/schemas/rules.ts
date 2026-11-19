@@ -48,6 +48,7 @@ export const ruleBodySchema = z.object({
 	// rule waits for its confirmation and an edit keeps the switch.
 	enabled: z.boolean().optional(),
 	stopProcessing: z.boolean().optional(),
+	applyImmediately: z.boolean().optional(),
 	effectiveDate: z.string().nullable().optional(),
 	conditions: z.array(conditionBody.extend({ conditions: z.array(conditionBody).optional() })),
 	actions: z.array(
@@ -74,6 +75,7 @@ const leafFields = {
 
 const fields = {
 	stopProcessing: ruleBodySchema.shape.stopProcessing,
+	applyImmediately: ruleBodySchema.shape.applyImmediately,
 	// A blank name is no name: the list shows the summary instead.
 	name: z
 		.string()

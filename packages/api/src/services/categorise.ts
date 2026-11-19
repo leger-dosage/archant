@@ -11,9 +11,9 @@ import { groupTypeOf, groupUncategorised } from "../domain/categorise-groups.ts"
 import { squishLabel } from "../domain/normalize-label.ts";
 import { AppError } from "../lib/errors.ts";
 import { MAX_CATEGORIZE_IDS } from "../schemas/transactions.ts";
-import { bulkUpdateTransactions } from "./ledger/edits.ts";
 import { countUncategorised, listTransactionsById, uncategorisedLines } from "./ledger/queries.ts";
 import { createRule, listRules } from "./rules.ts";
+import { bulkUpdateTransactions } from "./transactions.ts";
 
 /** A line as the wizard's row shows it. */
 export type CategorizeLine = {
@@ -161,12 +161,10 @@ export async function categorize(
 	deps: ServiceDeps,
 	request: CategorizeRequest,
 ): Promise<CategorizeResult> {
-	const { matched } = await bulkUpdateTransactions(
-		deps,
-		{ ids: request.ids },
-		{ categoryId: request.categoryId },
-		{ origin: "user" },
-	);
+	const { updated } = await bulkUpdateTransactions(deps, {
+		selection: { ids: request.ids },
+		patch: { categoryId: request.categoryId },
+	});
 	const rule =
 		request.rule === undefined
 			? null
@@ -174,5 +172,5 @@ export async function categorize(
 				? "created"
 				: "failed";
 
-	return { updated: matched, remaining: await countUncategorised(deps), rule };
+	return { updated, remaining: await countUncategorised(deps), rule };
 }

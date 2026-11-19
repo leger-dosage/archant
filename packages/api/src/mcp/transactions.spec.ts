@@ -235,6 +235,64 @@ async function merchantId(name: string) {
 const sure = (error: string, message: string) => ({ success: false, error, message });
 
 describe("create_transaction", () => {
+	it("applies immediate rules to assistant creates, edits and bulk edits", async () => {
+		const account = await checking();
+		const category = await ownCategory("Marché immédiat");
+		const tag = await idOf("Marché immédiat");
+		await sendOwn("POST", "/api/rules", {
+			enabled: true,
+			applyImmediately: true,
+			conditions: [{ conditionType: "transaction_name", operator: "like", value: "marché" }],
+			actions: [
+				{ actionType: "set_transaction_category", value: category },
+				{ actionType: "set_transaction_tags", value: tag },
+			],
+		});
+		const tools = await assistants();
+		const line = { account_id: account.id, date: "2026-09-19", amount: "23.40" };
+		const saved = created.parse(
+			(
+				await tools.write("create_transaction", {
+					...line,
+					name: "Marché du samedi",
+					external_id: "market",
+				})
+			).structuredContent,
+		);
+		expect(saved.category?.id).toBe(category);
+		expect(saved.tags).toEqual([{ id: tag, name: "Marché immédiat" }]);
+		const existing = await postOwn(account.id, {
+			date: line.date,
+			label: "À classer",
+			amount: "-2,00",
+		});
+		const edited = await tools.write("update_transaction", {
+			id: existing,
+			name: "Marché du mardi",
+		});
+		expect(edited.structuredContent).toMatchObject({
+			success: true,
+			transaction: { category: { id: category } },
+		});
+
+		const bulk = await postOwn(account.id, {
+			date: line.date,
+			label: "Autre achat",
+			amount: "-3,00",
+		});
+		expect(
+			(
+				await tools.write("bulk_update_transactions", {
+					ids: [bulk],
+					patch: { name: "Marché du jeudi" },
+				})
+			).structuredContent,
+		).toMatchObject({ success: true, changed: 1 });
+		expect(
+			(await tools.read("get_transactions", { search: "Marché du jeudi" })).structuredContent,
+		).toMatchObject({ transactions: [{ category: "Marché immédiat" }] });
+	});
+
 	it("records a line as the sheet does, in Sure's sign, the rule matching its label waiting for the next sync", async () => {
 		const account = await checking();
 		const market = await ownCategory("Marché");

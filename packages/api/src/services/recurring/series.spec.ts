@@ -333,7 +333,7 @@ describe("detection", () => {
 		const [excluded = ""] = await addRows(accountId, ["2026-07-10", "2026-08-10", "2026-09-10"]);
 		await expect(
 			updateTransaction(deps(), excluded, { excluded: true }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(runRecurring(deps(), { backfill: false })).resolves.toEqual({ detected: 1 });
 		await expect(stored()).resolves.toMatchObject([{ occurrenceCount: 3 }]);

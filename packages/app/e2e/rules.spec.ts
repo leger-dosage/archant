@@ -104,6 +104,75 @@ test("a rule saved from the form categorises the next imported transaction it ma
 	await expectCategory(page, label, "Courses");
 });
 
+test("an immediate rule classifies a transaction saved in the account form", async ({
+	page,
+	api,
+}) => {
+	const account = await api.openAccount();
+	const label = uniqueName("Marché immédiat");
+	await visit(page);
+	await page.getByRole("button", { name: "Ajouter une règle" }).click();
+	const flag = dialog(page).getByRole("switch", { name: "Appliquer immédiatement" });
+	await expect(flag).not.toBeChecked();
+	await flag.click();
+	await dialog(page).getByLabel("Valeur de la condition 1").fill(label);
+	await dialog(page).getByRole("button", { name: "Catégorie", exact: true }).click();
+	await page.getByRole("option", { name: "Courses", exact: true }).click();
+	await dialog(page).getByRole("button", { name: "Enregistrer" }).click();
+	await later(page);
+
+	await page.getByRole("link", { name: new RegExp(account.name) }).click();
+	await page.getByRole("button", { name: "Ajouter une opération" }).first().click();
+	const sheet = page.getByRole("dialog", { name: "Ajouter une opération" });
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(2)));
+	await sheet.getByLabel("Libellé").fill(label);
+	await sheet.getByLabel("Montant").fill("23,40");
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+	await expect(sheet).toBeHidden();
+	await page
+		.getByRole("navigation", { name: "Navigation principale" })
+		.getByRole("link", { name: "Règles", exact: true })
+		.click();
+	await expect(page.getByRole("cell", { name: "Immédiat", exact: true })).toBeVisible();
+	await expectCategory(page, label, "Courses");
+});
+
+test("saving a date after a note keeps an immediate rule's exclusion", async ({ page, api }) => {
+	const account = await api.openAccount();
+	const label = uniqueName("Operation à exclure");
+	const note = uniqueName("Note de contrôle");
+	await api.addTransaction(account.id, { date: daysAgo(4), label, amount: "-23,40" });
+	await api.createRule({
+		applyImmediately: true,
+		conditions: [{ conditionType: "transaction_notes", operator: "like", value: note }],
+		actions: [{ actionType: "exclude_transaction", value: null }],
+	});
+	await page.goto(`/accounts/${account.id}`);
+	await page
+		.getByRole("main")
+		.getByRole("button", { name: new RegExp(label) })
+		.click();
+	const sheet = page.getByRole("dialog", { name: "Modifier l'opération" });
+	const patched = () =>
+		page.waitForResponse(
+			(response) =>
+				response.request().method() === "PATCH" && response.url().includes("/api/transactions/"),
+		);
+
+	const noteResponse = patched();
+	await sheet.getByLabel("Notes").fill(note);
+	await sheet.getByLabel("Date", { exact: true }).focus();
+	expect(await (await noteResponse).json()).toMatchObject({ data: { excluded: true } });
+
+	const dateResponse = patched();
+	await sheet.getByLabel("Date", { exact: true }).fill(typed(daysAgo(2)));
+	await sheet.getByRole("button", { name: "Enregistrer" }).click();
+	expect(await (await dateResponse).json()).toMatchObject({
+		data: { excluded: true, date: daysAgo(2) },
+	});
+	await expect(sheet).toBeHidden();
+});
+
 test("the list sums up the other conditions and shows a rule's name", async ({ page, api }) => {
 	const category = await api.createCategory();
 	await api.createRule({

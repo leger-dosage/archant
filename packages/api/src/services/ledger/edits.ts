@@ -21,6 +21,7 @@ import { transfers } from "@archant/data/schema/transfers";
 import { minDate, today } from "../../domain/dates.ts";
 import { isTooFarAhead, rejectionFor } from "../../domain/statement.ts";
 import { AppError } from "../../lib/errors.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import { manualReconciliationEnabled } from "../manual-reconciliation.ts";
 import { deleteAttachmentsOf } from "./attachments.ts";
 import { accountWithOpeningDate, recomputeBalances } from "./balances.ts";
@@ -96,7 +97,18 @@ export async function updateTransaction(
 		async (tx): Promise<UpdateResult> => {
 			const current = await transactionRow(tx, entryId);
 			const account = await accountWithOpeningDate(tx, current.accountId);
-			const change = changeOf(current, patch, options.origin);
+			const { tagIds, previousTagIds } = patch;
+			// The note may have triggered a rule while the tag picker was still open.
+			// Apply only the selection's additions and removals to the stored set.
+			const selected =
+				tagIds === undefined || previousTagIds === undefined
+					? tagIds
+					: current.tagIds
+							.filter((id) => !previousTagIds.includes(id) || tagIds.includes(id))
+							.concat(
+								tagIds.filter((id) => !previousTagIds.includes(id) && !current.tagIds.includes(id)),
+							);
+			const change = changeOf(current, { ...patch, tagIds: selected }, options.origin);
 			const { next, changed } = change;
 
 			if (changed.some((field) => SPLIT_FIELDS.has(field))) {
@@ -123,6 +135,10 @@ export async function updateTransaction(
 				throw invalidField("merchantId");
 			}
 
+			if (changed.includes("tags") && next.tagIds.length > MAX_TAGS_PER_TRANSACTION) {
+				throw invalidField("tagIds", "too_big");
+			}
+
 			if (
 				changed.includes("tags") &&
 				next.tagIds.length > 0 &&
@@ -141,7 +157,9 @@ export async function updateTransaction(
 			}
 
 			// Sure's `one_time` kind, written apart: no other origin sets it, so it takes no lock.
-			if (patch.oneTime !== undefined && patch.oneTime !== current.oneTime) {
+			const oneTimeChanged = patch.oneTime !== undefined && patch.oneTime !== current.oneTime;
+
+			if (oneTimeChanged) {
 				await tx
 					.update(transactions)
 					.set({ oneTime: patch.oneTime })
@@ -149,7 +167,7 @@ export async function updateTransaction(
 			}
 
 			if (changed.length === 0) {
-				return { status: "updated" };
+				return { status: "updated", changed: oneTimeChanged };
 			}
 
 			// The category, the merchant, the tags and the activity label live beside
@@ -202,7 +220,7 @@ export async function updateTransaction(
 				await recomputeBalances(tx, account, minDate(current.date, next.date), deps.timeZone);
 			}
 
-			return { status: "updated" };
+			return { status: "updated", changed: true };
 		},
 		{ behavior: "immediate" },
 	);
@@ -333,7 +351,7 @@ async function selectedRows(tx: Transaction, selection: BulkSelection) {
 }
 
 /** How many rows a bulk edit selected, and how many of them it changed. */
-export type BulkUpdateResult = { matched: number; changed: number };
+export type BulkUpdateResult = { matched: number; changed: number; changedIds: string[] };
 
 /**
  * Sets the date, the label, the notes, the category, the merchant or the tags
@@ -411,6 +429,7 @@ export async function bulkUpdateTransactions(
 			const reconciled: string[] = [];
 			const earliest = new Map<string, IsoDate>();
 			const retagged: string[] = [];
+			const changedIds: string[] = [];
 			const newTaggings: { transactionId: string; tagId: string }[] = [];
 			let changed = 0;
 
@@ -459,6 +478,7 @@ export async function bulkUpdateTransactions(
 					continue;
 				}
 
+				changedIds.push(id);
 				const detail = detailOf(change, options.origin, now);
 				const key = writeKeyOf(detail, change, options.origin);
 				const group = writes.get(key);
@@ -513,7 +533,7 @@ export async function bulkUpdateTransactions(
 				await recomputeBalances(tx, account, from, deps.timeZone);
 			});
 
-			return { matched: rows.length, changed };
+			return { matched: rows.length, changed, changedIds };
 		},
 		{ behavior: "immediate" },
 	);

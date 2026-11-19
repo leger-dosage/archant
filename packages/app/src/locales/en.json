@@ -3200,6 +3200,8 @@
 			"namePlaceholder": "Optional",
 			"stopProcessing": "Stop processing",
 			"stopProcessingHint": "Skip later rules for transactions matched by this rule.",
+			"applyImmediately": "Apply immediately",
+			"applyImmediatelyHint": "Run this rule and the enabled rules above it when a transaction is added or edited.",
 			"effectiveDate": "Starting from",
 			"effectiveDateHint": "Optional. The rule only touches transactions dated on or after this day.",
 			"conditions": "If",
@@ -3270,7 +3272,8 @@
 			},
 			"types": {
 				"manual": "Manual",
-				"scheduled": "Scheduled"
+				"scheduled": "Scheduled",
+				"immediate": "Immediate"
 			},
 			"statuses": {
 				"pending": "Pending",

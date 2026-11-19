@@ -33,6 +33,7 @@ export const rules = sqliteTable("rules", {
 	enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
 	effectiveDate: text("effective_date"),
 	position: integer("position").notNull().default(0),
+	applyImmediately: integer("apply_immediately", { mode: "boolean" }).notNull().default(false),
 	stopProcessing: integer("stop_processing", { mode: "boolean" }).notNull().default(false),
 	createdAt: integer("created_at").notNull(),
 	updatedAt: integer("updated_at").notNull(),

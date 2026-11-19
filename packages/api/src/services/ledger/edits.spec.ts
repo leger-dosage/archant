@@ -9,6 +9,7 @@ import { tags } from "@archant/data/schema/tags";
 import { transactions } from "@archant/data/schema/transactions";
 
 import * as forward from "../../domain/balances/forward.ts";
+import { MAX_TAGS_PER_TRANSACTION } from "../../schemas/transactions.ts";
 import {
 	add,
 	asUser,
@@ -77,7 +78,7 @@ describe("updateTransaction", () => {
 				{ date: "2026-09-05", amount: toMinorUnits(-5000), label: "Boulangerie" },
 				{ origin: "user" },
 			),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		const days = await history(account.id);
 		expect(days.get("2026-09-04")).toBe(123456);
@@ -180,7 +181,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { amount: toMinorUnits(-4290) }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: false });
 
 		await expect(temp.db.select().from(entries).where(eq(entries.id, id)).get()).resolves.toEqual(
 			before,
@@ -193,7 +194,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { date: "2026-08-20" }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ date: "2026-08-20" });
 		await expect(balanceOn(deps(), account.id, "2026-08-20")).resolves.toMatchObject({
@@ -240,7 +241,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { excluded: true }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ excluded: true });
 		await expect(lockedFields(id)).resolves.toEqual(["date", "amount", "label", "excluded"]);
@@ -273,7 +274,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { categoryId: groceries }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ categoryId: groceries });
 		await expect(categoryOriginOf(id)).resolves.toBe("user");
@@ -373,7 +374,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { merchantId: carrefour }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({ merchantId: carrefour });
 		await expect(lockedFields(id)).resolves.toEqual(["merchant"]);
@@ -458,7 +459,7 @@ describe("updateTransaction", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { tagIds: [holidays, work, holidays] }, { origin: "user" }),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(tagsOf(id)).resolves.toEqual([holidays, work].toSorted());
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
@@ -481,6 +482,29 @@ describe("updateTransaction", () => {
 		await updateTransaction(deps(), id, { tagIds: [work] }, { origin: "user" });
 
 		await expect(tagsOf(id)).resolves.toEqual([work]);
+	});
+
+	it("refuses a merged selection that would exceed the tag limit", async () => {
+		const account = await openChecking();
+		const id = await add(account.id, {}, "sync");
+		const full = await Promise.all(
+			Array.from({ length: MAX_TAGS_PER_TRANSACTION }, (_, index) => newTag(`Saved tag ${index}`)),
+		);
+		const added = await newTag("New tag in stale selection");
+		await updateTransaction(deps(), id, { tagIds: full }, { origin: "rule" });
+
+		await expect(
+			updateTransaction(
+				deps(),
+				id,
+				{ tagIds: [added, full[0] ?? ""], previousTagIds: [full[0] ?? ""] },
+				{ origin: "user" },
+			),
+		).rejects.toMatchObject({
+			code: "VALIDATION_ERROR",
+			fields: [{ path: "tagIds", code: "too_big" }],
+		});
+		await expect(tagsOf(id)).resolves.toEqual(full.toSorted());
 	});
 
 	it("clears the tags by hand, locking them", async () => {
@@ -554,7 +578,7 @@ describe("updateTransaction and the investment activity label", () => {
 
 		await expect(
 			updateTransaction(deps(), id, { investmentActivityLabel: "Dividend" }, asUser),
-		).resolves.toEqual({ status: "updated" });
+		).resolves.toEqual({ status: "updated", changed: true });
 
 		await expect(findTransaction(deps(), id)).resolves.toMatchObject({
 			investmentActivityLabel: "Dividend",
@@ -1136,7 +1160,7 @@ describe("manual reconciliation", () => {
 		});
 		await expect(
 			bulkUpdateTransactions(deps(), selection, { reconciliationStatus: "reconciled" }, asUser),
-		).resolves.toEqual({ matched: 4, changed: 3 });
+		).resolves.toMatchObject({ matched: 4, changed: 3 });
 		await expect(
 			bulkUpdateTransactions(
 				deps(),
@@ -1144,7 +1168,7 @@ describe("manual reconciliation", () => {
 				{ reconciliationStatus: "reconciled", notes: "Lu" },
 				asUser,
 			),
-		).resolves.toEqual({ matched: 4, changed: 4 });
+		).resolves.toMatchObject({ matched: 4, changed: 4 });
 		await expect(findTransaction(deps(), synced)).resolves.toMatchObject({
 			reconciliationStatus: null,
 			notes: "Lu",
@@ -1194,7 +1218,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids }, { categoryId: groceries }, asUser),
-		).resolves.toEqual({ matched: 3, changed: 3 });
+		).resolves.toMatchObject({ matched: 3, changed: 3 });
 
 		await expect(Promise.all(ids.map(categoryOf))).resolves.toEqual([
 			groceries,
@@ -1222,7 +1246,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids }, { date: "2026-09-05", label: "Pain" }, asUser),
-		).resolves.toEqual({ matched: 3, changed: 3 });
+		).resolves.toMatchObject({ matched: 3, changed: 3 });
 
 		await expect(
 			Promise.all(ids.map(async (id) => findTransaction(deps(), id))),
@@ -1245,7 +1269,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [spent, saved] }, { date: "2026-09-05" }, asUser),
-		).resolves.toEqual({ matched: 2, changed: 2 });
+		).resolves.toMatchObject({ matched: 2, changed: 2 });
 
 		expect(recompute).toHaveBeenCalledTimes(2);
 		const jointDays = await history(joint.id);
@@ -1286,7 +1310,7 @@ describe("bulkUpdateTransactions", () => {
 				{ date: "2026-09-05", label: "Courses du mois" },
 				asUser,
 			),
-		).resolves.toEqual({ matched: 2, changed: 2 });
+		).resolves.toMatchObject({ matched: 2, changed: 2 });
 
 		await expect(findTransaction(deps(), parent)).resolves.toEqual(before);
 		await expect(lockedFields(parent)).resolves.toEqual(parentLocks);
@@ -1310,7 +1334,7 @@ describe("bulkUpdateTransactions", () => {
 				{ notes: "Revue" },
 				{ ...asUser, expectedCount: 3 },
 			),
-		).resolves.toEqual({ matched: 3, changed: 3 });
+		).resolves.toMatchObject({ matched: 3, changed: 3 });
 		await expect(findTransaction(deps(), other)).resolves.toMatchObject({ notes: "Revue" });
 	});
 
@@ -1324,7 +1348,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [tagged, bare] }, { tagIds: [work] }, asUser),
-		).resolves.toEqual({ matched: 2, changed: 2 });
+		).resolves.toMatchObject({ matched: 2, changed: 2 });
 
 		await expect(tagsOf(tagged)).resolves.toEqual([work]);
 		await expect(tagsOf(bare)).resolves.toEqual([work]);
@@ -1402,7 +1426,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [already, moved] }, { categoryId: groceries }, asUser),
-		).resolves.toEqual({ matched: 2, changed: 1 });
+		).resolves.toMatchObject({ matched: 2, changed: 1 });
 
 		await expect(lockedFields(already)).resolves.toEqual([]);
 		await expect(categoryOriginOf(already)).resolves.toBe("rule");
@@ -1428,7 +1452,7 @@ describe("bulkUpdateTransactions", () => {
 				{ categoryId: groceries },
 				asUser,
 			),
-		).resolves.toEqual({ matched: 3, changed: 3 });
+		).resolves.toMatchObject({ matched: 3, changed: 3 });
 
 		await expect(Promise.all(uncategorised.map(categoryOf))).resolves.toEqual([
 			groceries,
@@ -1449,10 +1473,10 @@ describe("bulkUpdateTransactions", () => {
 				{ notes: "Revue" },
 				asUser,
 			),
-		).resolves.toEqual({ matched: 0, changed: 0 });
+		).resolves.toMatchObject({ matched: 0, changed: 0 });
 		await expect(
 			bulkUpdateTransactions(deps(), { filter: { merchantIds: [] } }, { notes: "Revue" }, asUser),
-		).resolves.toEqual({ matched: 0, changed: 0 });
+		).resolves.toMatchObject({ matched: 0, changed: 0 });
 	});
 
 	it("writes nothing when an id names no transaction", async () => {
@@ -1483,7 +1507,7 @@ describe("bulkUpdateTransactions", () => {
 
 		await expect(
 			bulkUpdateTransactions(deps(), { ids: [id, id] }, { notes: "Revue" }, asUser),
-		).resolves.toEqual({ matched: 1, changed: 1 });
+		).resolves.toMatchObject({ matched: 1, changed: 1 });
 	});
 
 	it.each([
@@ -1552,7 +1576,7 @@ describe("bulkUpdateTransactions", () => {
 				{ categoryId: groceries },
 				{ ...asUser, expectedCount: 2 },
 			),
-		).resolves.toEqual({ matched: 2, changed: 1 });
+		).resolves.toMatchObject({ matched: 2, changed: 1 });
 
 		await expect(categoryOf(moved)).resolves.toBe(groceries);
 		await expect(lockedFields(already)).resolves.toEqual([]);
@@ -1634,7 +1658,7 @@ describe("bulkUpdateTransactions on 5,000 rows", () => {
 					{ categoryId: category, tagIds: [tag] },
 					asUser,
 				),
-			).resolves.toEqual({ matched: 5000, changed: 5000 });
+			).resolves.toMatchObject({ matched: 5000, changed: 5000 });
 
 			expect(transaction).toHaveBeenCalledTimes(1);
 			// Rows locking the same fields share a statement, whatever they held: 500 rows each.

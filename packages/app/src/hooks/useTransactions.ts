@@ -93,12 +93,13 @@ export function useCreateTransaction(accountId: string) {
 					api.accounts[":id"].transactions.$post({ param: { id: accountId }, json: input }),
 				)
 			).data,
-		// The matcher may pair the line as a contribution and create
-		// « Contributions aux investissements ».
+		// The matcher can create a contribution and immediate rules can classify or tag the line.
 		onSuccess: () =>
 			Promise.all([
 				invalidate(),
 				queryClient.invalidateQueries({ queryKey: queryKeys.categories.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
 			]),
 	});
 }
@@ -241,6 +242,8 @@ function useSetRowField<Field extends RowField>(field: Field) {
 			Promise.all([
 				queryClient.invalidateQueries({ queryKey: queryKeys.transactions.all }),
 				queryClient.invalidateQueries({ queryKey: texts.counts }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.merchants.all }),
+				queryClient.invalidateQueries({ queryKey: queryKeys.tags.all }),
 			]),
 	});
 
