@@ -73,7 +73,7 @@ export const createBillInput = z.strictObject({
 		"Next due date, YYYY-MM-DD: its day of the month, weekday and month set the schedule's.",
 	),
 	frequency: frequencyText.describe(
-		`Cadence, monthly by default: ${FREQUENCY_PRESETS.join(", ")}. Any other word is refused, "yearly" among them.`,
+		`Cadence, monthly by default: ${FREQUENCY_PRESETS.join(", ")}. Use once for a single occurrence on first_due_on. Any other word is refused, "yearly" among them.`,
 	),
 	is_income: looseBoolean
 		.nullable()
@@ -136,7 +136,7 @@ export const updateBillInput = z.strictObject({
 		.optional()
 		.describe('"paused" sets the bill aside, with no new occurrences; "active" resumes it.'),
 	frequency: frequencyText.describe(
-		`New cadence, pinned against detection: ${FREQUENCY_PRESETS.join(", ")}. Combine with due_day_of_month, weekday or month_of_year as the cadence needs.`,
+		`New cadence, pinned against detection: ${FREQUENCY_PRESETS.join(", ")}. Use once for a single occurrence on the current due date. Combine repeating cadences with due_day_of_month, weekday or month_of_year as needed.`,
 	),
 	due_day_of_month: looseInteger
 		.nullable()

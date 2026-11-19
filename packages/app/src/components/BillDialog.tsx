@@ -23,6 +23,7 @@ import {
 	INTERVAL_PRESET,
 	INTERVAL_UNITS,
 	MAX_INTERVAL,
+	ONCE_PRESET,
 	PICKER_SHOWN,
 	declareBillSchema,
 	editBillSchema,
@@ -142,6 +143,7 @@ const EDIT_FIELDS = [
 	"frequency.secondDayOfMonth",
 	"frequency.weekday",
 	"frequency.monthOfYear",
+	"frequency.onceOn",
 	"endAfterCount",
 	"autopay",
 	"notes",
@@ -303,12 +305,44 @@ function TextField({
 	);
 }
 
+function BillDateField({
+	form,
+	name,
+	label,
+}: {
+	form: BillForm;
+	name: "firstDueOn" | "frequency.onceOn";
+	label: string;
+}) {
+	const { field } = useController({ control: form.control, name });
+	const error = errorAt(form.formState.errors, name);
+	const id = `bill-${name.replaceAll(".", "-")}`;
+
+	return (
+		<div className="flex flex-col gap-1.5">
+			<Label htmlFor={id}>{label}</Label>
+			<DateField
+				// The first date can be prefilled from a candidate after the input mounts.
+				key={name === "firstDueOn" ? field.value : undefined}
+				id={id}
+				value={field.value ?? ""}
+				onChange={field.onChange}
+				onBlur={field.onBlur}
+				invalid={error !== undefined}
+				{...(error === undefined ? {} : { describedBy: errorId(name) })}
+			/>
+			<FieldMessage id={errorId(name)} error={error} />
+		</div>
+	);
+}
+
 /** Sure's frequency picker: a preset, every N weeks, months or years, and on an edit the day fields. */
 function FrequencyFields({
 	form,
 	income,
 	days,
 	custom,
+	allowOnce = true,
 }: {
 	form: BillForm;
 	income: boolean;
@@ -316,13 +350,15 @@ function FrequencyFields({
 	days: boolean;
 	/** Offers « Échéancier personnalisé », for rules no preset expresses. */
 	custom: boolean;
+	allowOnce?: boolean;
 }) {
 	const { t } = useTranslation();
 	const preset = useWatch({ control: form.control, name: "frequency.preset" });
 	const unit = useWatch({ control: form.control, name: "frequency.unit" });
 	const interval = preset === INTERVAL_PRESET;
+	const once = preset === ONCE_PRESET;
 	const presets: FrequencyKey[] = [
-		...FREQUENCY_PRESETS,
+		...FREQUENCY_PRESETS.filter((key) => allowOnce || key !== ONCE_PRESET),
 		INTERVAL_PRESET,
 		...(custom ? ([CUSTOM_PRESET] as const) : []),
 	];
@@ -367,7 +403,14 @@ function FrequencyFields({
 					/>
 				</div>
 			)}
-			{days && (
+			{days && once && (
+				<BillDateField
+					form={form}
+					name="frequency.onceOn"
+					label={t(income ? "recurring.form.incomeOnceOn" : "recurring.form.onceOn")}
+				/>
+			)}
+			{days && !once && (
 				<div className="grid grid-cols-2 gap-3">
 					{shows(
 						["monthly", "semimonthly", "quarterly", "semiannual", "annual"],
@@ -415,13 +458,15 @@ function FrequencyFields({
 			)}
 			<p className="text-xs text-muted-foreground">
 				{t(
-					days
-						? income
-							? "recurring.form.incomeFrequencyHint"
-							: "recurring.form.frequencyHint"
-						: income
-							? "recurring.form.incomeFrequencyNewHint"
-							: "recurring.form.frequencyNewHint",
+					once
+						? "recurring.form.onceHint"
+						: days
+							? income
+								? "recurring.form.incomeFrequencyHint"
+								: "recurring.form.frequencyHint"
+							: income
+								? "recurring.form.incomeFrequencyNewHint"
+								: "recurring.form.frequencyNewHint",
 				)}
 			</p>
 		</div>
@@ -754,10 +799,8 @@ function DeclareForm({
 		resolver: async (values, context, options) => resolver.current(values, context, options),
 		defaultValues: { ...declareValues(kind), ...prefilled },
 	});
-	const { errors, isSubmitting } = form.formState;
-	const firstDueOn = useController({ control: form.control, name: "firstDueOn" });
+	const { isSubmitting } = form.formState;
 	const income = useWatch({ control: form.control, name: "kind" }) === "income";
-	const dateError = errorAt(errors, "firstDueOn");
 	// The transaction the form was filled from: the starting points give way
 	// to « Partir d'une autre transaction », as Sure's `new` with `entry_id`.
 	const [startedFrom, setStartedFrom] = useState<string | null>(prefilledFrom);
@@ -870,22 +913,11 @@ function DeclareForm({
 						inputMode="decimal"
 						className="text-right tabular-nums"
 					/>
-					<div className="flex flex-col gap-1.5">
-						<Label htmlFor="bill-firstDueOn">
-							{t(income ? "recurring.form.incomeDueOn" : "recurring.form.firstDueOn")}
-						</Label>
-						<DateField
-							// Remounted when a candidate fills it: the field keeps its own text.
-							key={firstDueOn.field.value}
-							id="bill-firstDueOn"
-							value={firstDueOn.field.value}
-							onChange={firstDueOn.field.onChange}
-							onBlur={firstDueOn.field.onBlur}
-							invalid={dateError !== undefined}
-							{...(dateError === undefined ? {} : { describedBy: errorId("firstDueOn") })}
-						/>
-						<FieldMessage id={errorId("firstDueOn")} error={dateError} />
-					</div>
+					<BillDateField
+						form={form}
+						name="firstDueOn"
+						label={t(income ? "recurring.form.incomeDueOn" : "recurring.form.firstDueOn")}
+					/>
 				</div>
 				<AccountField form={form} accounts={accounts} income={income} />
 				<FrequencyFields form={form} income={income} days={false} custom={false} />
@@ -927,6 +959,11 @@ function editValues(series: RecurringData): BillValues {
 				}),
 		frequency: {
 			preset: frequency.key,
+			onceOn:
+				frequency.onceOn ??
+				(series.currentOccurrence?.status === "scheduled"
+					? series.currentOccurrence.effectiveDueOn
+					: series.nextExpectedDate),
 			interval: String(frequency.interval ?? 2),
 			unit: frequency.intervalUnit ?? "monthly",
 			dayOfMonth: String(frequency.dayOfMonth ?? series.expectedDayOfMonth),
@@ -1033,6 +1070,7 @@ function EditForm({
 					income={income}
 					days
 					custom={series.frequency.key === CUSTOM_PRESET}
+					allowOnce={!transfer}
 				/>
 				{!income && (
 					<div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

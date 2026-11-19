@@ -21,6 +21,7 @@ import {
 import { insertSecurity } from "../testing/prices.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
 import { exportArchive } from "./export.ts";
+import { listRecurring } from "./recurring/series.ts";
 import { seedDefaults } from "./seed.ts";
 import {
 	DEFAULT_SURE_IMPORT_LIMITS,
@@ -444,6 +445,31 @@ describe("importSureArchive", () => {
 			expect(before.actions).toContainEqual(
 				expect.objectContaining({ type: "set_transaction_category", value: "Boulangerie" }),
 			);
+		});
+	});
+
+	it("round-trips an overdue one-off as one dated occurrence", async () => {
+		await ownDatabase();
+		await created("/api/recurring/declare", {
+			kind: "bill",
+			name: "Inscription",
+			amount: "25",
+			accountId: null,
+			firstDueOn: "2026-09-10",
+			frequency: { preset: "once" },
+		});
+		const { target } = await intoNewDatabase(await allNdjson());
+
+		await disposed(target, async () => {
+			const records = await listRecurring({ db: target.db, timeZone: "Europe/Paris" });
+			expect(records).toMatchObject([
+				{
+					frequency: { key: "once", onceOn: "2026-09-10" },
+					anchorDate: "2026-09-10",
+					endAfterCount: 1,
+					currentOccurrence: { dueOn: "2026-09-10", state: "overdue" },
+				},
+			]);
 		});
 	});
 

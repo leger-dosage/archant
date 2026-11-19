@@ -17,7 +17,8 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { maxDate, today, weekdayOf } from "../../domain/dates.ts";
 import { normalizeLabel } from "../../domain/normalize-label.ts";
-import { applyFrequency } from "../../domain/recurring/frequency.ts";
+import { nextDueDateOf } from "../../domain/recurring/bills.ts";
+import { ONCE_PRESET, applyFrequency } from "../../domain/recurring/frequency.ts";
 import { monthlyOn } from "../../domain/recurring/schedule.ts";
 import { isKept, nextDateFrom, nextExpectedDate } from "../../domain/recurring/series.ts";
 import { AppError } from "../../lib/errors.ts";
@@ -25,7 +26,7 @@ import { validationError } from "../../lib/zod-error.ts";
 import { declareBillSchema, editBillSchema } from "../../schemas/bills.ts";
 import { transferPair } from "../ledger/recurring.ts";
 import { getReportingCurrency } from "../settings.ts";
-import { pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
+import { assertOneOffCanMove, pinAmountsAlreadyDue, regenerateFuture } from "./occurrences.ts";
 import { insertRules, replaceRules } from "./rules.ts";
 import { getRecord, invalid, notFound, setRecurringStatus, setStatusWithin } from "./series.ts";
 import { ensureRecurringEnabled } from "./switch.ts";
@@ -157,11 +158,25 @@ export async function declareBill(
 	const amount = toMinorUnits(bill.kind === "income" ? bill.amount : -Math.abs(bill.amount));
 	const due = bill.firstDueOn;
 	const day = Number(due.slice(8, 10));
+	const billType = bill.kind === "income" ? "income" : bill.billType;
+	const once = bill.frequency.preset === ONCE_PRESET;
+
+	if (once && billType === "installment") {
+		throw invalid("frequency.preset");
+	}
 	// No rule yet, so any preset changes the cadence.
 	const schedule = applyFrequency(
-		{ rules: [], anchorDate: due, lastOccurrenceDate: due, expectedDayOfMonth: day },
+		{
+			rules: [],
+			anchorDate: due,
+			lastOccurrenceDate: due,
+			expectedDayOfMonth: day,
+			endAfterCount: null,
+			billType,
+		},
 		{
 			...bill.frequency,
+			onceOn: due,
 			dayOfMonth: day,
 			weekday: weekdayOf(due),
 			monthOfYear: Number(due.slice(5, 7)),
@@ -201,12 +216,13 @@ export async function declareBill(
 				name: bill.name,
 				expectedDayOfMonth: schedule.expectedDayOfMonth,
 				anchorDate: due,
+				endAfterCount: once ? 1 : null,
 				lastOccurrenceDate: due,
 				nextExpectedDate: due,
 				occurrenceCount: 0,
 				status: "active",
 				manual: true,
-				billType: income ? "income" : bill.billType,
+				billType,
 				categoryId,
 				autopay: bill.autopay,
 				notes: bill.notes,
@@ -431,13 +447,25 @@ async function editWithin(
 		edit.amount === undefined
 			? current.amount
 			: toMinorUnits(current.amount > 0 ? edit.amount : -Math.abs(edit.amount));
-	const change = edit.frequency === undefined ? null : applyFrequency(current, edit.frequency);
-	const endAfterCount =
-		billType === "installment"
-			? edit.endAfterCount === undefined
-				? current.endAfterCount
-				: edit.endAfterCount
-			: null;
+	const oldOnceOn = current.frequency.onceOn;
+	const choice = edit.frequency;
+	const once = (choice?.preset ?? current.frequency.key) === ONCE_PRESET;
+	const onceOn = once ? (choice?.onceOn ?? oldOnceOn ?? nextDueDateOf(current)) : undefined;
+
+	if (once && (billType === "installment" || billType === "transfer")) {
+		throw invalid("frequency.preset");
+	}
+
+	const movedFrom = onceOn !== undefined && oldOnceOn !== onceOn ? oldOnceOn : undefined;
+
+	if (movedFrom !== undefined) {
+		await assertOneOffCanMove(tx, id, movedFrom);
+	}
+
+	const change = choice === undefined ? null : applyFrequency(current, { ...choice, onceOn });
+	const previousCount = oldOnceOn === undefined ? current.endAfterCount : null;
+	const installmentCount = edit.endAfterCount === undefined ? previousCount : edit.endAfterCount;
+	const endAfterCount = once ? 1 : billType === "installment" ? installmentCount : null;
 	// An installment counts its payments from an anchor, as Sure's update.
 	const anchorDate =
 		(change === null ? current.anchorDate : change.anchorDate) ??
@@ -452,12 +480,15 @@ async function editWithin(
 	const rescheduled =
 		change !== null || endAfterCount !== current.endAfterCount || anchorDate !== current.anchorDate;
 	// A bill declared ahead of its first payment is due from that date on.
-	const from = current.occurrenceCount === 0 ? maxDate(day, current.lastOccurrenceDate) : day;
-	const next = !rescheduled
-		? current.nextExpectedDate
-		: isKept(current)
-			? (nextDateFrom(schedule, from) ?? current.nextExpectedDate)
-			: nextExpectedDate(schedule, current.lastOccurrenceDate);
+	const from =
+		current.occurrenceCount === 0 ? maxDate(day, oldOnceOn ?? current.lastOccurrenceDate) : day;
+	const next =
+		onceOn ??
+		(!rescheduled
+			? current.nextExpectedDate
+			: isKept(current)
+				? (nextDateFrom(schedule, from) ?? current.nextExpectedDate)
+				: nextExpectedDate(schedule, current.lastOccurrenceDate));
 	const accountId = edit.accountId === undefined ? current.accountId : edit.accountId;
 	const moved = currency !== current.currency;
 	if (
@@ -499,7 +530,7 @@ async function editWithin(
 	// Sure's `SCHEDULE_SHAPING_ATTRIBUTES`: the occurrences to come follow
 	// a new cadence, day, anchor, number of payments or currency.
 	if (rescheduled || schedule.expectedDayOfMonth !== current.expectedDayOfMonth || moved) {
-		await regenerateFuture(tx, [id], day);
+		await regenerateFuture(tx, [id], day, movedFrom);
 	}
 
 	if (amount !== current.amount) {

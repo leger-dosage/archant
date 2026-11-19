@@ -3006,6 +3006,9 @@
 			"incomeFrequency": "Deposit frequency",
 			"frequencyNewHint": "The day details come from the due date above. You can fine-tune the schedule after saving.",
 			"incomeFrequencyNewHint": "The payday details come from the date above. You can fine-tune the schedule after saving.",
+			"onceOn": "Due date",
+			"incomeOnceOn": "Payday",
+			"onceHint": "A single occurrence on the selected date.",
 			"frequencyHint": "How often this bill is due. Choose the day details to match your statement.",
 			"incomeFrequencyHint": "How often you are paid. Choose the day details to match your payday.",
 			"interval": "Interval",
@@ -3036,6 +3039,7 @@
 			"savedIncome": "Income updated"
 		},
 		"frequencyPresets": {
+			"once": "Once",
 			"monthly": "Monthly",
 			"weekly": "Weekly",
 			"biweekly": "Every 2 weeks",
@@ -4125,6 +4129,7 @@
 			"not_held": "The account did not hold this security on that date.",
 			"amount_mismatch": "Quantity × price leaves no zero or positive fees for the transaction amount.",
 			"invalid_url": "Invalid link: an http or https address. Example: bank.com/pay.",
+			"once_date_locked": "This occurrence is closed or has a payment. Its date cannot be changed.",
 			"invalid_interval": "Enter a whole number, from 1 to 99.",
 			"invalid_count": "Enter a whole number of payments, from 1 to 600.",
 			"sign_mismatch": "This type does not match the direction of the transaction: a buy leaves the account, a sell, a dividend or interest enters it.",

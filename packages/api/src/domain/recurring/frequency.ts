@@ -1,13 +1,16 @@
 import type { IsoDate } from "../dates.ts";
 import type { RecurrenceRule } from "./schedule.ts";
 
-import type { RecurrenceFrequency } from "@archant/data/recurring";
+import type { BillType, RecurrenceFrequency } from "@archant/data/recurring";
 import { LAST_DAY_OF_MONTH, RECURRENCE_FREQUENCIES } from "@archant/data/recurring";
 
 import { weekdayOf } from "../dates.ts";
 
+export const ONCE_PRESET = "once";
+
 /** Sure's `FrequencyPreset::PRESETS`: the picker's named cadences. */
 export const FREQUENCY_PRESETS = [
+	ONCE_PRESET,
 	"monthly",
 	"weekly",
 	"biweekly",
@@ -44,10 +47,12 @@ export type Frequency = {
 	monthOfYear: number | null;
 	interval: number | null;
 	intervalUnit: RecurrenceFrequency | null;
+	onceOn?: IsoDate;
 };
 
 /** What the picker submits; a field left out takes Sure's default. */
 export type FrequencyChoice = {
+	onceOn?: IsoDate | undefined;
 	dayOfMonth?: number | null | undefined;
 	secondDayOfMonth?: number | null | undefined;
 	weekday?: number | null | undefined;
@@ -63,6 +68,8 @@ export type ScheduleFields = {
 	rules: readonly RecurrenceRule[];
 	anchorDate: IsoDate | null;
 	lastOccurrenceDate: IsoDate;
+	endAfterCount: number | null;
+	billType: BillType;
 	expectedDayOfMonth: number;
 };
 
@@ -169,7 +176,16 @@ const isMonthlyDay = (
  * Sure's `FrequencyPreset.detect`: a series' rules read back as the picker
  * shows them; a shape no preset expresses is `custom`.
  */
-export function detectFrequency(rules: readonly RecurrenceRule[]): Frequency {
+export function detectFrequency(
+	rules: readonly RecurrenceRule[],
+	series?: OnceScheduleFields,
+): Frequency {
+	const onceOn = series === undefined ? null : onceDateOf(rules, series);
+
+	if (onceOn !== null) {
+		return detection(ONCE_PRESET, { onceOn });
+	}
+
 	if (rules.length === 1) {
 		const rule = rules[0]!;
 
@@ -188,6 +204,28 @@ const dayOf = (date: IsoDate) => Number(date.slice(8, 10));
 
 const monthOf = (date: IsoDate) => Number(date.slice(5, 7));
 
+type OnceScheduleFields = Pick<ScheduleFields, "anchorDate" | "endAfterCount" | "billType">;
+
+/** Sure stores Once as an annual rule capped at the chosen anchor. */
+export function onceDateOf(
+	rules: readonly RecurrenceRule[],
+	{ anchorDate, endAfterCount, billType }: OnceScheduleFields,
+): IsoDate | null {
+	const [rule] = rules;
+
+	return billType !== "installment" &&
+		billType !== "transfer" &&
+		endAfterCount === 1 &&
+		anchorDate !== null &&
+		rules.length === 1 &&
+		rule?.frequency === "yearly" &&
+		rule.interval === 1 &&
+		rule.dayOfMonth === dayOf(anchorDate) &&
+		rule.monthOfYear === monthOf(anchorDate)
+		? anchorDate
+		: null;
+}
+
 /**
  * Sure's `target_detection`: what the submitted values resolve to, with the
  * defaults the rules are written with, so it compares exactly with
@@ -203,6 +241,15 @@ function targetOf(
 	const weekday = choice.weekday ?? weekdayOf(reference);
 
 	switch (choice.preset) {
+		case ONCE_PRESET: {
+			const onceOn = choice.onceOn ?? reference;
+
+			return detection(ONCE_PRESET, {
+				onceOn,
+				dayOfMonth: dayOf(onceOn),
+				monthOfYear: monthOf(onceOn),
+			});
+		}
 		case "monthly":
 		case "quarterly":
 		case "semiannual":
@@ -278,6 +325,7 @@ function rulesOf(target: Frequency): { rules: RecurrenceRule[]; anchored: boolea
 			return { rules: [ruleOf(target, 3)], anchored: true };
 		case "semiannual":
 			return { rules: [ruleOf(target, 6)], anchored: true };
+		case ONCE_PRESET:
 		case "annual":
 			return {
 				rules: [
@@ -327,8 +375,11 @@ export function applyFrequency(
 
 	const reference = current.anchorDate ?? current.lastOccurrenceDate;
 	const target = targetOf(current, reference, choice);
+	const previous = detectFrequency(current.rules, current);
 
-	if (sameFrequency(target, detectFrequency(current.rules))) {
+	if (
+		target.key === ONCE_PRESET ? target.onceOn === previous.onceOn : sameFrequency(target, previous)
+	) {
 		return null;
 	}
 
@@ -337,6 +388,6 @@ export function applyFrequency(
 	return {
 		rules,
 		expectedDayOfMonth: expectedDayOf(target, reference),
-		anchorDate: anchored ? reference : current.anchorDate,
+		anchorDate: target.onceOn ?? (anchored ? reference : current.anchorDate),
 	};
 }

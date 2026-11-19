@@ -23,6 +23,7 @@ import { recurringTransactions } from "@archant/data/schema/recurring-transactio
 
 import { addDays, addMonths, today } from "../../domain/dates.ts";
 import { displayName, nextDueDates } from "../../domain/recurring/bills.ts";
+import { ONCE_PRESET } from "../../domain/recurring/frequency.ts";
 import {
 	changePercent,
 	remainingOf,
@@ -152,7 +153,10 @@ export async function withAmounts(
 	});
 
 	return records.map(({ currentOccurrence: occurrence, ...record }) => {
-		const monthly = monthlyEquivalent(record.rules, record.amount);
+		const monthly =
+			record.frequency.key === ONCE_PRESET
+				? toMinorUnits(0)
+				: monthlyEquivalent(record.rules, record.amount);
 
 		if (occurrence === null) {
 			return { ...record, monthlyEquivalent: monthly, currentOccurrence: null };
@@ -300,7 +304,8 @@ async function subscriptionRollup(
 ): Promise<SubscriptionRollup> {
 	const currency = await getReportingCurrency(db);
 	const active = rows.filter((row) => row.status === "active");
-	const counted = active.filter((row) => row.currency === currency);
+	const repeating = active.filter((row) => row.frequency.key !== ONCE_PRESET);
+	const counted = repeating.filter((row) => row.currency === currency);
 	const sums = active.length === 0 ? null : monthlyRollup(counted);
 
 	return {
@@ -308,7 +313,7 @@ async function subscriptionRollup(
 		count: active.length,
 		monthly: sums?.monthly ?? null,
 		annual: sums?.annual ?? null,
-		leftOut: active
+		leftOut: repeating
 			.filter((row) => row.currency !== currency)
 			.map((row) => ({ id: row.id, name: displayName(row) })),
 		priceChanges: await priceChangesWhere(
@@ -445,6 +450,7 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 		.select({
 			id: recurringOccurrences.id,
 			dueOn: recurringOccurrences.dueOn,
+			originalDueOn: recurringOccurrences.originalDueOn,
 			status: recurringOccurrences.status,
 		})
 		.from(recurringOccurrences)
@@ -525,6 +531,9 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 		),
 	);
 	const first = shiftMonth(day.slice(0, 7), 1 - HISTORY_MONTHS);
+	const onceOn = record!.frequency.onceOn;
+	const onceClosed =
+		onceOn !== undefined && closed.some((occurrence) => occurrence.originalDueOn === onceOn);
 
 	return {
 		record: record!,
@@ -536,9 +545,12 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 						average: toMinorUnits(roundHalfUp(sumOf(sums), sums.length)),
 						lowest: toMinorUnits(Math.min(...sums)),
 						highest: toMinorUnits(Math.max(...sums)),
-						annualized: monthlyRollup([
-							{ rules: record!.rules, amount: toMinorUnits(Math.abs(record!.amount)) },
-						]).annual,
+						annualized:
+							onceOn !== undefined
+								? toMinorUnits(0)
+								: monthlyRollup([
+										{ rules: record!.rules, amount: toMinorUnits(Math.abs(record!.amount)) },
+									]).annual,
 						paidThisYear: sumOf(
 							payments
 								.filter((payment) => payment.paidOn !== null && payment.paidOn >= yearStart)
@@ -568,7 +580,7 @@ export async function billDetail(deps: ServiceDeps, id: string): Promise<BillDet
 				),
 			};
 		}),
-		upcoming: nextDueDates(record!, addDays(day, 1)),
+		upcoming: onceClosed ? [] : nextDueDates(record!, addDays(day, 1)),
 		history: closed.map((occurrence) => {
 			const own = payments.filter((payment) => payment.occurrenceId === occurrence.id);
 			const only = own.length === 1 ? own[0]!.entryId : null;
