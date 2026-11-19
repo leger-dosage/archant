@@ -3196,6 +3196,8 @@
 			"namePlaceholder": "Facultatif",
 			"stopProcessing": "Arrêter le traitement",
 			"stopProcessingHint": "Les règles suivantes ignorent les opérations qui répondent aux critères de cette règle.",
+			"applyImmediately": "Appliquer immédiatement",
+			"applyImmediatelyHint": "Exécuter cette règle et les règles actives qui la précèdent quand une opération est ajoutée ou modifiée.",
 			"effectiveDate": "À partir du",
 			"effectiveDateHint": "Facultatif. La règle ne touche que les opérations datées de ce jour ou après.",
 			"conditions": "Si",
@@ -3266,7 +3268,8 @@
 			},
 			"types": {
 				"manual": "Manuel",
-				"scheduled": "Planifié"
+				"scheduled": "Planifié",
+				"immediate": "Immédiat"
 			},
 			"statuses": {
 				"pending": "En attente",

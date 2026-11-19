@@ -146,14 +146,14 @@ describe("transfer sides and categories", () => {
 		const groceries = await newCategory("Courses");
 		const outflowLocks = await lockedFields(outflow);
 
-		await expect(
-			bulkUpdateTransactions(
-				deps(),
-				{ filter: { accountIds: [joint.id, livret.id] } },
-				{ categoryId: groceries, notes: "Revue" },
-				{ origin: "user" },
-			),
-		).resolves.toEqual({ matched: 3, changed: 3 });
+		const { matched, changed, changedIds } = await bulkUpdateTransactions(
+			deps(),
+			{ filter: { accountIds: [joint.id, livret.id] } },
+			{ categoryId: groceries, notes: "Revue" },
+			{ origin: "user" },
+		);
+		expect({ matched, changed }).toEqual({ matched: 3, changed: 3 });
+		expect(changedIds.toSorted()).toEqual([standard, outflow, inflow].toSorted());
 
 		await expect(categoryOf(standard)).resolves.toBe(groceries);
 		await expect(categoryOf(outflow)).resolves.toBeNull();
@@ -212,7 +212,7 @@ describe("transfer sides and categories", () => {
 				{ categoryId: housing },
 				{ origin: "user" },
 			),
-		).resolves.toEqual({ matched: 4, changed: 1 });
+		).resolves.toEqual({ matched: 4, changed: 1, changedIds: [loan.outflow] });
 
 		await expect(categoryOf(loan.outflow)).resolves.toBe(housing);
 		await expect(categoryOf(loan.inflow)).resolves.toBeNull();

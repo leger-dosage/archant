@@ -36,7 +36,7 @@ import { validationError } from "../lib/zod-error.ts";
 import { ruleEnabledSchema, ruleSchema } from "../schemas/rules.ts";
 import { MAX_TAGS_PER_TRANSACTION } from "../schemas/transactions.ts";
 import { applyRulePlan, ruleCandidates } from "./ledger/rule-plans.ts";
-import { oneByOne } from "./ledger/shared.ts";
+import { inSequence, KEYS_PER_LOOKUP, oneByOne } from "./ledger/shared.ts";
 import { matchTransfers } from "./ledger/transfers.ts";
 import {
 	CONDITION_REFERENCES,
@@ -56,6 +56,7 @@ export type RuleData = RuleSnapshot & {
 	enabled: boolean;
 	position: number;
 	stopProcessing: boolean;
+	applyImmediately: boolean;
 	effectiveDate: string | null;
 	/** Epoch milliseconds of the last save or switch, which the list sorts by as Sure's `updated_at`. */
 	updatedAt: number;
@@ -87,6 +88,7 @@ function toData({ row, conditions, actions }: ReadRule): RuleData {
 		enabled: row.enabled,
 		position: row.position,
 		stopProcessing: row.stopProcessing,
+		applyImmediately: row.applyImmediately,
 		effectiveDate: row.effectiveDate,
 		updatedAt: row.updatedAt,
 		conditions: conditionTree(conditions, null),
@@ -282,6 +284,7 @@ export async function createRule(deps: ServiceDeps, input: RuleInput): Promise<R
 				enabled: input.enabled ?? false,
 				position: (last?.position ?? -1) + 1,
 				stopProcessing: input.stopProcessing ?? false,
+				applyImmediately: input.applyImmediately ?? false,
 				effectiveDate: rule.effectiveDate,
 				createdAt: now,
 				updatedAt: now,
@@ -347,6 +350,9 @@ export async function updateRule(
 					effectiveDate: rule.effectiveDate,
 					...(input.enabled === undefined ? {} : { enabled: input.enabled }),
 					...(input.stopProcessing === undefined ? {} : { stopProcessing: input.stopProcessing }),
+					...(input.applyImmediately === undefined
+						? {}
+						: { applyImmediately: input.applyImmediately }),
 					updatedAt: Date.now(),
 				})
 				.where(eq(rules.id, id));
@@ -462,6 +468,7 @@ async function draftToApply(db: Pick<Db, "select">, input: RuleInput): Promise<A
 		enabled: true,
 		position: 0,
 		stopProcessing: input.stopProcessing ?? false,
+		applyImmediately: input.applyImmediately ?? false,
 		effectiveDate: rule.effectiveDate,
 		createdAt: now,
 		updatedAt: now,
@@ -665,6 +672,7 @@ async function runInTurn(
 ): Promise<RuleApplication> {
 	const executedAt = Date.now();
 	const changed = new Set<string>();
+	const transferIds = new Set<string>();
 	const runs: RuleRunData[] = [];
 	let rows = candidates;
 	const precedence: Parameters<typeof planRuleRow>[2] = new Map();
@@ -697,12 +705,20 @@ async function runInTurn(
 				}
 			}
 
-			const written = await tx.transaction(
-				async (savepoint) => (await applyRulePlan(savepoint, plan, { origin: "rule" })).changed,
+			if (executionType === "immediate" && queued === 0) {
+				return;
+			}
+
+			const written = await tx.transaction(async (savepoint) =>
+				applyRulePlan(savepoint, plan, { origin: "rule" }),
 			);
 
-			for (const id of written) {
+			for (const id of written.changed) {
 				changed.add(id);
+			}
+
+			for (const id of written.transferIds) {
+				transferIds.add(id);
 			}
 
 			rows = rows.map((row) => {
@@ -715,7 +731,7 @@ async function runInTurn(
 				status: "success",
 				transactionsQueued: queued,
 				transactionsProcessed: queued,
-				transactionsModified: written.length,
+				transactionsModified: written.changed.length,
 				errorMessage: null,
 			});
 		} catch (error) {
@@ -730,8 +746,13 @@ async function runInTurn(
 		}
 	}, Promise.resolve());
 
-	await tx.insert(ruleRuns).values(runs);
-	await matchTransfers(tx, Date.now());
+	if (runs.length > 0) {
+		await tx.insert(ruleRuns).values(runs);
+	}
+
+	if (executionType !== "immediate" || transferIds.size > 0) {
+		await matchTransfers(tx, Date.now(), executionType === "immediate" ? transferIds : undefined);
+	}
 
 	return { changed: changed.size, runs };
 }
@@ -787,6 +808,58 @@ export async function applyRules(
 		},
 		{ behavior: "immediate" },
 	);
+}
+
+/**
+ * Runs the enabled prefix on the entries a user write just committed.
+ * Failures leave that write in place, as with the run after a sync.
+ */
+export async function runImmediateRules(
+	deps: ServiceDeps,
+	entryIds: readonly string[],
+): Promise<void> {
+	if (entryIds.length === 0) {
+		return;
+	}
+
+	try {
+		const enabled = await deps.db
+			.select({ id: rules.id })
+			.from(rules)
+			.where(and(eq(rules.enabled, true), eq(rules.applyImmediately, true)))
+			.get();
+
+		if (enabled === undefined) {
+			return;
+		}
+
+		await deps.db.transaction(
+			async (tx) => {
+				const applied = await appliedOf(tx, await readRules(tx, { immediate: true }));
+
+				if (applied.length === 0) {
+					return;
+				}
+
+				const from = earliestStart(applied.map(({ rule }) => rule));
+				const candidates: RuleCandidate[] = [];
+
+				await inSequence(entryIds, KEYS_PER_LOOKUP, async (chunk) => {
+					const rows = await ruleCandidates(tx, from, {
+						activeAccountsOnly: true,
+						entryIds: chunk,
+					});
+
+					candidates.push(...rows);
+				});
+
+				await runInTurn(tx, applied, candidates, "immediate");
+			},
+			{ behavior: "immediate" },
+		);
+	} catch (error) {
+		deps.logger?.error({ code: codeOf(error) }, "immediate rule run failed");
+	}
 }
 
 /**

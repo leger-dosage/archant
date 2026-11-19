@@ -79,7 +79,7 @@ export async function applyRulePlan(
 	tx: Transaction,
 	plan: ReadonlyMap<string, RowPlan>,
 	_options: { origin: "rule" },
-): Promise<{ changed: string[] }> {
+): Promise<{ changed: string[]; transferIds: string[] }> {
 	const origin: Origin = "rule";
 	const now = Date.now();
 	const ids = [...plan.keys()];
@@ -117,6 +117,7 @@ export async function applyRulePlan(
 	const writes = new Map<string, { detail: TransactionDetail; ids: string[] }>();
 	const newTaggings: { transactionId: string; tagId: string }[] = [];
 
+	const transferIds: string[] = [];
 	const rowById = new Map(rows.map((row) => [row.id, row]));
 
 	for (const [id, planned] of plan) {
@@ -164,6 +165,10 @@ export async function applyRulePlan(
 			continue;
 		}
 
+		if (expects) {
+			transferIds.push(id);
+		}
+
 		const detail = {
 			...detailOf(change, origin, now),
 			...(expects ? { expectedTransferAccountId: expected } : {}),
@@ -198,7 +203,7 @@ export async function applyRulePlan(
 	);
 	await inSequence(newTaggings, ROWS_PER_INSERT, (chunk) => tx.insert(taggings).values(chunk));
 
-	return { changed: [...writes.values()].flatMap(({ ids: group }) => group) };
+	return { changed: [...writes.values()].flatMap(({ ids: group }) => group), transferIds };
 }
 
 /**
@@ -211,12 +216,12 @@ export async function applyRulePlan(
  * rules read `family.transactions.visible` while its recurring identifier,
  * which also reads these rows, reads every account. Tags are
  * read `KEYS_PER_LOOKUP` rows per query, below SQLite's parameter cap.
- * `entryId` reads that one row only.
+ * `entryIds` limits the query to the supplied chunk.
  */
 export async function ruleCandidates(
 	db: Pick<Transaction, "select">,
 	from: IsoDate | null,
-	{ activeAccountsOnly, entryId }: { activeAccountsOnly: boolean; entryId?: string },
+	{ activeAccountsOnly, entryIds }: { activeAccountsOnly: boolean; entryIds?: string[] },
 ): Promise<RuleCandidate[]> {
 	const rows = await db
 		.select({
@@ -237,7 +242,7 @@ export async function ruleCandidates(
 				notSplitParent,
 				activeAccountsOnly ? eq(accounts.active, true) : undefined,
 				from === null ? undefined : gte(entries.date, from),
-				entryId === undefined ? undefined : eq(entries.id, entryId),
+				entryIds === undefined ? undefined : inArray(entries.id, entryIds),
 			),
 		)
 		.orderBy(entries.date, entries.createdAt, entries.id);

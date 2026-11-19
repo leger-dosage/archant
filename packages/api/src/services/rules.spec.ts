@@ -102,6 +102,7 @@ describe("createRule", () => {
 			enabled: false,
 			position: 0,
 			stopProcessing: false,
+			applyImmediately: false,
 			effectiveDate: "2026-09-01",
 			updatedAt: rule.updatedAt,
 			conditions: [
@@ -305,7 +306,7 @@ describe("listRules", () => {
 
 describe("updateRule", () => {
 	it("replaces the name, start date, conditions and actions, keeping the switch", async () => {
-		const rule = await createRule(deps(), { ...grouped, enabled: true });
+		const rule = await createRule(deps(), { ...grouped, enabled: true, applyImmediately: true });
 
 		const updated = await updateRule(deps(), rule.id, {
 			conditions: [{ conditionType: "transaction_name", operator: "=", value: "Loyer" }],
@@ -318,6 +319,7 @@ describe("updateRule", () => {
 			enabled: true,
 			position: 0,
 			stopProcessing: false,
+			applyImmediately: true,
 			effectiveDate: null,
 			updatedAt: updated.updatedAt,
 			conditions: [

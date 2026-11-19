@@ -49,7 +49,7 @@ async function write(plan: Map<string, RowPlan>) {
 
 describe("applyRulePlan", () => {
 	it("writes nothing for an empty plan", async () => {
-		await expect(write(new Map())).resolves.toEqual({ changed: [] });
+		await expect(write(new Map())).resolves.toEqual({ changed: [], transferIds: [] });
 	});
 
 	it("writes every planned field with a rule origin, and locks nothing", async () => {
@@ -79,7 +79,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [id, twin] });
+		expect(written).toEqual({ changed: [id, twin], transferIds: [id] });
 		await expect(categoryOf(id)).resolves.toBe(groceries);
 		await expect(categoryOriginOf(id)).resolves.toBe("rule");
 		await expect(merchantOf(id)).resolves.toBe(merchant);
@@ -125,7 +125,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [] });
+		expect(written).toEqual({ changed: [], transferIds: [] });
 		await expect(categoryOf(locked)).resolves.toBe(leisure);
 		await expect(categoryOriginOf(locked)).resolves.toBe("user");
 		await expect(merchantOf(locked)).resolves.toBeNull();
@@ -146,7 +146,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [food] });
+		expect(written).toEqual({ changed: [food], transferIds: [] });
 		await expect(excludedOf(parent)).resolves.toBe(true);
 		await expect(excludedOf(food)).resolves.toBe(false);
 		await expect(categoryOf(food)).resolves.toBe(groceries);
@@ -163,6 +163,7 @@ describe("applyRulePlan", () => {
 
 		await expect(write(new Map([[crowded, { addTagIds: [added] }]]))).resolves.toEqual({
 			changed: [],
+			transferIds: [],
 		});
 		await expect(tagsOf(crowded)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 	});
@@ -181,9 +182,11 @@ describe("applyRulePlan", () => {
 
 		await expect(write(new Map([[id, { addTagIds: [carried] }]]))).resolves.toEqual({
 			changed: [],
+			transferIds: [],
 		});
 		await expect(write(new Map([[id, { addTagIds: [carried, added] }]]))).resolves.toEqual({
 			changed: [id],
+			transferIds: [],
 		});
 		await expect(tagsOf(id)).resolves.toHaveLength(MAX_TAGS_PER_TRANSACTION);
 		await expect(tagsOf(id)).resolves.toContain(added);
@@ -208,7 +211,7 @@ describe("applyRulePlan", () => {
 			]),
 		);
 
-		expect(written).toEqual({ changed: [] });
+		expect(written).toEqual({ changed: [], transferIds: [] });
 		await expect(categoryOf(id)).resolves.toBeNull();
 		await expect(merchantOf(id)).resolves.toBeNull();
 		await expect(tagsOf(id)).resolves.toEqual([]);
@@ -227,7 +230,7 @@ describe("applyRulePlan", () => {
 					[alone, { expectedTransferAccountId: joint.id }],
 				]),
 			),
-		).resolves.toEqual({ changed: [] });
+		).resolves.toEqual({ changed: [], transferIds: [] });
 		await expect(expectedOf(outflow)).resolves.toBeNull();
 		await expect(expectedOf(alone)).resolves.toBeNull();
 	});

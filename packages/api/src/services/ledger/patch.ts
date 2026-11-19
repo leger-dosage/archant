@@ -57,8 +57,9 @@ export type TransactionPatch = {
 	categoryId?: string | null | undefined;
 	/** `null` leaves the transaction « Sans marchand ». */
 	merchantId?: string | null | undefined;
-	/** The whole set, replacing the current one; `[]` removes every tag. */
+	/** The whole set unless the editor also supplied the set it opened with. */
 	tagIds?: readonly string[] | undefined;
+	previousTagIds?: readonly string[] | undefined;
 	/** Sure's `investment_activity_label`; `null` clears it. */
 	investmentActivityLabel?: ActivityLabel | null | undefined;
 };
@@ -76,7 +77,9 @@ const PATCH_KEY_OF = {
 	investmentActivityLabel: "investmentActivityLabel",
 } as const satisfies Record<LockableField, keyof TransactionPatch>;
 
-export type UpdateResult = { status: "updated" } | { status: "rejected"; reason: RejectionCode };
+export type UpdateResult =
+	| { status: "updated"; changed: boolean }
+	| { status: "rejected"; reason: RejectionCode };
 
 // What a row edit reads: the entry's date and amount beside the detail row.
 export const editableColumns = {

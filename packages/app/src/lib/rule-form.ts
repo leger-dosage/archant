@@ -101,6 +101,7 @@ export function valuesOf(rule: RuleData): FormValues {
 		name: rule.name ?? "",
 		effectiveDate: rule.effectiveDate,
 		stopProcessing: rule.stopProcessing,
+		applyImmediately: rule.applyImmediately,
 		conditions: rule.conditions.map((condition) =>
 			condition.conditionType === "compound"
 				? {

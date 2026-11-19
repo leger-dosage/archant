@@ -141,6 +141,8 @@ export function useApplyRules() {
 export function useRuleRuns(page: number) {
 	return useQuery({
 		queryKey: queryKeys.rules.runs(page),
+		// A transaction write can append runs while this page is closed.
+		staleTime: 0,
 		queryFn: async () =>
 			(await unwrap(api.rules.runs.$get({ query: { page: String(page) } }))).data,
 		placeholderData: (previous) => previous,

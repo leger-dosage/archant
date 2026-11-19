@@ -84,6 +84,7 @@ import { convertTransaction as convertLedgerTransaction } from "./ledger/trades.
 import { manualReconciliationEnabled } from "./manual-reconciliation.ts";
 import { categoryFilterNamed, idsNamed } from "./names.ts";
 import { recurringEntryIds } from "./recurring/series.ts";
+import { runImmediateRules } from "./rules.ts";
 import { getReportingCurrency } from "./settings.ts";
 import { getTrade, tradeCurrency } from "./trades.ts";
 
@@ -626,6 +627,8 @@ export async function createTransaction(
 		throw new AppError("INTERNAL_ERROR", "Something went wrong.");
 	}
 
+	await runImmediateRules(deps, [id]);
+
 	return { ...(await getTransaction(deps, id)), created: true };
 }
 
@@ -647,6 +650,10 @@ export async function updateTransaction(
 
 	if (result.status === "rejected") {
 		throw rejectionError(result.reason);
+	}
+
+	if (result.changed) {
+		await runImmediateRules(deps, [id]);
 	}
 
 	return getTransaction(deps, id);
@@ -807,12 +814,14 @@ export async function bulkUpdateTransactions(
 	options: { expectedCount?: number | undefined } = {},
 ): Promise<{ updated: number; changed: number }> {
 	const { name, ...rest } = body.patch;
-	const { matched, changed } = await bulkUpdateLedgerTransactions(
+	const { matched, changed, changedIds } = await bulkUpdateLedgerTransactions(
 		deps,
 		await selectionOf(deps, body.selection),
 		{ ...rest, label: name },
 		{ origin: "user", expectedCount: options.expectedCount },
 	);
+
+	await runImmediateRules(deps, changedIds);
 
 	return { updated: matched, changed };
 }
