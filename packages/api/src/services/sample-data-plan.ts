@@ -1,4 +1,4 @@
-import type { IsoDate } from "../domain/dates.ts";
+import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type { PlanAccount, PlanCategory, PlanSecurity, SurePlan } from "./sure-import-plan.ts";
 
 import type { AccountDetails, AccountSubtype, AccountType } from "@archant/data/account-types";
@@ -9,6 +9,7 @@ import type { CurrencyCode, MinorUnits } from "@archant/data/money";
 import { minorUnitsOf, toMinorUnits } from "@archant/data/money";
 import { daysInMonth } from "@archant/data/months";
 
+import { budgetMonthOf, budgetPeriod } from "../domain/budgets/months.ts";
 import { addDays, addMonths, daysBetween, minDate, weekdayOf } from "../domain/dates.ts";
 import { amortizationSchedule } from "../domain/loans/amortization-schedule.ts";
 import { tradeAmount } from "../domain/trades.ts";
@@ -212,8 +213,9 @@ export function samplePlan(options: {
 	seed: number;
 	today: IsoDate;
 	currency: CurrencyCode;
+	monthStartDay?: number;
 }): SamplePlan {
-	const { today, currency } = options;
+	const { today, currency, monthStartDay = 1 } = options;
 	const random: Random = seeded(options.seed);
 	const unit = 10 ** minorUnitsOf(currency);
 	const money = (major: number) => toMinorUnits(Math.round(major * unit));
@@ -1103,7 +1105,7 @@ export function samplePlan(options: {
 	plan.accounts = specs.map((spec) =>
 		accountOf(spec, plan, currency, today, details.get(spec.id) ?? null),
 	);
-	budgetAutoFill(plan, today, unit);
+	budgetAutoFill(plan, budgetMonthOf(today, monthStartDay), monthStartDay, unit);
 
 	return { plan, goals: sampleGoals(random, today, money) };
 }
@@ -1195,10 +1197,10 @@ function accountOf(
  * parent holds its own average plus its children's, as Archant's budgets
  * require; the month's total is the top-level amounts' sum.
  */
-function budgetAutoFill(plan: SurePlan, today: IsoDate, unit: number): void {
-	const month = startOfMonth(today);
-	const from = addMonths(month, -3);
-	const to = addDays(month, -1);
+function budgetAutoFill(plan: SurePlan, month: IsoMonth, startDay: number, unit: number): void {
+	const period = budgetPeriod(month, startDay);
+	const from = addMonths(period.startDate, -3);
+	const to = addDays(period.startDate, -1);
 	const spent = new Map<string, number>();
 
 	for (const row of plan.transactions) {
@@ -1238,7 +1240,8 @@ function budgetAutoFill(plan: SurePlan, today: IsoDate, unit: number): void {
 	plan.budgets = [
 		{
 			sourceId,
-			month: month.slice(0, 7),
+			month,
+			...period,
 			budgetedSpending: toMinorUnits(total),
 			expectedIncome: toMinorUnits(0),
 		},

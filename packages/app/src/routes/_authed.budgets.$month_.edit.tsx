@@ -27,7 +27,7 @@ import { useBudget, useSaveBudget } from "@/hooks/useBudget";
 import { amountToText } from "@/lib/amount-sign";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { canWrite } from "@/lib/auth-client";
-import { ofMonth, toIsoMonth } from "@/lib/dates";
+import { ofBudgetPeriod } from "@/lib/dates";
 import { showErrorToast } from "@/lib/error-toast";
 import { applyFieldErrors } from "@/lib/form-errors";
 
@@ -165,7 +165,7 @@ function BudgetEditPage() {
 	const data = budget.data;
 	const title = valid
 		? t(data?.setUp === true ? "budgets.form.editTitle" : "budgets.form.setUpTitle", {
-				ofMonth: ofMonth(month),
+				ofMonth: ofBudgetPeriod(month, data),
 			})
 		: t("nav.budgets");
 	const code = budget.isError ? errorCodeOf(budget.error) : null;
@@ -188,9 +188,7 @@ function BudgetEditPage() {
 				<BudgetOutOfRange
 					action={
 						<Button variant="outline" asChild>
-							<Link to="/budgets/$month" params={{ month: toIsoMonth() }}>
-								{t("budgets.today")}
-							</Link>
+							<Link to="/budgets">{t("budgets.today")}</Link>
 						</Button>
 					}
 				/>

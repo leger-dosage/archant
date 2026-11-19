@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { Page } from "@/components/Page";
 import { PlanBudget } from "@/components/PlanBudget";
 import { PlanGoals } from "@/components/PlanGoals";
-import { toIsoDate } from "@/lib/dates";
 
 export const Route = createFileRoute("/_authed/plan")({ component: PlanPage });
 
@@ -19,7 +18,7 @@ function PlanPage() {
 	return (
 		<Page title={t("nav.plan")} description={t("plan.description")} className="@container">
 			<div className="grid grid-cols-1 gap-4 @3xl:grid-cols-2">
-				<PlanBudget today={toIsoDate()} />
+				<PlanBudget />
 				<PlanGoals />
 			</div>
 		</Page>

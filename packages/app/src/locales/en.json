@@ -2318,6 +2318,8 @@
 			"incomeLeft": "{{amount}} to come",
 			"incomeOver": "{{amount}} over",
 			"budgetedSpending": "Budgeted spending",
+			"suggestedIncome": "Suggested income: {{amount}}",
+			"suggestedSpending": "Suggested spending: {{amount}}",
 			"spent": "{{amount}} spent",
 			"left": "{{amount}} left",
 			"over": "{{amount}} over"
@@ -3656,7 +3658,7 @@
 		"budget": {
 			"title": "Budget",
 			"monthStartDay": "Budget month starts on",
-			"monthStartDayHint": "This day will apply when custom budget periods are available."
+			"monthStartDayHint": "This setting applies to new periods. Saved budgets keep their dates."
 		},
 		"transactions": {
 			"title": "Transactions",

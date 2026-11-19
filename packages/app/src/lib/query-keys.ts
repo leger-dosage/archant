@@ -71,6 +71,7 @@ export const queryKeys = {
 		 * balances and the transactions, and every write that moves a balance
 		 * invalidates `all`; a category's own edit refreshes it once stale.
 		 */
+		reportsPages: ["accounts", "reports-page"] as const,
 		reportsPage: (period: {
 			periodType: string;
 			startDate?: string;

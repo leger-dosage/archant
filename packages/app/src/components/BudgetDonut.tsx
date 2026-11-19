@@ -12,7 +12,7 @@ import { toMinorUnits } from "@archant/data/money";
 import { Money } from "@/components/Money";
 import { Section } from "@/components/Section";
 import { useCanWrite } from "@/hooks/usePermissions";
-import { ofMonth } from "@/lib/dates";
+import { ofBudgetPeriod } from "@/lib/dates";
 import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
@@ -60,7 +60,7 @@ export function BudgetDonut({ budget }: { budget: BudgetData }) {
 	const over = spent > budgeted;
 	const money = (amount: MinorUnits) => formatMoney({ amount, currency: budget.currency });
 	const values = {
-		ofMonth: ofMonth(budget.month),
+		ofMonth: ofBudgetPeriod(budget.month, budget),
 		spent: money(spent),
 		budget: money(budgeted),
 		count: budget.segments.length,

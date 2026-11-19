@@ -281,6 +281,8 @@ export const EXPORTED_COLUMNS = {
 	budgets: {
 		id: budgets.id,
 		month: budgets.month,
+		startDate: budgets.startDate,
+		endDate: budgets.endDate,
 		currency: budgets.currency,
 		budgetedSpending: budgets.budgetedSpending,
 		expectedIncome: budgets.expectedIncome,

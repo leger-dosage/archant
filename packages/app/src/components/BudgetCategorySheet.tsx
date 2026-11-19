@@ -24,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRecentTransactions } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
-import { ofMonth } from "@/lib/dates";
+import { ofBudgetPeriod } from "@/lib/dates";
 import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
@@ -92,7 +92,11 @@ export function BudgetCategorySheet({
 				<div className="flex flex-col gap-4 overflow-y-auto p-4">
 					<InsetGroup level={3} title={t("budgets.sheet.overview")}>
 						<dl className="flex flex-col gap-3 p-4">
-							<Figure label={t("budgets.sheet.spending", { ofMonth: ofMonth(budget.month) })}>
+							<Figure
+								label={t("budgets.sheet.spending", {
+									ofMonth: ofBudgetPeriod(budget.month, budget),
+								})}
+							>
 								{money(line.spent)}
 							</Figure>
 							<Figure label={t("budgets.sheet.status")}>

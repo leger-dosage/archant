@@ -24,6 +24,7 @@ import { oneByOne } from "./ledger/shared.ts";
 import { splitTransaction } from "./ledger/splits.ts";
 import { recordTrade } from "./ledger/trades.ts";
 import { getReportsCsv, getReportsPage } from "./reports-page.ts";
+import { saveHouseholdPreferences } from "./settings.ts";
 import { createTag } from "./tags.ts";
 
 let temp: TempDatabase;
@@ -297,6 +298,19 @@ describe("getReportsPage", () => {
 		expect(
 			(await page({ startDate: "2026-10-01", endDate: "2026-10-31" })).summary.budgetPercent,
 		).toBeNull();
+	});
+
+	it("uses the current budget period in the calendar month's report", async () => {
+		const checking = await account();
+		const food = await category("Alimentation");
+		await saveHouseholdPreferences(temp.db, { monthStartDay: 25 });
+		await saveBudget(deps(), "2026-10", { budgetedSpending: "400", expectedIncome: "0" });
+		await saveCategoryBudget(deps(), "2026-10", food, { budgetedSpending: "200" });
+		await book(checking, "2026-10-26", -5_000);
+
+		const { summary } = await page();
+
+		expect(summary).toMatchObject({ budgetPercent: 25, expenses: 0 });
 	});
 
 	it("reads 0 % for the current month while no category has an amount, whatever the total", async () => {

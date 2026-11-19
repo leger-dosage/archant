@@ -786,19 +786,17 @@ async function cashFlowKeyed(
 	return rows.map(toRecord);
 }
 
-/**
- * `cashFlowByCategory`'s rows over every month up to `to`, inclusive, or
- * every month without it, future ones included, each group also keyed by its
- * calendar month: the same counted rows, so a month's rows here sum to that
- * month's rows there, which a parity test checks. The budget's rollover
- * chain reads it up to a month; Sure's monthly statistics over the whole
- * history, one query each.
- */
+/** The same counted rows, also grouped by the month in which their period starts. */
 export async function cashFlowByMonth(
 	deps: ServiceDeps,
 	range: { to?: IsoDate; accountIds: readonly string[] },
+	startDay = 1,
 ): Promise<(CashFlowRow & { month: IsoMonth })[]> {
-	const rows = await cashFlowKeyed(deps, range, sql<IsoMonth>`substr(${entries.date}, 1, 7)`);
+	// Shifting by startDay - 1 makes the first day of a budget period day one
+	// of its slug's calendar month. The setting is at most 28 in every month.
+	const date =
+		startDay === 1 ? entries.date : sql`date(${entries.date}, ${`-${startDay - 1} days`})`;
+	const rows = await cashFlowKeyed(deps, range, sql<IsoMonth>`substr(${date}, 1, 7)`);
 
 	return rows.map(({ key, ...row }) => ({ ...row, month: key }));
 }

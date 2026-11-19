@@ -313,6 +313,8 @@ async function importBudgets(
 			await tx.insert(budgets).values({
 				id,
 				month: budget.month,
+				startDate: budget.startDate,
+				endDate: budget.endDate,
 				currency,
 				...totals,
 				createdAt: now,

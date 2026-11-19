@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+	budgetPeriodLabel,
 	dayAndMonth,
 	MONTH_NAMES,
 	dayHeading,
@@ -139,5 +140,16 @@ describe("weekFromToday", () => {
 
 	it("answers before the due date when the row is due further than a week out", () => {
 		expect(weekFromToday({ effectiveDueOn: "2026-10-20", days: 10 })).toBe("2026-10-17");
+	});
+});
+
+describe("budgetPeriodLabel", () => {
+	it("names a saved calendar month and a payday period from their dates", () => {
+		expect(budgetPeriodLabel({ month: "2027-01", from: "2027-01-01", to: "2027-01-31" })).toBe(
+			"janvier 2027",
+		);
+		expect(budgetPeriodLabel({ month: "2027-01", from: "2027-01-25", to: "2027-02-24" })).toBe(
+			"25 janv. - 24 février 2027",
+		);
 	});
 });

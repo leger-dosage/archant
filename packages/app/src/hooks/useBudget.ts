@@ -21,14 +21,29 @@ export type BudgetCategoryData = BudgetData["categories"][number];
 /** « Sans catégorie »'s envelope, what the total leaves unallocated. */
 export type UncategorisedData = BudgetData["uncategorised"];
 
+async function fetchBudget(month: string) {
+	return (await unwrap(api.budgets[":month"].$get({ param: { month } }))).data;
+}
+
 export function useBudget(month: string) {
 	return useQuery({
 		queryKey: queryKeys.transactions.budget(month),
-		queryFn: async () => (await unwrap(api.budgets[":month"].$get({ param: { month } }))).data,
+		queryFn: async () => fetchBudget(month),
 		// A month out of bounds stays out: retrying would only delay saying so.
 		retry: (failureCount, error) =>
 			!["NOT_FOUND", "VALIDATION_ERROR", "UNAUTHORIZED"].includes(errorCodeOf(error)) &&
 			failureCount < 3,
+	});
+}
+
+export function useCurrentBudget() {
+	return useQuery({
+		queryKey: queryKeys.transactions.budget("current"),
+		queryFn: async () => {
+			const { data } = await unwrap(api.budgets.current.$get());
+
+			return { budget: await fetchBudget(data.month), today: data.today };
+		},
 	});
 }
 

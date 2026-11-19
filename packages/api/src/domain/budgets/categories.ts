@@ -1,5 +1,4 @@
 import type { CashFlowCategory, CashFlowRow } from "../cash-flow.ts";
-import type { IsoMonth } from "../dates.ts";
 import type { Stats } from "../statistics.ts";
 
 import type { CategoryIcon } from "@archant/data/category-presets";
@@ -67,7 +66,6 @@ export type BudgetCategoryLine = Envelope & {
 export type UncategorisedLine = Envelope;
 
 /** A month's counted rows, as `cashFlowByMonth` groups them. */
-export type MonthRows = { month: IsoMonth; rows: readonly CashFlowRow[] };
 
 /** A category's stored row in a month: its amount and its « Report » switch. */
 export type BudgetRow = { budgetedSpending: MinorUnits; rolloverEnabled: boolean };

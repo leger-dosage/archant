@@ -20,7 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useBudget } from "@/hooks/useBudget";
 import { errorCodeOf } from "@/lib/api";
 import { canWrite } from "@/lib/auth-client";
-import { ofMonth, toIsoMonth } from "@/lib/dates";
+import { ofBudgetPeriod } from "@/lib/dates";
 
 export const Route = createFileRoute("/_authed/budgets/$month_/categories")({
 	// A guest reads the month: its allocation writes, and the server would refuse the save.
@@ -108,7 +108,7 @@ function BudgetCategoriesPage() {
 	const valid = monthSchema.safeParse(month).success;
 	const data = budget.data;
 	const title = valid
-		? t("budgets.allocation.title", { ofMonth: ofMonth(month) })
+		? t("budgets.allocation.title", { ofMonth: ofBudgetPeriod(month, data) })
 		: t("nav.budgets");
 	const code = budget.isError ? errorCodeOf(budget.error) : null;
 	// A failed refetch keeps the fields rather than stacking an error under them.
@@ -130,9 +130,7 @@ function BudgetCategoriesPage() {
 				<BudgetOutOfRange
 					action={
 						<Button variant="outline" asChild>
-							<Link to="/budgets/$month" params={{ month: toIsoMonth() }}>
-								{t("budgets.today")}
-							</Link>
+							<Link to="/budgets">{t("budgets.today")}</Link>
 						</Button>
 					}
 				/>

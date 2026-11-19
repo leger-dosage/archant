@@ -29,7 +29,7 @@ import { toDecimalString, toMinorUnits } from "@archant/data/money";
 import type { RuleActionType } from "@archant/data/rules";
 import type { TransferKind } from "@archant/data/transfer-kinds";
 
-import { daysBetween, monthRange, today } from "../domain/dates.ts";
+import { daysBetween, today } from "../domain/dates.ts";
 import { typeOf } from "../domain/trades.ts";
 import { HAND_TRANSFER_WINDOW_DAYS, TRANSFER_WINDOW_DAYS } from "../domain/transfer-matching.ts";
 import { AppError } from "../lib/errors.ts";
@@ -1353,8 +1353,8 @@ async function budgetLines(deps: ServiceDeps): Promise<Line[]> {
 			type: "Budget",
 			data: {
 				id: month.id,
-				start_date: monthRange(month.month).from,
-				end_date: monthRange(month.month).to,
+				start_date: month.startDate,
+				end_date: month.endDate,
 				budgeted_spending:
 					month.budgetedSpending === null
 						? null

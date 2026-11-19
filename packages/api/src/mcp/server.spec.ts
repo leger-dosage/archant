@@ -3388,6 +3388,64 @@ describe("reading a budget", () => {
 		await expect(budgetRowCount(db)).resolves.toBe(0);
 	});
 
+	it("keeps a partial payday budget and its saved dates across a start-day change", async () => {
+		const { db, app, reader, author } = await budgetHousehold();
+		const groceries = await ownCategory("Courses");
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 25 });
+
+		const before = budgetResult.parse(
+			(await callTool(app, reader, "get_budget")).structuredContent,
+		);
+		expect(before.months).toMatchObject([
+			{
+				month: "aug-2026",
+				period: { start_date: "2026-08-25", end_date: "2026-09-24" },
+				is_current: true,
+				initialized: false,
+			},
+		]);
+		await expect(budgetRowCount(db)).resolves.toBe(0);
+		const updated = await callTool(app, author, "update_budget", {
+			categories: [{ category: groceries, amount: 30 }],
+		});
+		expect(updated.structuredContent).toMatchObject({
+			success: true,
+			month: "aug-2026",
+		});
+
+		await sendOwn("PATCH", "/api/preferences/household", { monthStartDay: 1 });
+		const saved = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { prior_months: 1 })).structuredContent,
+		);
+		expect(saved.months).toMatchObject([
+			{
+				month: "aug-2026",
+				period: { start_date: "2026-08-25", end_date: "2026-09-24" },
+				is_current: false,
+				initialized: false,
+			},
+			{ month: "sep-2026", is_current: true, initialized: false },
+		]);
+		expect(lineOf(saved.months[0], "Courses")?.budgeted).toBe(eur(3_000));
+		await expect(budgetRowCount(db)).resolves.toBe(1);
+
+		const initialized = await callTool(app, author, "update_budget", {
+			month: "Aug-2026",
+			budgeted_spending: 100,
+		});
+		expect(initialized.structuredContent).toMatchObject({ success: true, month: "aug-2026" });
+		const after = budgetResult.parse(
+			(await callTool(app, reader, "get_budget", { month: "Aug-2026" })).structuredContent,
+		);
+		expect(after.months[0]).toMatchObject({
+			period: { start_date: "2026-08-25", end_date: "2026-09-24" },
+			initialized: true,
+			income: { expected_income: eur(0) },
+		});
+		expect(lineOf(after.months[0], "Courses")?.budgeted).toBe(eur(3_000));
+		await expect(budgetRowCount(db)).resolves.toBe(1);
+	});
+
 	it("get_budget includes stored partial months before an out-of-bounds target", async () => {
 		const { db, app, reader, author } = await budgetHousehold();
 		const groceries = await ownCategory("Courses");

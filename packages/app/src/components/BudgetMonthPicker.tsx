@@ -6,12 +6,10 @@ import { ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { monthSchema } from "@archant/api/schemas/reports";
-
 import { EmptyState } from "@/components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { MONTH_NAMES, monthLabel } from "@/lib/dates";
+import { MONTH_NAMES } from "@/lib/dates";
 
 type MonthBounds = BudgetData["bounds"];
 
@@ -118,21 +116,19 @@ function YearOfMonths({
  */
 export function BudgetMonthPicker({
 	month,
-	current,
+	label,
 	previousMonth,
 	nextMonth,
 	bounds,
 }: {
 	month: string;
-	/** This month in the browser's zone, « Aujourd'hui »'s target. */
-	current: string;
+	label: string;
 	previousMonth: string | null;
 	nextMonth: string | null;
 	bounds: MonthBounds | null;
 }) {
 	const { t } = useTranslation();
 	const [open, setOpen] = useState(false);
-	const label = monthSchema.safeParse(month).success ? monthLabel(month) : month;
 
 	return (
 		<div className="flex flex-wrap items-center gap-2">
@@ -159,9 +155,7 @@ export function BudgetMonthPicker({
 				</PopoverContent>
 			</Popover>
 			<Button variant="outline" size="sm" className="ml-auto" asChild>
-				<Link to="/budgets/$month" params={{ month: current }}>
-					{t("budgets.today")}
-				</Link>
+				<Link to="/budgets">{t("budgets.today")}</Link>
 			</Button>
 		</div>
 	);

@@ -1,3 +1,5 @@
+import { daysInMonth } from "@archant/data/months";
+
 import { activeLocale, intlLocale } from "@/lib/locale";
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -156,6 +158,36 @@ export function ofMonth(month: string): string {
 /** `2026-09` as « septembre 2026 », the budget picker's label. */
 export function monthLabel(month: string): string {
 	return monthYear.format(new Date(`${month}-01T00:00:00Z`));
+}
+
+const shortDate = new Intl.DateTimeFormat(intlLocale, {
+	day: "numeric",
+	month: "short",
+	timeZone: "UTC",
+});
+
+type BudgetDates = { month: string; from: string; to: string };
+
+function budgetDateRange({ month, from, to }: BudgetDates): string | null {
+	const lastDay = daysInMonth(Number(month.slice(0, 4)), Number(month.slice(5, 7)));
+
+	return from === `${month}-01` && to === `${month}-${lastDay}`
+		? null
+		: `${shortDate.format(new Date(`${from}T00:00:00Z`))} - ${longDate(to)}`;
+}
+
+export function budgetPeriodLabel(dates: BudgetDates): string {
+	return budgetDateRange(dates) ?? monthLabel(dates.month);
+}
+
+export function ofBudgetPeriod(month: string, dates: BudgetDates | undefined): string {
+	const range = dates === undefined ? null : budgetDateRange(dates);
+
+	if (range === null) {
+		return ofMonth(month);
+	}
+
+	return activeLocale === "fr" ? `du ${range}` : range;
 }
 
 const dayMonth = new Intl.DateTimeFormat(intlLocale, {

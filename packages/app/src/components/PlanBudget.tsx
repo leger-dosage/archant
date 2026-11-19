@@ -14,7 +14,7 @@ import { Section } from "@/components/Section";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useBudget } from "@/hooks/useBudget";
+import { useCurrentBudget } from "@/hooks/useBudget";
 import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { formatMoney } from "@/lib/format-money";
@@ -73,43 +73,47 @@ function BudgetFigures({ budget, today }: { budget: BudgetData; today: string })
 	);
 }
 
-export function PlanBudget({ today }: { today: string }) {
+export function PlanBudget() {
 	const { t } = useTranslation();
-	const month = today.slice(0, 7);
-	const budget = useBudget(month);
+	const current = useCurrentBudget();
+	const budget = current.data?.budget;
 	const canWrite = useCanWrite();
 
 	return (
 		<Section title={t("plan.budget.title")}>
 			<div className="flex flex-1 flex-col gap-4 p-4">
-				{budget.isPending && <Skeleton aria-hidden="true" className="h-20" />}
-				{budget.isError && budget.data === undefined && (
+				{current.isPending && <Skeleton aria-hidden="true" className="h-20" />}
+				{current.isError && budget === undefined && (
 					<div role="alert" className="space-y-2">
-						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(budget.error)}`)}</p>
-						<Button variant="outline" onClick={() => void budget.refetch()}>
+						<p className="text-muted-foreground">{t(`errors.${errorCodeOf(current.error)}`)}</p>
+						<Button variant="outline" onClick={() => void current.refetch()}>
 							{t("common.retry")}
 						</Button>
 					</div>
 				)}
-				{budget.data?.setUp === true && <BudgetFigures budget={budget.data} today={today} />}
-				{budget.data?.setUp === false && (
+				{current.data?.budget.setUp === true && (
+					<BudgetFigures budget={current.data.budget} today={current.data.today} />
+				)}
+				{budget?.setUp === false && (
 					<div className="my-auto flex flex-col items-center gap-3 py-4 text-center">
 						<p className="max-w-xs text-muted-foreground">{t("plan.budget.empty")}</p>
 						{canWrite && (
 							<Button asChild>
-								<Link to="/budgets/$month/edit" params={{ month }}>
+								<Link to="/budgets/$month/edit" params={{ month: budget.month }}>
 									{t("plan.budget.setUp")}
 								</Link>
 							</Button>
 						)}
 					</div>
 				)}
-				<Button variant="outline" asChild className="mt-auto w-full whitespace-normal">
-					<Link to="/budgets/$month" params={{ month }}>
-						{t("plan.budget.view")}
-						<ChevronRightIcon aria-hidden="true" />
-					</Link>
-				</Button>
+				{budget !== undefined && (
+					<Button variant="outline" asChild className="mt-auto w-full whitespace-normal">
+						<Link to="/budgets/$month" params={{ month: budget.month }}>
+							{t("plan.budget.view")}
+							<ChevronRightIcon aria-hidden="true" />
+						</Link>
+					</Button>
+				)}
 			</div>
 		</Section>
 	);

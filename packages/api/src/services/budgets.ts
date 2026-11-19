@@ -2,12 +2,12 @@ import type { BudgetActuals, SpendingSegment } from "../domain/budgets/actuals.t
 import type {
 	BudgetCategoryLine,
 	BudgetRow,
-	MonthRows,
 	TreeCategory,
 	UncategorisedLine,
 } from "../domain/budgets/categories.ts";
 import type { MonthBounds } from "../domain/budgets/months.ts";
 import type { RolloverMonth } from "../domain/budgets/rollover.ts";
+import type { CashFlowRow } from "../domain/cash-flow.ts";
 import type { IsoDate, IsoMonth } from "../domain/dates.ts";
 import type {
 	BudgetCategoryInput,
@@ -49,10 +49,16 @@ import {
 	parentAfterChildSave,
 	spentByCategory,
 } from "../domain/budgets/categories.ts";
-import { budgetBounds, isBudgetMonth, neighbours } from "../domain/budgets/months.ts";
+import {
+	budgetBounds,
+	budgetMonthOf,
+	budgetPeriod,
+	isBudgetMonth,
+	neighbours,
+} from "../domain/budgets/months.ts";
 import { copiedRows, moveAllocation } from "../domain/budgets/moves.ts";
 import { rolloverChain } from "../domain/budgets/rollover.ts";
-import { today } from "../domain/dates.ts";
+import { addDays, daysBetween, today } from "../domain/dates.ts";
 import { AppError } from "../lib/errors.ts";
 import { validationError } from "../lib/zod-error.ts";
 import {
@@ -61,20 +67,20 @@ import {
 	budgetSchema,
 } from "../schemas/budgets.ts";
 import { UNCATEGORISED } from "../schemas/transactions.ts";
-import { oldestEntryDate } from "./ledger/queries.ts";
+import { cashFlowByDay, oldestEntryDate } from "./ledger/queries.ts";
 import { budgetBillReservations } from "./recurring/budget-reservations.ts";
 import {
-	getCashFlowHistory,
+	cashFlowAccounts,
 	getCashFlowMonths,
 	getCashFlowWithRows,
-	historyBefore,
 	statisticsOf,
 } from "./reports.ts";
-import { getReportingCurrency } from "./settings.ts";
+import { getMonthStartDay, getReportingCurrency } from "./settings.ts";
 
 /** A month's budget as the page shows it, whether set up or not. */
 export type BudgetMonth = {
 	month: IsoMonth;
+	isCurrent: boolean;
 	/** The month's first and last days, which a category's drill-down filters on. */
 	from: IsoDate;
 	to: IsoDate;
@@ -165,7 +171,13 @@ type ChainRow = {
 };
 
 /** A month set up, oldest first, with its rows: one without a row still breaks a carry. */
-type ChainMonth = { month: IsoMonth; currency: string; rows: ChainRow[] };
+type ChainMonth = {
+	month: IsoMonth;
+	startDate: IsoDate;
+	endDate: IsoDate;
+	currency: string;
+	rows: ChainRow[];
+};
 
 /** The months set up within `from` and `to`, both inclusive, each with its rows. */
 async function setUpMonths(
@@ -175,6 +187,8 @@ async function setUpMonths(
 	const rows = await db
 		.select({
 			month: budgets.month,
+			startDate: budgets.startDate,
+			endDate: budgets.endDate,
 			currency: budgets.currency,
 			// `null` for a month set up without a row.
 			row: {
@@ -219,26 +233,61 @@ function treeCategories(db: Db) {
 	return db.select({ id: categories.id, parentId: categories.parentId }).from(categories);
 }
 
-/**
- * The carry into each row of `months`, as `rolloverChain` computes it from
- * each month's spending: `history` is `getCashFlowHistory`'s, reaching at
- * least the month before the last one.
- */
-function chainOf(
+/** Saved periods can overlap or have gaps after the household changes its start day. */
+async function chainOf(
+	deps: ServiceDeps,
 	months: readonly ChainMonth[],
-	history: readonly MonthRows[],
 	allCategories: readonly TreeCategory[],
 ) {
-	const rowsOf = new Map(history.map((item) => [item.month, item.rows]));
+	const first = months[0];
+
+	if (
+		first === undefined ||
+		!months.some((month) => month.rows.some((row) => row.rolloverEnabled))
+	) {
+		return new Map<IsoMonth, Map<string, MinorUnits>>();
+	}
+
+	const to = months.reduce(
+		(last, month) => (month.endDate > last ? month.endDate : last),
+		first.endDate,
+	);
+	const { counted } = await cashFlowAccounts(deps);
+	const history = await cashFlowByDay(deps, {
+		from: first.startDate,
+		to,
+		accountIds: counted.map((row) => row.id),
+	});
+	const byDay = new Map<IsoDate, CashFlowRow[]>();
+
+	for (const { date, ...row } of history) {
+		const rows = byDay.get(date);
+
+		if (rows === undefined) {
+			byDay.set(date, [row]);
+		} else {
+			rows.push(row);
+		}
+	}
 
 	return rolloverChain({
 		categories: allCategories,
-		months: months.map((month): RolloverMonth => ({
-			month: month.month,
-			currency: month.currency,
-			rows: new Map(month.rows.map((row) => [row.categoryId, row])),
-			spending: spentByCategory(rowsOf.get(month.month) ?? [], allCategories),
-		})),
+		months: months.map((month): RolloverMonth => {
+			const rows: CashFlowRow[] = [];
+
+			const days = daysBetween(month.startDate, month.endDate) + 1;
+
+			for (let offset = 0; offset < days; offset += 1) {
+				rows.push(...(byDay.get(addDays(month.startDate, offset)) ?? []));
+			}
+
+			return {
+				month: month.month,
+				currency: month.currency,
+				rows: new Map(month.rows.map((row) => [row.categoryId, row])),
+				spending: spentByCategory(rows, allCategories),
+			};
+		}),
 	});
 }
 
@@ -274,9 +323,7 @@ export async function rolloverAmounts(deps: ServiceDeps): Promise<RolloverAmount
 	}
 
 	const months = await setUpMonths(deps.db, { from: first });
-	const last = months.at(-1)?.month ?? first;
-	const history = await getCashFlowHistory(deps, shiftMonth(last, 1));
-	const chain = chainOf(months, history, await treeCategories(deps.db));
+	const chain = await chainOf(deps, months, await treeCategories(deps.db));
 
 	return months.flatMap((month) =>
 		month.rows.map((row) => ({
@@ -346,14 +393,29 @@ async function setUpBudget(db: Db, month: IsoMonth) {
 	return budget;
 }
 
-/** The current month in `APP_TIMEZONE`, and the months a budget may cover. */
-async function budgetMonths(deps: ServiceDeps) {
-	const current = today(deps.timeZone).slice(0, 7);
+/** The current budget period in the household's time zone. */
+export async function currentBudgetPeriod(deps: ServiceDeps) {
+	const date = today(deps.timeZone);
 
-	return { current, bounds: budgetBounds(current, await oldestEntryDate(deps)) };
+	return { month: budgetMonthOf(date, await getMonthStartDay(deps.db)), today: date };
 }
 
-/** Whether a budget may cover `month`, as Sure's `budget_date_valid?`. */
+async function budgetMonths(deps: ServiceDeps) {
+	const [startDay, oldest] = await Promise.all([getMonthStartDay(deps.db), oldestEntryDate(deps)]);
+	const current = budgetMonthOf(today(deps.timeZone), startDay);
+
+	return { startDay, current, bounds: budgetBounds(current, oldest, startDay) };
+}
+
+/** Saved slugs remain usable when the bounds move. */
+async function budgetMonthAllowed(db: Db, month: IsoMonth, bounds: MonthBounds): Promise<boolean> {
+	return (
+		isBudgetMonth(month, bounds) ||
+		(await db.select({ id: budgets.id }).from(budgets).where(eq(budgets.month, month)).get()) !==
+			undefined
+	);
+}
+
 export async function isBudgetableMonth(deps: ServiceDeps, month: IsoMonth): Promise<boolean> {
 	return isBudgetMonth(month, (await budgetMonths(deps)).bounds);
 }
@@ -364,68 +426,73 @@ export async function isBudgetableMonth(deps: ServiceDeps, month: IsoMonth): Pro
  * received is computed again from the ledger as it stands, never taken from
  * the stored rollover amount, which only the next budget write refreshes. A month out of bounds is `NOT_FOUND`.
  */
-export async function getBudget(deps: ServiceDeps, month: IsoMonth): Promise<BudgetMonth> {
-	const { bounds } = await budgetMonths(deps);
+export async function getBudget(
+	deps: ServiceDeps,
+	requestedMonth: IsoMonth | undefined,
+): Promise<BudgetMonth> {
+	const calendar = await budgetMonths(deps);
+	const month = requestedMonth ?? calendar.current;
+	const row = await deps.db.select().from(budgets).where(eq(budgets.month, month)).get();
 
-	if (!isBudgetMonth(month, bounds)) {
+	if (row === undefined && !isBudgetMonth(month, calendar.bounds)) {
 		throw notFound();
 	}
 
-	return readBudget(deps, month, bounds);
+	return readBudget(deps, calendar, month, row);
 }
 
 /** Sure's budget history, with only the target computed when nothing was saved. */
-export async function getBudgetHistory(deps: ServiceDeps, month: IsoMonth, priorMonths: number) {
-	const { bounds } = await budgetMonths(deps);
+export async function getBudgetHistory(
+	deps: ServiceDeps,
+	requestedMonth: IsoMonth | undefined,
+	priorMonths: number,
+) {
+	const calendar = await budgetMonths(deps);
+	const month = requestedMonth ?? calendar.current;
 	const earlier = Array.from({ length: priorMonths }, (_, index) =>
 		shiftMonth(month, index - priorMonths),
-	).filter((item) => isBudgetMonth(item, bounds));
+	).filter((item) => isBudgetMonth(item, calendar.bounds));
+	const includeTarget = isBudgetMonth(month, calendar.bounds);
+	const candidates = includeTarget ? [...earlier, month] : earlier;
 	const stored =
-		earlier.length === 0
+		candidates.length === 0
 			? []
-			: await deps.db
-					.select({ month: budgets.month })
-					.from(budgets)
-					.where(inArray(budgets.month, earlier))
-					.orderBy(asc(budgets.month));
-	const months = stored.map((item) => item.month);
-
-	if (isBudgetMonth(month, bounds)) {
-		months.push(month);
-	}
+			: await deps.db.select().from(budgets).where(inArray(budgets.month, candidates));
+	const rows = new Map(stored.map((row) => [row.month, row]));
+	const prior = earlier.filter((item) => rows.has(item));
+	const months = includeTarget ? [...prior, month] : prior;
 
 	return {
 		currency: await getReportingCurrency(deps.db),
-		months: await Promise.all(months.map(async (item) => readBudget(deps, item, bounds))),
-		unavailable: earlier.length - stored.length,
+		months: await Promise.all(
+			months.map(async (item) => readBudget(deps, calendar, item, rows.get(item))),
+		),
+		unavailable: earlier.length - prior.length,
 	};
 }
 
 async function readBudget(
 	deps: ServiceDeps,
+	{ bounds, current, startDay }: Awaited<ReturnType<typeof budgetMonths>>,
 	month: IsoMonth,
-	bounds: MonthBounds,
+	row: typeof budgets.$inferSelect | undefined,
 ): Promise<BudgetMonth> {
-	const [
-		row,
-		chainMonths,
-		{ cashFlow, gross, rows, categories: allCategories, billReservations },
-		monthRows,
-		source,
-	] = await Promise.all([
-		deps.db.select().from(budgets).where(eq(budgets.month, month)).get(),
+	const [chainMonths, source] = await Promise.all([
 		setUpMonths(deps.db, { to: month }),
-		getCashFlowWithRows(deps, month).then(async (view) => ({
-			...view,
-			billReservations: await budgetBillReservations(deps.db, view.cashFlow),
-		})),
-		// The whole history once: the chain takes the months before this one,
-		// the statistics every month, whatever the month shown, as Sure's.
-		getCashFlowMonths(deps),
 		latestSetUpBefore(deps.db, month),
 	]);
-	const history = historyBefore(monthRows, month);
+	const { startDate: from, endDate: to } = row ?? budgetPeriod(month, startDay);
+	const periodStartDay = Number(from.slice(8));
+	const [{ cashFlow, gross, rows, categories: allCategories, billReservations }, monthRows] =
+		await Promise.all([
+			getCashFlowWithRows(deps, month, { from, to }).then(async (view) => ({
+				...view,
+				billReservations: await budgetBillReservations(deps.db, view.cashFlow),
+			})),
+			getCashFlowMonths(deps, periodStartDay),
+		]);
 	const statistics = statisticsOf(monthRows);
+	const currentPeriod = budgetPeriod(current, startDay);
 	const budgetedSpending = row?.budgetedSpending ?? null;
 	const expectedIncome = row?.expectedIncome ?? null;
 	// Partial budgets can hold category amounts before joining the rollover chain.
@@ -437,7 +504,7 @@ async function readBudget(
 						.find((item) => item.month === month)
 						?.rows.map((item) => [item.categoryId, item]),
 				);
-	const carried = chainOf(chainMonths, history, allCategories).get(month);
+	const carried = (await chainOf(deps, chainMonths, allCategories)).get(month);
 	const envelopes = budgetCategories({
 		categories: allCategories,
 		amounts: new Map([...shown].map(([id, item]) => [id, item.budgetedSpending])),
@@ -457,6 +524,7 @@ async function readBudget(
 
 	return {
 		month,
+		isCurrent: from === currentPeriod.startDate && to === currentPeriod.endDate,
 		from: cashFlow.from,
 		to: cashFlow.to,
 		currency: cashFlow.currency,
@@ -502,13 +570,13 @@ export async function saveBudget(
 
 	await deps.db.transaction(
 		async (tx) => {
-			const { bounds } = await budgetMonths({ ...deps, db: tx });
+			const { bounds, startDay } = await budgetMonths({ ...deps, db: tx });
 
-			if (!isBudgetMonth(month, bounds)) {
+			if (!(await budgetMonthAllowed(tx, month, bounds))) {
 				throw notFound();
 			}
 
-			await writeTotals(tx, month, { currency, ...parsed.data });
+			await writeTotals(tx, month, startDay, { currency, ...parsed.data });
 			await refreshRollover(tx, deps);
 		},
 		{ behavior: "immediate" },
@@ -530,6 +598,7 @@ type BudgetTotals = {
 async function writeTotals(
 	tx: Db,
 	month: IsoMonth,
+	startDay: number,
 	totals: BudgetTotals & { currency: CurrencyCode },
 ) {
 	const before = await tx.select().from(budgets).where(eq(budgets.month, month)).get();
@@ -553,7 +622,13 @@ async function writeTotals(
 	};
 	const budget = await tx
 		.insert(budgets)
-		.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
+		.values({
+			id: crypto.randomUUID(),
+			month,
+			...budgetPeriod(month, startDay),
+			...amounts,
+			createdAt: now,
+		})
 		.onConflictDoUpdate({ target: budgets.month, set: amounts })
 		.returning({ id: budgets.id })
 		.get();
@@ -632,7 +707,7 @@ export async function saveCategoryBudget(
 		async (tx) => {
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!isBudgetMonth(month, bounds)) {
+			if (!(await budgetMonthAllowed(tx, month, bounds))) {
 				throw notFound();
 			}
 
@@ -723,20 +798,25 @@ type BudgetUpdate = BudgetTotals & {
 };
 
 /** Sure's `UpdateBudget`: create the month if needed and apply the patch atomically. */
-export async function updateBudget(deps: ServiceDeps, month: IsoMonth, input: BudgetUpdate) {
+export async function updateBudget(
+	deps: ServiceDeps,
+	requestedMonth: IsoMonth | undefined,
+	input: BudgetUpdate,
+) {
 	const currency = await getReportingCurrency(deps.db);
 	const { budgetedSpending, expectedIncome, categories: categoryAmounts } = input;
 
-	const updated = await deps.db
+	const { month: savedMonth, updated } = await deps.db
 		.transaction(
 			async (tx) => {
-				const { bounds } = await budgetMonths({ ...deps, db: tx });
+				const { bounds, current, startDay } = await budgetMonths({ ...deps, db: tx });
+				const month = requestedMonth ?? current;
 
 				if (!isBudgetMonth(month, bounds)) {
 					throw notFound();
 				}
 
-				const budgetId = await writeTotals(tx, month, {
+				const budgetId = await writeTotals(tx, month, startDay, {
 					currency,
 					budgetedSpending,
 					expectedIncome,
@@ -777,7 +857,7 @@ export async function updateBudget(deps: ServiceDeps, month: IsoMonth, input: Bu
 
 				await refreshRollover(tx, deps);
 
-				return saved;
+				return { month, updated: saved };
 			},
 			{ behavior: "immediate" },
 		)
@@ -796,7 +876,7 @@ export async function updateBudget(deps: ServiceDeps, month: IsoMonth, input: Bu
 			throw error;
 		});
 
-	return { budget: await getBudget(deps, month), updated };
+	return { budget: await getBudget(deps, savedMonth), updated };
 }
 
 /**
@@ -816,9 +896,9 @@ export async function copyBudget(
 
 	const copiedFrom = await deps.db.transaction(
 		async (tx) => {
-			const { bounds } = await budgetMonths({ ...deps, db: tx });
+			const { bounds, startDay } = await budgetMonths({ ...deps, db: tx });
 
-			if (!isBudgetMonth(month, bounds)) {
+			if (!(await budgetMonthAllowed(tx, month, bounds))) {
 				throw notFound();
 			}
 
@@ -845,7 +925,13 @@ export async function copyBudget(
 			};
 			const budget = await tx
 				.insert(budgets)
-				.values({ id: crypto.randomUUID(), month, ...amounts, createdAt: now })
+				.values({
+					id: crypto.randomUUID(),
+					month,
+					...budgetPeriod(month, startDay),
+					...amounts,
+					createdAt: now,
+				})
 				.onConflictDoUpdate({ target: budgets.month, set: amounts })
 				.returning({ id: budgets.id })
 				.get();
@@ -917,7 +1003,7 @@ export async function moveCategoryBudget(
 		async (tx) => {
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!isBudgetMonth(month, bounds)) {
+			if (!(await budgetMonthAllowed(tx, month, bounds))) {
 				throw notFound();
 			}
 
@@ -990,7 +1076,7 @@ export async function setCategoryRollover(
 		async (tx) => {
 			const { bounds } = await budgetMonths({ ...deps, db: tx });
 
-			if (!isBudgetMonth(month, bounds)) {
+			if (!(await budgetMonthAllowed(tx, month, bounds))) {
 				throw notFound();
 			}
 
