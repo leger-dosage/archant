@@ -20,7 +20,7 @@ import {
 	temp,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -348,21 +348,21 @@ describe("PATCH /api/preferences", () => {
 		});
 	});
 
-	describe("as a viewer", () => {
+	describe("as a guest", () => {
 		const silent = createLogger("silent");
 		let auth: Auth;
-		let viewerCookie: string;
+		let guestCookie: string;
 
-		// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+		// One guest sign-in for the block: Better Auth allows three per ten seconds.
 		beforeAll(async () => {
 			auth = createTestAuth(temp.db, silent);
-			viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+			guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 		});
 
-		const viewer = () => withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = () => withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
 		it("reads household preferences but cannot write them", async () => {
-			const app = viewer();
+			const app = guest();
 			const read = await app.request("/api/preferences/household");
 			const refused = await app.request("/api/preferences/household", {
 				method: "PATCH",
@@ -377,7 +377,7 @@ describe("PATCH /api/preferences", () => {
 		});
 
 		it("is refused FORBIDDEN on hiding the rule prompt", async () => {
-			const refused = await viewer().request("/api/preferences/rule-prompt", {
+			const refused = await guest().request("/api/preferences/rule-prompt", {
 				method: "PATCH",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ disabled: true }),
@@ -388,15 +388,15 @@ describe("PATCH /api/preferences", () => {
 		});
 
 		it("is refused FORBIDDEN on saving the chart period, as AD-21", async () => {
-			const refused = await patchRaw({ defaultPeriod: "last_90_days" }, viewer());
+			const refused = await patchRaw({ defaultPeriod: "last_90_days" }, guest());
 
 			expect(refused.status).toBe(403);
 			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");
 		});
 
 		it("reads the default order, and is refused FORBIDDEN on a save, nothing written", async () => {
-			const refused = await patchRaw({ defaultAccountOrder: "balance_desc" }, viewer());
-			const read = await viewer().request("/api/preferences");
+			const refused = await patchRaw({ defaultAccountOrder: "balance_desc" }, guest());
+			const read = await guest().request("/api/preferences");
 
 			expect(refused.status).toBe(403);
 			expect(errorBody.parse(refused.body).error.code).toBe("FORBIDDEN");

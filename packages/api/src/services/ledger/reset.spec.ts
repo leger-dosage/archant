@@ -282,7 +282,7 @@ async function household({ syncStartedAt = null }: { syncStartedAt?: number | nu
 	await temp.db.insert(invitations).values({
 		id: crypto.randomUUID(),
 		email: `invited-${userId}@example.test`,
-		role: "viewer",
+		role: "guest",
 		tokenHash: crypto.randomUUID(),
 		inviterId: userId,
 		expiresAt: now + 86_400_000,

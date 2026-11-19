@@ -35,7 +35,7 @@ import {
 	useRefreshCategorize,
 } from "@/hooks/useCategorize";
 import { useHouseholdPreferences } from "@/hooks/useHouseholdPreferences";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { categoryTree } from "@/lib/category-tree";
 import { isoToInput } from "@/lib/dates";
@@ -484,9 +484,9 @@ function GroupStep({
 /** Sure's quick-categorise wizard: one group of uncategorised lines at a time. */
 function CategorizePage() {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const position = Route.useSearch().position ?? 0;
-	const step = useCategorizeStep(position, admin);
+	const step = useCategorizeStep(position, canWrite);
 	const navigate = useNavigate();
 	const finished = step.data !== undefined && step.data.group === null;
 
@@ -502,7 +502,7 @@ function CategorizePage() {
 		}
 	}, [finished, navigate, t]);
 
-	if (!admin) {
+	if (!canWrite) {
 		return <Navigate to="/transactions" replace />;
 	}
 

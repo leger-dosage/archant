@@ -17,7 +17,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { TintedIcon } from "@/components/TintedIcon";
 import { Button } from "@/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { formatMoney } from "@/lib/format-money";
 import { cn } from "@/lib/utils";
 
@@ -198,7 +198,7 @@ export function BudgetCategories({
 	onFilterChange: (filter: BudgetFilter | undefined) => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	// The sheet keeps the last card it opened while it slides out.
 	const [opened, setOpened] = useState<string | null>(null);
 	const [sheetOpen, setSheetOpen] = useState(false);
@@ -294,7 +294,7 @@ export function BudgetCategories({
 							</ToggleGroupItem>
 						</ToggleGroup>
 					)}
-					{admin && (
+					{canWrite && (
 						<Button variant="outline" size="sm" asChild>
 							<Link
 								to="/budgets/$month/categories"

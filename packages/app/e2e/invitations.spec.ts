@@ -45,7 +45,11 @@ test("an invited person opens the link signed out, sets a password and lands sig
 	await page.getByRole("button", { name: "Inviter", exact: true }).click();
 	const dialog = page.getByRole("dialog", { name: "Inviter une personne" });
 	await dialog.getByLabel("Adresse e-mail").fill(email);
-	await expect(dialog.getByRole("combobox", { name: "Rôle" })).toHaveText("Lecteur");
+	const role = dialog.getByRole("combobox", { name: "Rôle" });
+	await expect(role).toHaveText("Invité");
+	await role.click();
+	await expect(page.getByRole("option")).toHaveText(["Administrateur", "Membre", "Invité"]);
+	await page.getByRole("option", { name: "Invité" }).click();
 	await dialog.getByRole("button", { name: "Créer le lien" }).click();
 
 	const shown = page.getByRole("dialog", { name: `Lien d'invitation pour ${email}` });
@@ -60,7 +64,7 @@ test("an invited person opens the link signed out, sets a password and lands sig
 
 	const pending = page.getByRole("list", { name: "Invitations en attente" });
 	await expect(pending.getByRole("listitem").filter({ hasText: email })).toContainText(
-		"Lecteur · Expire le",
+		"Invité · Expire le",
 	);
 
 	// Signed out, as the person the link is sent to.
@@ -69,7 +73,7 @@ test("an invited person opens the link signed out, sets a password and lands sig
 
 	await expect(page.getByRole("heading", { level: 1, name: "Rejoindre Archant" })).toBeVisible();
 	await expect(
-		page.getByText(`${inviter} vous invite à rejoindre Archant en tant que lecteur.`),
+		page.getByText(`${inviter} vous invite à rejoindre Archant avec le rôle « Invité ».`),
 	).toBeVisible();
 	const emailField = page.getByLabel("Adresse e-mail");
 	await expect(emailField).toHaveValue(email);

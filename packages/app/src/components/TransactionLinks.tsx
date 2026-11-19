@@ -25,8 +25,8 @@ import {
 	useMergePending,
 	usePostedMatch,
 } from "@/hooks/useDuplicates";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
 import { useMerchants } from "@/hooks/useMerchants";
+import { useCanWrite } from "@/hooks/usePermissions";
 import {
 	recurringName,
 	useAddRecurring,
@@ -47,7 +47,7 @@ export type TransferLink = TransactionData["transfer"];
  * transaction, then the other side, « Ne plus proposer » and « Dissocier »
  * for the transfer just made; a transfer row opens the transfer's drawer. It saves at once,
  * apart from the form, so it keeps the link it last saved rather than the row
- * the sheet was opened with. A viewer reads the link without its actions.
+ * the sheet was opened with. A guest reads the link without its actions.
  */
 export function TransferBlock({
 	transaction,
@@ -59,7 +59,7 @@ export function TransferBlock({
 	onChange: (transfer: TransferLink) => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const matchTransfer = useMatchTransfer();
 	const unmatchTransfer = useUnmatchTransfer();
 	const rejectTransfer = useRejectTransfer();
@@ -116,7 +116,7 @@ export function TransferBlock({
 			{transfer === null || caption === null ? (
 				<div className="flex flex-col items-start gap-2">
 					<p className="text-sm text-muted-foreground">{t("transactions.transfer.none")}</p>
-					{admin && (
+					{canWrite && (
 						<>
 							<Button type="button" variant="outline" onClick={() => setPicking(true)}>
 								{t("transactions.transfer.match")}
@@ -140,7 +140,7 @@ export function TransferBlock({
 							{t(`transactions.transfer.kinds.${transfer.kind}`)}
 						</span>
 					</p>
-					{admin && (
+					{canWrite && (
 						<div className="flex shrink-0 gap-2">
 							<Button
 								type="button"
@@ -173,7 +173,7 @@ export function TransferBlock({
  * « Fusionner avec… » deletes this transaction into the one picked, and
  * « Ce n'est pas un doublon » clears the flag. Both save at once, apart from
  * the form, as the transfer block does. A merge or a dismissal made in
- * another tab hides the block rather than offering it again. A viewer reads
+ * another tab hides the block rather than offering it again. A guest reads
  * the flag without its actions.
  */
 export function DuplicateBlock({
@@ -192,7 +192,7 @@ export function DuplicateBlock({
 	onGone: () => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const mergeDuplicate = useMergeDuplicate();
 	const dismissDuplicate = useDismissDuplicate();
 	const [picking, setPicking] = useState(false);
@@ -246,7 +246,7 @@ export function DuplicateBlock({
 				<StatusBadge status="duplicate" />
 			</h3>
 			<p className="text-sm text-muted-foreground">{t("transactions.duplicate.description")}</p>
-			{admin && (
+			{canWrite && (
 				<>
 					<div className="flex flex-wrap gap-2">
 						<Button
@@ -325,7 +325,7 @@ function usePendingMergeFailure({ onResolved, onGone }: Omit<PendingOutcomes, "o
  * sync suggests this pending transaction repeats at another amount, with
  * « Oui, fusionnez-les » and « Non, gardez les deux », which dismisses it for
  * good. Both save at once, apart from the form. Nothing shows until the line
- * is read, nor once it is gone. A viewer reads the alert without its actions.
+ * is read, nor once it is gone. A guest reads the alert without its actions.
  */
 export function PostedMatchBlock({
 	transaction,
@@ -333,7 +333,7 @@ export function PostedMatchBlock({
 	...outcomes
 }: PendingOutcomes & { transaction: TransactionData; onDismissed: () => void }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const match = usePostedMatch(transaction.id, true);
 	const mergePending = useMergePending();
 	const dismissPostedMatch = useDismissPostedMatch();
@@ -366,7 +366,7 @@ export function PostedMatchBlock({
 					</p>
 					<Money amount={line.amount} currency={line.currency} signed />
 				</div>
-				{admin && (
+				{canWrite && (
 					<div className="flex flex-wrap gap-2">
 						<Button
 							type="button"
@@ -468,7 +468,7 @@ export function PendingMergeBlock({
  * patterns, active, at once and apart from the form, as the transfer
  * block does, or opens « Créer une facture » filled from it, as Sure's
  * `prefill_recurring_from_entry`. Hidden on a transfer side the API refuses.
- * A viewer reads whether it belongs to a series, and adds none.
+ * A guest reads whether it belongs to a series, and adds none.
  */
 export function RecurringBlock({
 	transaction,
@@ -479,7 +479,7 @@ export function RecurringBlock({
 	dirty: boolean;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const series = useRecurringOfEntry(transaction.id);
 	const addRecurring = useAddRecurring();
 	// While recurring transactions are off, the bill pages lead home, as Sure's
@@ -537,7 +537,7 @@ export function RecurringBlock({
 						</Button>
 					)}
 				</div>
-			) : !admin ? (
+			) : !canWrite ? (
 				<p className="text-sm text-muted-foreground">{t("transactions.recurring.none")}</p>
 			) : (
 				<div className="flex flex-col items-start gap-2">

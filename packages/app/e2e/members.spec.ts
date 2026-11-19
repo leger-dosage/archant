@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { acceptInvitation, expect, test, uniqueName } from "./fixtures.ts";
+import { openTypeList, TYPE_NAMES } from "./new-account.ts";
 import { ADMIN, WEB_URL } from "./settings.ts";
 
 // Story 20.3: « Réglages › Membres » lists who has access. The administrator
@@ -47,7 +48,7 @@ test("a member is promoted, demoted, then removed, each after a confirmation, ap
 		.getByRole("listitem")
 		.filter({ hasText: email });
 	await expect(row).toContainText(name);
-	await expect(row).toContainText("Lecteur");
+	await expect(row).toContainText("Invité");
 
 	await test.step("promoted", async () => {
 		await row.getByRole("button", { name: `Actions pour ${name}` }).click();
@@ -65,19 +66,29 @@ test("a member is promoted, demoted, then removed, each after a confirmation, ap
 		await expect(pending.getByText(invitee)).toBeVisible();
 	});
 
-	await test.step("demoted", async () => {
+	await test.step("demoted to member", async () => {
 		await row.getByRole("button", { name: `Actions pour ${name}` }).click();
-		await page.getByRole("menuitem", { name: "Passer lecteur" }).click();
-		const dialog = page.getByRole("alertdialog", { name: `Passer ${name} lecteur ?` });
+		await page.getByRole("menuitem", { name: "Passer membre" }).click();
+		const dialog = page.getByRole("alertdialog", { name: `Passer ${name} membre ?` });
 		await expect(dialog).toContainText(
 			"Ses assistants connectés et ses invitations en attente seront supprimés.",
 		);
-		await dialog.getByRole("button", { name: "Passer lecteur" }).click();
+		await dialog.getByRole("button", { name: "Passer membre" }).click();
 
-		await expect(page.getByText(`${name} est maintenant lecteur.`)).toBeVisible();
-		await expect(row).toContainText("Lecteur");
+		await expect(page.getByText(`${name} est maintenant membre.`)).toBeVisible();
+		await expect(row).toContainText("Membre");
 		await expect(pending.getByText(invitee)).toHaveCount(0);
 		expect((await member.get("/api/members")).status()).toBe(403);
+	});
+
+	await test.step("changed to guest", async () => {
+		await row.getByRole("button", { name: `Actions pour ${name}` }).click();
+		await page.getByRole("menuitem", { name: "Passer invité" }).click();
+		const dialog = page.getByRole("alertdialog", { name: `Passer ${name} invité ?` });
+		await dialog.getByRole("button", { name: "Passer invité" }).click();
+
+		await expect(page.getByText(`${name} est maintenant invité.`)).toBeVisible();
+		await expect(row).toContainText("Invité");
 	});
 
 	await test.step("removed", async () => {
@@ -121,7 +132,7 @@ test("an administrator demoted while their page is open leaves it at their next 
 			.object({ data: z.array(z.object({ id: z.string(), email: z.string() })) })
 			.parse(await listed.json())
 			.data.find((member) => member.email === email)?.id;
-		const demoted = await request.patch(`/api/members/${id ?? ""}`, { data: { role: "viewer" } });
+		const demoted = await request.patch(`/api/members/${id ?? ""}`, { data: { role: "guest" } });
 		expect(demoted.status(), await demoted.text()).toBe(200);
 
 		// The page still shows the administrator's controls until a request is refused.
@@ -137,4 +148,39 @@ test("an administrator demoted while their page is open leaves it at their next 
 	} finally {
 		await context.close();
 	}
+});
+
+test("a member creates a ledger account and cannot open household administration", async ({
+	api,
+	page,
+}) => {
+	const name = uniqueName("Compte partagé");
+	const { url } = await api.invite(`writer-${randomUUID()}@archant.test`, "member");
+	await page.context().clearCookies();
+	await acceptInvitation(page.request, url, { password: "mot de passe du membre" });
+
+	await page.goto("/accounts");
+	const dialog = await openTypeList(
+		page,
+		page.getByRole("main").getByRole("button", { name: "Ajouter un compte" }),
+	);
+	await dialog.getByRole("button", { name: TYPE_NAMES.depository, exact: true }).click();
+	await expect(dialog.getByRole("button", { name: "Lier avec Enable Banking" })).toHaveCount(0);
+	await dialog.getByRole("button", { name: "Saisir le solde du compte" }).click();
+	await dialog.getByLabel("Nom du compte").fill(name);
+	await dialog.getByLabel("Solde à la date :").fill("12,00");
+	await dialog.getByRole("button", { name: "Ajouter le compte" }).click();
+	await expect(page.getByRole("main").getByRole("link", { name: new RegExp(name) })).toBeVisible();
+
+	await page.goto("/plan");
+	const goals = page.getByRole("region", { name: "Vos objectifs" });
+	await goals.getByRole("button", { name: "Nouvel objectif" }).click();
+	await expect(page.getByRole("dialog", { name: "Nouvel objectif" })).toBeVisible();
+
+	await page.goto("/settings/banks");
+	await expect(page).toHaveURL(`${WEB_URL}/settings/security`);
+	const settings = page.getByRole("navigation", { name: "Réglages" });
+	await expect(settings.getByRole("link", { name: "Transactions récurrentes" })).toBeVisible();
+	await expect(settings.getByRole("link", { name: "Banques", exact: true })).toHaveCount(0);
+	await expect(settings.getByRole("link", { name: "Membres", exact: true })).toHaveCount(0);
 });

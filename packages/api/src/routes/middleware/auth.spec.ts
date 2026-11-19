@@ -113,7 +113,7 @@ describe("roles", () => {
 		const response = await signedIn().request("/api/auth/update-user", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ role: "viewer" }),
+			body: JSON.stringify({ role: "guest" }),
 		});
 
 		expect(response.status).toBe(400);

@@ -40,7 +40,7 @@ export const Route = createFileRoute("/oauth/consent")({
 	component: ConsentPage,
 });
 
-/** The code a failed answer is told by: the server refuses a viewer's with 403. */
+/** The code a failed answer is told by: the server refuses a guest's with 403. */
 function failureCode(status: number | undefined): "UNAUTHORIZED" | "FORBIDDEN" | "INTERNAL_ERROR" {
 	if (status === 401) {
 		return "UNAUTHORIZED";

@@ -203,12 +203,12 @@ function NextDue({ bill }: { bill: BillRecordData }) {
 export function AllBills({
 	query,
 	onQuery,
-	admin,
+	canWrite,
 	actions,
 }: {
 	query: AllBillsQuery;
 	onQuery: (next: AllBillsQuery) => void;
-	admin: boolean;
+	canWrite: boolean;
 	actions: BillActions;
 }) {
 	const { t } = useTranslation();
@@ -297,7 +297,7 @@ export function AllBills({
 											</TableHead>
 										),
 									)}
-									{admin && (
+									{canWrite && (
 										<TableHead scope="col">
 											<span className="sr-only">{t("bills.allView.columns.actions")}</span>
 										</TableHead>
@@ -355,7 +355,7 @@ export function AllBills({
 												{bill.manual && <StatusBadge status="recurringManual" />}
 											</span>
 										</TableCell>
-										{admin && (
+										{canWrite && (
 											<TableCell className="w-10 text-right">
 												<BillMenu bill={bill} actions={actions} />
 											</TableCell>

@@ -159,7 +159,7 @@
 		"empty": {
 			"title": "Aucun compte pour l'instant",
 			"description": "Connectez une banque ou importez un relevé pour voir votre patrimoine ici.",
-			"viewerDescription": "L'administrateur du foyer ajoute les comptes. Ils apparaîtront ici."
+			"guestDescription": "Les comptes du foyer apparaîtront ici."
 		},
 		"sections": "Sections du tableau de bord",
 		"toggleSection": "Afficher/masquer la section",
@@ -3581,23 +3581,32 @@
 		"list": "Membres",
 		"you": "Vous",
 		"actions": "Actions pour {{name}}",
-		"promote": "Passer administrateur",
-		"demote": "Passer lecteur",
 		"remove": "Retirer",
-		"promoteDialog": {
-			"title": "Passer {{name}} administrateur ?",
-			"description": "{{name}} pourra tout modifier, inviter et retirer des membres, et connecter des assistants. Le changement s'applique dès sa prochaine action."
+		"roleChange": {
+			"admin": {
+				"action": "Passer administrateur",
+				"title": "Passer {{name}} administrateur ?",
+				"description": "{{name}} pourra gérer les réglages du foyer, les membres et les assistants.",
+				"done": "{{name}} est maintenant administrateur."
+			},
+			"member": {
+				"action": "Passer membre",
+				"title": "Passer {{name}} membre ?",
+				"description": "{{name}} pourra modifier les comptes, les opérations, les règles et les budgets.",
+				"done": "{{name}} est maintenant membre."
+			},
+			"guest": {
+				"action": "Passer invité",
+				"title": "Passer {{name}} invité ?",
+				"description": "{{name}} pourra consulter les données du foyer en lecture seule.",
+				"done": "{{name}} est maintenant invité."
+			}
 		},
-		"demoteDialog": {
-			"title": "Passer {{name}} lecteur ?",
-			"description": "{{name}} pourra tout lire sans rien modifier. Ses assistants connectés et ses invitations en attente seront supprimés."
-		},
+		"revokesAdminAccess": "Ses assistants connectés et ses invitations en attente seront supprimés.",
 		"removeDialog": {
 			"title": "Retirer {{name}} ?",
 			"description": "{{name}} n'aura plus accès à Archant : ses sessions seront fermées sur tous ses appareils. Les comptes et les opérations du foyer restent."
 		},
-		"promoted": "{{name}} est maintenant administrateur.",
-		"demoted": "{{name}} est maintenant lecteur.",
 		"removed": "{{name}} n'a plus accès à Archant.",
 		"invite": "Inviter",
 		"pending": "Invitations en attente",
@@ -3614,7 +3623,8 @@
 			"description": "Une invitation apparaît ici jusqu'à ce que la personne crée son compte, ou pendant trois jours au plus."
 		},
 		"roles": {
-			"viewer": "Lecteur",
+			"guest": "Invité",
+			"member": "Membre",
 			"admin": "Administrateur"
 		},
 		"inviteDialog": {
@@ -3938,10 +3948,11 @@
 	},
 	"invitation": {
 		"title": "Rejoindre Archant",
-		"intro": "{{inviter}} vous invite à rejoindre Archant en tant que {{role}}.",
+		"intro": "{{inviter}} vous invite à rejoindre Archant avec le rôle « {{role}} ».",
 		"roles": {
-			"viewer": "lecteur",
-			"admin": "administrateur"
+			"guest": "Invité",
+			"member": "Membre",
+			"admin": "Administrateur"
 		},
 		"email": "Adresse e-mail",
 		"firstName": "Prénom",

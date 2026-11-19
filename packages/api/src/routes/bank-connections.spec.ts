@@ -17,7 +17,7 @@ import {
 	template,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 import {
 	TEST_APPLICATION_ID,
 	TEST_ENCRYPTION_KEY_BASE64,
@@ -398,7 +398,7 @@ describe("/api/bank-connections", () => {
 		expect((await account.json()).data).toMatchObject({ balance: 123456, bankConnection: null });
 	});
 
-	it("refuses a viewer's removal, and removes credentials without ENCRYPTION_KEY", async () => {
+	it("refuses a guest's removal, and removes credentials without ENCRYPTION_KEY", async () => {
 		const silent = createLogger("silent");
 		const interfaceBank = {
 			bankCredentials: null,
@@ -418,16 +418,16 @@ describe("/api/bank-connections", () => {
 		const stored = () =>
 			database.db.all(sql`select key from settings where key like 'enable_banking_%'`);
 		const auth = createTestAuth(database.db, silent);
-		const viewerCookie = await addViewer(
+		const guestCookie = await addTestUser(
 			buildTestApp(database.db, silent, auth, {}, interfaceBank),
 			auth,
 		);
-		const viewer = withSession(
+		const guest = withSession(
 			buildTestApp(database.db, silent, auth, {}, interfaceBank),
-			viewerCookie,
+			guestCookie,
 		);
 
-		const refused = await viewer.request("/api/bank-connections/credentials", {
+		const refused = await guest.request("/api/bank-connections/credentials", {
 			method: "DELETE",
 		});
 		expect(refused.status).toBe(403);
@@ -1011,7 +1011,7 @@ describe("/api/bank-connections/settings", () => {
 		).resolves.toEqual([]);
 	});
 
-	it("refuses a viewer's read and write", async () => {
+	it("refuses a guest's read and write", async () => {
 		const silent = createLogger("silent");
 		await bankApp();
 		const database = own;
@@ -1021,11 +1021,11 @@ describe("/api/bank-connections/settings", () => {
 		}
 
 		const auth = createTestAuth(database.db, silent);
-		const viewerCookie = await addViewer(buildTestApp(database.db, silent, auth), auth);
-		const viewer = withSession(buildTestApp(database.db, silent, auth), viewerCookie);
+		const guestCookie = await addTestUser(buildTestApp(database.db, silent, auth), auth);
+		const guest = withSession(buildTestApp(database.db, silent, auth), guestCookie);
 
-		const read = await viewer.request("/api/bank-connections/settings");
-		const write = await viewer.request("/api/bank-connections/settings", {
+		const read = await guest.request("/api/bank-connections/settings");
+		const write = await guest.request("/api/bank-connections/settings", {
 			method: "PUT",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({

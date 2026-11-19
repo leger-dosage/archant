@@ -21,7 +21,7 @@ import {
 	useHouseholdPreferences,
 	useUpdateHouseholdPreferences,
 } from "@/hooks/useHouseholdPreferences";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { usePreferences, useUpdatePreferences } from "@/hooks/usePreferences";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";

@@ -24,7 +24,7 @@ async function uploaded(file: File) {
  * « Importer depuis Sure »: the `all.ndjson` of a Sure or an Archant export,
  * `multipart/form-data` with one `file`, sent twice by the page. The
  * preflight writes nothing; the import writes everything or nothing. A
- * viewer's post is refused before either runs (AD-21).
+ * guest's post is refused before either runs (AD-21).
  */
 export function sureImportsRoutes(
 	deps: SureImportDeps & { sureImport?: SureImportLimits | undefined },

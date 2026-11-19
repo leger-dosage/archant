@@ -29,7 +29,7 @@ const REPORTS_SECTION_TITLES = {
  * One section of « Rapports », as Sure's `section[data-section-key]`: a list
  * item that a keyboard user grabs with Enter or Space and moves with the
  * arrows, a mouse drags by its grip and a finger holds, its chevron folding
- * it. A viewer gets the section alone: nothing to arrange, nothing saved (AD-21).
+ * it. A guest gets the section alone: nothing to arrange, nothing saved (AD-21).
  */
 export function ReportsSection({
 	sectionKey,

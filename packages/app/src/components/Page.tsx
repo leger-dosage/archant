@@ -10,7 +10,7 @@ import { BankAlerts } from "@/components/BankAlerts";
 import { SETTINGS_SECTIONS } from "@/components/SettingsNav";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { cn } from "@/lib/utils";
 
 /** The `h1`'s id, for a region the page's title names. */
@@ -189,7 +189,7 @@ export function Page({
 							<p className="order-last basis-full text-muted-foreground">{description}</p>
 						)}
 					</header>
-					{/* Not mounted for a viewer: it reads the bank setup, an administrator's (AD-21). */}
+					{/* Only administrators can read the bank setup (AD-21). */}
 					{admin && <BankAlerts />}
 					<div className={cn("flex w-full flex-col gap-6", className)}>{children}</div>
 				</div>

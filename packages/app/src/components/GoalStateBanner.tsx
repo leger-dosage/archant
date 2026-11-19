@@ -23,7 +23,7 @@ const BANNERS = {
 /**
  * Sure's banner above a goal that is not active: paused, with « Reprendre
  * l'objectif »; archived, with « Restaurer l'objectif »; completed, with
- * « Archiver l'objectif ». A viewer reads it without the button.
+ * « Archiver l'objectif ». A guest reads it without the button.
  */
 export function GoalStateBanner({
 	goal,
@@ -32,7 +32,7 @@ export function GoalStateBanner({
 }: {
 	goal: GoalData;
 	pending: boolean;
-	/** `null` for a viewer. */
+	/** `null` for a guest. */
 	onEvent: ((event: GoalEvent) => void) | null;
 }) {
 	const { t } = useTranslation();

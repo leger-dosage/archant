@@ -30,7 +30,7 @@ function Share({ percent }: { percent: string | null }) {
 /**
  * Sure's holdings table: each security held, by value, with its weight, its
  * « PRU », its value and quantity and its unrealised gain, then the cash. A
- * row opens the position's sheet, for a viewer too: its figures are theirs
+ * row opens the position's sheet, for a guest too: its figures are theirs
  * to read.
  */
 export function PositionList({ holdings, onOpen }: PositionListProps) {

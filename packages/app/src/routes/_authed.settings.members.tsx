@@ -8,6 +8,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 
+import { USER_ROLES, type UserRole } from "@archant/data/user-roles";
+
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { EmptyState } from "@/components/EmptyState";
 import { InsetGroup } from "@/components/InsetGroup";
@@ -41,7 +43,7 @@ const moment = new Intl.DateTimeFormat(intlLocale, { dateStyle: "long", timeStyl
 const nameOf = (member: MemberData) => (member.name.trim() === "" ? member.email : member.name);
 
 /** What the confirmation is for: another member's promotion, demotion or removal. */
-type Change = { member: MemberData; action: "promote" | "demote" | "remove" };
+type Change = { member: MemberData; action: UserRole | "remove" };
 
 function MemberRow({
 	member,
@@ -76,15 +78,11 @@ function MemberRow({
 						</Button>
 					</DropdownMenuTrigger>
 					<DropdownMenuContent align="end">
-						{member.role === "admin" ? (
-							<DropdownMenuItem onSelect={() => onChange("demote")}>
-								{t("members.demote")}
+						{USER_ROLES.filter((role) => role !== member.role).map((role) => (
+							<DropdownMenuItem key={role} onSelect={() => onChange(role)}>
+								{t(`members.roleChange.${role}.action`)}
 							</DropdownMenuItem>
-						) : (
-							<DropdownMenuItem onSelect={() => onChange("promote")}>
-								{t("members.promote")}
-							</DropdownMenuItem>
-						)}
+						))}
 						<DropdownMenuItem variant="destructive" onSelect={() => onChange("remove")}>
 							{t("members.remove")}
 						</DropdownMenuItem>
@@ -183,25 +181,38 @@ function ChangeDialog({
 			return;
 		}
 
-		const role = change.action === "promote" ? "admin" : "viewer";
+		const role = change.action;
 		setRole.mutate(
 			{ id: change.member.id, role },
 			{
-				onSuccess: () =>
-					done(t(change.action === "promote" ? "members.promoted" : "members.demoted", { name })),
+				onSuccess: () => done(t(`members.roleChange.${role}.done`, { name })),
 				onError: failed,
 			},
 		);
 	};
 
+	const action = change.action;
+	const roleChange = action === "remove" ? null : (`members.roleChange.${action}` as const);
+	const description =
+		roleChange === null
+			? t("members.removeDialog.description", { name })
+			: t(`${roleChange}.description`, { name });
+	const revokesAccess = action !== "remove" && change.member.role === "admin";
+
 	return (
 		<ConfirmDialog
 			open={open}
 			onOpenChange={onOpenChange}
-			title={t(`members.${change.action}Dialog.title`, { name })}
-			description={t(`members.${change.action}Dialog.description`, { name })}
-			confirmLabel={t(`members.${change.action}`)}
-			destructive={change.action !== "promote"}
+			title={
+				roleChange === null
+					? t("members.removeDialog.title", { name })
+					: t(`${roleChange}.title`, { name })
+			}
+			description={
+				revokesAccess ? `${description} ${t("members.revokesAdminAccess")}` : description
+			}
+			confirmLabel={roleChange === null ? t("members.remove") : t(`${roleChange}.action`)}
+			destructive={action === "remove" || revokesAccess}
 			pending={setRole.isPending || remove.isPending}
 			onConfirm={confirm}
 		/>
@@ -212,7 +223,7 @@ function ChangeDialog({
  * « Réglages › Membres »: who has access, each other member's role changed
  * or the member removed after a confirmation, then the invitations still
  * pending, each revoked at once, and « Inviter ». An administrator's page:
- * the settings route sends a viewer to « Sécurité ».
+ * the settings route sends other roles to « Sécurité ».
  */
 function MembersPage() {
 	const { t } = useTranslation();

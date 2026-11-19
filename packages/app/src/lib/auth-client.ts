@@ -56,13 +56,12 @@ export const sessionQuery = queryOptions({
 	refetchOnWindowFocus: "always",
 });
 
-/**
- * Whether the session is an administrator's (AD-21): what the interface shows
- * a viewer follows from it, never what the server allows. `useIsAdmin` and
- * the route guards read it; the consent page reads the role too.
- */
-export function isAdmin(session: Session | null | undefined): boolean {
-	return session?.user.role === "admin";
+export function isAdmin(role: string | null | undefined): boolean {
+	return role === "admin";
+}
+
+export function canWrite(role: string | null | undefined): boolean {
+	return isAdmin(role) || role === "member";
 }
 
 /** Whether first-launch setup is still open: no user exists yet. */

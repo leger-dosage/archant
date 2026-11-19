@@ -13,7 +13,7 @@ import {
 	template,
 	useSignedInApp,
 } from "../../testing/app.ts";
-import { addViewer, buildTestApp, withSession } from "../../testing/auth.ts";
+import { addTestUser, buildTestApp, withSession } from "../../testing/auth.ts";
 import { mockProvider } from "../../testing/enable-banking.ts";
 
 useSignedInApp();
@@ -89,15 +89,15 @@ describe("the first visit of the day", () => {
 		expect(transactionReads(requests)).toHaveLength(2);
 	});
 
-	it("starts the sync on a viewer's first read, as Sure's AutoSync runs for every member", async () => {
+	it("starts the sync on a guest's first read, as Sure's AutoSync runs for every member", async () => {
 		const { db, auth, connection } = await dueConnection();
 		const silent = createLogger("silent");
-		const cookie = await addViewer(buildTestApp(db, silent, auth), auth);
-		const viewer = withSession(buildTestApp(db, silent, auth, {}, configuredBank()), cookie);
+		const cookie = await addTestUser(buildTestApp(db, silent, auth), auth);
+		const guest = withSession(buildTestApp(db, silent, auth, {}, configuredBank()), cookie);
 		const requests = mockProvider();
 		const now = Date.now();
 
-		const response = await viewer.request("/api/accounts");
+		const response = await guest.request("/api/accounts");
 
 		expect(response.status).toBe(200);
 		await expect(syncState(db, connection.id)).resolves.toMatchObject({ syncAttemptedAt: now });

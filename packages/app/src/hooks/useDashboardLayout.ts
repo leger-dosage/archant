@@ -16,7 +16,7 @@ export type DashboardLayoutData = InferResponseType<
 
 /**
  * The signed-in user's dashboard: order, collapsed and hidden widgets, sizes.
- * Off for a viewer, who sees the default layout.
+ * Off for a guest, who sees the default layout.
  */
 export function useDashboardLayout({ enabled }: { enabled: boolean }) {
 	return useQuery({

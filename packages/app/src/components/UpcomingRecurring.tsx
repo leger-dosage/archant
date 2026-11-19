@@ -27,7 +27,7 @@ function byDate(items: readonly UpcomingData[]): [string, UpcomingData[]][] {
  * Sure's `transactions/_upcoming`: the active series expected within ten
  * days, grouped by date, each with when it is expected and the one signed
  * amount `_projected_transaction` shows. Nothing to act on, for an
- * administrator as for a viewer.
+ * administrator as for a guest.
  */
 export function UpcomingRecurring() {
 	const { t } = useTranslation();

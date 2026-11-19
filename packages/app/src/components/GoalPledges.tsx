@@ -31,7 +31,7 @@ function PledgeActions({ goalId, pledge }: { goalId: string; pledge: Pledge }) {
 	);
 }
 
-export function GoalPledges({ goal, admin }: { goal: GoalData; admin: boolean }) {
+export function GoalPledges({ goal, canWrite }: { goal: GoalData; canWrite: boolean }) {
 	const { t } = useTranslation();
 
 	if (goal.pledges.length === 0) {
@@ -52,7 +52,9 @@ export function GoalPledges({ goal, admin }: { goal: GoalData; admin: boolean })
 							count: pledge.daysLeft,
 						})}
 					</p>
-					{admin && pledge.status === "open" && <PledgeActions goalId={goal.id} pledge={pledge} />}
+					{canWrite && pledge.status === "open" && (
+						<PledgeActions goalId={goal.id} pledge={pledge} />
+					)}
 				</li>
 			))}
 		</ul>

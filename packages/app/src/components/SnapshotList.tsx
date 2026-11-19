@@ -21,11 +21,11 @@ export type OpeningRow = { date: string; balance: MinorUnits; currency: string }
 
 type SnapshotListProps = {
 	items: readonly SnapshotData[];
-	/** `null` for a viewer: a row opens the form that edits it, which they cannot use. */
+	/** `null` for a guest: a row opens the form that edits it, which they cannot use. */
 	onOpen: ((snapshot: SnapshotData) => void) | null;
 	/** Shown below the snapshots, on the last page only; `null` elsewhere. */
 	opening: OpeningRow | null;
-	/** `null` for a viewer: the row opens nothing. */
+	/** `null` for a guest: the row opens nothing. */
 	onOpenOpening: (() => void) | null;
 };
 

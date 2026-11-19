@@ -9,7 +9,7 @@ import { LazyCreateAccountDialog } from "@/components/LazyCreateAccountDialog";
 import { Page } from "@/components/Page";
 import { Button } from "@/components/ui/button";
 import { useAccounts } from "@/hooks/useAccounts";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 
 export const Route = createFileRoute("/_authed/accounts/")({
@@ -19,7 +19,7 @@ export const Route = createFileRoute("/_authed/accounts/")({
 function AccountsPage() {
 	const { t } = useTranslation();
 	const accounts = useAccounts();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const [creatingAccount, setCreatingAccount] = useState(false);
 	const hasAccounts = accounts.data?.groups.some((group) => group.accounts.length > 0) ?? false;
 
@@ -31,7 +31,7 @@ function AccountsPage() {
 		<Page
 			title={t("accounts.title")}
 			actions={
-				hasAccounts && admin ? (
+				hasAccounts && canWrite ? (
 					<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
 				) : undefined
 			}
@@ -56,13 +56,13 @@ function AccountsPage() {
 					title={t("accounts.empty.title")}
 					description={t("accounts.empty.description")}
 					action={
-						admin ? (
+						canWrite ? (
 							<Button onClick={() => setCreatingAccount(true)}>{t("accounts.add")}</Button>
 						) : null
 					}
 				/>
 			)}
-			{admin && (
+			{canWrite && (
 				<LazyCreateAccountDialog open={creatingAccount} onOpenChange={setCreatingAccount} />
 			)}
 		</Page>

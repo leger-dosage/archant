@@ -279,13 +279,68 @@ const insertUser = (database: Database, id: string, role: string | null) =>
 	);
 
 describe("users and settings", () => {
-	it("accepts the admin and viewer roles only, and requires one", async () => {
+	it("accepts only admin, member and guest roles, and requires one", async () => {
 		const database = await migrated();
 
 		await expect(insertUser(database, "u1", "admin")).resolves.toBeDefined();
-		await expect(insertUser(database, "u2", "viewer")).resolves.toBeDefined();
+		await expect(insertUser(database, "u2", "guest")).resolves.toBeDefined();
 		await expect(insertUser(database, "u3", "owner")).rejects.toThrow();
 		await expect(insertUser(database, "u4", null)).rejects.toThrow();
+		await expect(insertUser(database, "u5", "member")).resolves.toBeDefined();
+		await expect(insertUser(database, "u6", "viewer")).rejects.toThrow();
+	});
+
+	it("upgrades viewers and invitations without losing authentication or invitation data", async () => {
+		const before = await migratedBefore("0113_household_roles");
+		await insertAccount(before, "a1", "depository", "checking");
+		await insertUser(before, "u1", "admin");
+		await insertUser(before, "u2", "viewer");
+		await before.run(
+			sql`update users set default_account_id = 'a1', locale = 'fr', two_factor_enabled = 1 where id = 'u2'`,
+		);
+		await before.run(
+			sql`insert into sessions (id, expires_at, token, updated_at, user_id) values ('s1', 1, 't1', 0, 'u2')`,
+		);
+		await before.run(
+			sql`insert into auth_accounts (id, account_id, provider_id, user_id, password, updated_at) values ('c1', 'u2', 'credential', 'u2', 'hash', 0)`,
+		);
+		await before.run(
+			sql`insert into two_factors (id, secret, backup_codes, user_id) values ('f1', 'secret', 'codes', 'u2')`,
+		);
+		await before.run(
+			sql`insert into passkeys (id, name, public_key, user_id, factor_id, user_handle, credential_id, counter, device_type, backed_up)
+				values ('p1', 'Test key', 'public-key', 'u2', 'f1', 'handle', 'credential-id', 1, 'singleDevice', 0)`,
+		);
+		await before.run(
+			sql`insert into invitations (id, email, role, token_hash, inviter_id, expires_at, accepted_at, created_at) values
+				('i1', 'pending@example.test', 'viewer', 'pending-hash', 'u1', 10, null, 1),
+				('i2', 'u2@example.test', 'viewer', 'used-hash', 'u1', 11, 2, 1),
+				('i3', 'admin@example.test', 'admin', 'admin-hash', 'u1', 12, null, 1)`,
+		);
+		const oldUsers = await before.all<{ role: string }>(sql`select * from users order by id`);
+		const oldInvitations = await before.all<{ role: string }>(
+			sql`select * from invitations order by id`,
+		);
+		const authRows = sql`select sessions.token, auth_accounts.password, two_factors.secret
+			from sessions join auth_accounts using (user_id) join two_factors using (user_id)`;
+		const oldAuth = await before.all(authRows);
+		const oldPasskeys = await before.all(sql`select * from passkeys`);
+		before.$client.close();
+
+		const database = await migrated();
+
+		await expect(database.all(sql`select * from users order by id`)).resolves.toEqual(
+			oldUsers.map((row) => (row.role === "viewer" ? { ...row, role: "guest" } : row)),
+		);
+		await expect(database.all(sql`select * from invitations order by id`)).resolves.toEqual(
+			oldInvitations.map((row) => (row.role === "viewer" ? { ...row, role: "guest" } : row)),
+		);
+		await expect(database.all(authRows)).resolves.toEqual(oldAuth);
+		await expect(database.all(sql`select * from passkeys`)).resolves.toEqual(oldPasskeys);
+		await expect(database.all(sql`select * from pragma_foreign_key_check`)).resolves.toEqual([]);
+		await expect(
+			database.run(sql`update invitations set role = 'viewer' where id = 'i1'`),
+		).rejects.toThrow();
 	});
 
 	it("keeps an administrator's session, credential, two-factor and consent when 0044 rebuilds users", async () => {
@@ -337,7 +392,7 @@ describe("users and settings", () => {
 		await expect(database.all(sql`select id from oauth_access_tokens`)).resolves.toEqual([
 			{ id: "a1" },
 		]);
-		await expect(insertUser(database, "u2", "viewer")).resolves.toBeDefined();
+		await expect(insertUser(database, "u2", "guest")).resolves.toBeDefined();
 		await expect(insertUser(database, "u3", "owner")).rejects.toSatisfy(
 			(error: unknown) =>
 				error instanceof Error && String(error.cause).includes("users_role_check"),
@@ -431,7 +486,7 @@ describe("users and settings", () => {
 			id: string,
 			{
 				email = "camille@example.test",
-				role = "viewer",
+				role = "guest",
 				acceptedAt = null,
 				hash = id,
 			}: { email?: string; role?: string; acceptedAt?: number | null; hash?: string } = {},

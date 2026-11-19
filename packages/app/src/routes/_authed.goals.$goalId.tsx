@@ -34,7 +34,7 @@ import {
 	useGoalEvent,
 	useGoalHistory,
 } from "@/hooks/useGoals";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { ApiError, errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
 import { CHART_HEIGHTS } from "@/lib/chart-heights";
@@ -256,14 +256,13 @@ function Projection({
 
 /**
  * One goal, as Sure's page: a banner when it is not active, its progress,
- * its chart, the share each account backs and its notes; for an
- * administrator, « Modifier » and the « … » menu of its events and
+ * its chart, the share each account backs and its notes; for writers, « Modifier » and the « … » menu of its events and
  * « Supprimer ».
  */
 function GoalPage() {
 	const { t } = useTranslation();
 	const { goalId } = Route.useParams();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const goal = useGoal(goalId);
 	const fundable = useFundableAccounts();
 	const deleteGoal = useDeleteGoal(goalId);
@@ -367,7 +366,7 @@ function GoalPage() {
 				)
 			}
 			actions={
-				admin && data !== undefined ? (
+				canWrite && data !== undefined ? (
 					<>
 						<GoalPledgeDialog key={data.id} goal={data} />
 						<Button variant="outline" onClick={openEditor}>
@@ -415,13 +414,13 @@ function GoalPage() {
 					<GoalStateBanner
 						goal={data}
 						pending={goalEvent.isPending}
-						onEvent={admin ? request : null}
+						onEvent={canWrite ? request : null}
 					/>
 					{panel !== null && (
 						<Section title={panel.title} className="tabular-nums">
 							<div className="flex flex-wrap items-center gap-3 p-4">
 								<p className="min-w-48 flex-1 text-sm text-muted-foreground">{panel.body}</p>
-								{admin && panel.action !== null && (
+								{canWrite && panel.action !== null && (
 									<Button
 										size="sm"
 										variant={panel.action === "complete" ? "default" : "outline"}
@@ -434,13 +433,13 @@ function GoalPage() {
 							</div>
 						</Section>
 					)}
-					<GoalPledges goal={data} admin={admin} />
+					<GoalPledges goal={data} canWrite={canWrite} />
 					<div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:items-start">
 						<Progress goal={data} />
 						<Projection goal={data} history={history} summary={explanation?.projection ?? null} />
 						<Accounts goal={data} />
 					</div>
-					{admin &&
+					{canWrite &&
 						data.kind === "one_off" &&
 						data.state === "active" &&
 						data.accounts.length > 0 && <GoalSpending key={data.id} goal={data} />}
@@ -452,7 +451,7 @@ function GoalPage() {
 				</>
 			)}
 
-			{admin && data !== undefined && fundable.data !== undefined && edit.session > 0 && (
+			{canWrite && data !== undefined && fundable.data !== undefined && edit.session > 0 && (
 				<GoalDialog
 					key={edit.session}
 					open={edit.open}
@@ -462,7 +461,7 @@ function GoalPage() {
 					reportingCurrency={fundable.data.reportingCurrency}
 				/>
 			)}
-			{admin && data !== undefined && (
+			{canWrite && data !== undefined && (
 				<>
 					<ConfirmDialog
 						open={confirming === "delete"}

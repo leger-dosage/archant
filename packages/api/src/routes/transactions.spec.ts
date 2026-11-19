@@ -46,7 +46,7 @@ import {
 	uniqueCategory,
 	useSignedInApp,
 } from "../testing/app.ts";
-import { addViewer, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
+import { addTestUser, buildTestApp, createTestAuth, withSession } from "../testing/auth.ts";
 
 useSignedInApp();
 
@@ -2053,24 +2053,24 @@ describe("manual reconciliation through the transactions API", () => {
 	});
 });
 
-describe("a viewer and a one-time or labelled transaction", () => {
-	let viewerCookie: string;
+describe("a guest and a one-time or labelled transaction", () => {
+	let guestCookie: string;
 	let auth: Auth;
 	const silent = createLogger("silent");
 
-	// One viewer sign-in for the block: Better Auth allows three per ten seconds.
+	// One guest sign-in for the block: Better Auth allows three per ten seconds.
 	beforeAll(async () => {
 		auth = createTestAuth(temp.db, silent);
-		viewerCookie = await addViewer(buildTestApp(temp.db, silent, auth), auth);
+		guestCookie = await addTestUser(buildTestApp(temp.db, silent, auth), auth);
 	});
 
-	it("is refused FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+	it("is refused FORBIDDEN by `guestReadOnly`, nothing written", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const edit = await viewer.request(`/api/transactions/${data.id}`, {
+		const edit = await guest.request(`/api/transactions/${data.id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ oneTime: true }),
@@ -2081,11 +2081,11 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		await expect(listedOf(account.id)).resolves.toMatchObject([{ id: data.id, oneTime: false }]);
 	});
 
-	it("lets a viewer read and filter reconciliation but refuses each write", async () => {
+	it("lets a guest read and filter reconciliation but refuses each write", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const id = z.object({ data: z.object({ id: z.string() }) }).parse(created.body).data.id;
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 		await expect(
 			request("PATCH", "/api/preferences", { manualReconciliation: true }),
 		).resolves.toMatchObject({
@@ -2104,7 +2104,7 @@ describe("a viewer and a one-time or labelled transaction", () => {
 			] as const;
 			const responses = await Promise.all(
 				mutations.map(async ([path, method, data]) =>
-					viewer.request(path, {
+					guest.request(path, {
 						method,
 						headers: { "content-type": "application/json" },
 						body: JSON.stringify(data),
@@ -2114,7 +2114,7 @@ describe("a viewer and a one-time or labelled transaction", () => {
 
 			expect(responses.map((response) => response.status)).toEqual([403, 403, 403]);
 
-			const result = await viewer.request(
+			const result = await guest.request(
 				`/api/transactions?account=${account.id}&reconciliationStatus=unreconciled`,
 			);
 			expect(result.status).toBe(200);
@@ -2126,39 +2126,39 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		}
 	});
 
-	it("refuses a viewer's unlock FORBIDDEN, every lock kept", async () => {
+	it("refuses a guest's unlock FORBIDDEN, every lock kept", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const unlock = await viewer.request(`/api/transactions/${data.id}/unlock`, { method: "POST" });
+		const unlock = await guest.request(`/api/transactions/${data.id}/unlock`, { method: "POST" });
 
 		expect(unlock.status).toBe(403);
 		expect(errorBody.parse(await unlock.json()).error.code).toBe("FORBIDDEN");
 		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 	});
 
-	it("refuses a viewer the rule prompt FORBIDDEN: a viewer writes no rule", async () => {
+	it("refuses a guest the rule prompt FORBIDDEN: a guest writes no rule", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const prompt = await viewer.request(`/api/transactions/${data.id}/rule-prompt`);
+		const prompt = await guest.request(`/api/transactions/${data.id}/rule-prompt`);
 
 		expect(prompt.status).toBe(403);
 		expect(errorBody.parse(await prompt.json()).error.code).toBe("FORBIDDEN");
 	});
 
-	it("refuses a viewer's quick categorisation FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+	it("refuses a guest's quick categorisation FORBIDDEN by `guestReadOnly`, nothing written", async () => {
 		const account = await openAccount();
 		const created = await postTransaction(account.id, expense);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
 		const { id: categoryId } = await createCategory(uniqueCategory("Courses"));
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const response = await viewer.request("/api/transactions/categorize", {
+		const response = await guest.request("/api/transactions/categorize", {
 			method: "POST",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ ids: [data.id], categoryId }),
@@ -2169,13 +2169,13 @@ describe("a viewer and a one-time or labelled transaction", () => {
 		await expect(locksOf(data.id)).resolves.toEqual(["date", "amount", "label"]);
 	});
 
-	it("refuses a viewer's activity label FORBIDDEN by `viewerReadOnly`, nothing written", async () => {
+	it("refuses a guest's activity label FORBIDDEN by `guestReadOnly`, nothing written", async () => {
 		const account = await openAccount(pea);
 		const created = await postTransaction(account.id, dividend);
 		const { data } = z.object({ data: z.object({ id: z.string() }) }).parse(created.body);
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), viewerCookie);
+		const guest = withSession(buildTestApp(temp.db, silent, auth), guestCookie);
 
-		const edit = await viewer.request(`/api/transactions/${data.id}`, {
+		const edit = await guest.request(`/api/transactions/${data.id}`, {
 			method: "PATCH",
 			headers: { "content-type": "application/json" },
 			body: JSON.stringify({ investmentActivityLabel: "Dividend" }),

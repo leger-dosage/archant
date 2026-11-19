@@ -486,7 +486,7 @@ export function useTouchHold(
  * One dashboard widget, as Sure's `section[data-section-key]`: a list item
  * that a keyboard user grabs with Enter or Space and moves with the arrows,
  * a mouse drags by its grip and a finger holds, and that lends its section
- * the chevron, the size menu and the grip. A viewer gets the widget alone:
+ * the chevron, the size menu and the grip. A guest gets the widget alone:
  * nothing to arrange, nothing saved (AD-21).
  */
 export function DashboardWidget({

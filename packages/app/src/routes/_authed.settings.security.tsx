@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuthActions } from "@/hooks/useAuthActions";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { useResetFinancialData } from "@/hooks/useResetFinancialData";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
@@ -248,7 +248,7 @@ function PasswordSection() {
  * le compte » deletes every account and what goes with them, and keeps the
  * users; « Réinitialiser et précharger » then loads Sure's sample household.
  * An administrator's only, as Sure's `ensure_admin`; Archant has no
- * « Supprimer le compte », so a viewer sees no section at all.
+ * « Supprimer le compte », so a guest sees no section at all.
  */
 function DangerZoneSection() {
 	const { t } = useTranslation();

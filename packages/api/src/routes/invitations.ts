@@ -26,7 +26,7 @@ export type InvitationsRouteDeps = InvitationDeps & AttemptsDeps;
 /**
  * « Réglages › Membres »' invitations, and the two public routes the link's
  * page calls. Every other route checks the administrator's role itself, for
- * two reasons: `viewerReadOnly` lets a viewer's `GET` through, and another
+ * two reasons: `guestReadOnly` lets a guest's `GET` through, and another
  * method on `/preview` or `/accept`, a public path, such as `DELETE`, reaches
  * `/:id` without a session.
  */

@@ -19,7 +19,8 @@ export type AssistantsDeps = ServiceDeps & {
  */
 export function assistantsRoutes(deps: AssistantsDeps) {
 	return new Hono<SessionEnv>()
-		.get("/", requireRole("admin"), async (c) =>
+		.use(requireRole("admin"))
+		.get("/", async (c) =>
 			c.json(
 				{
 					data: {

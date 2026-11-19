@@ -31,6 +31,7 @@ import { UnlinkAccountDialog } from "@/components/UnlinkAccountDialog";
 import { useAccount } from "@/hooks/useAccount";
 import { useRemoveDefaultAccount, useSetDefaultAccount } from "@/hooks/useAccounts";
 import { useAccountToggles } from "@/hooks/useAccountToggles";
+import { useIsAdmin } from "@/hooks/usePermissions";
 import { errorCodeOf } from "@/lib/api";
 import { showErrorToast } from "@/lib/error-toast";
 
@@ -50,6 +51,7 @@ export function AccountRowMenu({
 	isDefault: boolean;
 }) {
 	const { t } = useTranslation();
+	const admin = useIsAdmin();
 	const trigger = useRef<HTMLButtonElement>(null);
 	const [editing, setEditing] = useState(false);
 	// Kept once chosen, so the dialog stays mounted through its closing animation.
@@ -102,8 +104,8 @@ export function AccountRowMenu({
 						<PencilLineIcon aria-hidden="true" className="size-3.5" />
 						{t("accounts.rowMenu.edit")}
 					</DropdownMenuItem>
-					{/* Sure's `unlink_provider`, offered on a linked account only. */}
-					{account.linked && (
+					{/* Sure's `unlink_provider`, a bank administration action. */}
+					{admin && account.linked && (
 						<DropdownMenuItem
 							onSelect={() => {
 								setUnlinkMounted(true);
@@ -179,7 +181,7 @@ export function AccountRowMenu({
 				/>
 			)}
 
-			{(account.linked || unlinkMounted) && (
+			{admin && (account.linked || unlinkMounted) && (
 				<UnlinkAccountDialog account={account} open={unlinking} onOpenChange={setUnlinking} />
 			)}
 

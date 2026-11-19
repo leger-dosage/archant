@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAttachmentCount } from "@/hooks/useAttachments";
 import { useCategoryShown } from "@/hooks/useCategories";
-import { useIsAdmin } from "@/hooks/useIsAdmin";
+import { useCanWrite } from "@/hooks/usePermissions";
 import { useSplit, useUnsplitTransaction } from "@/hooks/useTransactions";
 import { errorCodeOf } from "@/lib/api";
 import { formatShortDate } from "@/lib/balance-change";
@@ -126,7 +126,7 @@ function SplitActions({
  * line names its parent, both with the split's actions; a transaction that
  * can be split offers « Diviser ». Every action saves at once, apart from
  * the form, so it waits while the form holds unsaved edits, as the
- * recurring block does. A viewer reads a split without its actions, and no
+ * recurring block does. A guest reads a split without its actions, and no
  * offer.
  */
 export function SplitBlock({
@@ -145,12 +145,12 @@ export function SplitBlock({
 	onDone: (rowId: string) => void;
 }) {
 	const { t } = useTranslation();
-	const admin = useIsAdmin();
+	const canWrite = useCanWrite();
 	const inSplit = transaction.splitParent || transaction.parentEntryId !== null;
 	const split = useSplit(transaction.id, inSplit);
 	const [splitting, setSplitting] = useState(false);
 
-	if (!inSplit && (!splittable || !admin)) {
+	if (!inSplit && (!splittable || !canWrite)) {
 		return null;
 	}
 
@@ -213,7 +213,7 @@ export function SplitBlock({
 							})}
 						</p>
 					)}
-					{admin && (
+					{canWrite && (
 						<SplitActions split={split.data} currency={currency} disabled={dirty} onDone={onDone} />
 					)}
 				</div>

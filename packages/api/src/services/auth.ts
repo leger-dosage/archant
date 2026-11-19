@@ -244,9 +244,9 @@ export function createAuth({
 		emailAndPassword: { enabled: true, disableSignUp: true },
 		plugins: [
 			// A user created without a role reads and writes nothing more than a
-			// viewer: every creation names its role, and a forgotten one fails
+			// guest: every creation names its role, and a forgotten one fails
 			// closed (AD-21).
-			admin({ defaultRole: "viewer" }),
+			admin({ defaultRole: "guest" }),
 			// Change only generation so backup codes already stored by Better Auth still work.
 			twoFactor({
 				issuer: "Archant",

@@ -31,7 +31,7 @@ import {
 	createTestAuth,
 	signIn,
 	TEST_SECRET,
-	addViewer,
+	addTestUser,
 	withSession,
 } from "../testing/auth.ts";
 import { createTempDatabase } from "../testing/temp-database.ts";
@@ -756,7 +756,7 @@ async function postConsent(app: TestApp, body: Record<string, unknown>): Promise
 }
 
 describe("roles", () => {
-	it("stores viewer for a user created without a role, so a forgotten one fails closed", async () => {
+	it("stores guest for a user created without a role, so a forgotten one fails closed", async () => {
 		const auth = createTestAuth(temp.db);
 
 		const { user } = await auth.api.createUser({
@@ -765,26 +765,32 @@ describe("roles", () => {
 
 		await expect(
 			temp.db.select({ role: users.role }).from(users).where(eq(users.id, user.id)),
-		).resolves.toEqual([{ role: "viewer" }]);
+		).resolves.toEqual([{ role: "guest" }]);
 	});
 
-	it("refuses a viewer's consent, allowing or refusing, before Better Auth reads it, storing none", async () => {
-		const { auth, bare } = assistantServer();
-		const viewer = withSession(buildTestApp(temp.db, silent, auth), await addViewer(bare, auth));
-		const oauthQuery = await consentQuery(viewer, await registerClient(bare));
+	it.each(["guest", "member"] as const)(
+		"refuses consent from a %s before Better Auth reads it",
+		async (role) => {
+			const { auth, bare } = assistantServer();
+			const user = withSession(
+				buildTestApp(temp.db, silent, auth),
+				await addTestUser(bare, auth, role),
+			);
+			const oauthQuery = await consentQuery(user, await registerClient(bare));
 
-		const allowed = await postConsent(viewer, {
-			accept: true,
-			scope: "archant:read",
-			oauth_query: oauthQuery,
-		});
-		const denied = await postConsent(viewer, { accept: false, oauth_query: oauthQuery });
+			const allowed = await postConsent(user, {
+				accept: true,
+				scope: "archant:read",
+				oauth_query: oauthQuery,
+			});
+			const denied = await postConsent(user, { accept: false, oauth_query: oauthQuery });
 
-		expect([allowed.status, denied.status]).toEqual([403, 403]);
-		expect(await allowed.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
-		expect(await denied.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
-		await expect(temp.db.select().from(oauthConsents)).resolves.toEqual([]);
-	});
+			expect([allowed.status, denied.status]).toEqual([403, 403]);
+			expect(await allowed.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+			expect(await denied.json()).toMatchObject({ error: { code: "FORBIDDEN" } });
+			await expect(temp.db.select().from(oauthConsents)).resolves.toEqual([]);
+		},
+	);
 
 	it("lets Better Auth alone extend a day-old session on an administrator's consent, its cookie sent once", async () => {
 		const { bare, signedIn } = assistantServer();

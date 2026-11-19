@@ -18,7 +18,7 @@ export const ERROR_STATUSES = {
 	UNAUTHORIZED: 401,
 	/**
 	 * Setup once a user exists, a form post with no origin, or a role that
-	 * does not allow the request: a viewer's write, or a read kept to administrators.
+	 * does not allow the request: a guest's write, or a read kept to administrators.
 	 */
 	FORBIDDEN: 403,
 	/**

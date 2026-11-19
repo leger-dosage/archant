@@ -2,7 +2,7 @@
 
 ## Why
 
-A partner writes beside me and a guest only reads, as Sure.
+A household can give a partner permission to update the ledger without giving them control of the server. A guest can read and manage their own sign-in.
 
 ## What changes
 
