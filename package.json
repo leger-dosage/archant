@@ -15,7 +15,7 @@
 		"test:e2e": "pnpm --filter @archant/app test:e2e"
 	},
 	"devDependencies": {
-		"@fission-ai/openspec": "^1.11.0",
+		"@fission-ai/openspec": "^2.1.1",
 		"@shadcn/lint": "^0.2.0",
 		"knip": "^6.39.0",
 		"oxfmt": "^0.70.0",
